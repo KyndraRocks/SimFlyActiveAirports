@@ -1,6 +1,6 @@
 # SimFly Active Airports
 
-A single-file flight planning tool for Microsoft Flight Simulator. Download it, open it in any browser, and start planning — no installation, no server, no account required.
+A single-file flight planning tool for SimFly pilots. Download it, open it in any browser, and start planning — no installation, no server, no account required.
 
 **Current version: v2.16.14**
 
