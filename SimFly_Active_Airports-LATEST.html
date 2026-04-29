@@ -2722,6 +2722,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .tip-wx-cat.lifr         { color:#cc44ff; }
   .tip-wx-nearest-note     { font-size:0.72rem; color:var(--muted); font-style:italic; margin-bottom:0.35rem; }
 
+  /* Owner profile-page hyperlinks — easter-egg styling: visually identical to
+     plain text. Pointer cursor on hover is the only hint to "pro users" who
+     happen to mouse over the owner name or label. */
+  .owner-link,
+  .owner-link:link,
+  .owner-link:visited,
+  .owner-link:hover,
+  .owner-link:active { color: inherit; text-decoration: none; }
+
   .wx-map-legend           { display:none; position:absolute; bottom:30px; right:8px; z-index:500;
                              background:rgba(10,15,20,0.82); border:1px solid var(--border);
                              border-radius:5px; padding:5px 9px; font-size:0.69rem; color:var(--text);
@@ -3056,7 +3065,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.17.0';
+const APP_VERSION = '2.18.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3137,6 +3146,7 @@ const OVERRIDE_URL           = `https://gist.githubusercontent.com/KyndraRocks/$
 const RECIP_GIST_ID       = '2a6f1d36fdbdc51ac4bf3b4e3e2ee47d';
 const RECIP_GIST_RAW_URL  = `https://gist.githubusercontent.com/KyndraRocks/${RECIP_GIST_ID}/raw/SimFly_Pilot_Reciprocation.json`;
 window._gistPilotCodes    = new Map(); // lowercase username → 3-letter code (e.g. 'ABC')
+window._gistPilotUrls     = new Map(); // lowercase username → SimFly profile URL (when set in Recip Tracker)
 
 let airportDB  = null;
 let regionDB   = null;
@@ -3756,10 +3766,25 @@ async function loadGistPilotCodes() {
       if (p.username && p.code) {
         window._gistPilotCodes.set(p.username.trim().toLowerCase(), p.code.trim().toUpperCase());
       }
+      if (p.username && p.simflyUrl) {
+        window._gistPilotUrls.set(p.username.trim().toLowerCase(), p.simflyUrl.trim());
+      }
     }
+    // Refresh the owner-header label links now that URL data is available —
+    // page may have already rendered with no URLs known.
+    if (typeof _updateOwnerHeaderLinks === 'function') _updateOwnerHeaderLinks();
   } catch(e) { /* fail silently — fltnum will be omitted if gist unavailable */ }
 }
 loadGistPilotCodes();
+
+// Look up an owner's SimFly profile URL (Recip Tracker Gist data, loaded above).
+// Returns the URL string when known, null otherwise. Callers decide how to
+// render — a hyperlink when set, plain text otherwise.
+function _ownerProfileUrl(ownerName) {
+  if (!ownerName) return null;
+  const url = window._gistPilotUrls && window._gistPilotUrls.get(ownerName.trim().toLowerCase());
+  return url || null;
+}
 
 // ── Auto-load airport data from URL ────────────────────────────────────────
 // Default source is a GitHub Gist storing pilot input format (.txt).
@@ -4966,6 +4991,38 @@ function _updateLookupBtns() {
     swapBtn.disabled = !dep && !arr;
   }
   if (typeof _wxUpdateButton === 'function') _wxUpdateButton(_wxButtonState());
+  // Run after _distSyncLookupBtn has reset label.textContent (it does so on
+  // pin/unpin transitions). When unpinned + owner has profile URL, we override
+  // the plain label with an anchor wrapper.
+  _updateOwnerHeaderLinks();
+}
+
+// Wire up the "Departure Airport Owner" / "Arrival Airport Owner" dropdown
+// labels to open the selected owner's SimFly profile in a new tab when a URL
+// is on record. No visual styling change (no underline, no color shift) —
+// pro/easter-egg discoverability via the pointer cursor only.
+//
+// Skipped on a pinned axis: the label there reads "Departure Airport — KSEA",
+// not "Owner", and clicking shouldn't navigate anywhere meaningful.
+function _updateOwnerHeaderLinks() {
+  ['dep', 'arr'].forEach(which => {
+    const labelId = which === 'dep' ? 'distDepOwnerLabel' : 'distArrOwnerLabel';
+    const selId   = which === 'dep' ? 'distDepOwner'      : 'distArrOwner';
+    const label   = document.getElementById(labelId);
+    const sel     = document.getElementById(selId);
+    if (!label || !sel) return;
+    const pinned = which === 'dep' ? _pinnedDep : _pinnedArr;
+    if (pinned) return;  // pinned label already shows ICAO, not owner
+    const baseText  = (which === 'dep' ? 'Departure' : 'Arrival') + ' Airport Owner';
+    const ownerName = sel.value;
+    const url       = _ownerProfileUrl(ownerName);
+    if (ownerName && url) {
+      const safeUrl = url.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      label.innerHTML = `<a class="owner-link" href="${safeUrl}" target="_blank" rel="noopener">${baseText}</a>`;
+    } else {
+      label.textContent = baseText;
+    }
+  });
 }
 
 // Pin state — when set, this ICAO overrides the corresponding owner dropdown
@@ -5671,7 +5728,13 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
   let html = `<strong>${esc(rec.name)}</strong>`;
   html += `<span class="tip-line" style="color:var(--accent);">${icao}${iata ? ' &nbsp;/&nbsp; ' + iata : ''}</span>`;
   if (city) html += `<span class="tip-line">${city}</span>`;
-  if (ownerName) html += `<span class="tip-line">Owner: ${esc(ownerName)}</span>`;
+  if (ownerName) {
+    const ownerUrl = _ownerProfileUrl(ownerName);
+    const ownerDisplay = ownerUrl
+      ? `<a class="owner-link" href="${esc(ownerUrl)}" target="_blank" rel="noopener">${esc(ownerName)}</a>`
+      : esc(ownerName);
+    html += `<span class="tip-line">Owner: ${ownerDisplay}</span>`;
+  }
   if (categoryDB) {
     const cat = categoryDB.get(icao.toUpperCase());
     if (cat) html += `<span class="tip-line">Category: ${esc(cat)}</span>`;
@@ -5775,6 +5838,9 @@ function renderDistMatrix() {
     });
   };
   _syncOwnerSwapBtn(depName === arrName);
+  // Owner dropdowns are the canonical source for the header labels — refresh
+  // their easter-egg profile-link state on every render.
+  _updateOwnerHeaderLinks();
 
   if ((!depName && !_pinnedDep) || (!arrName && !_pinnedArr)) {
     wrap.classList.remove('visible');
@@ -6442,10 +6508,21 @@ function _dmRenderMap() {
       if (activeDepRec && activeArrRec) {
         const od = _getOwnerData();
         const _findOwner = icao => { for (const o of od) { if (o.airports.some(a => a.icao === icao)) return o.name; } return null; };
+        // Append a Weather section when METAR data is cached for the airport.
+        // Returns the existing rich-tooltip weather HTML (raw + decoded) so the
+        // info card matches the badge-hover tooltip exactly. Omitted when no
+        // weather is cached for that ICAO — _wxTooltipHtml returns null.
+        const _appendWxSection = (icao) => {
+          const wx = (typeof _wxTooltipHtml === 'function') ? _wxTooltipHtml(icao) : null;
+          if (!wx) return '';
+          return '<span class="tip-ac-section"><span class="tip-ac-label">Weather</span>' + wx + '</span>';
+        };
         document.getElementById('distMapInfoDepContent').innerHTML =
-          _buildTooltipHtml(activeDepIcao, activeDepRec, false, null, _findOwner(activeDepIcao), 'dep');
+          _buildTooltipHtml(activeDepIcao, activeDepRec, false, null, _findOwner(activeDepIcao), 'dep')
+          + _appendWxSection(activeDepIcao);
         document.getElementById('distMapInfoArrContent').innerHTML =
-          _buildTooltipHtml(activeArrIcao, activeArrRec, false, null, _findOwner(activeArrIcao), 'arr');
+          _buildTooltipHtml(activeArrIcao, activeArrRec, false, null, _findOwner(activeArrIcao), 'arr')
+          + _appendWxSection(activeArrIcao);
         infoPanel.style.display = '';
       } else {
         infoPanel.style.display = 'none';
@@ -8319,7 +8396,7 @@ setInterval(() => {
           <div class="help-feature-title">Weather &amp; Flight Conditions</div>
           <div class="help-feature-desc">
             Click the <strong>⛅</strong> button in the top-left corner of the distance matrix to fetch live METAR data for every airport currently in view. Each ICAO label gets a colored dot showing its flight category: <strong>VFR</strong> (green), <strong>MVFR</strong> (blue), <strong>IFR</strong> (red), or <strong>LIFR</strong> (magenta). <strong>Hover any dot</strong> to see the full decoded report — conditions, wind, visibility, ceiling, observation time, and raw METAR text.<br/><br/>
-            If an airport has no reporting station of its own, the nearest one within 100 nm is used as a fallback, shown with a <strong>dashed ring</strong> around the dot. Weather data is cached for 30 minutes; switching owner dropdowns clears the cache and prompts a fresh fetch. If the Distance Map panel is open when you fetch, map marker rings update to show flight categories too.
+            If an airport has no reporting station of its own, the nearest one within 100 nm is used as a fallback, shown with a <strong>dashed ring</strong> around the dot. Weather data is cached for 30 minutes; switching owner dropdowns clears the cache and prompts a fresh fetch. If the Distance Map panel is open when you fetch, map marker rings update to show flight categories too. <strong>Distance Map info cards</strong> below the map also include a Weather section with the same decoded report whenever METAR data is cached for the highlighted route's airports.
           </div>
         </div>
       </div>
@@ -8407,8 +8484,22 @@ setInterval(() => {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.17.0</span>
+          <span class="release-version">v2.18.0</span>
           <span class="release-date">Apr 29, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Weather summary in Distance Map info cards</strong> — when a route is highlighted on the distance map, the Departure and Arrival info cards beneath the map now include a <strong>Weather</strong> section with the same content as the badge-hover tooltip (raw METAR, flight category, wind, visibility, sky, temp/dewpoint, altimeter, observed time). The section is omitted entirely when no METAR is cached for that airport, so cards stay compact for unfetched airports.</li>
+          <li><strong>Owner names link to SimFly profile pages (easter-egg)</strong> — when an owner has a SimFly profile URL recorded in the Recip Tracker Gist (the <em>SimFly Profile URL</em> field on the Edit Pilot modal), Active Airports now uses that URL in two places: the <code>Owner: Name</code> line on the matrix tooltips and Distance Map info cards, and the large <strong>Departure/Arrival Airport Owner</strong> dropdown labels. The links are styled to be visually identical to plain text — no underline, inherited color — so they don't clutter the UI; pro users discover them via the pointer cursor on hover. Owners without a recorded URL render as plain static text.</li>
+          <li><strong>Pilot URL data shared with Active Airports</strong> — Active Airports already loaded the Recip Tracker Gist for the 3-letter pilot codes used in SimBrief flight numbers; that fetch now also captures each pilot's SimFly profile URL into <code>window._gistPilotUrls</code>. Failures stay silent; missing URLs fall back to plain-text rendering.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.17.0</span>
+          <span class="release-date">Apr 29, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
