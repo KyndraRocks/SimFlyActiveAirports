@@ -1268,6 +1268,12 @@
   /* ── Distance Matrix Map Panel ────────────────────────────────────────────── */
   .dist-map-panel { display: none; margin-top: 1.2rem; position: relative; z-index: 1; }
   .dist-map-panel.visible { display: block; }
+  /* Centered swap-button row beneath the map — mirrors the matrix-row swap */
+  .dist-map-swap-row {
+    display: flex;
+    justify-content: center;
+    margin: 0.55rem 0 0.3rem;
+  }
   .dist-map-toggle-hdr {
     display: flex;
     align-items: center;
@@ -2515,11 +2521,13 @@
   }
   .dist-corner-label {
     display: block;
-    font-size: 0.65rem;
+    font-size: 0.81rem;
     color: var(--muted);
     opacity: 0.55;
     text-align: center;
     white-space: nowrap;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
   }
   /* Inline SWAP button between owner dropdowns */
   .dist-owner-swap-btn:disabled {
@@ -2920,7 +2928,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             </div>
 
             <!-- Range scaling reference -->
-            <p class="ac-disclaimer">* All figures are rough estimates for planning purposes only — use SimBrief for more accurate final calculations.</p>
+            <p class="ac-disclaimer">* All figures are rough estimates for planning purposes only — use SimBrief for more accurate final calculations. <strong>Adj load</strong> figures are weight-corrected at sea level; per-airport density-altitude correction is applied in the matrix tooltips and dimming, not here.</p>
             <details class="ac-range-info" id="acRangeInfo">
               <summary>Range scaling model</summary>
               <p class="ac-range-formula">Adj&thinsp;range&thinsp;=&thinsp;base&thinsp;&times;&thinsp;ln(TOW&thinsp;/&thinsp;ZFW)&thinsp;&divide;&thinsp;ln(MTOW&thinsp;/&thinsp;ZFW<sub>pub</sub>)</p>
@@ -3014,6 +3022,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
               <div class="wx-legend-row"><div class="wx-legend-dot nearest"></div>Nearest stn</div>
             </div>
           </div>
+          <div class="dist-map-swap-row">
+            <button class="dist-owner-swap-btn" id="distMapSwapBtn" onclick="_distSwapOwners()" title="Swap Departure and Arrival owners" tabindex="-1">⇄</button>
+          </div>
           <div id="distMapStatus" class="dist-map-status">&nbsp;</div>
           <div id="distMapInfoPanel" style="display:none;">
             <div class="dist-map-info-row">
@@ -3045,7 +3056,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.16.14';
+const APP_VERSION = '2.17.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3839,6 +3850,134 @@ function _acCatCount(cat) {
   var n = 0;
   aircraftDB.forEach(function(ac) { if (ac.simfly_cat === cat) n++; });
   return n;
+}
+
+// ── Density-altitude correction ─────────────────────────────────────────────
+// Per-SimFly-category fudge factor (decimal/1000 ft DA). Applied to the
+// weight-corrected required runway distance:
+//   correctedFt = weightAdjFt × (1 + factor × max(0, DA) / 1000)
+// DA is floored at zero so cold/sea-level airports never reduce required
+// distance below book numbers (conservative).
+const _AC_DA_FACTORS = {
+  1: { to: 0.120, ldg: 0.035 }, // Light GA single piston (NA)
+  2: { to: 0.100, ldg: 0.035 }, // GA twin / light turboprop
+  3: { to: 0.090, ldg: 0.035 }, // Turboprop single / pressurised piston
+  4: { to: 0.080, ldg: 0.035 }, // Large turboprop
+  5: { to: 0.070, ldg: 0.040 }, // Business / regional jet
+  6: { to: 0.075, ldg: 0.040 }, // Narrowbody airliner
+  7: { to: 0.080, ldg: 0.040 }, // Widebody airliner
+};
+const _AC_DA_DEFAULT = _AC_DA_FACTORS[4];
+
+function _acDAFactor(simflyCat, isLanding) {
+  const f = _AC_DA_FACTORS[simflyCat] || _AC_DA_DEFAULT;
+  return isLanding ? f.ldg : f.to;
+}
+
+// CheckWX exposes pressure as both inHg (.hg) and millibars/hPa (.mb). Prefer
+// inHg; fall back to mb÷33.8639 if only the metric form is present so
+// European Q-code stations still drive PA correctly on low-pressure days.
+function _getAltimInHg(wxData) {
+  const p = wxData && wxData.pressure;
+  if (!p) return 29.92;
+  if (p.hg != null) return p.hg;
+  if (p.mb != null) return p.mb / 33.8639;
+  return 29.92;
+}
+
+// Density altitude in feet from elevation, OAT, and altimeter.
+// When tempC is null, returns pressure altitude only — and when altim is also
+// missing, that collapses to elevation, which is the ISA-fallback DA.
+function _computeDA(elevFt, tempC, altimInHg) {
+  const altim = altimInHg != null ? altimInHg : 29.92;
+  const PA    = elevFt + (29.92 - altim) * 1000;
+  if (tempC == null) return PA;
+  const isaTemp = 15 - 1.98 * (PA / 1000);
+  return PA + 120 * (tempC - isaTemp);
+}
+
+// Format any Date-constructible input (ISO string or epoch ms) as "HH:MMZ".
+// Returns null if missing or unparseable. Matches the format already used by
+// the live weather tooltip's "Observed:" line, keeping annotations consistent.
+function _formatZuluHHMM(input) {
+  if (input == null) return null;
+  const d = new Date(input);
+  if (isNaN(d.getTime())) return null;
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return hh + ':' + mm + 'Z';
+}
+
+// Resolve DA for a given airport. Reads _wxCache when available (fresh OR
+// stale — the 30-min mark is a UI signal, not a data validity gate), falls
+// back to ISA otherwise.
+//   { daFt, source: 'metar' | 'metar-nearest' | 'isa',
+//     observedZ?, fetchedZ?, nearestIcao?, nearestDistNm? }
+function _getAirportDA(icao, rec) {
+  const elev  = rec && rec.elevation_ft != null ? rec.elevation_ft : 0;
+  const entry = _wxCache && _wxCache.get((icao || '').toUpperCase());
+  const tempC = entry && entry.data && entry.data.temperature && entry.data.temperature.celsius;
+  if (tempC == null) {
+    return { daFt: Math.round(_computeDA(elev, null, null)), source: 'isa' };
+  }
+  const altim     = _getAltimInHg(entry.data);
+  const daFt      = Math.round(_computeDA(elev, tempC, altim));
+  const observedZ = _formatZuluHHMM(entry.data.observed);
+  const fetchedZ  = _formatZuluHHMM(entry.fetchedAt);
+  if (entry.isNearest) {
+    return {
+      daFt,
+      source       : 'metar-nearest',
+      observedZ,
+      fetchedZ,
+      nearestIcao  : entry.nearestIcao || '?',
+      nearestDistNm: entry.nearestDistNm,
+    };
+  }
+  return {
+    daFt,
+    source   : 'metar',
+    observedZ,
+    fetchedZ,
+  };
+}
+
+// Format DA + source annotation for tooltip suitability lines.
+//   { daFt: 11400, source: 'metar', observedZ: '14:30Z' }
+//     → "DA 11,400 ft (METAR, 14:30Z)"
+// Falls back to "(METAR fetched HH:MMZ)" when the observation timestamp is
+// missing — both forms are static, so the cached tooltip text never drifts.
+function _formatDAAnnotation(da) {
+  if (!da) return '';
+  const daStr = da.daFt.toLocaleString('en-US') + ' ft';
+  let suffix;
+  if (da.source === 'metar') {
+    if (da.observedZ) {
+      suffix = '(METAR, ' + da.observedZ + ')';
+    } else if (da.fetchedZ) {
+      suffix = '(METAR fetched ' + da.fetchedZ + ')';
+    } else {
+      suffix = '(METAR)';
+    }
+  } else if (da.source === 'metar-nearest') {
+    const nm   = da.nearestDistNm != null ? ', ' + Math.round(da.nearestDistNm) + ' nm' : '';
+    let time;
+    if (da.observedZ)      time = ', ' + da.observedZ;
+    else if (da.fetchedZ)  time = ', fetched ' + da.fetchedZ;
+    else                   time = '';
+    suffix = '(METAR via ' + da.nearestIcao + nm + time + ')';
+  } else {
+    suffix = '(ISA — fetch weather for accuracy)';
+  }
+  return 'DA ' + daStr + ' ' + suffix;
+}
+
+// Apply DA correction to a weight-adjusted required runway distance.
+// daFt floored at 0 so cold/sea-level airports never reduce required distance.
+function _acApplyDACorrection(weightAdjFt, daFt, factor) {
+  if (weightAdjFt == null) return null;
+  const da = Math.max(0, daFt || 0);
+  return Math.ceil(weightAdjFt * (1 + factor * da / 1000));
 }
 
 // ── MTOW load slider helpers ─────────────────────────────────────────────────
@@ -5411,9 +5550,12 @@ function _buildAcSuitabilityHtml(icao, rec, role, depRec, depIcaoOverride) {
                           ? Math.round(_haversineNm(depRec.latitude, depRec.longitude, rec.latitude, rec.longitude))
                           : null;
     const wtFrac      = depRole ? _acTowFrac(_acMtowPct) : _acLdwFrac(routeDistNm);
-    const rawFt     = depRole ? ac.mtow : ac.land;
-    const reqFt     = rawFt != null ? Math.round(rawFt * Math.pow(wtFrac, 2)) : null;
-    const roleLabel = depRole ? 'Takeoff' : 'Landing';
+    const rawFt       = depRole ? ac.mtow : ac.land;
+    const weightAdjFt = rawFt != null ? Math.round(rawFt * Math.pow(wtFrac, 2)) : null;
+    const daInfo      = _getAirportDA(icao, rec);
+    const daFactor    = _acDAFactor(ac.cat, !depRole);
+    const reqFt       = _acApplyDACorrection(weightAdjFt, daInfo.daFt, daFactor);
+    const roleLabel   = depRole ? 'Takeoff' : 'Landing';
     const lines = [];
 
     // Cat-1 check
@@ -5453,17 +5595,23 @@ function _buildAcSuitabilityHtml(icao, rec, role, depRec, depIcaoOverride) {
       const isLoadAdj = _acMtowPct < 100 || _acPayloadPct > 0;
       const wtPct     = Math.round(wtFrac * 100);
       const wtLabel   = depRole ? 'TOW' : 'LDW';
-      const pctSuffix = rawFt
+      // DA-correct the at-MTOW reference number so it shares a basis with the
+      // displayed required value (which already folds in DA). Without this,
+      // a reader at less than 100% TOW would compare an apples-to-oranges
+      // pair: required=DA-corrected vs reference=book sea-level.
+      const rawAtDAFt = rawFt != null ? _acApplyDACorrection(rawFt, daInfo.daFt, daFactor) : null;
+      const pctSuffix = rawAtDAFt
         ? (depRole
-            ? (isLoadAdj ? ` @ ${wtPct}% TOW (${rawFt.toLocaleString('en-US')} ft at MTOW)` : '')
-            : ` with 10% fuel reserve (${rawFt.toLocaleString('en-US')} ft at MTOW)`)
+            ? (isLoadAdj ? ` @ ${wtPct}% TOW (${rawAtDAFt.toLocaleString('en-US')} ft at MTOW · DA-corrected)` : '')
+            : ` with 10% fuel reserve (${rawAtDAFt.toLocaleString('en-US')} ft at MTOW · DA-corrected)`)
         : '';
+      const daSuffix = ' &middot; ' + _formatDAAnnotation(daInfo);
       if (ok) {
         lines.push({ cls: 'tip-ac-ok',
-          text: `&#x2713; ${roleLabel}: ${longest} ft available, ${req} ft required${pctSuffix}` });
+          text: `&#x2713; ${roleLabel}: ${longest} ft available, ${req} ft required${pctSuffix}${daSuffix}` });
       } else {
         lines.push({ cls: 'tip-ac-fail',
-          text: `&#x274C; ${roleLabel}: ${longest} ft available, ${req} ft required${pctSuffix}` });
+          text: `&#x274C; ${roleLabel}: ${longest} ft available, ${req} ft required${pctSuffix}${daSuffix}` });
       }
     }
 
@@ -5615,12 +5763,16 @@ function renderDistMatrix() {
   const tbl     = document.getElementById('distMatrix');
   const helpEl  = document.getElementById('distHelpText');
 
-  // Keep owner swap button in sync regardless of whether a matrix renders.
+  // Keep both owner-swap buttons in sync regardless of whether a matrix renders.
   // Must run before early returns so both-empty and same-owner cases are covered.
+  // distMapSwapBtn (under the map) duplicates distOwnerSwapBtn's behavior so
+  // its title needs the same same-owner / different-owner messaging.
   const _syncOwnerSwapBtn = (same) => {
-    const swapBtn = document.getElementById('distOwnerSwapBtn');
-    if (!swapBtn) return;
-    swapBtn.title = same ? 'Same owner selected — swap has no effect' : 'Swap Departure and Arrival owners';
+    const title = same ? 'Same owner selected — swap has no effect' : 'Swap Departure and Arrival owners';
+    ['distOwnerSwapBtn', 'distMapSwapBtn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.title = title;
+    });
   };
   _syncOwnerSwapBtn(depName === arrName);
 
@@ -5796,7 +5948,7 @@ function renderDistMatrix() {
     ? `<span class="dist-corner-same-badge" title="${cornerTitle}">same owner</span>`
     : '';
 
-  let html = `<thead><tr><th class="dist-corner-cell"><div class="dist-corner-inner"><span class="dist-corner-label">Dep&nbsp;/&nbsp;Arr</span></div></th>`;
+  let html = `<thead><tr><th class="dist-corner-cell"><div class="dist-corner-inner"><span class="dist-corner-label">DEP&nbsp;&darr;<br/>ARR&nbsp;&rarr;</span></div></th>`;
   for (let c = 0; c < arrAirports.length; c++) {
     const a   = arrAirports[c];
     const tipHtml_c = _buildTooltipHtml(a.icao, a.rec, false, colSortHint(a.icao), resolvedArr.name, 'arr');
@@ -6631,9 +6783,15 @@ function _acAirportSuitable(icao, depRole) {
                         : null;
 
   // ── Runway check ──────────────────────────────────────────────────────
-  // Apply weight² scaling: TOW for departure, LDW (route-adjusted) for arrival
-  const rawMtow = depRole ? ac.mtow : ac.land;
-  const reqFt   = rawMtow != null ? Math.round(rawMtow * Math.pow(depRole ? _acTowFrac(_acMtowPct) : _acLdwFrac(routeDistNm), 2)) : null;
+  // Apply weight² scaling first (TOW for departure, LDW for arrival), then
+  // density-altitude correction using METAR temp/altimeter when cached, ISA
+  // otherwise. DA floored at 0 — book numbers are the lower bound.
+  const rawMtow     = depRole ? ac.mtow : ac.land;
+  const wtFrac      = depRole ? _acTowFrac(_acMtowPct) : _acLdwFrac(routeDistNm);
+  const weightAdjFt = rawMtow != null ? Math.round(rawMtow * Math.pow(wtFrac, 2)) : null;
+  const daInfo      = _getAirportDA(icao, rec);
+  const daFactor    = _acDAFactor(ac.cat, !depRole);
+  const reqFt       = _acApplyDACorrection(weightAdjFt, daInfo.daFt, daFactor);
   if (reqFt == null && !ac.paved) return true;  // no runway constraints
 
   // ── Range check — placed after the no-constraint early-return but before
@@ -6727,7 +6885,7 @@ function _distUpdateRangeMarker() {
   labelEl.textContent = rangeNm.toLocaleString('en-US') + ' nm';
   if (codeEl) {
     codeEl.style.color = catColor;
-    codeEl.textContent = ac.code + ' Max Range';
+    codeEl.textContent = ac.code + ' Range';
     codeEl.classList.add('visible');
   }
   marker.classList.add('visible');
@@ -8033,6 +8191,18 @@ async function _wxFetch() {
   _wxFetching = false;
   _wxUpdateButton(_wxButtonState());
 
+  // Rebuild the matrix so cached suitability tooltips pick up fresh DA values
+  // from the new METAR data. _wxApplyBadges() runs inside renderDistMatrix(),
+  // so the badges that were just populated remain visible after the rebuild.
+  // _distApplyFilter() re-evaluates dimming because DA can flip suitable
+  // airports to unsuitable (e.g. SEQM at +20°C above ISA).
+  if (typeof renderDistMatrix === 'function') {
+    try { renderDistMatrix(); } catch(_) {}
+  }
+  if (typeof _distApplyFilter === 'function') {
+    try { _distApplyFilter(); } catch(_) {}
+  }
+
   // Re-render the map if it is currently open so marker colours update
   if (_dmMap && _dmMapOpen) {
     try { _dmRenderMap(); } catch(_) {}
@@ -8126,7 +8296,8 @@ setInterval(() => {
           <div class="help-feature-desc">
             Click the <strong>Aircraft</strong> header to expand the panel. Use the category tabs to filter by aircraft type, then click any chip to select an aircraft. The spec strip shows takeoff distance, landing distance, and range — both at full MTOW and adjusted for your current fuel and payload settings.<br/><br/>
             The <strong>Fuel</strong> slider sets fuel load as a percentage of max capacity. The <strong>Payload</strong> slider sets passenger/cargo load as a percentage of max payload. Both sliders feed into the adjusted performance column and affect the suitability check. The stacked <strong>Weights</strong> bar shows OEW, payload, and fuel as proportions of MTOW.<br/><br/>
-            When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.
+            When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
+            <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
         </div>
       </div>
@@ -8234,10 +8405,30 @@ setInterval(() => {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.17.0</span>
+          <span class="release-date">Apr 29, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft suitability now corrects for density altitude</strong> — required takeoff and landing runway distances were previously sea-level book numbers, which underestimated requirements at hot/high airports. A flight from SEQM (≈9,228 ft elevation) revealed the gap. Suitability dimming and the matrix tooltip's runway verdict lines now apply a per-SimFly-category DA factor on top of the existing weight scaling: light pistons (Cat 1) take the biggest hit at ~12% per 1,000 ft DA on takeoff, jets (Cat 5–7) ~7–8%, and landing distance scales at ~3.5–4% across all categories.</li>
+          <li><strong>METAR-driven DA when weather is fetched, ISA fallback otherwise</strong> — when the ⛅ button has fetched a station's METAR, the airport's reported temperature and altimeter setting (inHg or hPa, with fall-through conversion) drive a true DA calculation including pressure altitude. When no METAR is cached, suitability falls back to ISA conditions computed from field elevation alone. Stale METARs (past the 30-minute fresh window) are still used — far better than ISA. DA is floored at zero so cold or sea-level airports never reduce required distance below book numbers.</li>
+          <li><strong>Suitability tooltip shows DA value and source</strong> — the runway verdict line now ends with a DA annotation: <code>DA 11,400 ft (METAR, 14:30Z)</code> for direct METARs (using the published observation time in Zulu, matching the format on the existing weather tooltip), <code>DA 11,400 ft (METAR via SEQU, 18 nm, 14:00Z)</code> for nearest-station fallbacks, or <code>DA 9,228 ft (ISA — fetch weather for accuracy)</code> when no weather is loaded. The ISA form is a quiet nudge, not a warning. If a METAR is missing its observation timestamp, the annotation falls back to elapsed time since fetch.</li>
+          <li><strong>Suitability tooltips refresh when weather is fetched</strong> — clicking ⛅ now triggers a matrix rebuild after the METAR fetch completes, so cached row and column tooltips pick up the freshly-computed DA values immediately. Suitability dimming also re-evaluates because a new METAR can flip an airport from suitable to unsuitable (e.g. when temps push DA above what the longest runway can support at the current weight).</li>
+          <li><strong>At-MTOW reference in the suitability tooltip is now DA-corrected</strong> — the parenthetical book number that anchored the displayed required value used to be sea-level, so a reader at less than 100% TOW saw an apples-to-oranges comparison (DA-corrected required vs. sea-level reference). Both numbers now share a basis at this airport's DA, and the parenthetical reads <code>(X ft at MTOW · DA-corrected)</code> to make the basis explicit.</li>
+          <li><strong>Spec strip Adj load disclaimer extended</strong> — the planning disclaimer below the Aircraft panel now notes that <strong>Adj load</strong> figures are weight-corrected at sea level only; per-airport DA correction lives in the matrix tooltips and dimming. Avoids confusion when the Adj load number differs from the matrix tooltip's required value at the same airport.</li>
+          <li><strong>Distance slider range marker label simplified</strong> — the aircraft code label above the slider now reads <code>C750 Range</code> instead of <code>C750 Max Range</code>; the marker arrow already conveys it's the maximum.</li>
+          <li><strong>Matrix corner cell label refreshed</strong> — the top-left cell now reads <code>DEP ↓</code> / <code>ARR →</code> on two lines with directional arrows, replacing the plain <code>Dep / Arr</code> text. Conveys row/column orientation at a glance.</li>
+          <li><strong>Distance Map gets its own ⇄ Swap button</strong> — a centered swap button now sits beneath the map panel, mirroring the owner-swap button between the dropdowns: same <code>_distSwapOwners()</code> handler and same title behavior (different-owner case shows "Swap Departure and Arrival owners"; same-owner case shows "Same owner selected — swap has no effect"). Saves a long scroll back to the matrix when working in the map view.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.16.14</span>
-          <span class="release-date">Apr 26, 2026 &middot; Current</span>
+          <span class="release-date">Apr 26, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
