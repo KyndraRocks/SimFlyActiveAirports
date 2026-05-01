@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.18.0**
+**Current version: v2.18.1**
 
 ---
 
@@ -23,7 +23,7 @@ Enter departure and arrival ICAOs to instantly calculate the great-circle distan
 Select departure and arrival fleet owners from dropdown menus to generate a full distance matrix — every combination of their airports, at a glance. Sort any row or column, filter by distance range or airport category, and click any cell to populate the ICAO fields.
 
 ### Distance Map
-An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded.
+An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded. When a route is highlighted on the map, the departure and arrival info cards display a **Weather** section with the same decoded breakdown as the badge-hover tooltip (METAR, flight category, wind, visibility, sky, temp/dew, altimeter).
 
 ### Weather & Flight Conditions
 Click **⛅ Get Weather** to fetch live METARs for all visible airports. Flight category dots (VFR / MVFR / IFR / LIFR) appear on every matrix header and inline on the departure/arrival name lines. Hovering any dot shows a decoded weather breakdown: conditions, wind, visibility, ceiling, altimeter, and raw METAR. Data is cached for 30 minutes and invalidates automatically when you change owners.
@@ -33,6 +33,9 @@ Once departure and arrival ICAOs are set, the **File on SimBrief →** button li
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. All figures are rough planning estimates; use SimBrief for final calculations.
+
+### Owner Profile Links
+When a pilot's SimFly profile URL is recorded in the Recip Tracker Gist, their name becomes a clickable link in the matrix tooltips, Distance Map info cards, and the Departure/Arrival Airport Owner dropdowns. Links are visually identical to plain text (pointer cursor on hover only), so the UI stays uncluttered for owners without a recorded URL.
 
 ### Airport Info & External Links
 Click any ICAO to open a tooltip with runway details, surface type, elevation, and direct links to external resources.
