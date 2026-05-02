@@ -2753,6 +2753,136 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .wx-legend-dot.nearest   { border-style:dashed; border-color:rgba(255,255,255,0.55); }
   .wx-legend-sep           { border-top:1px solid rgba(255,255,255,0.12); margin:4px 0; }
   .wx-legend-label         { font-size:0.63rem; color:var(--muted); margin-bottom:2px; }
+
+  /* ── Region Mode Modal ────────────────────────────────────────────── */
+  #regionModal { display:none; position:fixed; inset:0; background:rgba(0,5,15,0.85); z-index:9000; align-items:center; justify-content:center; }
+  #regionModal.open { display:flex; }
+  .rg-modal { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 0 50px rgba(0,200,255,0.14); width:92vw; height:92vh; display:flex; flex-direction:column; overflow:hidden; }
+  .rg-modal-hdr { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; padding:0.5rem 1rem; border-bottom:1px solid var(--border); background:var(--panel); flex-shrink:0; }
+  .rg-hdr-left  { display:flex; align-items:center; gap:0.5rem; flex:1; min-width:0; }
+  .rg-hdr-right { display:flex; align-items:center; gap:0.45rem; flex-shrink:0; }
+  .rg-hdr-sep   { width:1px; height:1.2rem; background:var(--border); margin:0 0.15rem; flex-shrink:0; }
+  .rg-phase-text { font-family:'Rajdhani',sans-serif; font-size:0.92rem; color:var(--text); line-height:1.35; min-width:0; }
+  .rg-phase-badge { display:inline-block; font-family:'Orbitron',monospace; font-size:0.58rem; font-weight:700; letter-spacing:0.06em; padding:0.15rem 0.5rem; border-radius:20px; margin-right:0.45rem; vertical-align:middle; }
+  .rg-phase-badge.dep  { background:rgba(0,200,255,0.18); color:var(--accent); border:1px solid rgba(0,200,255,0.4); }
+  .rg-phase-badge.arr  { background:rgba(255,106,0,0.18); color:var(--accent2); border:1px solid rgba(255,106,0,0.4); }
+  .rg-phase-badge.done { background:rgba(0,255,157,0.13); color:var(--green); border:1px solid rgba(0,255,157,0.35); }
+  .rg-hdr-btns { display:flex; gap:0.45rem; flex-shrink:0; }
+  .rg-btn { font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:600; padding:0.22rem 0.65rem; border-radius:4px; border:1px solid var(--border); background:rgba(255,255,255,0.04); color:var(--text); cursor:pointer; white-space:nowrap; }
+  .rg-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  .rg-btn:disabled { opacity:0.28; cursor:default; }
+  .rg-btn-close { border-color:rgba(255,61,90,0.35); color:var(--danger); }
+  .rg-btn-close:hover { background:rgba(255,61,90,0.1) !important; border-color:var(--danger) !important; color:var(--danger) !important; }
+  .rg-btn.active { background:rgba(0,200,255,0.18); border-color:var(--accent); color:var(--accent); }
+  .rg-sort-dot { position:absolute; top:2px; right:9px; font-size:1.02rem; background:none; border:none; color:var(--muted); cursor:pointer; padding:0; line-height:1; opacity:0.45; z-index:5; }
+  .rg-sort-dot:hover { opacity:1; color:var(--accent); }
+  .rg-sort-dot.active { opacity:1; color:var(--accent); }
+  .rg-matrix th.rg-col-hdr:not(.rg-corner), .rg-matrix th.rg-row-hdr { padding-right:1.6rem !important; }
+  #rgMapContainer { flex:1 1 0; min-height:260px; position:relative; }
+  #rgMapContainer.rg-cross  .leaflet-container, #rgMapContainer.rg-cross  { cursor:crosshair !important; }
+  #rgMapContainer.rg-grab   .leaflet-container, #rgMapContainer.rg-grab   { cursor:grabbing  !important; }
+  #rgMapContainer.rg-ruler  .leaflet-container, #rgMapContainer.rg-ruler  { cursor:crosshair !important; }
+  #rgMapContainer.rg-resize .leaflet-container, #rgMapContainer.rg-resize { cursor:ew-resize !important; }
+  .rg-resize-handle { width:20px; height:20px; border-radius:50%; border:2.5px solid; background:rgba(0,8,18,0.78); box-sizing:border-box; box-shadow:0 0 7px 2px rgba(0,0,0,0.55); }
+  /* Route info label (cell-selection line midpoint) */
+  .rg-route-info-lbl { background:rgba(0,8,18,0.88); color:var(--text); font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:600; padding:0.25rem 0.7rem; border-radius:5px; border:1px solid rgba(255,209,102,0.5); white-space:nowrap; pointer-events:none; box-shadow:0 0 8px 2px rgba(255,209,102,0.18); display:inline-block; }
+  .rg-ri-dep  { color:#00c8ff; font-family:'Courier New',Courier,monospace; font-weight:700; }
+  .rg-ri-arr  { color:#ff6a00; font-family:'Courier New',Courier,monospace; font-weight:700; }
+  .rg-ri-arrow { color:var(--muted); }
+  .rg-ri-nm   { color:#ffd166; font-family:'Courier New',Courier,monospace; font-weight:700; }
+  /* Inline category filter groups inside results bar */
+  .rg-inline-filter { display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; }
+  #rgResultsBar .dist-cat-btn { width:1.8rem; height:1.8rem; font-size:0.9rem; color:var(--rg-cat-color,var(--muted)); border-color:var(--rg-cat-color,rgba(0,200,255,0.2)); }
+  #rgResultsBar .dist-cat-btn.active { color:var(--rg-cat-color,var(--accent)); background:rgba(0,200,255,0.12); border-color:var(--rg-cat-color,rgba(0,200,255,0.45)); box-shadow:0 0 6px color-mix(in srgb,var(--rg-cat-color,#00c8ff) 35%,transparent); }
+  .rg-cat-acc-btn { font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:600; padding:0.15rem 0.4rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:3px; cursor:pointer; }
+  .rg-cat-acc-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .rg-col-resize { position:absolute; top:0; right:-1px; bottom:0; width:7px; cursor:col-resize; z-index:6; background:transparent; }
+  .rg-col-resize:hover, .rg-col-resize.rg-drag-active { background:rgba(0,200,255,0.3); }
+  .rg-row-resize { position:absolute; left:0; right:0; bottom:-1px; height:6px; cursor:row-resize; z-index:6; background:transparent; }
+  .rg-row-resize:hover, .rg-row-resize.rg-drag-active { background:rgba(0,200,255,0.3); }
+  .rg-nm-label { position:absolute; top:0; left:0; pointer-events:none; z-index:1000; background:var(--panel); border:1px solid var(--accent); border-radius:4px; padding:0.15rem 0.45rem; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:600; color:var(--accent); white-space:nowrap; display:none; transform:translate(14px,12px); }
+  .rg-nm-label.arr { border-color:var(--accent2); color:var(--accent2); }
+  .rg-hero-lbl { background:rgba(0,8,18,0.88); color:#00c8ff; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:700; padding:0.22rem 0.65rem; border-radius:5px; border:1px solid rgba(0,200,255,0.45); white-space:nowrap; letter-spacing:0.04em; pointer-events:none; box-shadow:0 0 10px 2px rgba(0,200,255,0.25); display:inline-block; }
+  /* Specificity override needed to beat Leaflet's default white background */
+  .leaflet-tooltip.rg-dot-tip { background:rgba(0,8,18,0.92); border:1px solid rgba(0,200,255,0.28); border-radius:5px; padding:0.3rem 0.6rem; white-space:nowrap; box-shadow:0 2px 10px rgba(0,0,0,0.6); pointer-events:none; color:var(--text); user-select:none; }
+  .leaflet-tooltip.rg-dot-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.92); }
+  .rg-dt-icao { font-family:'Courier New',Courier,monospace; font-size:1rem; font-weight:700; }
+  .rg-dt-cat  { font-family:'Rajdhani',sans-serif; font-size:0.82rem; color:var(--muted); margin-left:0.3rem; }
+  .rg-dt-name { display:block; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--muted); margin-top:0.05rem; }
+  .rg-dt-owner { display:block; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--accent); }
+  .rg-dt-rwy  { display:block; font-family:'Rajdhani',sans-serif; font-size:0.82rem; color:var(--muted); margin-top:0.08rem; }
+  /* Vertical split drag handle between map and results area */
+  .rg-vsplit { flex-shrink:0; height:7px; cursor:row-resize; background:linear-gradient(to bottom, transparent 2px, var(--border) 2px, var(--border) 3px, transparent 3px); position:relative; z-index:5; }
+  .rg-vsplit:hover, .rg-vsplit.rg-drag-active { background:linear-gradient(to bottom, transparent 2px, var(--accent) 2px, var(--accent) 3px, transparent 3px); }
+  /* Owner filter dropdown */
+  .rg-owner-wrap { position:relative; }
+  .rg-owner-btn { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:600; padding:0.2rem 0.6rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; }
+  .rg-owner-btn:hover, .rg-owner-btn.filtered { border-color:var(--accent); color:var(--accent); }
+  .rg-owner-panel { display:none; position:fixed; min-width:300px; max-width:450px; background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.55); z-index:9500; overflow:hidden; }
+  .rg-owner-panel.open { display:block; }
+  .rg-owner-panel-hdr { display:flex; align-items:center; gap:0.67rem; padding:0.6rem 0.9rem; border-bottom:1px solid var(--border); }
+  .rg-owner-panel-title { font-family:'Rajdhani',sans-serif; font-size:1.35rem; font-weight:600; color:var(--muted); flex:1; }
+  .rg-owner-panel-hdr .rg-cat-acc-btn { font-size:1.17rem; padding:0.225rem 0.6rem; }
+  .rg-owner-list { max-height:300px; overflow-y:auto; padding:0.375rem 0; }
+  .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; }
+  .rg-owner-row:hover { background:rgba(0,200,255,0.07); }
+  .rg-owner-check { width:1.1em; height:1.1em; border:2px solid rgba(255,255,255,0.3); border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent; font-size:0.85rem; font-weight:700; }
+  .rg-owner-row.active .rg-owner-check { background:var(--accent); border-color:var(--accent); color:#000; }
+  body.light-mode .rg-owner-check { border-color:rgba(0,0,0,0.3); }
+  .rg-owner-swatch { width:0.9rem; height:0.9rem; border-radius:50%; flex-shrink:0; }
+  .rg-owner-name { font-family:'Rajdhani',sans-serif; font-size:1.5rem; color:var(--text); }
+  /* Range ring border label + hover tooltip */
+  .rg-ring-lbl { background:rgba(0,8,18,0.82); border:1px solid rgba(255,209,102,0.55); color:#ffd166; font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:600; padding:0.1rem 0.38rem; border-radius:3px; white-space:nowrap; pointer-events:none; }
+  .leaflet-tooltip.rg-ring-tip { background:rgba(0,8,18,0.9); border:1px solid rgba(255,209,102,0.5); color:#ffd166; padding:0.2rem 0.55rem; border-radius:4px; font-family:'Rajdhani',sans-serif; white-space:nowrap; pointer-events:none; }
+  .leaflet-tooltip.rg-ring-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.9); }
+  .rg-matrix tr.rg-row-hl > th.rg-row-hdr,
+  .rg-matrix tr.rg-row-hl > td:not(.rg-same) { background:rgba(0,200,255,0.07); }
+  .rg-matrix td.rg-col-hl { background:rgba(0,200,255,0.07); }
+  body.light-mode .rg-matrix tr.rg-row-hl > th.rg-row-hdr,
+  body.light-mode .rg-matrix tr.rg-row-hl > td:not(.rg-same),
+  body.light-mode .rg-matrix td.rg-col-hl { background:rgba(0,100,200,0.09); }
+  .rg-results-bar { background:var(--panel); border-top:1px solid var(--border); padding:0.63rem 1rem; display:none; align-items:center; gap:1.2rem; flex-shrink:0; flex-wrap:wrap; }
+  .rg-results-bar.visible { display:flex; }
+  .rg-results-summary { font-family:'Rajdhani',sans-serif; font-size:1.3rem; color:var(--muted); flex:1; text-align:center; }
+  .rg-results-summary b { color:var(--text); }
+  .rg-cap-row { display:flex; align-items:center; gap:0.45rem; }
+  .rg-cap-lbl { font-family:'Rajdhani',sans-serif; font-size:1.25rem; color:var(--muted); white-space:nowrap; }
+  #rgCapSelect, #rgSortSelect { font-family:'Rajdhani',sans-serif; font-size:1.25rem; padding:0.18rem 0.53rem; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer; }
+  .rg-perf-warn { font-family:'Rajdhani',sans-serif; font-size:1.17rem; color:var(--accent2); }
+  .rg-matrix-wrap { border-top:1px solid var(--border); flex:1 1 0; min-height:150px; display:none; flex-direction:column; overflow:hidden; }
+  .rg-matrix-wrap.visible { display:flex; }
+  .rg-sel-route { display:none; align-items:center; gap:0.6rem; padding:0.35rem 1rem; background:rgba(0,200,255,0.05); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+  .rg-sel-route.visible { display:flex; }
+  .rg-sel-dep { font-family:'Rajdhani',sans-serif; font-size:0.88rem; font-weight:600; color:var(--accent); }
+  .rg-sel-arr { font-family:'Rajdhani',sans-serif; font-size:0.88rem; font-weight:600; color:var(--accent2); }
+  .rg-sel-arrow { color:var(--muted); font-size:0.9rem; }
+  .rg-sel-nm { font-family:'Courier New',Courier,monospace; font-size:0.95rem; font-weight:700; color:var(--green); }
+  .rg-sel-send { font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:600; padding:0.18rem 0.65rem; border:1px solid var(--accent); background:rgba(0,200,255,0.09); color:var(--accent); border-radius:4px; cursor:pointer; margin-left:auto; }
+  .rg-sel-send:hover { background:rgba(0,200,255,0.2); }
+  #rgMatrixScroll { flex:1; overflow:auto; }
+  .rg-matrix { border-collapse:collapse; font-family:'Rajdhani',sans-serif; font-size:1.2rem; white-space:nowrap; }
+  .rg-matrix th { padding:0.42rem 0.75rem; background:var(--panel); border:1px solid var(--border); color:var(--muted); font-weight:600; font-size:1.12rem; letter-spacing:0.04em; }
+  .rg-matrix th.rg-col-hdr { position:sticky; top:0; z-index:3; border-top:3px solid var(--rg-oc,rgba(255,255,255,0.1)) !important; vertical-align:bottom; padding-bottom:0.45rem; }
+  .rg-matrix th.rg-row-hdr { position:sticky; left:0; z-index:2; text-align:left; min-width:108px; border-left:3px solid var(--rg-oc,rgba(255,255,255,0.1)) !important; }
+  .rg-matrix th.rg-corner   { position:sticky; left:0; top:0; z-index:4; text-align:center; font-size:0.93rem; color:var(--muted); border-top:none !important; border-left:none !important; }
+  .rg-th-icao  { display:block; font-weight:700; font-size:1.2rem; letter-spacing:0.05em; line-height:1.25; }
+  .rg-th-owner { display:block; font-size:0.93rem; font-weight:400; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:108px; line-height:1.2; margin-top:1px; }
+  .rg-th-link  { text-decoration:none; color:inherit; cursor:pointer; }
+  .rg-th-link:hover { text-decoration:underline; opacity:0.85; }
+  [data-rg-tip] { cursor:default; }
+  [data-rg-tip]:hover { background:rgba(255,255,255,0.04); }
+  .rg-matrix td { padding:0.3rem 0.68rem; border:1px solid rgba(26,58,106,0.35); text-align:center; color:var(--text); cursor:pointer; font-family:'Courier New',Courier,monospace; }
+  .rg-matrix td:hover:not(.rg-same) { background:rgba(0,200,255,0.11); }
+  .rg-matrix td.rg-selected { background:rgba(0,200,255,0.18) !important; color:var(--accent); font-weight:700; }
+  .rg-matrix td.rg-same { color:var(--muted); opacity:0.3; cursor:default; }
+  .rg-matrix-msg { padding:2rem; text-align:center; font-family:'Rajdhani',sans-serif; color:var(--muted); font-size:1.38rem; }
+  /* light-mode adjustments */
+  body.light-mode .rg-modal  { box-shadow:0 8px 40px rgba(0,0,0,0.18); }
+  body.light-mode .rg-btn    { background:rgba(0,0,0,0.03); }
+  body.light-mode .rg-matrix th { background:#f0ecdf; }
+  body.light-mode .rg-matrix td { border-color:rgba(0,0,0,0.08); }
+  body.light-mode .rg-sel-route { background:rgba(0,102,153,0.05); }
+  body.light-mode #rgCapSelect, body.light-mode #rgSortSelect { background:#faf7f2; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -2832,6 +2962,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
           <div style="display:flex;gap:0.5rem;">
             <button class="btn-action btn-help" onclick="openHelp()" aria-label="Help" title="How to use this tool" tabindex="-1">? Help</button>
             <button class="btn-action btn-clear" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="clearDist()" aria-label="Reset flight planner" tabindex="-1">✕ Reset</button>
+            <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.35);color:var(--accent);" onclick="openRegionModal()" aria-label="Region airport selector" title="Select departure and arrival regions on a map" tabindex="-1">⊙ Regions</button>
           </div>
           <button class="btn-action" id="simbriefBtn"
                   style="font-size:1.17rem;padding:0.3rem 0.9rem;background:rgba(255,106,0,0.15);border-color:var(--accent2);color:var(--accent2);white-space:nowrap;width:100%;"
@@ -3070,7 +3201,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.18.1';
+const APP_VERSION = '2.19.34';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3778,6 +3909,7 @@ async function loadGistPilotCodes() {
     // Refresh the owner-header label links now that URL data is available —
     // page may have already rendered with no URLs known.
     if (typeof _updateOwnerHeaderLinks === 'function') _updateOwnerHeaderLinks();
+    if (typeof _rgRefreshOwnerLinks === 'function') _rgRefreshOwnerLinks();
   } catch(e) { /* fail silently — fltnum will be omitted if gist unavailable */ }
 }
 loadGistPilotCodes();
@@ -4471,6 +4603,7 @@ function _acSetMtowPct(pct) {
   _distUpdateRangeMarker();
   _distApplyFilter();   // re-dim the matrix immediately
   _distRefreshAllColTooltips();
+  _rgUpdateRangeRing();
 }
 
 // Called on every payload slider tick (oninput)
@@ -4490,6 +4623,7 @@ function _acSetPayloadPct(pct) {
   // the current landing weight. renderDistMatrix() does a full rebuild on
   // release; this covers the live-drag case.
   _distRefreshAllColTooltips();
+  _rgUpdateRangeRing();
 }
 
 // Called on slider release (onchange)
@@ -4537,6 +4671,7 @@ function _acSelect(code, keepCollapsed) {
   renderDistMatrix();
   _distApplyFilter();
   _refreshSimbriefTooltip();
+  _rgUpdateRangeRing();
   // Open the panel so the user can see their selection — unless caller
   // requests it stays collapsed (e.g. when auto-selected from URL params)
   if (code && !keepCollapsed) {
@@ -5027,6 +5162,26 @@ function _updateOwnerHeaderLinks() {
     } else {
       label.textContent = baseText;
     }
+  });
+}
+
+// After the pilot-URL gist loads, upgrade any span.rg-th-owner elements in the
+// region-mode matrix that rendered before the gist was available.
+function _rgRefreshOwnerLinks() {
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) return;
+  matEl.querySelectorAll('span.rg-th-owner').forEach(span => {
+    const name = span.textContent;
+    const url  = _ownerProfileUrl(name);
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href      = url;
+    a.target    = '_blank';
+    a.rel       = 'noopener';
+    a.className = 'rg-th-owner rg-th-link';
+    a.textContent = name;
+    a.style.cssText = span.style.cssText;
+    span.parentNode.replaceChild(a, span);
   });
 }
 
@@ -8323,6 +8478,1698 @@ setInterval(() => {
 }());
 </script>
 
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+//  REGION MODE — interactive map-based airport region selector
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── State ──────────────────────────────────────────────────────────────
+let _rgMap        = null;
+let _rgMapReady   = false;
+let _rgDotLayer   = null;   // canvas layer: all airport dots
+let _rgHiLayer    = null;   // canvas layer: highlighted dots after selection
+let _rgOwnerMap   = new Map(); // ICAO.toUpperCase() → owner name (built in _rgRenderDots)
+let _rgTipTimer   = null;   // delayed-tooltip timer handle
+let _rgRangeRing  = null;   // aircraft range ring centered on dep region
+
+// Phase: 'explore' | 'idle' | 'dep_drag' | 'ruler' | 'arr_drag' | 'results'
+let _rgPhase = 'idle';
+
+let _rgDepCenter   = null;   // L.LatLng
+let _rgDepRadiusNm = 0;
+let _rgArrCenter   = null;
+let _rgArrRadiusNm = 0;
+let _rgLastLL      = null;   // last known mouse LatLng during drag
+
+// Leaflet draw layers
+let _rgDepFill    = null;
+let _rgDepRing    = null;
+let _rgDepPin     = null;
+let _rgArrFill    = null;
+let _rgArrRing    = null;
+let _rgArrPin     = null;
+let _rgRadLine    = null;   // radius line during drag
+let _rgRulerLine  = null;   // measuring line during ruler phase
+let _rgHeroLayers = [];     // center-to-center hero line + midpoint label
+let _rgTileLayer  = null;   // current base tile layer
+let _rgMapSat     = false;  // false = street (default), true = satellite
+let _rgRouteLayer = null;   // selected-cell airport-to-airport route line
+let _rgSortMode   = 'alpha'; // 'alpha' | 'owner'
+
+// Results
+let _rgDepAirports = [];    // [{icao, rec, distNm}]
+let _rgArrAirports = [];
+let _rgCapVal      = 100;
+let _rgSelCell     = null;
+let _rgSelDep      = null;
+let _rgSelArr      = null;
+let _rgDotSelDep   = null;   // ICAO selected via dep dot click
+let _rgDotSelArr   = null;   // ICAO selected via arr dot click
+
+// Category filter (dep and arr are independent)
+let _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
+let _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
+
+// Owner filters — null = all owners visible; Set of included owner names otherwise
+let _rgDepOwnerFilter = null;
+let _rgArrOwnerFilter = null;
+
+// Range ring layers (glow halo + main ring + east-edge label)
+let _rgRangeGlow    = null;
+let _rgRangeLabel   = null;
+
+// Measurement ruler tool
+let _rgMeasureActive = false;
+let _rgMeasureOrigin = null;
+let _rgMeasureLine   = null;
+let _rgMeasureCircle = null;
+let _rgMeasureLabel  = null;
+let _rgMeasureDraw   = false;
+let _rgMeasureSaved  = [];     // [{line,circle,label}] frozen measurements
+
+// Per-column sort pivot
+let _rgSortPivot = null; // null | { icao, axis: 'dep'|'arr', mode: 'nearest'|'farthest'|'alpha' }
+
+// Map/matrix split drag
+let _rgSplitDrag    = null;
+
+// Drag / resize (results phase)
+let _rgDragMode     = null;
+let _rgResizeDrag   = null;   // active col/row resize drag state   // null | 'dep_center' | 'arr_center' | 'dep_edge' | 'arr_edge'
+let _rgDepHandle    = null;   // L.marker — visual edge resize handle (dep)
+let _rgArrHandle    = null;   // L.marker — visual edge resize handle (arr)
+let _rgMatRefreshTm = null;   // debounce timer for matrix refresh during drag
+
+// ── Open / Close ───────────────────────────────────────────────────────
+
+function openRegionModal() {
+  const modal = document.getElementById('regionModal');
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  document.addEventListener('mouseup', _rgDocMouseUp);
+  loadAirportDB()
+    .then(() => _rgInitMap())
+    .catch(e => console.error('Region modal: DB load failed', e));
+}
+
+function closeRegionModal() {
+  document.getElementById('regionModal').classList.remove('open');
+  document.body.style.overflow = '';
+  document.removeEventListener('mouseup', _rgDocMouseUp);
+}
+
+function _rgBeginSelection() {
+  _rgPhase = 'idle';
+  _rgSetCursor('cross');
+  _rgUpdatePhaseText();
+}
+
+function _rgToggleMeasure() {
+  _rgMeasureActive = !_rgMeasureActive;
+  const btn = document.getElementById('rgRulerBtn');
+  if (btn) btn.classList.toggle('active', _rgMeasureActive);
+  if (!_rgMeasureActive) {
+    _rgClearMeasureLive(); // keep saved measurements visible; just stop in-progress
+    if (_rgPhase === 'idle') _rgSetCursor('cross');
+    else if (_rgPhase === 'ruler') _rgSetCursor('ruler');
+    else _rgSetCursor('');
+  } else {
+    _rgSetCursor('cross');
+  }
+  _rgSyncClearBtn();
+}
+
+function _rgClearMeasureLive() {
+  [_rgMeasureLine, _rgMeasureCircle, _rgMeasureLabel].forEach(l => { if (l) l.remove(); });
+  _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+  _rgMeasureOrigin = null;
+  _rgMeasureDraw   = false;
+}
+
+function _rgClearMeasure() {
+  _rgClearMeasureLive();
+  for (const m of _rgMeasureSaved) {
+    if (m.line)   m.line.remove();
+    if (m.circle) m.circle.remove();
+    if (m.label)  m.label.remove();
+  }
+  _rgMeasureSaved = [];
+  _rgSyncClearBtn();
+}
+
+function _rgSyncClearBtn() {
+  const btn = document.getElementById('rgRulerClearBtn');
+  if (btn) btn.style.display = (_rgMeasureActive || _rgMeasureSaved.length > 0) ? '' : 'none';
+}
+
+function rgClearMeasurements() {
+  if (!_rgMeasureSaved.length) return;
+  const m = _rgMeasureSaved.pop();
+  if (m.line)   m.line.remove();
+  if (m.circle) m.circle.remove();
+  if (m.label)  m.label.remove();
+  _rgSyncClearBtn();
+}
+
+function _rgTrueBearing(lat1, lon1, lat2, lon2) {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+  const y  = Math.sin(Δλ) * Math.cos(φ2);
+  const x  = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function _rgMagDecl(lat, lon) {
+  // Simplified dipole approximation (±5° accuracy for most regions, 2024 pole ~81°N 110°W)
+  const φp = 81.0 * Math.PI / 180, λp = -110.0 * Math.PI / 180;
+  const φ  = lat  * Math.PI / 180, λ  =  lon  * Math.PI / 180;
+  return Math.atan2(
+    Math.sin(λp - λ) * Math.cos(φp),
+    Math.cos(φ) * Math.sin(φp) - Math.sin(φ) * Math.cos(φp) * Math.cos(λp - λ)
+  ) * 180 / Math.PI;
+}
+
+function _rgUpdateMeasure(toLL) {
+  if (!_rgMeasureOrigin || !_rgMap) return;
+  const nm      = _haversineNm(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
+  const trueBrg = _rgTrueBearing(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
+  const decl    = _rgMagDecl(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng);
+  const magBrg  = ((trueBrg - decl) + 360) % 360;
+  const distM   = nm * 1852;
+  const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
+  const mbStr   = Math.round(magBrg).toString().padStart(3, '0');
+  const origin  = [_rgMeasureOrigin.lat, _rgMeasureOrigin.lng];
+
+  if (!_rgMeasureCircle) {
+    _rgMeasureCircle = L.circle(origin, {
+      radius: distM, color: '#cc44ff', weight: 2,
+      opacity: 0.65, fillOpacity: 0.04, dashArray: '8 5', interactive: false,
+    }).addTo(_rgMap);
+  } else {
+    _rgMeasureCircle.setRadius(distM);
+  }
+
+  if (!_rgMeasureLine) {
+    _rgMeasureLine = L.polyline([origin, [toLL.lat, toLL.lng]], {
+      color: '#cc44ff', weight: 3, opacity: 1, dashArray: '6 4', interactive: false,
+    }).addTo(_rgMap);
+  } else {
+    _rgMeasureLine.setLatLngs([origin, [toLL.lat, toLL.lng]]);
+  }
+
+  const midLL = _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
+  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
+    `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
+    `${Math.round(nm)} nm &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ~${mbStr}° M</div></div>`;
+
+  if (!_rgMeasureLabel) {
+    _rgMeasureLabel = L.marker([midLL.lat, midLL.lng], {
+      icon: L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }),
+      interactive: false, keyboard: false,
+    }).addTo(_rgMap);
+  } else {
+    _rgMeasureLabel.setLatLng([midLL.lat, midLL.lng]);
+    _rgMeasureLabel.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
+  }
+}
+
+function _rgPivotClick(event, icao, axis) {
+  event.stopPropagation();
+  event.preventDefault();
+  const modes = ['nearest', 'farthest', 'alpha'];
+  if (_rgSortPivot && _rgSortPivot.icao === icao && _rgSortPivot.axis === axis) {
+    const next = modes[(modes.indexOf(_rgSortPivot.mode) + 1) % modes.length];
+    if (next === 'alpha' && _rgSortPivot.mode === 'farthest') {
+      // third click: clear pivot (back to global sort)
+      _rgSortPivot = null;
+    } else {
+      _rgSortPivot.mode = next;
+    }
+  } else {
+    _rgSortPivot = { icao, axis, mode: 'nearest' };
+  }
+  _rgRenderMatrix();
+}
+
+// ── Map initialisation ──────────────────────────────────────────────────
+
+async function _rgInitMap() {
+  await _dmLoadLeaflet();   // safe to call multiple times — checks window.L
+  _rgMapReady = true;
+
+  if (_rgMap) {
+    setTimeout(() => _rgMap.invalidateSize(), 60);
+    _rgUpdatePhaseText();
+    return;
+  }
+
+  _rgMap = L.map('rgMapContainer', { zoomControl: true, center: [30, 0], zoom: 3 });
+
+  // Start on street/chart tiles (better for regional planning than satellite)
+  _rgMapSat   = false;
+  const t     = _DM_TILES.street;
+  _rgTileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19, ...(t.sub ? { subdomains: t.sub } : {}) })
+    .addTo(_rgMap);
+
+  // Attach map event handlers
+  _rgMap.on('mousedown', _rgMapMouseDown);
+  _rgMap.on('mousemove', _rgMapMouseMove);
+  _rgMap.on('mouseup',   _rgMapMouseUp);
+  _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); });
+
+  // Render all airport dots asynchronously so the map appears first
+  setTimeout(_rgRenderDots, 120);
+
+  _rgPhase = 'explore';
+  _rgSetCursor('');
+  _rgUpdatePhaseText();
+}
+
+function _rgToggleLayer() {
+  if (!_rgMap || !_rgTileLayer) return;
+  _rgMapSat = !_rgMapSat;
+  const t = _rgMapSat ? _DM_TILES.satellite : _DM_TILES.street;
+  _rgMap.removeLayer(_rgTileLayer);
+  _rgTileLayer = L.tileLayer(t.url, {
+    attribution: t.attr,
+    maxZoom: 19,
+    ...(t.sub ? { subdomains: t.sub } : {}),
+  }).addTo(_rgMap);
+  const btn = document.getElementById('rgLayerBtn');
+  if (btn) btn.textContent = t.label;
+  // Re-render base dots with sat-aware colours
+  _rgRenderDots();
+  _rgHighlightDots();
+}
+
+// ── Aircraft range ring ───────────────────────────────────────────────
+
+function _rgUpdateRangeRing() {
+  if (_rgRangeGlow)  { _rgRangeGlow.remove();  _rgRangeGlow  = null; }
+  if (_rgRangeRing)  { _rgRangeRing.remove();  _rgRangeRing  = null; }
+  if (_rgRangeLabel) { _rgRangeLabel.remove(); _rgRangeLabel = null; }
+  if (!_rgMap || !_rgDepCenter) return;
+  const ac = _acSelectedCode ? aircraftDB.get(_acSelectedCode) : null;
+  if (!ac || !ac.range_nm) return;
+  const nm = _acGetAdjustedRange() ?? ac.range_nm;
+  if (!nm) return;
+  const center = [_rgDepCenter.lat, _rgDepCenter.lng];
+  // Glow halo underneath (stored so it can be removed on next call)
+  _rgRangeGlow = L.circle(center, {
+    radius: nm * 1852, color: '#ffd166', weight: 10,
+    opacity: 0.18, fillOpacity: 0, interactive: false,
+  }).addTo(_rgMap);
+  // Main ring — thicker, more opaque; fully non-interactive (view-only)
+  _rgRangeRing = L.circle(center, {
+    radius: nm * 1852, color: '#ffd166', weight: 3,
+    opacity: 0.9, fillOpacity: 0, dashArray: '12 6',
+    interactive: false,
+  }).addTo(_rgMap);
+  // Border label at east edge — wrapper pattern avoids Leaflet icon container artifacts
+  const eastLL = _rgDestLL(_rgDepCenter.lat, _rgDepCenter.lng, 90, nm);
+  _rgRangeLabel = L.marker(eastLL, {
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="position:absolute;transform:translate(5px,-50%);white-space:nowrap"><div class="rg-ring-lbl">✈ ${Math.round(nm).toLocaleString()} nm</div></div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    }),
+    interactive: false,
+    keyboard: false,
+  }).addTo(_rgMap);
+}
+
+// ── Map / matrix vertical split ───────────────────────────────────────
+
+function _rgSplitDown(e) {
+  e.preventDefault();
+  const mapEl = document.getElementById('rgMapContainer');
+  _rgSplitDrag = { startY: e.clientY, startH: mapEl.getBoundingClientRect().height };
+  document.addEventListener('mousemove', _rgSplitMove);
+  document.addEventListener('mouseup',   _rgSplitEnd);
+  document.getElementById('rgVSplit')?.classList.add('rg-drag-active');
+}
+
+function _rgSplitMove(e) {
+  if (!_rgSplitDrag) return;
+  const mapEl = document.getElementById('rgMapContainer');
+  const newH  = Math.max(80, _rgSplitDrag.startH + (e.clientY - _rgSplitDrag.startY));
+  mapEl.style.flex = `0 0 ${newH}px`;
+  if (_rgMap) _rgMap.invalidateSize();
+}
+
+function _rgSplitEnd() {
+  _rgSplitDrag = null;
+  document.removeEventListener('mousemove', _rgSplitMove);
+  document.removeEventListener('mouseup',   _rgSplitEnd);
+  document.getElementById('rgVSplit')?.classList.remove('rg-drag-active');
+  if (_rgMap) _rgMap.invalidateSize();
+}
+
+// ── Airport dot layer ──────────────────────────────────────────────────
+
+function _rgBindDotTip(marker, icao, rec, ownerName) {
+  const catNum = +(categoryDB && categoryDB.get(icao.toUpperCase())) || null;
+  const catCol = _rgCatOf(icao) || '#aaaaaa';
+  let rwyHtml = '';
+  const rwys = runwayDB ? runwayDB.get(icao.toUpperCase()) : null;
+  if (rwys && rwys.length) {
+    const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
+    const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
+    const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
+    const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
+    const lit   = best.lighted  ? ' · Lighted' : '';
+    const parts = [idents, len, surf + lit].filter(Boolean);
+    rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
+  }
+  const html =
+    `<div><span class="rg-dt-icao" style="color:${catCol}">${icao}</span>` +
+    (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
+    (rec.name ? `<span class="rg-dt-name">${rec.name}</span>` : '') +
+    (ownerName ? `<span class="rg-dt-owner">${ownerName}</span>` : '') +
+    rwyHtml +
+    `</div>`;
+  marker.bindTooltip(html, { direction: 'top', permanent: false, className: 'rg-dot-tip' });
+  marker.on('mouseover', function() {
+    if (_rgPhase === 'dep_drag' || _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
+    clearTimeout(_rgTipTimer);
+    const m = this;
+    _rgTipTimer = setTimeout(() => m.openTooltip(), 500);
+  });
+  marker.on('mouseout', function() {
+    clearTimeout(_rgTipTimer);
+    this.closeTooltip();
+  });
+}
+
+function _rgRenderDots() {
+  if (!_rgMap) return;
+  if (_rgDotLayer) { _rgDotLayer.remove(); _rgDotLayer = null; }
+  const renderer  = L.canvas({ padding: 0.5 });
+  _rgDotLayer = L.layerGroup().addTo(_rgMap);
+  const ownerData = _getOwnerData();
+  if (!ownerData || !ownerData.length) return;
+  // Build / refresh the ICAO→owner lookup used by _rgHighlightDots
+  _rgOwnerMap = new Map();
+  for (const owner of ownerData)
+    for (const ap of (owner.airports || []))
+      _rgOwnerMap.set(ap.icao.toUpperCase(), owner.name);
+  const seen = new Set();
+  for (const owner of ownerData) {
+    for (const ap of (owner.airports || [])) {
+      if (seen.has(ap.icao)) continue;
+      seen.add(ap.icao);
+      const rec = lookupICAO(ap.icao);
+      if (!rec || !rec.latitude || !rec.longitude) continue;
+      // Use category color globally; fall back to sat/street defaults for uncategorised
+      const fillColor   = _rgCatOf(ap.icao) || (_rgMapSat ? '#a8d8f0' : '#3a7090');
+      const fillOpacity = _rgMapSat ? 0.88 : 0.75;
+      const m = L.circleMarker([rec.latitude, rec.longitude], {
+        renderer, radius: 9, weight: 1,
+        color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
+      });
+      _rgBindDotTip(m, ap.icao, rec, owner.name);
+      m.addTo(_rgDotLayer);
+    }
+  }
+}
+
+// ── Hero line (center-to-center) ─────────────────────────────────────────
+
+function _rgClearHeroLine() {
+  _rgHeroLayers.forEach(l => { if (l) l.remove(); });
+  _rgHeroLayers = [];
+}
+
+function _rgDrawHeroLine() {
+  _rgClearHeroLine();
+  if (!_rgMap || !_rgDepCenter || !_rgArrCenter) return;
+
+  const dep = _rgDepCenter;
+  const arr = _rgArrCenter;
+  const coords = [[dep.lat, dep.lng], [arr.lat, arr.lng]];
+  const nm = Math.round(_haversineNm(dep.lat, dep.lng, arr.lat, arr.lng));
+
+  // Three-layer glow stack — outer bloom, mid glow, bright core
+  const bloom = L.polyline(coords, { color: '#00c8ff', weight: 22, opacity: 0.08, interactive: false });
+  const glow  = L.polyline(coords, { color: '#00c8ff', weight: 8,  opacity: 0.32, interactive: false });
+  const core  = L.polyline(coords, { color: '#ffffff', weight: 2,  opacity: 0.92, interactive: false });
+
+  bloom.addTo(_rgMap);
+  glow.addTo(_rgMap);
+  core.addTo(_rgMap);
+
+  // Midpoint distance badge
+  const mid  = L.latLng((dep.lat + arr.lat) / 2, (dep.lng + arr.lng) / 2);
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap"><span class="rg-hero-lbl">${nm.toLocaleString()} nm</span></div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  const label = L.marker(mid, { icon, interactive: false, keyboard: false });
+  label.addTo(_rgMap);
+
+  _rgHeroLayers = [bloom, glow, core, label];
+}
+
+// ── Selected-route line ──────────────────────────────────────────────────
+
+function _rgClearRouteHL() {
+  if (_rgRouteLayer) {
+    _rgRouteLayer.forEach(l => { if (l) l.remove(); });
+    _rgRouteLayer = null;
+  }
+}
+
+function _rgDrawRouteHL(depIcao, arrIcao, nm) {
+  _rgClearRouteHL();
+  if (!_rgMap) return;
+  const depEntry = _rgDepAirports.find(a => a.icao === depIcao);
+  const arrEntry = _rgArrAirports.find(a => a.icao === arrIcao);
+  if (!depEntry || !arrEntry) return;
+
+  // Dedicated panes keep the route line above the hero line regardless of draw order.
+  // routeLinePane (450) > overlayPane (400); routeLabelPane (650) > markerPane (600).
+  if (!_rgMap.getPane('routeLinePane')) {
+    const lp = _rgMap.createPane('routeLinePane');
+    lp.style.zIndex = 450;
+    lp.style.pointerEvents = 'none';
+    const lbp = _rgMap.createPane('routeLabelPane');
+    lbp.style.zIndex = 650;
+    lbp.style.pointerEvents = 'none';
+  }
+
+  const depLL  = [depEntry.rec.latitude,  depEntry.rec.longitude];
+  const arrLL  = [arrEntry.rec.latitude,  arrEntry.rec.longitude];
+  const coords = [depLL, arrLL];
+
+  const glow = L.polyline(coords, { color: '#ffd166', weight: 12, opacity: 0.15, interactive: false, pane: 'routeLinePane' });
+  const line = L.polyline(coords, { color: '#ffd166', weight: 4,  opacity: 0.45, interactive: false, pane: 'routeLinePane' });
+  const core = L.polyline(coords, { color: '#ffffff', weight: 1.5, opacity: 0.9, interactive: false, pane: 'routeLinePane' });
+
+  const renderer = L.canvas({ padding: 0.5, pane: 'routeLinePane' });
+  const depRing  = L.circleMarker(depLL, {
+    renderer, radius: 7, weight: 2,
+    color: '#00c8ff', fillColor: '#00c8ff', fillOpacity: 0.2, interactive: false,
+  });
+  const arrRing  = L.circleMarker(arrLL, {
+    renderer, radius: 7, weight: 2,
+    color: '#ff6a00', fillColor: '#ff6a00', fillOpacity: 0.2, interactive: false,
+  });
+
+  const midLL = L.latLng(
+    (depEntry.rec.latitude  + arrEntry.rec.latitude)  / 2,
+    (depEntry.rec.longitude + arrEntry.rec.longitude) / 2
+  );
+  const infoIcon = L.divIcon({
+    className: '',
+    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap">` +
+          `<div class="rg-route-info-lbl">` +
+          `<span class="rg-ri-dep">${depIcao}</span>` +
+          `<span class="rg-ri-arrow"> → </span>` +
+          `<span class="rg-ri-arr">${arrIcao}</span>` +
+          `<span class="rg-ri-nm">${nm != null ? ' · ' + nm + ' nm' : ''}</span>` +
+          `</div></div>`,
+    iconSize: [0, 0], iconAnchor: [0, 0],
+  });
+  const infoLabel = L.marker(midLL, { icon: infoIcon, interactive: false, keyboard: false, pane: 'routeLabelPane' });
+
+  [glow, line, core, depRing, arrRing, infoLabel].forEach(l => l.addTo(_rgMap));
+  _rgRouteLayer = [glow, line, core, depRing, arrRing, infoLabel];
+}
+
+function _rgHighlightDots() {
+  if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
+  if (!_rgMap) return;
+  const renderer = L.canvas({ padding: 0.5 });
+  _rgHiLayer = L.layerGroup().addTo(_rgMap);
+  for (const a of _rgDepAirports) {
+    const cat = +(categoryDB && categoryDB.get(a.icao.toUpperCase())) || 999;
+    if (!_rgDepCatFilter.has(cat)) continue;
+    if (_rgDepOwnerFilter !== null && !_rgDepOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+    const fill = _rgCatOf(a.icao) || '#00c8ff';
+    const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
+      renderer, radius: 12, weight: 1,
+      color: 'rgba(0,0,0,0.55)', fillColor: fill, fillOpacity: 0.92, interactive: true,
+    });
+    _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
+    const depIcao = a.icao;
+    m.on('click', () => _rgHighlightDepRow(depIcao));
+    m.addTo(_rgHiLayer);
+  }
+  for (const a of _rgArrAirports) {
+    const cat = +(categoryDB && categoryDB.get(a.icao.toUpperCase())) || 999;
+    if (!_rgArrCatFilter.has(cat)) continue;
+    if (_rgArrOwnerFilter !== null && !_rgArrOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+    const fill = _rgCatOf(a.icao) || '#ff6a00';
+    const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
+      renderer, radius: 12, weight: 1,
+      color: 'rgba(0,0,0,0.55)', fillColor: fill, fillOpacity: 0.92, interactive: true,
+    });
+    _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
+    const arrIcao = a.icao;
+    m.on('click', () => _rgHighlightArrCol(arrIcao));
+    m.addTo(_rgHiLayer);
+  }
+}
+
+// ── Drag / resize helpers ──────────────────────────────────────────────
+
+function _rgDestLL(lat, lng, bearingDeg, nm) {
+  const R = 3440.065;
+  const d = nm / R;
+  const φ1 = lat * Math.PI / 180, λ1 = lng * Math.PI / 180;
+  const θ  = bearingDeg * Math.PI / 180;
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(θ));
+  const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2));
+  return L.latLng(φ2 * 180 / Math.PI, λ2 * 180 / Math.PI);
+}
+
+function _rgHandleIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="rg-resize-handle" style="border-color:${color}" title="Drag to resize region"></div>`,
+    iconSize: [20, 20], iconAnchor: [10, 10],
+  });
+}
+
+function _rgDrawHandles() {
+  if (!_rgMap) return;
+  if (_rgDepCenter && _rgDepRadiusNm > 0) {
+    const ll = _rgDestLL(_rgDepCenter.lat, _rgDepCenter.lng, 90, _rgDepRadiusNm);
+    if (!_rgDepHandle) _rgDepHandle = L.marker(ll, { icon: _rgHandleIcon('#00c8ff'), interactive: false, keyboard: false, zIndexOffset: 500 }).addTo(_rgMap);
+    else _rgDepHandle.setLatLng(ll);
+  }
+  if (_rgArrCenter && _rgArrRadiusNm > 0) {
+    const ll = _rgDestLL(_rgArrCenter.lat, _rgArrCenter.lng, 90, _rgArrRadiusNm);
+    if (!_rgArrHandle) _rgArrHandle = L.marker(ll, { icon: _rgHandleIcon('#ff6a00'), interactive: false, keyboard: false, zIndexOffset: 500 }).addTo(_rgMap);
+    else _rgArrHandle.setLatLng(ll);
+  }
+}
+
+function _rgRemoveHandles() {
+  if (_rgDepHandle) { _rgDepHandle.remove(); _rgDepHandle = null; }
+  if (_rgArrHandle) { _rgArrHandle.remove(); _rgArrHandle = null; }
+}
+
+// px tolerance for hit-testing drag targets
+const _RG_CENTER_TOL = 20;
+const _RG_EDGE_TOL   = 16;
+
+function _rgDragHitTest(e) {
+  const mp = e.containerPoint;
+  const px = (ll) => {
+    const p = _rgMap.latLngToContainerPoint(L.latLng(ll.lat, ll.lng));
+    return Math.hypot(p.x - mp.x, p.y - mp.y);
+  };
+  if (_rgDepCenter && px(_rgDepCenter) < _RG_CENTER_TOL) return 'dep_center';
+  if (_rgArrCenter && px(_rgArrCenter) < _RG_CENTER_TOL) return 'arr_center';
+  if (_rgDepCenter && _rgDepRadiusNm > 0 && px(_rgDestLL(_rgDepCenter.lat, _rgDepCenter.lng, 90, _rgDepRadiusNm)) < _RG_EDGE_TOL) return 'dep_edge';
+  if (_rgArrCenter && _rgArrRadiusNm > 0 && px(_rgDestLL(_rgArrCenter.lat, _rgArrCenter.lng, 90, _rgArrRadiusNm)) < _RG_EDGE_TOL) return 'arr_edge';
+  return null;
+}
+
+function _rgScheduleMatrixRefresh() {
+  clearTimeout(_rgMatRefreshTm);
+  _rgMatRefreshTm = setTimeout(() => { if (_rgPhase === 'results') _rgComputeAndRender(); }, 160);
+}
+
+function _rgApplyDrag(e) {
+  if (_rgDragMode === 'dep_center') {
+    _rgDepCenter = e.latlng;
+    _rgDepPin.setLatLng(e.latlng);
+    _rgDepFill.setLatLng(e.latlng);
+    _rgDepRing.setLatLng(e.latlng);
+    _rgDrawHandles();
+    _rgDrawHeroLine();
+    _rgScheduleMatrixRefresh();
+
+  } else if (_rgDragMode === 'arr_center') {
+    _rgArrCenter = e.latlng;
+    _rgArrPin.setLatLng(e.latlng);
+    _rgArrFill.setLatLng(e.latlng);
+    _rgArrRing.setLatLng(e.latlng);
+    _rgDrawHandles();
+    _rgDrawHeroLine();
+    _rgScheduleMatrixRefresh();
+
+  } else if (_rgDragMode === 'dep_edge') {
+    const nm = Math.max(1, _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, e.latlng.lat, e.latlng.lng));
+    _rgDepRadiusNm = nm;
+    _rgDepFill.setRadius(nm * 1852);
+    _rgDepRing.setRadius(nm * 1852);
+    _rgDrawHandles();
+    _rgScheduleMatrixRefresh();
+
+  } else if (_rgDragMode === 'arr_edge') {
+    const nm = Math.max(1, _haversineNm(_rgArrCenter.lat, _rgArrCenter.lng, e.latlng.lat, e.latlng.lng));
+    _rgArrRadiusNm = nm;
+    _rgArrFill.setRadius(nm * 1852);
+    _rgArrRing.setRadius(nm * 1852);
+    _rgDrawHandles();
+    _rgScheduleMatrixRefresh();
+  }
+}
+
+// ── Phase: mouse events ────────────────────────────────────────────────
+
+function _rgMapMouseDown(e) {
+  if (_rgMeasureActive) {
+    _rgClearMeasureLive(); // discard any partially-started drag; saved measurements stay
+    _rgMeasureOrigin = e.latlng;
+    _rgMeasureDraw   = true;
+    _rgMap.dragging.disable();
+    L.DomEvent.stopPropagation(e);
+    return;
+  }
+  if (_rgPhase === 'explore') return;
+  if (_rgPhase === 'results') {
+    const hit = _rgDragHitTest(e);
+    if (!hit) return;
+    _rgDragMode = hit;
+    _rgMap.dragging.disable();
+    _rgSetCursor(hit.includes('center') ? 'grab' : 'resize');
+    L.DomEvent.stopPropagation(e);
+    return;
+  }
+  if (_rgPhase === 'idle') {
+    _rgPhase     = 'dep_drag';
+    _rgDepCenter = e.latlng;
+    _rgDepRadiusNm = 0;
+    _rgLastLL    = e.latlng;
+    _rgMap.dragging.disable();
+    _rgSetCursor('grab');
+
+    _rgDepPin = L.circleMarker(e.latlng, {
+      radius: 5, weight: 2, color: '#00c8ff', fillColor: '#00c8ff', fillOpacity: 1, interactive: false,
+    }).addTo(_rgMap);
+    _rgDepFill = L.circle(e.latlng, {
+      radius: 1, color: 'transparent', fillColor: '#00c8ff', fillOpacity: 0.07, interactive: false,
+    }).addTo(_rgMap);
+    _rgDepRing = L.circle(e.latlng, {
+      radius: 1, color: '#00c8ff', weight: 2, fillOpacity: 0, dashArray: '6 4', interactive: false,
+    }).addTo(_rgMap);
+    _rgRadLine = L.polyline([e.latlng, e.latlng], {
+      color: '#00c8ff', weight: 1.5, opacity: 0.65, dashArray: '4 5', interactive: false,
+    }).addTo(_rgMap);
+    _rgUpdateRangeRing();
+    _rgUpdatePhaseText();
+
+  } else if (_rgPhase === 'ruler') {
+    _rgPhase     = 'arr_drag';
+    _rgArrCenter = e.latlng;
+    _rgArrRadiusNm = 0;
+    _rgLastLL    = e.latlng;
+    _rgMap.dragging.disable();
+    _rgSetCursor('grab');
+
+    if (_rgRulerLine) { _rgRulerLine.remove(); _rgRulerLine = null; }
+
+    _rgArrPin = L.circleMarker(e.latlng, {
+      radius: 5, weight: 2, color: '#ff6a00', fillColor: '#ff6a00', fillOpacity: 1, interactive: false,
+    }).addTo(_rgMap);
+    _rgArrFill = L.circle(e.latlng, {
+      radius: 1, color: 'transparent', fillColor: '#ff6a00', fillOpacity: 0.07, interactive: false,
+    }).addTo(_rgMap);
+    _rgArrRing = L.circle(e.latlng, {
+      radius: 1, color: '#ff6a00', weight: 2, fillOpacity: 0, dashArray: '6 4', interactive: false,
+    }).addTo(_rgMap);
+    _rgRadLine = L.polyline([e.latlng, e.latlng], {
+      color: '#ff6a00', weight: 1.5, opacity: 0.65, dashArray: '4 5', interactive: false,
+    }).addTo(_rgMap);
+    _rgUpdatePhaseText();
+  }
+}
+
+function _rgMapMouseMove(e) {
+  _rgLastLL = e.latlng;
+  const cp  = e.originalEvent;
+
+  if (_rgMeasureActive && _rgMeasureOrigin) {
+    _rgUpdateMeasure(e.latlng);
+    return;
+  }
+
+  if (_rgPhase === 'dep_drag') {
+    const nm = _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, e.latlng.lat, e.latlng.lng);
+    _rgDepRadiusNm = nm;
+    const m = nm * 1852;
+    _rgDepFill.setRadius(m);
+    _rgDepRing.setRadius(m);
+    _rgRadLine.setLatLngs([_rgDepCenter, e.latlng]);
+    _rgShowNmLabel(cp, Math.round(nm) + ' nm', false);
+
+  } else if (_rgPhase === 'ruler') {
+    if (!_rgRulerLine) {
+      _rgRulerLine = L.polyline([_rgDepCenter, e.latlng], {
+        color: '#00c8ff', weight: 1.5, opacity: 0.45, dashArray: '9 6', interactive: false,
+      }).addTo(_rgMap);
+    } else {
+      _rgRulerLine.setLatLngs([_rgDepCenter, e.latlng]);
+    }
+    const nm = _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, e.latlng.lat, e.latlng.lng);
+    _rgShowNmLabel(cp, Math.round(nm) + ' nm to arrival', false);
+
+  } else if (_rgPhase === 'arr_drag') {
+    const nm = _haversineNm(_rgArrCenter.lat, _rgArrCenter.lng, e.latlng.lat, e.latlng.lng);
+    _rgArrRadiusNm = nm;
+    const m = nm * 1852;
+    _rgArrFill.setRadius(m);
+    _rgArrRing.setRadius(m);
+    _rgRadLine.setLatLngs([_rgArrCenter, e.latlng]);
+    _rgShowNmLabel(cp, Math.round(nm) + ' nm', true);
+
+  } else if (_rgPhase === 'results') {
+    if (_rgDragMode) {
+      _rgApplyDrag(e);
+    } else {
+      // Cursor hint while hovering over drag targets
+      const hit = _rgDragHitTest(e);
+      _rgSetCursor(hit ? (hit.includes('center') ? 'grab' : 'resize') : '');
+    }
+  } else {
+    _rgHideNmLabel();
+  }
+}
+
+function _rgEndDrag() {
+  if (!_rgDragMode) return false;
+  _rgDragMode = null;
+  clearTimeout(_rgMatRefreshTm);
+  _rgMap.dragging.enable();
+  _rgSetCursor('');
+  _rgComputeAndRender();
+  return true;
+}
+
+function _rgMapMouseUp() {
+  if (_rgMeasureDraw) {
+    _rgMeasureDraw = false;
+    _rgMap.dragging.enable();
+    if (_rgMeasureLine) {
+      _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
+      _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgMeasureOrigin = null;
+    }
+    _rgSyncClearBtn();
+    return;
+  }
+  if (_rgEndDrag()) return;
+  if (_rgPhase === 'dep_drag') _rgLockDep();
+  else if (_rgPhase === 'arr_drag') _rgLockArr();
+}
+
+function _rgDocMouseUp() {
+  if (_rgMeasureDraw) {
+    _rgMeasureDraw = false;
+    if (_rgMap) _rgMap.dragging.enable();
+    if (_rgMeasureLine) {
+      _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
+      _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgMeasureOrigin = null;
+    }
+    _rgSyncClearBtn();
+    return;
+  }
+  if (_rgEndDrag()) return;
+  if (_rgPhase === 'dep_drag') _rgLockDep();
+  else if (_rgPhase === 'arr_drag') _rgLockArr();
+}
+
+// ── Lock regions ────────────────────────────────────────────────────────
+
+function _rgLockDep() {
+  if (_rgDepRadiusNm < 1) { rgReset(true); return; }
+  _rgMap.dragging.enable();
+  _rgPhase = 'ruler';
+  if (_rgRadLine)  { _rgRadLine.remove(); _rgRadLine = null; }
+  if (_rgDepFill)  _rgDepFill.setStyle({ fillOpacity: 0.09 });
+  if (_rgDepRing)  _rgDepRing.setStyle({ dashArray: null });
+  _rgHideNmLabel();
+  _rgSetCursor('ruler');
+  document.getElementById('rgUndoBtn').disabled = false;
+  _rgUpdatePhaseText();
+}
+
+function _rgLockArr() {
+  if (_rgArrRadiusNm < 1) {
+    // Circle too small — discard arr attempt and stay in ruler
+    [_rgArrFill, _rgArrRing, _rgArrPin, _rgRadLine].forEach(l => { if (l) l.remove(); });
+    _rgArrFill = _rgArrRing = _rgArrPin = _rgRadLine = null;
+    _rgArrCenter = null; _rgArrRadiusNm = 0;
+    _rgMap.dragging.enable();
+    _rgPhase = 'ruler';
+    _rgSetCursor('ruler');
+    _rgHideNmLabel();
+    return;
+  }
+  _rgMap.dragging.enable();
+  _rgPhase = 'results';
+  if (_rgRadLine)  { _rgRadLine.remove(); _rgRadLine = null; }
+  if (_rgArrFill)  _rgArrFill.setStyle({ fillOpacity: 0.09 });
+  if (_rgArrRing)  _rgArrRing.setStyle({ dashArray: null });
+  _rgHideNmLabel();
+  _rgSetCursor('');
+  document.getElementById('rgUndoBtn').disabled = false;
+  _rgUpdatePhaseText();
+  _rgDrawHeroLine();
+  _rgComputeAndRender();
+  _rgDrawHandles();
+}
+
+// ── Undo / Reset ────────────────────────────────────────────────────────
+
+function rgUndo() {
+  if (_rgPhase === 'dep_drag' || _rgPhase === 'ruler') {
+    [_rgDepFill, _rgDepRing, _rgDepPin, _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel]
+      .forEach(l => { if (l) l.remove(); });
+    _rgDepFill = _rgDepRing = _rgDepPin = _rgRadLine = _rgRulerLine = null;
+    _rgRangeGlow = _rgRangeRing = _rgRangeLabel = null;
+    _rgDepCenter = null; _rgDepRadiusNm = 0;
+    _rgMap.dragging.enable();
+    _rgPhase = 'idle';
+    _rgSetCursor('cross');
+    document.getElementById('rgUndoBtn').disabled = true;
+
+  } else if (_rgPhase === 'arr_drag' || _rgPhase === 'results') {
+    _rgRemoveHandles();
+    [_rgArrFill, _rgArrRing, _rgArrPin, _rgRadLine, _rgRulerLine]
+      .forEach(l => { if (l) l.remove(); });
+    _rgArrFill = _rgArrRing = _rgArrPin = _rgRadLine = _rgRulerLine = null;
+    _rgArrCenter = null; _rgArrRadiusNm = 0;
+    if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
+    _rgClearHeroLine();
+    _rgMap.dragging.enable();
+    _rgPhase = 'ruler';
+    _rgSetCursor('ruler');
+    document.getElementById('rgResultsBar').classList.remove('visible');
+    document.getElementById('rgMatrixWrap').classList.remove('visible');
+  }
+  _rgUpdatePhaseText();
+}
+
+function rgReset(silent) {
+  clearTimeout(_rgMatRefreshTm);
+  _rgDragMode   = null;
+  _rgSortPivot  = null;
+  _rgMeasureActive = false;
+  _rgClearMeasure(); // also calls _rgSyncClearBtn
+  const rulerBtn = document.getElementById('rgRulerBtn');
+  if (rulerBtn) rulerBtn.classList.remove('active');
+  _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
+  _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
+  document.querySelectorAll('#rgResultsBar .dist-cat-btn').forEach(b => b.classList.add('active'));
+  _rgRemoveHandles();
+  [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
+   _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
+  _rgDepFill = _rgDepRing = _rgDepPin = null;
+  _rgRangeGlow = null; _rgRangeRing = null; _rgRangeLabel = null;
+  _rgDepOwnerFilter = null;
+  _rgArrOwnerFilter = null;
+  _rgArrFill = _rgArrRing = _rgArrPin = null;
+  _rgRadLine = _rgRulerLine = null;
+  if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
+  _rgClearHeroLine();
+  _rgClearRouteHL();
+  if (_rgMap) _rgMap.dragging.enable();
+  _rgDepCenter = null; _rgDepRadiusNm = 0;
+  _rgArrCenter = null; _rgArrRadiusNm = 0;
+  _rgDepAirports = []; _rgArrAirports = [];
+  _rgSelCell = null; _rgSelDep = null; _rgSelArr = null;
+  _rgDotSelDep = null; _rgDotSelArr = null;
+  _rgPhase = 'idle';
+  _rgSetCursor('cross');
+  _rgHideNmLabel();
+  document.getElementById('rgUndoBtn').disabled = true;
+  if (!silent) {
+    document.getElementById('rgResultsBar').classList.remove('visible');
+    document.getElementById('rgMatrixWrap').classList.remove('visible');
+  }
+  _rgUpdatePhaseText();
+}
+
+function rgExploreReturn() {
+  rgReset();
+  _rgPhase = 'explore';
+  _rgSetCursor('');
+  _rgUpdatePhaseText();
+}
+
+// ── Nm label ────────────────────────────────────────────────────────────
+
+function _rgShowNmLabel(ev, text, isArr) {
+  const lbl  = document.getElementById('rgNmLabel');
+  const rect = document.getElementById('rgMapContainer').getBoundingClientRect();
+  lbl.textContent = text;
+  lbl.style.left  = (ev.clientX - rect.left) + 'px';
+  lbl.style.top   = (ev.clientY - rect.top)  + 'px';
+  lbl.className   = 'rg-nm-label' + (isArr ? ' arr' : '');
+  lbl.style.display = 'block';
+}
+function _rgHideNmLabel() {
+  const lbl = document.getElementById('rgNmLabel');
+  if (lbl) lbl.style.display = 'none';
+}
+
+// ── Cursor helper ───────────────────────────────────────────────────────
+
+function _rgSetCursor(type) {
+  const c = document.getElementById('rgMapContainer');
+  if (!c) return;
+  c.classList.remove('rg-cross', 'rg-grab', 'rg-ruler', 'rg-resize');
+  if (type) c.classList.add('rg-' + type);
+}
+
+// ── Phase text ──────────────────────────────────────────────────────────
+
+function _rgUpdatePhaseText() {
+  const el = document.getElementById('rgPhaseText');
+  if (!el) return;
+  const msgs = {
+    explore:  'Explore the map freely — click <b>Select Regions</b> when ready to define departure and arrival areas',
+    idle:     '<span class="rg-phase-badge dep">STEP 1</span>Click &amp; drag on the map to define the <b>departure region</b>',
+    dep_drag: '<span class="rg-phase-badge dep">DEP</span>Drag to set radius — release to lock departure region',
+    ruler:    '<span class="rg-phase-badge arr">STEP 2</span>Click &amp; drag to define the <b>arrival region</b>',
+    arr_drag: '<span class="rg-phase-badge arr">ARR</span>Drag to set radius — release to lock arrival region',
+    results:  '<span class="rg-phase-badge done">DONE</span>Both regions set — matrix below',
+  };
+  el.innerHTML = msgs[_rgPhase] || '';
+  const selBtn   = document.getElementById('rgSelectBtn');
+  const undoBtn  = document.getElementById('rgUndoBtn');
+  const resetBtn = document.getElementById('rgResetBtn');
+  if (selBtn)   selBtn.style.display   = _rgPhase === 'explore' ? '' : 'none';
+  if (undoBtn)  undoBtn.style.display  = _rgPhase === 'explore' ? 'none' : '';
+  if (resetBtn) resetBtn.style.display = _rgPhase === 'explore' ? 'none' : '';
+}
+
+// ── Airport filtering ───────────────────────────────────────────────────
+
+function _rgAirportsInCircle(cLat, cLng, radiusNm, cap) {
+  const ownerData = _getOwnerData();
+  if (!ownerData || !ownerData.length) return [];
+  const seen = new Set();
+  const out  = [];
+  for (const owner of ownerData) {
+    for (const ap of (owner.airports || [])) {
+      if (seen.has(ap.icao)) continue;
+      seen.add(ap.icao);
+      const rec = lookupICAO(ap.icao);
+      if (!rec || !rec.latitude || !rec.longitude) continue;
+      const d = _haversineNm(cLat, cLng, rec.latitude, rec.longitude);
+      if (d <= radiusNm) out.push({ icao: ap.icao, rec, distNm: d });
+    }
+  }
+  out.sort((a, b) => a.distNm - b.distNm);
+  return out.slice(0, cap);
+}
+
+// ── Matrix computation ──────────────────────────────────────────────────
+
+function _rgComputeAndRender() {
+  const matEl = document.getElementById('rgMatrix');
+  const wrap  = document.getElementById('rgMatrixWrap');
+  const bar   = document.getElementById('rgResultsBar');
+  wrap.classList.add('visible');
+  bar.classList.add('visible');
+  matEl.innerHTML = '<tr><td class="rg-matrix-msg">Computing airports…</td></tr>';
+
+  setTimeout(() => {
+    _rgDepAirports = _rgAirportsInCircle(
+      _rgDepCenter.lat, _rgDepCenter.lng, _rgDepRadiusNm, _rgCapVal);
+    _rgArrAirports = _rgAirportsInCircle(
+      _rgArrCenter.lat, _rgArrCenter.lng, _rgArrRadiusNm, _rgCapVal);
+    _rgHighlightDots();
+    _rgRenderMatrix();
+    _rgUpdateSummary();
+  }, 30);
+}
+
+function rgSetCap(val) {
+  _rgCapVal = val;
+  document.getElementById('rgPerfWarn').style.display = val > 200 ? 'inline' : 'none';
+  if (_rgPhase === 'results') _rgComputeAndRender();
+}
+
+function rgSetSort(val) {
+  if (val === 'pivot') return;
+  _rgSortPivot = null;
+  _rgSortMode = val;
+  if (_rgPhase === 'results') _rgRenderMatrix();
+  else _rgUpdateSortLabel();
+}
+
+function _rgUpdateSortLabel() {
+  const sel = document.getElementById('rgSortSelect');
+  if (!sel) return;
+  const existing = sel.querySelector('option[value="pivot"]');
+  if (existing) existing.remove();
+  if (_rgSortPivot) {
+    const opt = document.createElement('option');
+    opt.value = 'pivot';
+    opt.textContent = (_rgSortPivot.mode === 'nearest' ? 'Closest ' : 'Furthest ') + _rgSortPivot.icao;
+    sel.appendChild(opt);
+    sel.value = 'pivot';
+  } else {
+    sel.value = _rgSortMode;
+  }
+}
+
+function _rgUpdateSummary() {
+  const dep = _rgDepAirports.length, arr = _rgArrAirports.length;
+  document.getElementById('rgResultsSummary').innerHTML =
+    `<b>${dep}</b> dep airports &times; <b>${arr}</b> arr airports = <b>${dep * arr}</b> routes`;
+}
+
+// ── Owner colour palette ─────────────────────────────────────────────────
+
+const _RG_PALETTE = [
+  '#4db8ff','#ff6b6b','#69e06e','#ffd166','#c77dff',
+  '#ff9f43','#00d2d3','#ff78c4','#7bed9f','#a29bfe',
+  '#fd79a8','#55efc4','#fdcb6e','#74b9ff','#e17055',
+];
+
+function _rgOwnerColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+  return _RG_PALETTE[Math.abs(h) % _RG_PALETTE.length];
+}
+
+// KML Generator "both mode" category palette (matches catPins by index = cat-1)
+const _RG_CAT_COLORS = {
+  1: '#FF4040',  2: '#FF8800',  3: '#FFEE00',
+  4: '#44FF44',  5: '#00DDFF',  6: '#4466FF',  7: '#FF44FF',
+};
+
+function _rgCatOf(icao) {
+  const cat = categoryDB && categoryDB.get((icao || '').toUpperCase());
+  return cat ? (_RG_CAT_COLORS[+cat] || null) : null;
+}
+
+function _rgBuildOwnerLookup() {
+  const map = new Map();
+  const owners = _getOwnerData();
+  for (const o of owners) {
+    const col = _rgOwnerColor(o.name);
+    for (const ap of o.airports) {
+      map.set(ap.icao.toUpperCase(), { name: o.name, color: col });
+    }
+  }
+  return map;
+}
+
+// ── Matrix rendering ────────────────────────────────────────────────────
+
+// Tooltip delegation — call once after modal DOM exists
+let _rgTipDelegateAttached = false;
+function _rgInitTooltipDelegate() {
+  if (_rgTipDelegateAttached) return;
+  _rgTipDelegateAttached = true;
+  const wrap = document.getElementById('rgMatrixWrap');
+  if (!wrap) return;
+  wrap.addEventListener('mouseover', e => {
+    const th = e.target.closest('[data-rg-tip]');
+    if (!th || !window._tipAPI) return;
+    const icao = th.dataset.rgTip;
+    const rec  = lookupICAO(icao);
+    if (!rec) return;
+    const ownerInfo = _rgOwnerLookupCache && _rgOwnerLookupCache.get(icao.toUpperCase());
+    const ownerName = ownerInfo ? ownerInfo.name : '';
+    _tipAPI.showLive(() => _buildTooltipHtml(icao, rec, true, null, ownerName, null),
+      e.clientX, e.clientY);
+  }, true);
+  wrap.addEventListener('mousemove', e => {
+    if (e.target.closest('[data-rg-tip]') && window._tipAPI) _tipAPI.move(e.clientX, e.clientY);
+  }, true);
+  wrap.addEventListener('mouseout', e => {
+    if (e.target.closest('[data-rg-tip]') && window._tipAPI) _tipAPI.hide();
+  }, true);
+}
+
+let _rgOwnerLookupCache = null;
+
+function _rgRenderMatrix() {
+  const matEl = document.getElementById('rgMatrix');
+  const dep   = _rgDepAirports;
+  const arr   = _rgArrAirports;
+
+  if (!dep.length || !arr.length) {
+    matEl.innerHTML = '<tr><td class="rg-matrix-msg">No airports found in ' +
+      (!dep.length ? 'departure' : 'arrival') + ' region — try a larger radius.</td></tr>';
+    return;
+  }
+
+  _rgOwnerLookupCache = _rgBuildOwnerLookup();
+  const ownerOf = icao => _rgOwnerLookupCache.get(icao.toUpperCase());
+
+  const catNumOf = icao => +(categoryDB && categoryDB.get(icao.toUpperCase())) || 999;
+
+  // Apply sort to working copies (don't mutate the original arrays)
+  const _sortAirports = list => {
+    const copy = [...list];
+    if (_rgSortMode === 'owner') {
+      copy.sort((a, b) => {
+        const oa = ownerOf(a.icao)?.name || '￿';
+        const ob = ownerOf(b.icao)?.name || '￿';
+        return oa.localeCompare(ob, undefined, { sensitivity: 'base' }) || a.icao.localeCompare(b.icao);
+      });
+    } else if (_rgSortMode === 'category') {
+      copy.sort((a, b) => catNumOf(a.icao) - catNumOf(b.icao) || a.icao.localeCompare(b.icao));
+    } else {
+      copy.sort((a, b) => a.icao.localeCompare(b.icao));
+    }
+    return copy;
+  };
+
+  // Pivot sort: clicking ⊙ on an arr column sorts dep rows by distance to that arr airport, and vice versa
+  let sortedDep, sortedArr;
+  if (_rgSortPivot) {
+    const pivotRec = lookupICAO(_rgSortPivot.icao);
+    if (!pivotRec) { _rgSortPivot = null; }
+  }
+  if (_rgSortPivot && _rgSortPivot.mode !== 'alpha' && _rgSortPivot.axis === 'arr') {
+    const pivotRec = lookupICAO(_rgSortPivot.icao);
+    const copy = [...dep];
+    copy.sort((a, b) => {
+      const da = _haversineNm(a.rec.latitude, a.rec.longitude, pivotRec.latitude, pivotRec.longitude);
+      const db = _haversineNm(b.rec.latitude, b.rec.longitude, pivotRec.latitude, pivotRec.longitude);
+      return _rgSortPivot.mode === 'nearest' ? da - db : db - da;
+    });
+    sortedDep = copy;
+    sortedArr = _sortAirports(arr);
+  } else if (_rgSortPivot && _rgSortPivot.mode !== 'alpha' && _rgSortPivot.axis === 'dep') {
+    const pivotRec = lookupICAO(_rgSortPivot.icao);
+    const copy = [...arr];
+    copy.sort((a, b) => {
+      const da = _haversineNm(pivotRec.latitude, pivotRec.longitude, a.rec.latitude, a.rec.longitude);
+      const db = _haversineNm(pivotRec.latitude, pivotRec.longitude, b.rec.latitude, b.rec.longitude);
+      return _rgSortPivot.mode === 'nearest' ? da - db : db - da;
+    });
+    sortedDep = _sortAirports(dep);
+    sortedArr = copy;
+  } else {
+    sortedDep = _sortAirports(dep);
+    sortedArr = _sortAirports(arr);
+  }
+
+  const rows = [];
+
+  // Header row (arrival airports = columns)
+  let hdr = '<tr><th class="rg-col-hdr rg-corner">DEP \\ ARR</th>';
+  for (const a of sortedArr) {
+    const oi  = ownerOf(a.icao);
+    const col = oi ? oi.color : 'rgba(255,255,255,0.1)';
+    const catCol = _rgCatOf(a.icao);
+    const icaoSpan = catCol
+      ? `<a href="https://simfly.io/assets/airport/${a.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link" style="color:${catCol}">${a.icao}</a>`
+      : `<a href="https://simfly.io/assets/airport/${a.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link">${a.icao}</a>`;
+    const ownerSpan = oi ? `<span class="rg-th-owner">${_rgX(oi.name)}</span>` : '';
+    const aIspivot = _rgSortPivot && _rgSortPivot.icao === a.icao && _rgSortPivot.axis === 'arr';
+    const aDotLbl  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
+    const aDotTip  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest dep first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest dep first — click to clear' : 'Alpha — click to clear') : 'Sort dep airports by distance to ' + a.icao;
+    hdr += `<th class="rg-col-hdr" style="--rg-oc:${col}" data-rg-tip="${a.icao}">${icaoSpan}${ownerSpan}<button class="rg-sort-dot${aIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${a.icao}','arr')" title="${aDotTip}">${aDotLbl}</button></th>`;
+  }
+  hdr += '</tr>';
+  rows.push(hdr);
+
+  // Data rows (departure airports = rows)
+  for (const d of sortedDep) {
+    const doi = ownerOf(d.icao);
+    const dcol = doi ? doi.color : 'rgba(255,255,255,0.1)';
+    const dcatCol = _rgCatOf(d.icao);
+    const dicaoSpan = dcatCol
+      ? `<a href="https://simfly.io/assets/airport/${d.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link" style="color:${dcatCol}">${d.icao}</a>`
+      : `<a href="https://simfly.io/assets/airport/${d.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link">${d.icao}</a>`;
+    const downerSpan = doi ? `<span class="rg-th-owner">${_rgX(doi.name)}</span>` : '';
+
+    const dIspivot = _rgSortPivot && _rgSortPivot.icao === d.icao && _rgSortPivot.axis === 'dep';
+    const dDotLbl  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
+    const dDotTip  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest arr first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest arr first — click to clear' : 'Alpha — click to clear') : 'Sort arr airports by distance to ' + d.icao;
+    let row = `<th class="rg-row-hdr" style="--rg-oc:${dcol}" data-rg-tip="${d.icao}">${dicaoSpan}${downerSpan}<button class="rg-sort-dot${dIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${d.icao}','dep')" title="${dDotTip}">${dDotLbl}</button></th>`;
+
+    for (const a of sortedArr) {
+      if (d.icao === a.icao) {
+        row += `<td class="rg-same" data-rg-arr="${a.icao}">—</td>`;
+      } else {
+        const nm = Math.round(_haversineNm(
+          d.rec.latitude, d.rec.longitude, a.rec.latitude, a.rec.longitude));
+        row += `<td data-rg-arr="${a.icao}" onclick="_rgSelectCell(this,'${d.icao}','${a.icao}',${nm})">${nm}</td>`;
+      }
+    }
+    const depCat   = catNumOf(d.icao);
+    const depOwner = _rgX(doi ? doi.name : '');
+    rows.push(`<tr data-rg-dep-cat="${depCat}" data-rg-dep-owner="${depOwner}">` + row + '</tr>');
+  }
+
+  matEl.innerHTML = '<thead>' + rows[0] + '</thead><tbody>' + rows.slice(1).join('') + '</tbody>';
+  _rgRefreshOwnerLinks();
+  document.getElementById('rgSelRoute').classList.remove('visible');
+  _rgSelCell = null; _rgDotSelDep = null; _rgDotSelArr = null;
+  _rgClearRouteHL();
+  _rgInitTooltipDelegate();
+  _rgInitColResize();
+  _rgBuildOwnerDropdown();
+  _rgApplyCatFilter();
+  _rgUpdateSortLabel();
+}
+
+function _rgX(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+// ── Column / row resize ────────────────────────────────────────────────
+
+function _rgInitColResize() {
+  const tbl = document.getElementById('rgMatrix');
+  if (!tbl) return;
+
+  // Corner cell: right-edge drag resizes the entire dep-name column
+  const corner = tbl.querySelector('th.rg-corner');
+  if (corner) {
+    const h = document.createElement('div');
+    h.className = 'rg-col-resize';
+    corner.style.position = 'relative';
+    corner.appendChild(h);
+    h.addEventListener('mousedown', _rgCornerResizeDown);
+    h.addEventListener('dblclick',  _rgAutoFitAll);
+  }
+
+  tbl.querySelectorAll('th.rg-col-hdr:not(.rg-corner)').forEach(th => {
+    const h = document.createElement('div');
+    h.className = 'rg-col-resize';
+    th.style.position = 'relative';
+    th.appendChild(h);
+    h.addEventListener('mousedown', _rgColResizeDown);
+    h.addEventListener('dblclick',  _rgAutoFitAll);
+  });
+
+  tbl.querySelectorAll('th.rg-row-hdr').forEach(th => {
+    const h = document.createElement('div');
+    h.className = 'rg-row-resize';
+    th.style.position = 'relative';
+    th.appendChild(h);
+    h.addEventListener('mousedown', _rgRowResizeDown);
+    h.addEventListener('dblclick',  _rgAutoFitAll);
+  });
+}
+
+function _rgCornerResizeDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const th = e.currentTarget.closest('th');
+  e.currentTarget.classList.add('rg-drag-active');
+  _rgResizeDrag = { type: 'corner', th, handle: e.currentTarget, startX: e.clientX, startW: th.getBoundingClientRect().width };
+  document.addEventListener('mousemove', _rgResizeDragMove);
+  document.addEventListener('mouseup',   _rgResizeDragEnd, { once: true });
+}
+
+function _rgColResizeDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const th = e.currentTarget.closest('th');
+  e.currentTarget.classList.add('rg-drag-active');
+  _rgResizeDrag = { type: 'col', th, handle: e.currentTarget, startX: e.clientX, startW: th.getBoundingClientRect().width };
+  document.addEventListener('mousemove', _rgResizeDragMove);
+  document.addEventListener('mouseup',   _rgResizeDragEnd, { once: true });
+}
+
+function _rgRowResizeDown(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  const tr = e.currentTarget.closest('tr');
+  e.currentTarget.classList.add('rg-drag-active');
+  _rgResizeDrag = { type: 'row', tr, handle: e.currentTarget, startY: e.clientY, startH: tr.getBoundingClientRect().height };
+  document.addEventListener('mousemove', _rgResizeDragMove);
+  document.addEventListener('mouseup',   _rgResizeDragEnd, { once: true });
+}
+
+function _rgResizeDragMove(e) {
+  if (!_rgResizeDrag) return;
+  if (_rgResizeDrag.type === 'col') {
+    const w = Math.max(65, _rgResizeDrag.startW + (e.clientX - _rgResizeDrag.startX));
+    _rgResizeDrag.th.style.minWidth = w + 'px';
+    _rgResizeDrag.th.style.width    = w + 'px';
+    _rgResizeDrag.th.querySelectorAll('.rg-th-owner').forEach(el => el.style.maxWidth = Math.max(40, w - 20) + 'px');
+  } else if (_rgResizeDrag.type === 'corner') {
+    const w = Math.max(80, _rgResizeDrag.startW + (e.clientX - _rgResizeDrag.startX));
+    _rgResizeDrag.th.style.minWidth = w + 'px';
+    _rgResizeDrag.th.style.width    = w + 'px';
+    const tbl = document.getElementById('rgMatrix');
+    if (tbl) tbl.querySelectorAll('th.rg-row-hdr').forEach(rh => {
+      rh.style.minWidth = w + 'px';
+      rh.style.width    = w + 'px';
+      rh.querySelectorAll('.rg-th-owner').forEach(el => el.style.maxWidth = Math.max(40, w - 20) + 'px');
+    });
+  } else {
+    const h = Math.max(30, _rgResizeDrag.startH + (e.clientY - _rgResizeDrag.startY));
+    _rgResizeDrag.tr.style.height = h + 'px';
+  }
+}
+
+function _rgResizeDragEnd() {
+  if (_rgResizeDrag && _rgResizeDrag.handle) _rgResizeDrag.handle.classList.remove('rg-drag-active');
+  _rgResizeDrag = null;
+  document.removeEventListener('mousemove', _rgResizeDragMove);
+}
+
+function _rgAutoFitAll() {
+  const tbl = document.getElementById('rgMatrix');
+  if (!tbl) return;
+  tbl.querySelectorAll('th.rg-col-hdr, th.rg-row-hdr').forEach(th => {
+    th.style.minWidth = '';
+    th.style.width    = '';
+  });
+  tbl.querySelectorAll('tr').forEach(tr => tr.style.height = '');
+  tbl.querySelectorAll('.rg-th-owner').forEach(el => el.style.maxWidth = 'none');
+}
+
+// ── Category filter ──────────────────────────────────────────────────────
+
+function _rgToggleCat(btn) {
+  const cat    = +btn.dataset.rgCat;
+  const filter = btn.dataset.rgSide === 'dep' ? _rgDepCatFilter : _rgArrCatFilter;
+  if (filter.has(cat)) filter.delete(cat);
+  else filter.add(cat);
+  btn.classList.toggle('active');
+  _rgApplyCatFilter();
+}
+
+function _rgInvertCat(side) {
+  const filter = side === 'dep' ? _rgDepCatFilter : _rgArrCatFilter;
+  const rowId  = side === 'dep' ? 'rgDepCatFilterRow' : 'rgArrCatFilterRow';
+  document.querySelectorAll(`#${rowId} .dist-cat-btn`).forEach(btn => {
+    const cat = +btn.dataset.rgCat;
+    if (filter.has(cat)) { filter.delete(cat); btn.classList.remove('active'); }
+    else                 { filter.add(cat);    btn.classList.add('active');    }
+  });
+  _rgApplyCatFilter();
+}
+
+function _rgAllCats(side) {
+  const filter = side === 'dep' ? _rgDepCatFilter : _rgArrCatFilter;
+  const rowId  = side === 'dep' ? 'rgDepCatFilterRow' : 'rgArrCatFilterRow';
+  for (let i = 1; i <= 7; i++) filter.add(i);
+  document.querySelectorAll(`#${rowId} .dist-cat-btn`).forEach(b => b.classList.add('active'));
+  _rgApplyCatFilter();
+}
+
+function _rgNoneCats(side) {
+  const filter = side === 'dep' ? _rgDepCatFilter : _rgArrCatFilter;
+  const rowId  = side === 'dep' ? 'rgDepCatFilterRow' : 'rgArrCatFilterRow';
+  filter.clear();
+  document.querySelectorAll(`#${rowId} .dist-cat-btn`).forEach(b => b.classList.remove('active'));
+  _rgApplyCatFilter();
+}
+
+// ── Owner filter ──────────────────────────────────────────────────────────
+
+function _rgBuildOwnerDropdown() {
+  // Build dep and arr owner lists independently — each shows only owners with
+  // airports in that specific region.
+  // If a filter is active (at least one owner unchecked), preserve it across
+  // region moves/resizes — explicitly-hidden owners stay hidden, new owners
+  // entering the region default to visible. If no filter is active, reset to
+  // all-visible (auto-refresh mode).
+  ['dep', 'arr'].forEach(side => {
+    const airports = side === 'dep' ? _rgDepAirports : _rgArrAirports;
+    const seen = new Map();
+    for (const a of airports) {
+      const oi = _rgOwnerLookupCache ? _rgOwnerLookupCache.get(a.icao.toUpperCase()) : null;
+      if (oi && oi.name && !seen.has(oi.name)) seen.set(oi.name, oi.color || null);
+    }
+    const owners = [...seen.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+
+    const listId  = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+    const prevFilter = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
+    const preserving = prevFilter !== null; // null = all shown = no active filter
+
+    // Collect names that were explicitly unchecked before the region moved
+    const hidden = new Set();
+    if (preserving) {
+      const listEl = document.getElementById(listId);
+      if (listEl) listEl.querySelectorAll('.rg-owner-row:not(.active)').forEach(r => hidden.add(r.dataset.rgOwner));
+    }
+
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = owners.map(([name, color]) => {
+      const dot = color
+        ? `<span class="rg-owner-swatch" style="background:${color}"></span>`
+        : `<span class="rg-owner-swatch" style="background:var(--muted)"></span>`;
+      const isActive = !hidden.has(name); // new owners default to visible
+      return `<div class="rg-owner-row${isActive ? ' active' : ''}" data-rg-owner="${_rgX(name)}" onclick="_rgToggleOwner(this,'${side}')">` +
+        `<span class="rg-owner-check">✓</span>${dot}` +
+        `<span class="rg-owner-name">${_rgX(name)}</span></div>`;
+    }).join('');
+
+    if (preserving) {
+      const newFilter = new Set([...list.querySelectorAll('.rg-owner-row.active')].map(r => r.dataset.rgOwner));
+      const allActive = newFilter.size === owners.length;
+      if (side === 'dep') _rgDepOwnerFilter = allActive ? null : newFilter;
+      else                _rgArrOwnerFilter = allActive ? null : newFilter;
+      _rgUpdateOwnerBtn(side);
+    } else {
+      if (side === 'dep') _rgDepOwnerFilter = null;
+      else                _rgArrOwnerFilter = null;
+      _rgUpdateOwnerBtnLabel(side, owners.length, owners.length);
+    }
+  });
+}
+
+function _rgToggleOwnerDropdown(side) {
+  const panelId = side === 'dep' ? 'rgDepOwnerPanel' : 'rgArrOwnerPanel';
+  const btnId   = side === 'dep' ? 'rgDepOwnerBtn'   : 'rgArrOwnerBtn';
+  const panel = document.getElementById(panelId);
+  const btn   = document.getElementById(btnId);
+  if (!panel || !btn) return;
+  const opening = !panel.classList.contains('open');
+  if (opening) {
+    // Position panel above the button using fixed coords (escapes overflow:hidden on .rg-modal)
+    const r = btn.getBoundingClientRect();
+    panel.style.left   = r.left + 'px';
+    panel.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+    panel.style.top    = 'auto';
+    panel.classList.add('open');
+    setTimeout(() => {
+      document.addEventListener('click', function _close(e) {
+        if (!panel.contains(e.target) && e.target !== btn) {
+          panel.classList.remove('open');
+          document.removeEventListener('click', _close);
+        }
+      });
+    }, 0);
+  } else {
+    panel.classList.remove('open');
+  }
+}
+
+function _rgToggleOwner(row, side) {
+  const name   = row.dataset.rgOwner;
+  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  let filter   = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
+  if (filter === null) {
+    filter = new Set(
+      [...document.querySelectorAll('#' + listId + ' .rg-owner-row.active')]
+        .map(r => r.dataset.rgOwner)
+    );
+  }
+  if (filter.has(name)) { filter.delete(name); row.classList.remove('active'); }
+  else                  { filter.add(name);    row.classList.add('active'); }
+  if (filter.size === document.querySelectorAll('#' + listId + ' .rg-owner-row').length)
+    filter = null; // all selected = same as no filter
+  if (side === 'dep') _rgDepOwnerFilter = filter;
+  else                _rgArrOwnerFilter = filter;
+  _rgUpdateOwnerBtn(side);
+  _rgApplyCatFilter();
+}
+
+function _rgAllOwners(side) {
+  if (side === 'dep') _rgDepOwnerFilter = null;
+  else                _rgArrOwnerFilter = null;
+  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(r => r.classList.add('active'));
+  _rgUpdateOwnerBtn(side);
+  _rgApplyCatFilter();
+}
+
+function _rgNoOwners(side) {
+  if (side === 'dep') _rgDepOwnerFilter = new Set();
+  else                _rgArrOwnerFilter = new Set();
+  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(r => r.classList.remove('active'));
+  _rgUpdateOwnerBtn(side);
+  _rgApplyCatFilter();
+}
+
+function _rgUpdateOwnerBtn(side) {
+  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  const total  = document.querySelectorAll('#' + listId + ' .rg-owner-row').length;
+  const active = document.querySelectorAll('#' + listId + ' .rg-owner-row.active').length;
+  _rgUpdateOwnerBtnLabel(side, active, total);
+}
+
+function _rgUpdateOwnerBtnLabel(side, active, total) {
+  const lblId = side === 'dep' ? 'rgDepOwnerBtnLabel' : 'rgArrOwnerBtnLabel';
+  const btnId = side === 'dep' ? 'rgDepOwnerBtn'      : 'rgArrOwnerBtn';
+  const lbl = document.getElementById(lblId);
+  const btn = document.getElementById(btnId);
+  if (!lbl || !btn) return;
+  const filter = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
+  if (active === total || filter === null) {
+    lbl.textContent = '';
+    btn.classList.remove('filtered');
+  } else if (active === 0) {
+    lbl.textContent = ': None';
+    btn.classList.add('filtered');
+  } else {
+    lbl.textContent = `: ${active} / ${total}`;
+    btn.classList.add('filtered');
+  }
+}
+
+function _rgApplyCatFilter() {
+  const tbl = document.getElementById('rgMatrix');
+  if (!tbl) return;
+
+  // Dep rows: hide if cat or owner filtered out
+  tbl.querySelectorAll('tr[data-rg-dep-cat]').forEach(tr => {
+    const cat     = +tr.dataset.rgDepCat;
+    const catOk   = _rgDepCatFilter.has(cat);
+    const ownerOk = _rgDepOwnerFilter === null || _rgDepOwnerFilter.has(tr.dataset.rgDepOwner || '');
+    tr.style.display = (catOk && ownerOk) ? '' : 'none';
+  });
+
+  // Arr columns: hide if cat or owner filtered out
+  const hiddenArr = new Set();
+  _rgArrAirports.forEach(a => {
+    const cat     = +(categoryDB && categoryDB.get(a.icao.toUpperCase())) || 999;
+    const catOk   = _rgArrCatFilter.has(cat);
+    const ownerOk = _rgArrOwnerFilter === null || _rgArrOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
+    if (!catOk || !ownerOk) hiddenArr.add(a.icao);
+  });
+  tbl.querySelectorAll('th.rg-col-hdr[data-rg-tip]').forEach(th => {
+    th.style.display = hiddenArr.has(th.dataset.rgTip) ? 'none' : '';
+  });
+  tbl.querySelectorAll('td[data-rg-arr]').forEach(td => {
+    td.style.display = hiddenArr.has(td.dataset.rgArr) ? 'none' : '';
+  });
+
+  // Sync map dots to reflect the current filter state
+  _rgHighlightDots();
+}
+
+// ── Cell selection ───────────────────────────────────────────────────────
+
+function _rgHighlightDepRow(icao) {
+  _rgDotSelDep = icao;
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) return;
+  if (_rgDotSelArr) {
+    // Both sides set — find the intersection cell and do a full selection
+    const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + icao + '"]');
+    if (depTh) {
+      const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + _rgDotSelArr + '"]');
+      if (td && !td.classList.contains('rg-same')) {
+        _rgSelectCell(td, icao, _rgDotSelArr, parseInt(td.textContent) || 0);
+        return;
+      }
+    }
+  }
+  // Only dep side — clear dep row highlights, preserve arr column highlights
+  if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
+  matEl.querySelectorAll('tr.rg-row-hl').forEach(r => r.classList.remove('rg-row-hl'));
+  const th = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + icao + '"]');
+  if (!th) return;
+  const tr = th.closest('tr');
+  if (tr) {
+    tr.classList.add('rg-row-hl');
+    tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function _rgHighlightArrCol(icao) {
+  _rgDotSelArr = icao;
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) return;
+  if (_rgDotSelDep) {
+    // Both sides set — find the intersection cell and do a full selection
+    const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + _rgDotSelDep + '"]');
+    if (depTh) {
+      const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + icao + '"]');
+      if (td && !td.classList.contains('rg-same')) {
+        _rgSelectCell(td, _rgDotSelDep, icao, parseInt(td.textContent) || 0);
+        return;
+      }
+    }
+  }
+  // Only arr side — clear arr col highlights, preserve dep row highlights
+  if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
+  matEl.querySelectorAll('td.rg-col-hl').forEach(c => c.classList.remove('rg-col-hl'));
+  matEl.querySelectorAll('td[data-rg-arr="' + icao + '"]').forEach(td => {
+    if (!td.classList.contains('rg-same')) td.classList.add('rg-col-hl');
+  });
+  const th = matEl.querySelector('th.rg-col-hdr[data-rg-tip="' + icao + '"]');
+  if (th) th.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+}
+
+function _rgClearMatrixHL() {
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) return;
+  matEl.querySelectorAll('tr.rg-row-hl').forEach(r => r.classList.remove('rg-row-hl'));
+  matEl.querySelectorAll('td.rg-col-hl').forEach(c => c.classList.remove('rg-col-hl'));
+}
+
+function _rgSelectCell(td, depIcao, arrIcao, nm) {
+  const matEl = document.getElementById('rgMatrix');
+
+  // Clear previous selection + highlights
+  if (_rgSelCell) _rgSelCell.classList.remove('rg-selected');
+  _rgClearMatrixHL();
+
+  _rgSelCell = td;
+  td.classList.add('rg-selected');
+
+  // Row highlight
+  td.closest('tr').classList.add('rg-row-hl');
+
+  // Column highlight — every td whose arr matches, skip only the diagonal same cell
+  matEl.querySelectorAll(`td[data-rg-arr="${arrIcao}"]`).forEach(c => {
+    if (!c.classList.contains('rg-same'))
+      c.classList.add('rg-col-hl');
+  });
+
+  // Map route highlight
+  _rgDrawRouteHL(depIcao, arrIcao, nm);
+
+  _rgSelDep = depIcao;
+  _rgSelArr = arrIcao;
+
+  const depRec = _rgDepAirports.find(a => a.icao === depIcao);
+  const arrRec = _rgArrAirports.find(a => a.icao === arrIcao);
+
+  document.getElementById('rgSelDep').textContent =
+    depIcao + (depRec ? '  ' + depRec.rec.name : '');
+  document.getElementById('rgSelArr').textContent =
+    arrIcao + (arrRec ? '  ' + arrRec.rec.name : '');
+  document.getElementById('rgSelNm').textContent = nm + ' nm';
+  document.getElementById('rgSelRoute').classList.add('visible');
+}
+
+function rgSendToFlightPlanner() {
+  if (!_rgSelDep || !_rgSelArr) return;
+  const depEl = document.getElementById('distDep');
+  const arrEl = document.getElementById('distArr');
+  // Set values then fire onDistInput — auto-selects owner dropdowns,
+  // renders the main matrix, and highlights the dep row / arr column.
+  if (depEl) { depEl.value = _rgSelDep; onDistInput(depEl); }
+  if (arrEl) { arrEl.value = _rgSelArr; onDistInput(arrEl); }
+  closeRegionModal();
+  if (depEl) depEl.focus();
+}
+</script>
+
+
 <!-- Help Modal -->
 <div class="modal-overlay" id="npcModal" onclick="if(event.target===this)_closeNewPilotConfirm()">
   <div class="modal" style="max-width:440px;">
@@ -8466,6 +10313,21 @@ setInterval(() => {
         </div>
       </div>
 
+      <div class="help-feature">
+        <div class="help-feature-icon">⊙</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Region Mode</div>
+          <div class="help-feature-desc">
+            Click <strong>⊙ Regions</strong> in the panel header to open the Region Mode map. All SimFly player-owned airports are shown as color-coded dots (matching each airport&rsquo;s SimFly category color). Hover any dot to see a tooltip with the ICAO, category, airport name, owner, and longest runway details after a brief delay.<br/><br/>
+            <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
+            <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
+            Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Use <strong>All</strong> or <strong>None</strong> inside each menu, or toggle individual category bubbles. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
+            Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
+            Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Use <strong>✕ Cancel</strong> to exit region selection entirely and return to free map exploration — you can click <strong>Select Regions</strong> again at any time to restart.
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -8487,10 +10349,478 @@ setInterval(() => {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.34</span>
+          <span class="release-date">May 2, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips suppressed during region drawing</strong> &mdash; dot hover tooltips no longer appear while a region circle is being drawn (departure drag, ruler phase, or arrival drag). Tooltips resume once both regions are confirmed. Prevents popup clutter while the mouse is actively sweeping the map to set a region.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.33</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner filter persists across region moves and resizes</strong> &mdash; when at least one owner is hidden in the Dep or Arr owner filter, dragging a region or resizing its radius now preserves your filter: previously-hidden owners stay hidden, and any new owners that enter the region appear visible by default. If all owners are currently visible (no filter active), the owner list auto-refreshes as before. Makes it easy to visually scan the map for a specific person&rsquo;s airports by moving the region without losing your selection.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.32</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Route line always draws above the region hero line</strong> &mdash; the selected-route line and its distance label were sometimes hidden behind the center-to-center hero line, especially after dragging a region (which re-stacks the hero layers). Fixed by placing the route line in dedicated Leaflet panes at higher z-indices — <em>routeLinePane</em> (450, above the default overlay pane at 400) and <em>routeLabelPane</em> (650, above the marker pane at 600) — so the route is always on top regardless of draw order.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.31</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Sort menu reflects active distance pivot</strong> &mdash; clicking a dep or arr bullseye (⊙) to sort by distance now updates the <em>Sort</em> dropdown to read <strong>Closest ICAO</strong> or <strong>Furthest ICAO</strong> instead of still showing the previous mode. Choosing any option from the Sort dropdown while a pivot is active clears the pivot and returns to the selected global sort mode.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.30</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Same-owner dimming removed</strong> &mdash; cells where the departure and arrival airport share the same owner were previously dimmed and non-clickable on the basis that same-owner flights have no reciprocation value. That assumption was wrong, so the dim and the click block are gone. All cells are now equally selectable.</li>
+          <li><strong>Pilot profile links in arrival column headers</strong> &mdash; owner name links in the arrival column headers were inconsistently absent due to a gist-load timing race. The matrix now always renders owner names as plain text first, then upgrades to profile links in a single post-render pass, so both departure rows and arrival columns get links under the same code path with no race condition.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.29</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Split owner filters — Dep Owners and Arr Owners</strong> &mdash; the single <em>Owners</em> dropdown has been replaced with two independent menus: <strong>Dep Owners</strong> (left of the Dep cat buttons) and <strong>Arr Owners</strong> (right of the Arr cat buttons). Selecting owners in each menu filters only the rows or columns for that side of the matrix, so you can mix and match — for example, showing departures from any owner but arrivals at airports owned by a specific pilot.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.28</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Escape from region selection at any time</strong> &mdash; the header <em>Reset</em> button has been renamed <strong>Cancel</strong> and now exits region selection mode entirely, returning the map to free exploration. Previously it only restarted the selection process (back to Step 1 crosshair) with no way to cancel short of drawing both regions and then using <em>Close Results</em>. <em>Undo</em> is unchanged &mdash; it still steps back one phase within the selection flow.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.27</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Cat filter groups inset toward center</strong> &mdash; the Dep and Arr category filter groups each have 100&thinsp;px of inward margin, creating a visual buffer between the filter buttons and the centered route count.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.26</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Results bar reorganized with centered route count</strong> &mdash; the filtering bar above the matrix is now arranged as: <em>Owners · Sort</em> on the left, <em>Dep category filters</em> just left of center, the <strong>X dep × Y arr = Z routes</strong> summary in the true center (flex-grows to fill), <em>Arr category filters</em> just right of center, and <em>Max per region · Close</em> on the right. Max per region and Sort are separated to either side of the center stat.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.25</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Matrix column headers now sticky</strong> &mdash; the arrival column header row was rendered without a <code>&lt;thead&gt;</code> element, which caused Chrome to ignore <code>position:sticky; top:0</code> on those cells. Headers now render inside a proper <code>&lt;thead&gt;</code> so both the column headers (arr airports, vertical scroll) and row headers (dep airports, horizontal scroll) stick correctly as the matrix is scrolled.</li>
+          <li><strong>Owner name hyperlinks restored in matrix headers</strong> &mdash; when the pilot-URL gist finished loading after the matrix had already rendered, the owner name spans were never upgraded to anchor links. Added a post-load refresh that walks the matrix and replaces any plain <code>&lt;span&gt;</code> owner labels with clickable links once the URL data becomes available.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.24</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner filter list scoped to current regions</strong> &mdash; the Owners dropdown now lists only pilots who own at least one airport in the departure or arrival region. Owners with no airports in either region are not shown. The list rebuilds automatically whenever the regions are recomputed (including handle drags and radius adjustments).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.23</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map dot clicks accumulate dep + arr selection independently</strong> &mdash; clicking a departure airport dot highlights its matrix row without clearing any arrival column highlight, and vice versa. Each side remembers its last selection.</li>
+          <li><strong>Intersection fires full cell selection</strong> &mdash; once both a departure and an arrival dot have been clicked, the matrix highlights the intersection cell, draws the route line, and shows the distance &mdash; identical to clicking that cell directly.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.22</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owners panel 50% larger</strong> &mdash; panel width, padding, font sizes, row height, color swatches, and All/None buttons all scaled up for easier readability and interaction.</li>
+          <li><strong>Checked/unchecked state is now visually unambiguous</strong> &mdash; active owners show a filled cyan checkbox with a dark check mark; inactive owners show an empty box with a subtle border. No more relying on color alone to distinguish state.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.21</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft range ring is now fully non-interactive</strong> &mdash; the yellow range ring no longer captures mouse events, grabs focus, or shows a tooltip. It is display-only and no longer blocks map interaction.</li>
+          <li><strong>Clicking a highlighted airport dot scrolls to its matrix row or column</strong> &mdash; clicking a dep airport dot highlights and scrolls to that departure row; clicking an arr airport dot highlights and scrolls to that arrival column.</li>
+          <li><strong>Close Results button on results bar</strong> &mdash; a <em>✕ Close Results</em> button on the right side of the results bar clears all selections and returns the map to free-explore mode, as if the modal had just opened.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.20</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Undo and Reset moved to upper-left header</strong> &mdash; both buttons are now in the region-controls group (left side), consistent with their role in the selection workflow rather than global controls.</li>
+          <li><strong>Undo and Reset hidden until selection starts</strong> &mdash; buttons are not visible in the initial explore phase; they appear only after clicking <em>Select Regions</em>, so the header stays uncluttered until the region-drawing workflow begins.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.19</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Sort pivot (⊙) moved to top-right corner of header cells</strong> &mdash; was bottom-right, which caused overlap with owner name text. Increased font size by 50% (0.68 &rarr; 1.02 rem). Added right padding to all header cells to keep ICAO/owner text clear of the button.</li>
+          <li><strong>Range ring tooltip no longer follows pointer</strong> &mdash; removed <code>sticky:true</code> so the tooltip only appears when hovering directly on the ring line; the permanent east-edge label is the primary distance indicator.</li>
+          <li><strong>Header layout: region controls left, measurement controls right</strong> &mdash; Select Regions button and phase text are now left-justified; Ruler and ↩ Clear buttons are right-justified with a separator before Undo / Reset / Close.</li>
+          <li><strong>Ruler label font 25% larger</strong> &mdash; measurement distance/bearing text increased from 0.75 to 0.94 rem for easier reading.</li>
+          <li><strong>↩ Clear removes one measurement at a time</strong> &mdash; each click undoes the most recently drawn measurement; repeated clicks walk back through the stack. The button disappears when all measurements have been removed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.18</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport dots 3× larger</strong> &mdash; base dot radius increased from 3 px to 9 px, highlighted (in-region) dots from 4 px to 12 px, for easier visibility at typical zoom levels.</li>
+          <li><strong>Ruler measurements persist until cleared</strong> &mdash; drag-releasing a measurement now freezes the line and circle in place. Each subsequent drag adds a new measurement overlay; all remain visible simultaneously. A <em>✕ Clear</em> button appears in the header when any measurements exist and removes them all at once.</li>
+          <li><strong>Ruler line contrast improved</strong> &mdash; changed color from washed-out light green to vivid purple (#cc44ff), which reads clearly on both light street maps and dark satellite imagery. Label background darkened with a matching border.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.19.17</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Free map exploration on open</strong> &mdash; Region Mode now opens in a neutral &ldquo;explore&rdquo; state so you can pan and zoom freely before committing to a selection. A new <em>Select Regions</em> button in the header initiates the departure/arrival drag flow when you&rsquo;re ready.</li>
+          <li><strong>Measurement ruler tool</strong> &mdash; a new <em>Ruler</em> toggle button in the header activates a live measurement overlay. Click anywhere on the map to anchor the origin; as you move the cursor, a radius spoke and range circle appear showing <em>distance in nm</em>, <em>true bearing</em>, and <em>approximate magnetic bearing</em> (simplified dipole model, accurate to ±5&deg; for most regions). Click again to move the origin; click the button again to clear.</li>
+          <li><strong>Per-column sort in the region matrix</strong> &mdash; every departure and arrival header cell now has a small <em>&#8857;</em> button in its corner. Clicking it sorts the opposite axis by distance to that airport: first click = nearest first (&#9650;), second = farthest first (&#9660;), third = clear (back to global sort). Active pivot is highlighted in the header.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.16</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owners dropdown no longer hidden behind the map</strong> &mdash; the dropdown panel was being clipped by the modal&rsquo;s <code>overflow:hidden</code> container. Changed to <code>position:fixed</code> with viewport-relative coordinates computed at open time, so the panel always renders above all Leaflet layers.</li>
+          <li><strong>Range ring label no longer shows as a black box</strong> &mdash; the <code>L.divIcon</code> wrapper was producing a misaligned Leaflet container. Replaced with the same <code>position:absolute;transform:translate()</code> wrapper pattern used by the hero route badge, which renders cleanly with no background artifact.</li>
+          <li><strong>Stale range ring glow halos removed on update</strong> &mdash; the soft glow halo circle under the range ring was not stored in a variable, so it was never removed when the ring updated (e.g., changing fuel or payload). The glow is now tracked in <code>_rgRangeGlow</code> and cleaned up on every ring update and on Undo/Reset.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.15</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner filter in Region Mode</strong> &mdash; a compact <em>Owners ▾</em> dropdown in the results bar lets you show only selected owners&rsquo; airports in both the matrix and the map dots. Supports multi-select with checkboxes; <em>All</em> and <em>None</em> one-click accelerators; the button label changes to show the active count (e.g., &ldquo;Owners: 3 / 7&rdquo;) when filtering is active.</li>
+          <li><strong>Matrix auto-expands with panel height</strong> &mdash; the distance matrix now fills all remaining space below the results bar rather than being capped at a fixed 38 vh, so dragging the split handle to grow the panel gives the matrix more visible rows.</li>
+          <li><strong>Range ring visibility and label</strong> &mdash; the aircraft range ring is now thicker (3 px) with a soft gold glow halo underneath for better contrast. A permanent label at the ring&rsquo;s east edge displays the range in nm, and hovering the ring shows a tooltip with the aircraft name.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.14</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Resizable map/matrix split</strong> &mdash; a thin drag handle now separates the Region Mode map from the results area. Drag it up or down to give more space to either the map or the matrix. The map redraws correctly after resize.</li>
+          <li><strong>Global category colors on all airport dots</strong> &mdash; every airport dot on the Region Mode map now uses its SimFly category color (not just the highlighted region results). Airports with no category entry fall back to the previous blue/cyan tones. All dots carry the dark outline for satellite-imagery legibility.</li>
+          <li><strong>Richer airport tooltips</strong> &mdash; dot tooltips now include the longest runway&rsquo;s identifier pair, length in feet, surface type, and whether it is lighted, in addition to the existing ICAO, category, name, and owner fields.</li>
+          <li><strong>Tooltip accessibility fix</strong> &mdash; the dark tooltip background was being overridden by Leaflet&rsquo;s default white style. Fixed by strengthening the CSS selector specificity so the dark theme is applied consistently.</li>
+          <li><strong>Consolidated filter row + All/None accelerators</strong> &mdash; the Dep and Arr category filter groups are now inline within the single results/controls bar instead of sitting in two separate rows below it. Each group gains <em>All</em> and <em>None</em> one-click buttons to select or clear all categories in that group at once.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.19.13</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft range ring in Region Mode</strong> &mdash; when an aircraft is selected in the main UI, placing the departure region center draws a dashed gold ring at that point showing the aircraft&rsquo;s effective range in nm (matching the adjusted value shown in the aircraft panel — accounting for current fuel and payload settings). The ring updates live when the aircraft is changed or the fuel/payload sliders are moved, and clears on Undo or Reset.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.12</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map dot tooltips</strong> &mdash; hovering any airport dot (both the background layer and the highlighted results layer) shows a tooltip after a 500 ms delay with the ICAO in its category color, airport name, and owner name. Tooltip cancels immediately on mouse-out or map pan, so accidental hovers never fire.</li>
+          <li><strong>Category filter hides region dots from map</strong> &mdash; toggling a category button in the Dep or Arr filter bar now instantly removes matching airport dots from the map (in addition to hiding rows/columns in the matrix), keeping the map and table in sync.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.11</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map dots: category colors</strong> &mdash; highlighted airport dots on the Region Mode map now use each airport&rsquo;s SimFly category color (matching the matrix palette) rather than a flat cyan/orange. A dark outline is added on each dot so the colors stay legible over satellite imagery.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.10</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode: separate Dep and Arr category filters</strong> &mdash; the category filter bar is now split into two independent rows: <em>Dep</em> filters departure rows (and their map dots) and <em>Arr</em> filters arrival columns (and their map dots). Each has its own Invert button. Filtering one side no longer affects the other.</li>
+          <li><strong>Region map dots respond to category filter</strong> &mdash; toggling a category button now hides or shows the corresponding airport dots on the Leaflet map in real time, keeping the map in sync with the matrix.</li>
+          <li><strong>DEP/ARR corner cell now resizable</strong> &mdash; dragging the right edge of the corner cell resizes the entire departure-name column (corner + all row headers together). Double-click to auto-fit all columns and rows as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.19.9</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix: KML Generator category colors</strong> &mdash; ICAO headers in the region matrix now use the same seven-color palette as KML Generator's &ldquo;Both&rdquo; mode (red through magenta for categories 1–7), replacing the aircraft-tab color set.</li>
+          <li><strong>Max per region: 5 and 10 options added</strong> &mdash; the dropdown now includes 5 and 10 at the top for small, focused region comparisons.</li>
+          <li><strong>Sort: Group by category</strong> &mdash; a new &ldquo;Group by category&rdquo; sort option clusters departure rows by their airport category (1 through 7), then alphabetically within each group.</li>
+          <li><strong>Category filter bar in Region Mode</strong> &mdash; the same category filter bubbles from the main UI appear below the results bar. Toggle individual category buttons to show/hide departure and arrival airports by category, or hit Invert to flip the selection. Resets to all-on when the region is cleared.</li>
+          <li><strong>Route info label on map</strong> &mdash; selecting a matrix cell now shows a floating label at the route midpoint displaying departure ICAO, arrival ICAO, and distance in nm.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.8</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Monospaced distance numbers</strong> &mdash; all distance values in the region matrix cells, the drag radius label, the hero line midpoint badge, and the selected-route nm display now use <code>Courier New</code> for clean column alignment and unambiguous digit rendering.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.7</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region circles: drag to move and resize</strong> &mdash; once both regions are set, grab the center pin of either circle and drag to reposition it, or grab the cyan/orange handle at the circle&rsquo;s east edge to resize the radius. The matrix refreshes in real time as you drag (debounced) and does a final full refresh on release. Hit areas are generously sized (20 px for center, 16 px for edge handle) — no pixel-perfect targeting required.</li>
+          <li><strong>Region matrix: resizable columns and rows</strong> &mdash; every column header now has a drag handle on its right edge, and every row header has one on its bottom edge. Drag to resize. Double-click any handle to auto-fit all columns and rows to their natural content width, which also removes the 108 px truncation cap on owner names.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.6</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Same-owner cells: tooltip explanation</strong> &mdash; dimmed same-owner matrix cells now show a native tooltip (<em>"Same owner — no reciprocation value"</em>) on hover so the visual treatment is self-documenting.</li>
+          <li><strong>Same-owner cells receive row/column highlight</strong> &mdash; previously, selecting a cell excluded same-owner cells from the column and row highlight. They now receive the same cyan tint as other cells in the selected row/column — only the diagonal &ldquo;same airport&rdquo; cells remain un-highlighted.</li>
+          <li><strong>Info bar enlarged 50%</strong> &mdash; the results summary, Max per region, and Sort controls are now rendered at 1.5× their previous font size for easier reading at a glance.</li>
+          <li><strong>Region matrix ICAO and owner headers are clickable</strong> &mdash; each ICAO label in the row and column headers now links to its SimFly details page (<code>simfly.io/assets/airport/…/details</code>) in a new tab. Owner name labels link to the owner&rsquo;s SimFly profile when a profile URL is on record; owners without a profile URL remain plain text.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.5</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region state persists across modal close/reopen</strong> &mdash; closing and reopening the Region modal no longer resets the map. Both region circles, the hero line, the dot highlights, and the matrix all survive and are immediately visible on reopen. Only the <em>Reset</em> button clears the state.</li>
+          <li><strong>Airport dot visibility on satellite</strong> &mdash; base airport dots were near-invisible on Esri satellite imagery. On satellite mode, dots now render in light blue (<code>#a8d8f0</code>) with a white stroke; dots are automatically re-rendered when switching tile layers.</li>
+          <li><strong>Cell selection highlights route on map</strong> &mdash; clicking a matrix cell now draws a gold route line (three-layer: amber glow, mid glow, white core) between the two specific departure and arrival airports on the map, with cyan/orange endpoint rings. Clears when the matrix rebuilds or Reset is pressed.</li>
+          <li><strong>Matrix sort controls</strong> &mdash; new <em>Sort</em> selector in the results bar. Default is A–Z alphabetical by ICAO; <em>Group by owner</em> clusters same-owner airports together, then sorts alphabetically within each owner. Applies to both rows and columns independently.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.4</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix: ICAO category colors fixed</strong> &mdash; <code>categoryDB</code> is a <code>let</code> binding and not on <code>window</code>, so <code>window.categoryDB</code> was always undefined; corrected to direct reference so per-category colors now render correctly on all header ICAO labels.</li>
+          <li><strong>Region matrix: row and column highlights on cell click</strong> &mdash; clicking a cell now highlights the full departure row and arrival column (matching the main matrix behavior) in addition to the selected-cell highlight. Highlights clear when a new cell is clicked.</li>
+          <li><strong>Send to Flight Planner: auto-selects owners and highlights route</strong> &mdash; after populating the departure and arrival ICAO fields, the button now fires <code>onDistInput</code> for both fields, which auto-selects the correct owner in each dropdown, renders the main matrix, and highlights the departure row and arrival column — exactly as if the user had typed the ICAOs manually.</li>
+          <li><strong>Region map: tile layer toggle</strong> &mdash; a 🛰 Satellite / 🗺 Street button now appears in the top-right corner of the region map, matching the Distance Map toggle. Default remains street/chart view.</li>
+          <li><strong>Region hero line: badge centering fixed</strong> &mdash; the nm distance badge at the midpoint was offset because <code>transform:translate(-50%,-50%)</code> was on a <code>display:block</code> span inside the Leaflet DivIcon; moved the transform to a wrapper div with <code>iconSize:[0,0]</code> so the badge now centers precisely on the midpoint.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.3</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix: enlarged text and cells</strong> &mdash; all matrix font sizes, padding, and header widths increased by 50% for legibility. ICAO headers: 1.2rem; owner sub-labels: 0.93rem; data cells: 1.2rem base with 0.3rem × 0.68rem padding; row header min-width: 108px.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.2</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode: hero route line</strong> &mdash; once both regions are confirmed, a glowing center-to-center line connects the two region centers with a three-layer stack (wide cyan bloom, mid glow, bright white core) matching the Distance Map hero line style. A floating badge at the midpoint shows the exact nm distance between centers. Line and badge are removed when the arrival region is undone or reset.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.1</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix: owner color bands</strong> &mdash; each column and row header now shows a thick colored accent border derived from a consistent per-owner hash. Owners are visually distinct at a glance without needing to read the name.</li>
+          <li><strong>Region matrix: two-line headers</strong> &mdash; column and row headers now show the ICAO code (colored by SimFly aircraft category) on the first line and the owner name in small muted text below, matching the visual language of the main matrix.</li>
+          <li><strong>Region matrix: same-owner cell dimming</strong> &mdash; cells where departure and arrival are owned by the same pilot are dimmed and non-clickable, so cross-owner reciprocation opportunities stand out immediately.</li>
+          <li><strong>Region matrix: header tooltips</strong> &mdash; hovering any ICAO header cell shows the full SimFly airport tooltip (name, category, elevation, weather, owner) via the existing tooltip engine.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.19.0</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode — map-based airport selection</strong> &mdash; new <em>⊙ Regions</em> button in the panel header opens a full-screen interactive map modal. Click &amp; drag to draw a departure region circle (radius shown live in nm with a radius line), then use the measuring ruler to place and size an arrival region. Both regions are drawn from the SimFly owned-airport database. Once both are set, a filterable distance matrix renders showing all owned airports within each region with nm distances between them. Cells are sticky-header scrollable.</li>
+          <li><strong>Cell selection and Send to Flight Planner</strong> &mdash; clicking any matrix cell highlights it and shows a route card with the departure airport, arrival airport, and distance. The <em>Send to Flight Planner →</em> button populates the main ICAO fields and closes the modal.</li>
+          <li><strong>Configurable airport cap</strong> &mdash; results default to the 100 closest owned airports per region; adjustable to 25, 50, 100, 200, 500, or 1000 via the cap selector. A performance warning appears above 200.</li>
+          <li><strong>Highlight layer</strong> &mdash; after both regions are confirmed, owned airports within each region are highlighted cyan (departure) and orange (arrival) on the map to confirm the selection visually.</li>
+          <li><strong>Undo / Reset controls</strong> &mdash; Undo walks back one phase (ruler → dep region, results → ruler); Reset clears everything and returns to the drawing start state. Existing owner-based matrix and all other functionality are unchanged.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.18.1</span>
-          <span class="release-date">Apr 30, 2026 &middot; Current</span>
+          <span class="release-date">Apr 30, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -11822,6 +14152,117 @@ setInterval(() => {
         </ul>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- Region Mode Modal -->
+<div id="regionModal">
+  <div class="rg-modal">
+    <div class="rg-modal-hdr">
+      <div class="rg-hdr-left">
+        <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ Select Regions</button>
+        <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none">↩ Undo</button>
+        <button class="rg-btn" id="rgResetBtn" onclick="rgExploreReturn()" style="display:none">✕ Cancel</button>
+        <span class="rg-phase-text" id="rgPhaseText"></span>
+      </div>
+      <div class="rg-hdr-right">
+        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Ruler</button>
+        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last ruler measurement">↩ Clear</button>
+        <div class="rg-hdr-sep"></div>
+        <button class="rg-btn rg-btn-close" onclick="closeRegionModal()">✕ Close</button>
+      </div>
+    </div>
+    <div id="rgMapContainer">
+      <div class="rg-nm-label" id="rgNmLabel"></div>
+      <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
+    </div>
+    <div id="rgVSplit" class="rg-vsplit" onmousedown="_rgSplitDown(event)"></div>
+    <div class="rg-results-bar" id="rgResultsBar">
+      <div class="rg-cap-row">
+        <span class="rg-cap-lbl">Sort:</span>
+        <select id="rgSortSelect" onchange="rgSetSort(this.value)">
+          <option value="alpha" selected>A–Z</option>
+          <option value="owner">Group by owner</option>
+          <option value="category">Group by category</option>
+        </select>
+      </div>
+      <div class="rg-owner-wrap" id="rgDepOwnerFilterWrap">
+        <button id="rgDepOwnerBtn" class="rg-owner-btn" onclick="_rgToggleOwnerDropdown('dep')" tabindex="-1">Dep Owners<span id="rgDepOwnerBtnLabel"></span> ▾</button>
+        <div id="rgDepOwnerPanel" class="rg-owner-panel">
+          <div class="rg-owner-panel-hdr">
+            <span class="rg-owner-panel-title">Filter dep owners</span>
+            <button class="rg-cat-acc-btn" onclick="_rgAllOwners('dep')">All</button>
+            <button class="rg-cat-acc-btn" onclick="_rgNoOwners('dep')">None</button>
+          </div>
+          <div id="rgDepOwnerList" class="rg-owner-list"></div>
+        </div>
+      </div>
+      <div class="rg-inline-filter" id="rgDepCatFilterRow" style="margin-left:100px">
+        <span class="dist-cat-filter-label">Dep</span>
+        <button class="rg-cat-acc-btn" onclick="_rgAllCats('dep')" tabindex="-1">All</button>
+        <button class="rg-cat-acc-btn" onclick="_rgNoneCats('dep')" tabindex="-1">None</button>
+        <button class="dist-cat-btn active" data-rg-cat="1" data-rg-side="dep" style="--rg-cat-color:#FF4040" onclick="_rgToggleCat(this)" tabindex="-1">1</button>
+        <button class="dist-cat-btn active" data-rg-cat="2" data-rg-side="dep" style="--rg-cat-color:#FF8800" onclick="_rgToggleCat(this)" tabindex="-1">2</button>
+        <button class="dist-cat-btn active" data-rg-cat="3" data-rg-side="dep" style="--rg-cat-color:#FFEE00" onclick="_rgToggleCat(this)" tabindex="-1">3</button>
+        <button class="dist-cat-btn active" data-rg-cat="4" data-rg-side="dep" style="--rg-cat-color:#44FF44" onclick="_rgToggleCat(this)" tabindex="-1">4</button>
+        <button class="dist-cat-btn active" data-rg-cat="5" data-rg-side="dep" style="--rg-cat-color:#00DDFF" onclick="_rgToggleCat(this)" tabindex="-1">5</button>
+        <button class="dist-cat-btn active" data-rg-cat="6" data-rg-side="dep" style="--rg-cat-color:#4466FF" onclick="_rgToggleCat(this)" tabindex="-1">6</button>
+        <button class="dist-cat-btn active" data-rg-cat="7" data-rg-side="dep" style="--rg-cat-color:#FF44FF" onclick="_rgToggleCat(this)" tabindex="-1">7</button>
+        <button class="dist-cat-invert-btn" onclick="_rgInvertCat('dep')" title="Invert selection" tabindex="-1">Invert</button>
+      </div>
+      <span class="rg-results-summary" id="rgResultsSummary"></span>
+      <div class="rg-inline-filter" id="rgArrCatFilterRow" style="margin-right:100px">
+        <span class="dist-cat-filter-label">Arr</span>
+        <button class="rg-cat-acc-btn" onclick="_rgAllCats('arr')" tabindex="-1">All</button>
+        <button class="rg-cat-acc-btn" onclick="_rgNoneCats('arr')" tabindex="-1">None</button>
+        <button class="dist-cat-btn active" data-rg-cat="1" data-rg-side="arr" style="--rg-cat-color:#FF4040" onclick="_rgToggleCat(this)" tabindex="-1">1</button>
+        <button class="dist-cat-btn active" data-rg-cat="2" data-rg-side="arr" style="--rg-cat-color:#FF8800" onclick="_rgToggleCat(this)" tabindex="-1">2</button>
+        <button class="dist-cat-btn active" data-rg-cat="3" data-rg-side="arr" style="--rg-cat-color:#FFEE00" onclick="_rgToggleCat(this)" tabindex="-1">3</button>
+        <button class="dist-cat-btn active" data-rg-cat="4" data-rg-side="arr" style="--rg-cat-color:#44FF44" onclick="_rgToggleCat(this)" tabindex="-1">4</button>
+        <button class="dist-cat-btn active" data-rg-cat="5" data-rg-side="arr" style="--rg-cat-color:#00DDFF" onclick="_rgToggleCat(this)" tabindex="-1">5</button>
+        <button class="dist-cat-btn active" data-rg-cat="6" data-rg-side="arr" style="--rg-cat-color:#4466FF" onclick="_rgToggleCat(this)" tabindex="-1">6</button>
+        <button class="dist-cat-btn active" data-rg-cat="7" data-rg-side="arr" style="--rg-cat-color:#FF44FF" onclick="_rgToggleCat(this)" tabindex="-1">7</button>
+        <button class="dist-cat-invert-btn" onclick="_rgInvertCat('arr')" title="Invert selection" tabindex="-1">Invert</button>
+      </div>
+      <div class="rg-owner-wrap" id="rgArrOwnerFilterWrap">
+        <button id="rgArrOwnerBtn" class="rg-owner-btn" onclick="_rgToggleOwnerDropdown('arr')" tabindex="-1">Arr Owners<span id="rgArrOwnerBtnLabel"></span> ▾</button>
+        <div id="rgArrOwnerPanel" class="rg-owner-panel">
+          <div class="rg-owner-panel-hdr">
+            <span class="rg-owner-panel-title">Filter arr owners</span>
+            <button class="rg-cat-acc-btn" onclick="_rgAllOwners('arr')">All</button>
+            <button class="rg-cat-acc-btn" onclick="_rgNoOwners('arr')">None</button>
+          </div>
+          <div id="rgArrOwnerList" class="rg-owner-list"></div>
+        </div>
+      </div>
+      <div class="rg-cap-row">
+        <span class="rg-cap-lbl">Max per region:</span>
+        <select id="rgCapSelect" onchange="rgSetCap(+this.value)">
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+        </select>
+        <span class="rg-perf-warn" id="rgPerfWarn" style="display:none;">⚠ Large matrix — may be slow</span>
+      </div>
+      <button class="rg-btn rg-btn-close" onclick="rgExploreReturn()" style="flex-shrink:0" title="Close results and return to map exploration">✕ Close Results</button>
+    </div>
+    <div class="rg-matrix-wrap" id="rgMatrixWrap">
+      <div class="rg-sel-route" id="rgSelRoute">
+        <span class="rg-sel-dep" id="rgSelDep"></span>
+        <span class="rg-sel-arrow">→</span>
+        <span class="rg-sel-arr" id="rgSelArr"></span>
+        <span class="rg-sel-nm"  id="rgSelNm"></span>
+        <button class="rg-sel-send" onclick="rgSendToFlightPlanner()">Send to Flight Planner →</button>
+      </div>
+      <div id="rgMatrixScroll">
+        <table class="rg-matrix" id="rgMatrix"></table>
+      </div>
     </div>
   </div>
 </div>
