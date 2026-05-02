@@ -3201,7 +3201,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.19.39';
+const APP_VERSION = '2.19.40';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -5541,6 +5541,11 @@ function _getOwnerData() {
   const src = document.getElementById('importResultPreview').value;
   if (!src.trim()) return [];
 
+  // Return cached result if the textarea content hasn't changed.
+  // All three write points (showImportResult, onKmlPasteInput, clearImport) change
+  // the value, so the next call naturally picks up the fresh content.
+  if (_ownerDataCacheKey === src && _ownerDataCache !== null) return _ownerDataCache;
+
   const mergedMap = new Map();
   const pilots = parseUserInput(src);
   for (const { pilotName, icaos } of pilots) {
@@ -5565,6 +5570,9 @@ function _getOwnerData() {
     }
   }
   owners.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  _ownerDataCacheKey = src;
+  _ownerDataCache    = owners;
   return owners;
 }
 
@@ -8490,6 +8498,11 @@ let _rgDotLayer   = null;   // canvas layer: all airport dots
 let _rgHiLayer    = null;   // canvas layer: highlighted dots after selection
 let _rgOwnerMap   = new Map(); // ICAO.toUpperCase() → owner name (built in _rgRenderDots)
 let _rgTipTimer   = null;   // delayed-tooltip timer handle
+// ── Memory-reduction caches ────────────────────────────────────────────
+let _rgCanvasRenderer  = null;   // shared L.canvas() — created once, reused by both layers
+let _rgTipHtmlCache    = null;   // Map<ICAO→html> — tooltip HTML built once per dot render pass
+let _ownerDataCache    = null;   // parsed result of _getOwnerData()
+let _ownerDataCacheKey = null;   // textarea value that produced the cache
 let _rgRangeRing  = null;   // aircraft range ring centered on dep region
 
 // Phase: 'explore' | 'idle' | 'dep_drag' | 'ruler' | 'arr_drag' | 'results'
@@ -8829,26 +8842,36 @@ function _rgSplitEnd() {
 // ── Airport dot layer ──────────────────────────────────────────────────
 
 function _rgBindDotTip(marker, icao, rec, ownerName) {
-  const catNum = +(categoryDB && categoryDB.get(icao.toUpperCase())) || null;
-  const catCol = _rgCatOf(icao) || '#aaaaaa';
-  let rwyHtml = '';
-  const rwys = runwayDB ? runwayDB.get(icao.toUpperCase()) : null;
-  if (rwys && rwys.length) {
-    const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
-    const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
-    const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
-    const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
-    const lit   = best.lighted  ? ' · Lighted' : '';
-    const parts = [idents, len, surf + lit].filter(Boolean);
-    rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
+  // Tooltip HTML is stable for a given ICAO within a render pass (owner, category,
+  // runway data don't change mid-session). Use a per-ICAO cache so _rgHighlightDots
+  // filter toggles don't rebuild the same strings on every call.
+  // _rgTipHtmlCache is reset at the top of _rgRenderDots() when owner data refreshes.
+  if (!_rgTipHtmlCache) _rgTipHtmlCache = new Map();
+  const cacheKey = icao.toUpperCase();
+  let html = _rgTipHtmlCache.get(cacheKey);
+  if (!html) {
+    const catNum = +(categoryDB && categoryDB.get(cacheKey)) || null;
+    const catCol = _rgCatOf(icao) || '#aaaaaa';
+    let rwyHtml = '';
+    const rwys = runwayDB ? runwayDB.get(cacheKey) : null;
+    if (rwys && rwys.length) {
+      const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
+      const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
+      const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
+      const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
+      const lit   = best.lighted  ? ' · Lighted' : '';
+      const parts = [idents, len, surf + lit].filter(Boolean);
+      rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
+    }
+    html =
+      `<div><span class="rg-dt-icao" style="color:${catCol}">${icao}</span>` +
+      (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
+      (rec.name ? `<span class="rg-dt-name">${rec.name}</span>` : '') +
+      (ownerName ? `<span class="rg-dt-owner">${ownerName}</span>` : '') +
+      rwyHtml +
+      `</div>`;
+    _rgTipHtmlCache.set(cacheKey, html);
   }
-  const html =
-    `<div><span class="rg-dt-icao" style="color:${catCol}">${icao}</span>` +
-    (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
-    (rec.name ? `<span class="rg-dt-name">${rec.name}</span>` : '') +
-    (ownerName ? `<span class="rg-dt-owner">${ownerName}</span>` : '') +
-    rwyHtml +
-    `</div>`;
   marker.bindTooltip(html, { direction: 'top', permanent: false, className: 'rg-dot-tip' });
   // Block Leaflet's auto-open entirely via a permanent instance no-op.
   // Leaflet's _openTooltip calls this.openTooltip() on mouseover; the no-op stops
@@ -8877,7 +8900,10 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
 function _rgRenderDots() {
   if (!_rgMap) return;
   if (_rgDotLayer) { _rgDotLayer.remove(); _rgDotLayer = null; }
-  const renderer  = L.canvas({ padding: 0.5 });
+  // Shared renderer — created once, reused by both dot and hi layers.
+  // Tooltip HTML cache reset here so it rebuilds with current owner data.
+  if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
+  _rgTipHtmlCache = new Map();
   _rgDotLayer = L.layerGroup().addTo(_rgMap);
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) return;
@@ -8897,7 +8923,7 @@ function _rgRenderDots() {
       const fillColor   = _rgCatOf(ap.icao) || (_rgMapSat ? '#a8d8f0' : '#3a7090');
       const fillOpacity = _rgMapSat ? 0.88 : 0.75;
       const m = L.circleMarker([rec.latitude, rec.longitude], {
-        renderer, radius: 9, weight: 1,
+        renderer: _rgCanvasRenderer, radius: 9, weight: 1,
         color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
       });
       _rgBindDotTip(m, ap.icao, rec, owner.name);
@@ -9014,7 +9040,9 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
 function _rgHighlightDots() {
   if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
   if (!_rgMap) return;
-  const renderer = L.canvas({ padding: 0.5 });
+  // Reuse the shared canvas renderer — avoids allocating a new L.canvas() on
+  // every filter toggle (which is the hot path: every owner/cat filter tap).
+  if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
   _rgHiLayer = L.layerGroup().addTo(_rgMap);
   for (const a of _rgDepAirports) {
     const cat = +(categoryDB && categoryDB.get(a.icao.toUpperCase())) || 999;
@@ -9022,7 +9050,7 @@ function _rgHighlightDots() {
     if (_rgDepOwnerFilter !== null && !_rgDepOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
     const fill = _rgCatOf(a.icao) || '#00c8ff';
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
-      renderer, radius: 12, weight: 1,
+      renderer: _rgCanvasRenderer, radius: 12, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor: fill, fillOpacity: 0.92, interactive: true,
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -9036,7 +9064,7 @@ function _rgHighlightDots() {
     if (_rgArrOwnerFilter !== null && !_rgArrOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
     const fill = _rgCatOf(a.icao) || '#ff6a00';
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
-      renderer, radius: 12, weight: 1,
+      renderer: _rgCanvasRenderer, radius: 12, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor: fill, fillOpacity: 0.92, interactive: true,
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -10356,10 +10384,24 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.19.40</span>
+          <span class="release-date">May 2, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner data cached to prevent repeated parsing</strong> &mdash; <code>_getOwnerData()</code> previously re-parsed the full owner/airport dataset on every filter toggle, satellite switch, and region move. Result is now cached against the textarea content and reused on subsequent calls with no change; the parse only runs when new data is loaded.</li>
+          <li><strong>Shared canvas renderer across Region Mode layers</strong> &mdash; each call to <code>_rgRenderDots()</code> and <code>_rgHighlightDots()</code> previously allocated a fresh <code>L.canvas()</code> renderer object. Both functions now share a single renderer created once and reused for the life of the map, eliminating repeated allocations on filter toggles and satellite switches.</li>
+          <li><strong>Tooltip HTML cached per airport</strong> &mdash; the runway lookup, string formatting, and HTML assembly in <code>_rgBindDotTip</code> now run at most once per ICAO per render pass. The result is stored in a per-ICAO cache that is reused by <code>_rgHighlightDots</code> filter-toggle calls; the cache is reset whenever new owner data is loaded to prevent stale content.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.19.39</span>
-          <span class="release-date">May 2, 2026 &middot; Current</span>
+          <span class="release-date">May 2, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
