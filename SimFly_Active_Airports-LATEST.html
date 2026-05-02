@@ -3201,7 +3201,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.19.34';
+const APP_VERSION = '2.19.39';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8850,11 +8850,23 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
     rwyHtml +
     `</div>`;
   marker.bindTooltip(html, { direction: 'top', permanent: false, className: 'rg-dot-tip' });
+  // Block Leaflet's auto-open entirely via a permanent instance no-op.
+  // Leaflet's _openTooltip calls this.openTooltip() on mouseover; the no-op stops
+  // that chain without touching any event registrations (ruler stays intact).
+  // Our own mouseover handler calls tip.openOn() directly — this sidesteps the
+  // openTooltip → _prepareOpen chain which proved unreliable for canvas CircleMarkers.
+  marker.openTooltip = function() { return this; };
   marker.on('mouseover', function() {
-    if (_rgPhase === 'dep_drag' || _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
+    if (_rgPhase !== 'explore' && _rgPhase !== 'results') return;
     clearTimeout(_rgTipTimer);
     const m = this;
-    _rgTipTimer = setTimeout(() => m.openTooltip(), 500);
+    _rgTipTimer = setTimeout(function() {
+      const tip = m.getTooltip();
+      if (!tip || !m._map) return;
+      tip._source = m;
+      tip.setLatLng(m.getLatLng());
+      tip.openOn(m._map);
+    }, 200);
   });
   marker.on('mouseout', function() {
     clearTimeout(_rgTipTimer);
@@ -9886,9 +9898,11 @@ function _rgNoneCats(side) {
 function _rgBuildOwnerDropdown() {
   // Build dep and arr owner lists independently — each shows only owners with
   // airports in that specific region.
-  // If a filter is active (at least one owner unchecked), preserve it across
-  // region moves/resizes — explicitly-hidden owners stay hidden, new owners
-  // entering the region default to visible. If no filter is active, reset to
+  // If a filter is active (at least one owner unchecked), preserve the exact
+  // selection: only owners already in the filter remain checked; new owners
+  // entering the region are deselected. The filter variable itself is not
+  // changed — it persists as-is so owners that temporarily leave the region
+  // (then return) are still correctly gated. If no filter is active, reset to
   // all-visible (auto-refresh mode).
   ['dep', 'arr'].forEach(side => {
     const airports = side === 'dep' ? _rgDepAirports : _rgArrAirports;
@@ -9900,16 +9914,9 @@ function _rgBuildOwnerDropdown() {
     const owners = [...seen.entries()].sort((a, b) =>
       a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
 
-    const listId  = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+    const listId     = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
     const prevFilter = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
     const preserving = prevFilter !== null; // null = all shown = no active filter
-
-    // Collect names that were explicitly unchecked before the region moved
-    const hidden = new Set();
-    if (preserving) {
-      const listEl = document.getElementById(listId);
-      if (listEl) listEl.querySelectorAll('.rg-owner-row:not(.active)').forEach(r => hidden.add(r.dataset.rgOwner));
-    }
 
     const list = document.getElementById(listId);
     if (!list) return;
@@ -9917,17 +9924,17 @@ function _rgBuildOwnerDropdown() {
       const dot = color
         ? `<span class="rg-owner-swatch" style="background:${color}"></span>`
         : `<span class="rg-owner-swatch" style="background:var(--muted)"></span>`;
-      const isActive = !hidden.has(name); // new owners default to visible
+      // In preserve mode: active only if the owner was already in the filter.
+      // New owners entering the region are deselected by default.
+      const isActive = !preserving || prevFilter.has(name);
       return `<div class="rg-owner-row${isActive ? ' active' : ''}" data-rg-owner="${_rgX(name)}" onclick="_rgToggleOwner(this,'${side}')">` +
         `<span class="rg-owner-check">✓</span>${dot}` +
         `<span class="rg-owner-name">${_rgX(name)}</span></div>`;
     }).join('');
 
     if (preserving) {
-      const newFilter = new Set([...list.querySelectorAll('.rg-owner-row.active')].map(r => r.dataset.rgOwner));
-      const allActive = newFilter.size === owners.length;
-      if (side === 'dep') _rgDepOwnerFilter = allActive ? null : newFilter;
-      else                _rgArrOwnerFilter = allActive ? null : newFilter;
+      // Do not re-derive the filter from the DOM — the existing filter variable
+      // is the source of truth. Just refresh the button label.
       _rgUpdateOwnerBtn(side);
     } else {
       if (side === 'dep') _rgDepOwnerFilter = null;
@@ -10351,8 +10358,70 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.19.34</span>
+          <span class="release-version">v2.19.39</span>
           <span class="release-date">May 2, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips now work after region selection</strong> &mdash; the v2.19.38 dynamic-phase override called the Leaflet prototype <code>openTooltip</code> chain, which silently fails for canvas-rendered circle markers due to <code>_prepareOpen</code> source-map resolution timing. Reworked to use a permanent no-op on <code>openTooltip</code> (blocking Leaflet&rsquo;s auto-open) paired with a custom <code>mouseover</code> handler that calls <code>tip.setLatLng</code> + <code>tip.openOn</code> directly after a 200&thinsp;ms delay. Tooltips are suppressed during all drawing phases and re-enabled in both <em>explore</em> and <em>results</em> phases.</li>
+          <li><strong>Max per region capped at 250</strong> &mdash; removed the 500 and 1000 options from the <strong>Max per region</strong> dropdown to prevent browser out-of-memory crashes on large region overlap sets.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.38</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner filter: new pilots entering a resized region are deselected by default</strong> &mdash; previously, moving or resizing a region with an active filter would add any newly in-scope owners as visible by default. Now, when a filter is active, only owners already checked in the filter remain checked; new owners entering the region are added as deselected. The filter variable is also no longer re-derived from the DOM on each rebuild, so pilots that temporarily leave the region don&rsquo;t lose their checked state when they come back.</li>
+          <li><strong>Airport tooltips re-enabled after matrix is set</strong> &mdash; the v2.19.37 instance override was a permanent no-op that never re-enabled. Changed to a dynamic phase check: the override now passes through to the real Leaflet open when in <em>explore</em> or <em>results</em> phase, and blocks during all drawing phases. Tooltips are suppressed from &ldquo;Select Regions&rdquo; click through both region placements, then automatically re-enabled once the matrix is visible.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.37</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Ruler regression fixed; tooltip suppression finally correct</strong> &mdash; v2.19.36 removed Leaflet&rsquo;s internal <code>mouseover</code>/<code>mouseout</code> tooltip handlers from each dot marker, which inadvertently broke the ruler feature&rsquo;s ability to draw multiple measurement lines. Reworked the approach: Leaflet&rsquo;s event registration is now left completely untouched. Instead, <code>openTooltip</code> is overridden on each marker instance to a no-op, and a separate captured reference (<code>_baseOpen</code>) is used by our own <code>mouseover</code> handler to open with the phase check and 500 ms delay. Any call path &mdash; Leaflet&rsquo;s auto-open or ours &mdash; now goes through the gate without touching the map&rsquo;s event infrastructure.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.36</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips actually suppressed during region selection</strong> &mdash; the phase-check guard in v2.19.34&ndash;35 gated our custom handler, but Leaflet&rsquo;s own internal <code>_openTooltip</code> handler (registered automatically by <code>bindTooltip</code>) still fired on every mouseover, bypassing the check entirely. Fixed by removing Leaflet&rsquo;s auto-open and auto-close listeners immediately after binding, making our handler the sole gatekeeper. Tooltips are now correctly silent from the moment <strong>Select Regions</strong> is clicked until both regions are confirmed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.35</span>
+          <span class="release-date">May 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips correctly suppressed during region selection</strong> &mdash; the v2.19.34 guard only blocked the active drag phases; tooltips still appeared in the <em>idle</em> phase immediately after clicking <strong>Select Regions</strong>. Fixed by inverting the logic: tooltips are now only permitted in the <em>explore</em> and <em>results</em> phases — every other phase (idle, dep drag, ruler, arr drag) suppresses them entirely.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.19.34</span>
+          <span class="release-date">May 2, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -14244,9 +14313,7 @@ function rgSendToFlightPlanner() {
           <option value="25">25</option>
           <option value="50">50</option>
           <option value="100" selected>100</option>
-          <option value="200">200</option>
-          <option value="500">500</option>
-          <option value="1000">1000</option>
+          <option value="250">250</option>
         </select>
         <span class="rg-perf-warn" id="rgPerfWarn" style="display:none;">⚠ Large matrix — may be slow</span>
       </div>
