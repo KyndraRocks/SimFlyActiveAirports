@@ -3020,7 +3020,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.35);color:var(--accent);" onclick="openRegionModal()" aria-label="Region airport selector" title="Select departure and arrival regions on a map" tabindex="-1">⊙ Regions</button>
           </div>
           <button class="btn-action" id="simbriefBtn"
-                  style="font-size:1.17rem;padding:0.3rem 0.9rem;background:rgba(255,106,0,0.15);border-color:var(--accent2);color:var(--accent2);white-space:nowrap;width:100%;"
+                  style="font-size:1.17rem;padding:0.3rem 0.9rem;background:rgba(255,106,0,0.15);border-color:var(--accent2);color:var(--accent2);white-space:nowrap;width:100%;justify-content:center;"
                   onclick="fileOnSimbrief()" aria-label="File flight plan on SimBrief" disabled tabindex="-1"
                   onmouseenter="if(window._tipAPI){_tipAPI.showLive(_buildSimbriefTooltip,event.clientX,event.clientY)}"
                   onmouseleave="if(window._tipAPI){_tipAPI.hide()}"
@@ -3266,7 +3266,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.20.0';
+const APP_VERSION = '2.20.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6045,6 +6045,11 @@ const _distSort = {
 let _userFilterMin = null;
 let _userFilterMax = null;
 
+// Full-dataset scale set at render time — used to restore the slider when
+// "Hide filtered airports" is turned off.
+let _fullScaleMin = 0;
+let _fullScaleMax = 0;
+
 function _distSortLabel(mode) {
   return mode === 'alpha' ? '⇅ A–Z' : mode === 'asc' ? '↑ Near' : '↓ Far';
 }
@@ -6917,6 +6922,8 @@ function _distInitFilter(minNm, maxNm) {
     minNm = Math.max(0, minNm - 1);
     maxNm = maxNm + 1;
   }
+  _fullScaleMin = minNm;
+  _fullScaleMax = maxNm;
 
   const sliderMin = document.getElementById('distFilterMin');
   const sliderMax = document.getElementById('distFilterMax');
@@ -7395,6 +7402,62 @@ function _distApplyFilter() {
       tbl.querySelectorAll(`tbody td[data-arr="${icao}"]`).forEach(td => _setDisplay(td, hidden));
     }
   });
+
+  // ── Rescale the distance slider to match visible airports when hide mode is on.
+  // In hide mode the slider endpoints should span only the routes that remain
+  // visible (not cat-hidden, not ac-hidden). When hide mode is off, restore the
+  // full scale stored at render time so the slider always matches the matrix.
+  {
+    let effMin, effMax;
+    if (hideMode) {
+      effMin = Infinity; effMax = -Infinity;
+      cells.forEach(td => {
+        const catD = _depCatHidden(td.dataset.depCat || '') || _arrCatHidden(td.dataset.arrCat || '');
+        const acD  = acFilterOn && (
+          _acDepOk(td.dataset.dep || '') === false ||
+          _acArrOk(td.dataset.arr || '') === false
+        );
+        if (!catD && !acD) {
+          const nm = parseInt(td.dataset.nm, 10);
+          if (nm < effMin) effMin = nm;
+          if (nm > effMax) effMax = nm;
+        }
+      });
+      if (effMin === Infinity) { effMin = absMin; effMax = absMax; }
+      if (effMin === effMax)   { effMin = Math.max(0, effMin - 1); effMax += 1; }
+    } else {
+      effMin = _fullScaleMin;
+      effMax = _fullScaleMax;
+    }
+    if (effMin !== absMin || effMax !== absMax) {
+      sliderMin.min = effMin; sliderMin.max = effMax;
+      sliderMax.min = effMin; sliderMax.max = effMax;
+      const wMin = _userFilterMin !== null ? _userFilterMin : effMin;
+      const wMax = _userFilterMax !== null ? _userFilterMax : effMax;
+      const cMin = Math.max(effMin, Math.min(effMax, wMin));
+      const cMax = Math.max(effMin, Math.min(effMax, wMax));
+      sliderMin.value = cMin; sliderMax.value = cMax;
+      if (track) {
+        const eRange = effMax - effMin || 1;
+        const r      = 9;
+        const trackW = track.offsetWidth || document.getElementById('distRangeWrap').offsetWidth || 200;
+        const travel = trackW - 2 * r;
+        const minPx  = r + ((cMin - effMin) / eRange) * travel;
+        const maxPx  = r + ((cMax - effMin) / eRange) * travel;
+        track.style.background =
+          `linear-gradient(to right,` +
+          ` var(--border) ${minPx}px,` +
+          ` var(--muted) ${minPx}px,` +
+          ` var(--muted) ${maxPx}px,` +
+          ` var(--border) ${maxPx}px)`;
+      }
+      minValEl.textContent = `${cMin.toLocaleString('en-US')} nm`;
+      maxValEl.textContent = `${cMax.toLocaleString('en-US')} nm`;
+      _attachKmTip(minValEl, cMin);
+      _attachKmTip(maxValEl, cMax);
+    }
+  }
+
   _distUpdateRangeMarker();
   if (_dmMapOpen) _dmRenderMap();
 }
@@ -10453,10 +10516,23 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.20.1</span>
+          <span class="release-date">May 3, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance slider rescales when Hide filtered airports is active</strong> — the slider's right (and left) edge now reflects only the distance range of airports still visible in the matrix. Previously the scale stayed anchored to the full dataset max even after hidden-category airports were removed by the Hide filtered toggle. Scale restores to the full range when Hide filtered is turned off.</li>
+          <li><strong>File on SimBrief button text centred</strong> — the button label was left-aligned inside its full-width container; it is now horizontally centred.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.20.0</span>
-          <span class="release-date">May 3, 2026 &middot; Current</span>
+          <span class="release-date">May 3, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
