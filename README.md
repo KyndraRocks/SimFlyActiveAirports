@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.20.1**
+**Current version: v2.21.6**
 
 ---
 
@@ -28,7 +28,9 @@ ICAO labels carry per-category colors (1–7) so airport tier is immediately vis
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
 
 ### Region Mode
-A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a click-to-highlight map dot system that mirrors matrix selections with a white ring on the map.
+A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a click-to-highlight map dot system that mirrors matrix selections with a bright ring on the map — cyan for departure airports, yellow for arrival airports.
+
+A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier — and take precedence over the map filter within their region rings, so you can globally suppress a category while still seeing it inside a specific region.
 
 Region mode includes a **Measure Distance** ruler with magnetic heading sourced from the NOAA WMM API for sub-degree accuracy, results capped at 250 per region with on-demand expansion, and an owner filter that respects new pilots auto-deselected by default.
 
