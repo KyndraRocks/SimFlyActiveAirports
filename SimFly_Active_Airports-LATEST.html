@@ -2878,6 +2878,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-panel-title { font-family:'Rajdhani',sans-serif; font-size:1.35rem; font-weight:600; color:var(--muted); flex:1; }
   .rg-owner-panel-hdr .rg-cat-acc-btn { font-size:1.17rem; padding:0.225rem 0.6rem; }
   .rg-owner-list { max-height:300px; overflow-y:auto; padding:0.375rem 0; }
+  .rg-owner-search { display:block; width:100%; box-sizing:border-box; padding:0.4rem 0.75rem; border:none; border-bottom:1px solid var(--border); background:transparent; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.15rem; outline:none; }
+  .rg-owner-search::placeholder { color:var(--muted); opacity:1; }
+  .rg-owner-search:focus { border-bottom-color:var(--accent); }
   .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; }
   .rg-owner-row:hover { background:rgba(0,200,255,0.07); }
   .rg-owner-check { width:1.1em; height:1.1em; border:2px solid rgba(255,255,255,0.3); border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent; font-size:0.85rem; font-weight:700; }
@@ -3271,7 +3274,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.21.7';
+const APP_VERSION = '2.21.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10136,6 +10139,8 @@ function _rgBuildOwnerDropdown() {
         `<span class="rg-owner-check">✓</span>${dot}` +
         `<span class="rg-owner-name">${_rgX(name)}</span></div>`;
     }).join('');
+    const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
+    if (searchEl && searchEl.value) _rgOwnerSearch(side, searchEl.value);
 
     if (preserving) {
       // Do not re-derive the filter from the DOM — the existing filter variable
@@ -10146,6 +10151,14 @@ function _rgBuildOwnerDropdown() {
       else                _rgArrOwnerFilter = null;
       _rgUpdateOwnerBtnLabel(side, owners.length, owners.length);
     }
+  });
+}
+
+function _rgOwnerSearch(side, query) {
+  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(row => {
+    row.style.display = (!q || row.dataset.rgOwner.toLowerCase().includes(q)) ? '' : 'none';
   });
 }
 
@@ -10163,6 +10176,8 @@ function _rgToggleOwnerDropdown(side) {
     panel.style.bottom = (window.innerHeight - r.top + 4) + 'px';
     panel.style.top    = 'auto';
     panel.classList.add('open');
+    const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
+    if (searchEl) { searchEl.value = ''; _rgOwnerSearch(side, ''); searchEl.focus(); }
     setTimeout(() => {
       document.addEventListener('click', function _close(e) {
         const path = e.composedPath();
@@ -10538,7 +10553,7 @@ function rgSendToFlightPlanner() {
             Click <strong>⊙ Regions</strong> in the panel header to open the Region Mode map. All SimFly player-owned airports are shown as color-coded dots (matching each airport&rsquo;s SimFly category color). Hover any dot to see a tooltip with the ICAO, category, airport name, owner, and longest runway details after a brief delay.<br/><br/>
             <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
-            Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Use <strong>All</strong> or <strong>None</strong> inside each menu, or toggle individual category bubbles. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
+            Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners. Use <strong>All</strong> or <strong>None</strong> inside each menu to select or clear the full list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
             <strong>Map dot selection</strong> — clicking any airport dot on the map highlights the corresponding row or column in the matrix and places a white ring around that dot. Click a departure-side dot to highlight its dep row; click an arrival-side dot to highlight its arr column. If both sides have been clicked, the cell at their intersection is selected and the route appears in the strip above the matrix.<br/><br/>
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
@@ -10569,10 +10584,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.21.8</span>
+          <span class="release-date">May 4, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner menus in region mode are now searchable</strong> — both the Dep Owners and Arr Owners dropdowns now include a text input at the top of the list. Typing letters instantly hides non-matching owner rows so you can find a specific pilot quickly in large regions. The search clears and the input is focused automatically each time the panel opens. The underlying checkbox filter, All/None buttons, and stripe-click behaviour are unaffected.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.21.7</span>
-          <span class="release-date">May 4, 2026 &middot; Current</span>
+          <span class="release-date">May 4, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -14763,6 +14790,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-cat-acc-btn" onclick="_rgAllOwners('dep')">All</button>
             <button class="rg-cat-acc-btn" onclick="_rgNoOwners('dep')">None</button>
           </div>
+          <input type="text" id="rgDepOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('dep',this.value)">
           <div id="rgDepOwnerList" class="rg-owner-list"></div>
         </div>
       </div>
@@ -14801,6 +14829,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-cat-acc-btn" onclick="_rgAllOwners('arr')">All</button>
             <button class="rg-cat-acc-btn" onclick="_rgNoOwners('arr')">None</button>
           </div>
+          <input type="text" id="rgArrOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('arr',this.value)">
           <div id="rgArrOwnerList" class="rg-owner-list"></div>
         </div>
       </div>
