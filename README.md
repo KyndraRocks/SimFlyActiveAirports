@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.21.14**
+**Current version: v2.21.15**
 
 ---
 
@@ -32,7 +32,7 @@ A full-screen map-based region selector for cross-region matrix planning. Draw c
 
 A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier — and take precedence over the map filter within their region rings, so you can globally suppress a category while still seeing it inside a specific region.
 
-Region mode includes a **Measure Distance** ruler with magnetic heading sourced from the NOAA WMM API for sub-degree accuracy and **Undo** / **Clear All** controls for multi-segment sessions, results capped at 250 per region with on-demand expansion, and searchable **Dep / Arr owner dropdowns** with live text filtering. Any character typed while a panel is open routes automatically to the filter box — no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
+Region mode includes a **Measure Distance** ruler with magnetic heading sourced from the NOAA WMM API for sub-degree accuracy and **Undo** / **Clear All** controls for multi-segment sessions, results capped at 250 per region with on-demand expansion, and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open routes to the filter box — no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
 
 ### Distance Map
 An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded. When a route is highlighted on the map, the departure and arrival info cards display a **Weather** section with the same decoded breakdown as the badge-hover tooltip (METAR, flight category, wind, visibility, sky, temp/dew, altimeter).

@@ -2872,7 +2872,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-wrap { position:relative; }
   .rg-owner-btn { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:600; padding:0.2rem 0.6rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; }
   .rg-owner-btn:hover, .rg-owner-btn.filtered { border-color:var(--accent); color:var(--accent); }
-  .rg-owner-panel { display:none; position:fixed; min-width:300px; max-width:450px; background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.55); z-index:9500; overflow:hidden; }
+  .rg-owner-panel { display:none; position:fixed; width:max-content; min-width:300px; max-width:min(560px,90vw); background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.55); z-index:9500; overflow:hidden; }
   .rg-owner-panel.open { display:block; }
   .rg-owner-panel-hdr { display:flex; align-items:center; gap:0.67rem; padding:0.6rem 0.9rem; border-bottom:1px solid var(--border); }
   .rg-owner-panel-title { font-family:'Rajdhani',sans-serif; font-size:1.35rem; font-weight:600; color:var(--muted); flex:1; }
@@ -2885,7 +2885,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-search-clear { position:absolute; right:0.4rem; top:50%; transform:translateY(-50%); background:none; border:none; padding:0 0.2rem; color:var(--muted); font-size:1rem; cursor:pointer; line-height:1; display:none; }
   .rg-owner-search-clear:hover { color:var(--text); }
   .rg-owner-search-clear.visible { display:block; }
-  .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; }
+  .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; white-space:nowrap; }
+  .rg-owner-name { flex:1; }
+  .rg-owner-count { color:var(--muted); font-size:0.88em; min-width:2.5ch; text-align:right; }
   .rg-owner-row:hover { background:rgba(0,200,255,0.07); }
   .rg-owner-row.rg-owner-focused { background:rgba(0,200,255,0.16); box-shadow:inset 2px 0 0 rgba(0,200,255,0.55); }
   .rg-owner-check { width:1.1em; height:1.1em; border:2px solid rgba(255,255,255,0.3); border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent; font-size:0.85rem; font-weight:700; }
@@ -3279,7 +3281,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.21.14';
+const APP_VERSION = '2.21.15';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10131,7 +10133,10 @@ function _rgBuildOwnerDropdown() {
     const seen = new Map();
     for (const a of airports) {
       const oi = _rgOwnerLookupCache ? _rgOwnerLookupCache.get(a.icao.toUpperCase()) : null;
-      if (oi && oi.name && !seen.has(oi.name)) seen.set(oi.name, oi.color || null);
+      if (oi && oi.name) {
+        if (!seen.has(oi.name)) seen.set(oi.name, { color: oi.color || null, count: 0 });
+        seen.get(oi.name).count++;
+      }
     }
     const owners = [...seen.entries()].sort((a, b) =>
       a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
@@ -10142,16 +10147,17 @@ function _rgBuildOwnerDropdown() {
 
     const list = document.getElementById(listId);
     if (!list) return;
-    list.innerHTML = owners.map(([name, color]) => {
-      const dot = color
-        ? `<span class="rg-owner-swatch" style="background:${color}"></span>`
+    list.innerHTML = owners.map(([name, info]) => {
+      const dot = info.color
+        ? `<span class="rg-owner-swatch" style="background:${info.color}"></span>`
         : `<span class="rg-owner-swatch" style="background:var(--muted)"></span>`;
       // In preserve mode: active only if the owner was already in the filter.
       // New owners entering the region are deselected by default.
       const isActive = !preserving || prevFilter.has(name);
       return `<div class="rg-owner-row${isActive ? ' active' : ''}" data-rg-owner="${_rgX(name)}" onclick="_rgToggleOwner(this,'${side}')">` +
         `<span class="rg-owner-check">✓</span>${dot}` +
-        `<span class="rg-owner-name">${_rgX(name)}</span></div>`;
+        `<span class="rg-owner-name">${_rgX(name)}</span>` +
+        `<span class="rg-owner-count">(${info.count})</span></div>`;
     }).join('');
     const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
     if (searchEl && searchEl.value) _rgOwnerSearch(side, searchEl.value);
@@ -10744,8 +10750,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.21.14</span>
+          <span class="release-version">v2.21.15</span>
           <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner panel: airport count per owner</strong> — each name in the Dep Owners and Arr Owners dropdowns now shows the number of airports that owner has within the drawn region in parentheses, e.g. <em>Pilot One (3)</em>. Count reflects only airports currently loaded for that side — it updates automatically when the region changes. The panel also expands horizontally to fit the widest entry rather than wrapping long names.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.21.14</span>
+          <span class="release-date">May 5, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
