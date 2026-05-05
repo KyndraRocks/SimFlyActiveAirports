@@ -2878,9 +2878,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-panel-title { font-family:'Rajdhani',sans-serif; font-size:1.35rem; font-weight:600; color:var(--muted); flex:1; }
   .rg-owner-panel-hdr .rg-cat-acc-btn { font-size:1.17rem; padding:0.225rem 0.6rem; }
   .rg-owner-list { max-height:300px; overflow-y:auto; padding:0.375rem 0; }
-  .rg-owner-search { display:block; width:100%; box-sizing:border-box; padding:0.4rem 0.75rem; border:none; border-bottom:1px solid var(--border); background:transparent; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.15rem; outline:none; }
+  .rg-owner-search-wrap { position:relative; display:block; border-bottom:1px solid var(--border); }
+  .rg-owner-search-wrap:focus-within { border-bottom-color:var(--accent); }
+  .rg-owner-search { display:block; width:100%; box-sizing:border-box; padding:0.4rem 2rem 0.4rem 0.75rem; border:none; background:transparent; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.15rem; outline:none; }
   .rg-owner-search::placeholder { color:var(--muted); opacity:1; }
-  .rg-owner-search:focus { border-bottom-color:var(--accent); }
+  .rg-owner-search-clear { position:absolute; right:0.4rem; top:50%; transform:translateY(-50%); background:none; border:none; padding:0 0.2rem; color:var(--muted); font-size:1rem; cursor:pointer; line-height:1; display:none; }
+  .rg-owner-search-clear:hover { color:var(--text); }
+  .rg-owner-search-clear.visible { display:block; }
   .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; }
   .rg-owner-row:hover { background:rgba(0,200,255,0.07); }
   .rg-owner-check { width:1.1em; height:1.1em; border:2px solid rgba(255,255,255,0.3); border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent; font-size:0.85rem; font-weight:700; }
@@ -3274,7 +3278,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.21.8';
+const APP_VERSION = '2.21.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8626,9 +8630,7 @@ function closeRegionModal() {
 }
 
 function _rgBeginSelection() {
-  _rgPhase = 'idle';
-  _rgSetCursor('cross');
-  _rgUpdatePhaseText();
+  rgReset(true); // clears previous region circles; rgReset sets phase=idle, cursor=cross, calls _rgUpdatePhaseText
 }
 
 function _rgToggleMeasure() {
@@ -8650,6 +8652,8 @@ function _rgClearMeasureLive() {
   [_rgMeasureLine, _rgMeasureCircle, _rgMeasureLabel].forEach(l => { if (l) l.remove(); });
   _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
   _rgMeasureOrigin = null;
+  // Re-enable dragging if we interrupted a live draw (e.g. toggle-off button click mid-drag)
+  if (_rgMeasureDraw && _rgMap) _rgMap.dragging.enable();
   _rgMeasureDraw   = false;
   _rgMeasureDecl   = null;
   _rgMeasureLastLL = null;
@@ -8667,8 +8671,10 @@ function _rgClearMeasure() {
 }
 
 function _rgSyncClearBtn() {
-  const btn = document.getElementById('rgRulerClearBtn');
-  if (btn) btn.style.display = (_rgMeasureActive || _rgMeasureSaved.length > 0) ? '' : 'none';
+  const undoBtn     = document.getElementById('rgRulerClearBtn');
+  const clearAllBtn = document.getElementById('rgRulerClearAllBtn');
+  if (undoBtn)     undoBtn.style.display     = (_rgMeasureActive || _rgMeasureSaved.length > 0) ? '' : 'none';
+  if (clearAllBtn) clearAllBtn.style.display = (_rgMeasureSaved.length > 1) ? '' : 'none';
 }
 
 function rgClearMeasurements() {
@@ -9325,9 +9331,9 @@ function _rgMapMouseMove(e) {
   _rgLastLL = e.latlng;
   const cp  = e.originalEvent;
 
-  if (_rgMeasureActive && _rgMeasureOrigin) {
-    _rgUpdateMeasure(e.latlng);
-    return;
+  if (_rgMeasureActive) {
+    if (_rgMeasureOrigin) _rgUpdateMeasure(e.latlng);
+    return; // always return early — prevent phase handlers from overriding the crosshair cursor
   }
 
   if (_rgPhase === 'dep_drag') {
@@ -9389,8 +9395,8 @@ function _rgMapMouseUp() {
     if (_rgMeasureLine) {
       _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
-      _rgMeasureOrigin = null;
     }
+    _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
     _rgSyncClearBtn();
     return;
   }
@@ -9406,8 +9412,8 @@ function _rgDocMouseUp() {
     if (_rgMeasureLine) {
       _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
-      _rgMeasureOrigin = null;
     }
+    _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
     _rgSyncClearBtn();
     return;
   }
@@ -9536,7 +9542,14 @@ function rgReset(silent) {
 }
 
 function rgExploreReturn() {
-  rgReset();
+  // Collapse just the bottom results panel and return to free-explore map mode.
+  // Region circles remain on the map — _rgBeginSelection → rgReset clears them when the
+  // user starts a new selection.
+  if (_rgMap) _rgMap.dragging.enable();
+  _rgDragMode = null;
+  _rgHideNmLabel();
+  document.getElementById('rgResultsBar').classList.remove('visible');
+  document.getElementById('rgMatrixWrap').classList.remove('visible');
   _rgPhase = 'explore';
   _rgSetCursor('');
   _rgUpdatePhaseText();
@@ -10155,11 +10168,20 @@ function _rgBuildOwnerDropdown() {
 }
 
 function _rgOwnerSearch(side, query) {
-  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  const listId  = side === 'dep' ? 'rgDepOwnerList'        : 'rgArrOwnerList';
+  const clearId = side === 'dep' ? 'rgDepOwnerSearchClear' : 'rgArrOwnerSearchClear';
   const q = query.trim().toLowerCase();
   document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(row => {
     row.style.display = (!q || row.dataset.rgOwner.toLowerCase().includes(q)) ? '' : 'none';
   });
+  const clearBtn = document.getElementById(clearId);
+  if (clearBtn) clearBtn.classList.toggle('visible', q.length > 0);
+}
+
+function _rgOwnerSearchKey(e, side) {
+  if (e.key !== 'Enter') return;
+  const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
+  if (searchEl) { searchEl.value = ''; _rgOwnerSearch(side, ''); }
 }
 
 function _rgToggleOwnerDropdown(side) {
@@ -10214,19 +10236,51 @@ function _rgToggleOwner(row, side) {
 }
 
 function _rgAllOwners(side) {
-  if (side === 'dep') { _rgDepOwnerFilter = null; _rgStripeOwnerDep = null; _rgStripeFilterDep = null; }
-  else                { _rgArrOwnerFilter = null; _rgStripeOwnerArr = null; _rgStripeFilterArr = null; }
-  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
-  document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(r => r.classList.add('active'));
+  if (side === 'dep') { _rgStripeOwnerDep = null; _rgStripeFilterDep = null; }
+  else                { _rgStripeOwnerArr = null; _rgStripeFilterArr = null; }
+  const listId   = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
+  const rows     = [...document.querySelectorAll('#' + listId + ' .rg-owner-row')];
+  const filtered = searchEl && searchEl.value.trim() !== '';
+  if (!filtered) {
+    // No active search — select everything
+    if (side === 'dep') _rgDepOwnerFilter = null;
+    else                _rgArrOwnerFilter = null;
+    rows.forEach(r => r.classList.add('active'));
+  } else {
+    // Search active — All applies only to visible rows; hidden rows keep their state
+    let filter = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
+    if (filter === null) filter = new Set(rows.filter(r => r.classList.contains('active')).map(r => r.dataset.rgOwner));
+    rows.forEach(r => { if (r.style.display !== 'none') { filter.add(r.dataset.rgOwner); r.classList.add('active'); } });
+    // Collapse to null if every row is now selected
+    if (rows.every(r => r.classList.contains('active'))) filter = null;
+    if (side === 'dep') _rgDepOwnerFilter = filter;
+    else                _rgArrOwnerFilter = filter;
+  }
   _rgUpdateOwnerBtn(side);
   _rgApplyCatFilter();
 }
 
 function _rgNoOwners(side) {
-  if (side === 'dep') { _rgDepOwnerFilter = new Set(); _rgStripeOwnerDep = null; _rgStripeFilterDep = null; }
-  else                { _rgArrOwnerFilter = new Set(); _rgStripeOwnerArr = null; _rgStripeFilterArr = null; }
-  const listId = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
-  document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(r => r.classList.remove('active'));
+  if (side === 'dep') { _rgStripeOwnerDep = null; _rgStripeFilterDep = null; }
+  else                { _rgStripeOwnerArr = null; _rgStripeFilterArr = null; }
+  const listId   = side === 'dep' ? 'rgDepOwnerList' : 'rgArrOwnerList';
+  const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
+  const rows     = [...document.querySelectorAll('#' + listId + ' .rg-owner-row')];
+  const filtered = searchEl && searchEl.value.trim() !== '';
+  if (!filtered) {
+    // No active search — deselect everything
+    if (side === 'dep') _rgDepOwnerFilter = new Set();
+    else                _rgArrOwnerFilter = new Set();
+    rows.forEach(r => r.classList.remove('active'));
+  } else {
+    // Search active — None applies only to visible rows; hidden rows keep their state
+    let filter = side === 'dep' ? _rgDepOwnerFilter : _rgArrOwnerFilter;
+    if (filter === null) filter = new Set(rows.filter(r => r.classList.contains('active')).map(r => r.dataset.rgOwner));
+    rows.forEach(r => { if (r.style.display !== 'none') { filter.delete(r.dataset.rgOwner); r.classList.remove('active'); } });
+    if (side === 'dep') _rgDepOwnerFilter = filter;
+    else                _rgArrOwnerFilter = filter;
+  }
   _rgUpdateOwnerBtn(side);
   _rgApplyCatFilter();
 }
@@ -10553,12 +10607,12 @@ function rgSendToFlightPlanner() {
             Click <strong>⊙ Regions</strong> in the panel header to open the Region Mode map. All SimFly player-owned airports are shown as color-coded dots (matching each airport&rsquo;s SimFly category color). Hover any dot to see a tooltip with the ICAO, category, airport name, owner, and longest runway details after a brief delay.<br/><br/>
             <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
-            Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners. Use <strong>All</strong> or <strong>None</strong> inside each menu to select or clear the full list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
+            Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners; press <strong>Enter</strong> to clear the search and return to the full list (selections are preserved). While search text is active, <strong>All</strong> and <strong>None</strong> apply only to the visible rows — hidden rows keep their current state. Use <strong>All</strong> or <strong>None</strong> with no search text to select or clear the complete list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
             <strong>Map dot selection</strong> — clicking any airport dot on the map highlights the corresponding row or column in the matrix and places a white ring around that dot. Click a departure-side dot to highlight its dep row; click an arrival-side dot to highlight its arr column. If both sides have been clicked, the cell at their intersection is selected and the route appears in the strip above the matrix.<br/><br/>
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
-            Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Use <strong>✕ Cancel</strong> to exit region selection entirely and return to free map exploration — you can click <strong>Select Regions</strong> again at any time to restart.
+            Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely.
           </div>
         </div>
       </div>
@@ -10584,10 +10638,61 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.21.12</span>
+          <span class="release-date">May 4, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Crosshair cursor maintained throughout Measure Distance mode</strong> — the crosshair was set correctly when activating the tool, but mouse-move events in the results phase called <code>_rgSetCursor</code> on every tick, silently overriding it. The mouse-move handler now returns early whenever measure mode is active (not only while a drag is in progress), so the cursor stays as a crosshair for the full duration of the tool.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.21.11</span>
+          <span class="release-date">May 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner search: ✕ clear button on the input</strong> — a small ✕ button appears at the right end of the Filter owners text box whenever search text is present. Clicking it clears the text and restores the full owner list, identical to pressing Enter, without leaving the keyboard.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.21.10</span>
+          <span class="release-date">May 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measure Distance: Undo and Clear All buttons</strong> — the <em>↩ Clear</em> button is renamed <em>↩ Undo</em> to better reflect that it removes only the last measurement. A new <em>✕ Clear All</em> button appears to its right whenever two or more measurements are saved, and removes all of them at once. Both buttons auto-hide when there is nothing to act on.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.21.9</span>
+          <span class="release-date">May 4, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measure Distance tool: stuck-ring edge case fixed</strong> — a click with no drag (mousedown + immediate mouseup) left the origin point set. Subsequent mouse movement immediately drew a new measurement ring from that stale origin, and every further click repeated the cycle. Origin is now always cleared on mouseup, regardless of whether any dragging occurred. Additionally, calling <em>Clear Live</em> (e.g. toggling the tool off mid-drag) now re-enables map panning if dragging was disabled by the in-progress draw.</li>
+          <li><strong>Done button collapses the matrix panel only</strong> — clicking ⊙ DONE now hides the distance matrix and results bar and returns to free map exploration, leaving the drawn region circles visible on the map. Previously it triggered a full reset, clearing the circles. Clicking ⊙ Select Regions still performs the full reset and clears old circles before a new selection begins.</li>
+          <li><strong>Owner search All / None scoped to visible rows</strong> — while text is typed in the owner search box, the All and None buttons now apply only to the rows that match the search. Rows hidden by the filter keep their current checked/unchecked state. With no search text active, All and None continue to affect the complete list as before.</li>
+          <li><strong>Enter clears owner search and restores full list</strong> — pressing Enter in a Dep Owners or Arr Owners search box clears the typed text and makes all owner rows visible again, preserving whatever was checked or unchecked during the filtered state.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.21.8</span>
-          <span class="release-date">May 4, 2026 &middot; Current</span>
+          <span class="release-date">May 4, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -14763,7 +14868,8 @@ function rgSendToFlightPlanner() {
       </div>
       <div class="rg-hdr-right">
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Measure Distance</button>
-        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last ruler measurement">↩ Clear</button>
+        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
+        <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <div class="rg-hdr-sep"></div>
         <button class="rg-btn rg-btn-close" onclick="closeRegionModal()">✕ Close</button>
       </div>
@@ -14790,7 +14896,10 @@ function rgSendToFlightPlanner() {
             <button class="rg-cat-acc-btn" onclick="_rgAllOwners('dep')">All</button>
             <button class="rg-cat-acc-btn" onclick="_rgNoOwners('dep')">None</button>
           </div>
-          <input type="text" id="rgDepOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('dep',this.value)">
+          <div class="rg-owner-search-wrap">
+            <input type="text" id="rgDepOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('dep',this.value)" onkeydown="_rgOwnerSearchKey(event,'dep')">
+            <button class="rg-owner-search-clear" id="rgDepOwnerSearchClear" onclick="_rgOwnerSearchKey({key:'Enter'},'dep')" title="Clear search" tabindex="-1">✕</button>
+          </div>
           <div id="rgDepOwnerList" class="rg-owner-list"></div>
         </div>
       </div>
@@ -14829,7 +14938,10 @@ function rgSendToFlightPlanner() {
             <button class="rg-cat-acc-btn" onclick="_rgAllOwners('arr')">All</button>
             <button class="rg-cat-acc-btn" onclick="_rgNoOwners('arr')">None</button>
           </div>
-          <input type="text" id="rgArrOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('arr',this.value)">
+          <div class="rg-owner-search-wrap">
+            <input type="text" id="rgArrOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgOwnerSearch('arr',this.value)" onkeydown="_rgOwnerSearchKey(event,'arr')">
+            <button class="rg-owner-search-clear" id="rgArrOwnerSearchClear" onclick="_rgOwnerSearchKey({key:'Enter'},'arr')" title="Clear search" tabindex="-1">✕</button>
+          </div>
           <div id="rgArrOwnerList" class="rg-owner-list"></div>
         </div>
       </div>
