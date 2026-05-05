@@ -2887,6 +2887,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-search-clear.visible { display:block; }
   .rg-owner-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; }
   .rg-owner-row:hover { background:rgba(0,200,255,0.07); }
+  .rg-owner-row.rg-owner-focused { background:rgba(0,200,255,0.16); box-shadow:inset 2px 0 0 rgba(0,200,255,0.55); }
   .rg-owner-check { width:1.1em; height:1.1em; border:2px solid rgba(255,255,255,0.3); border-radius:3px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; color:transparent; font-size:0.85rem; font-weight:700; }
   .rg-owner-row.active .rg-owner-check { background:var(--accent); border-color:var(--accent); color:#000; }
   body.light-mode .rg-owner-check { border-color:rgba(0,0,0,0.3); }
@@ -3278,7 +3279,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.21.13';
+const APP_VERSION = '2.21.14';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10167,10 +10168,26 @@ function _rgBuildOwnerDropdown() {
   });
 }
 
+// Move the keyboard-arrow highlight to a specific visible-row index (or clear if idx < 0).
+function _rgOwnerSetArrow(panel, listId, idx) {
+  const rows = [...document.querySelectorAll('#' + listId + ' .rg-owner-row')]
+    .filter(r => r.style.display !== 'none');
+  rows.forEach(r => r.classList.remove('rg-owner-focused'));
+  panel._arrowIdx = idx;
+  if (idx >= 0 && idx < rows.length) {
+    rows[idx].classList.add('rg-owner-focused');
+    rows[idx].scrollIntoView({ block: 'nearest' });
+  }
+}
+
 function _rgOwnerSearch(side, query) {
   const listId  = side === 'dep' ? 'rgDepOwnerList'        : 'rgArrOwnerList';
+  const panelId = side === 'dep' ? 'rgDepOwnerPanel'       : 'rgArrOwnerPanel';
   const clearId = side === 'dep' ? 'rgDepOwnerSearchClear' : 'rgArrOwnerSearchClear';
   const q = query.trim().toLowerCase();
+  // Filter changes always reset arrow-key navigation (visible rows may have shifted)
+  const panel = document.getElementById(panelId);
+  if (panel && panel._arrowIdx > 0) _rgOwnerSetArrow(panel, listId, -1);
   document.querySelectorAll('#' + listId + ' .rg-owner-row').forEach(row => {
     row.style.display = (!q || row.dataset.rgOwner.toLowerCase().includes(q)) ? '' : 'none';
   });
@@ -10187,6 +10204,7 @@ function _rgOwnerSearchKey(e, side) {
 function _rgToggleOwnerDropdown(side) {
   const panelId = side === 'dep' ? 'rgDepOwnerPanel' : 'rgArrOwnerPanel';
   const btnId   = side === 'dep' ? 'rgDepOwnerBtn'   : 'rgArrOwnerBtn';
+  const listId  = side === 'dep' ? 'rgDepOwnerList'  : 'rgArrOwnerList'; // hoisted — needed in both branches
   const panel = document.getElementById(panelId);
   const btn   = document.getElementById(btnId);
   if (!panel || !btn) return;
@@ -10200,18 +10218,60 @@ function _rgToggleOwnerDropdown(side) {
     panel.classList.add('open');
     const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
     if (searchEl) { searchEl.value = ''; _rgOwnerSearch(side, ''); searchEl.focus(); }
-    // Redirect any keystrokes to the search input while this panel is open,
-    // so the user never has to manually click into the filter box.
+    // Keyboard handler while this panel is open:
+    //  - Arrow Down/Up  → move a highlight through visible rows; Up past row 0 returns to search
+    //  - Space          → toggle the highlighted row (only if arrow nav is active)
+    //  - Printable / Backspace → route to search box (resets arrow nav)
+    //  - Enter          → clear filter (handled by _rgOwnerSearchKey via _rgOwnerSearch)
+    panel._arrowIdx = -1; // -1 = no arrow selection / focus is in search
     const keyCapture = function(e) {
       if (!panel.classList.contains('open')) { document.removeEventListener('keydown', keyCapture); return; }
-      if (document.activeElement === searchEl) return; // already focused — input handles it normally
       if (e.ctrlKey || e.metaKey || e.altKey) return;  // leave browser / OS shortcuts alone
       if (e.key === 'Tab' || e.key === 'Escape') return;
-      if (e.key === 'Enter')     { _rgOwnerSearchKey(e, side); return; }
+
+      // --- Arrow navigation (intercepted even when focus is in the search box) ---
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const visibleRows = [...document.querySelectorAll('#' + listId + ' .rg-owner-row')]
+          .filter(r => r.style.display !== 'none');
+        if (!visibleRows.length) return;
+        if (e.key === 'ArrowDown') {
+          const next = panel._arrowIdx + 1;
+          if (next < visibleRows.length) _rgOwnerSetArrow(panel, listId, next);
+          // clamp at last row — do nothing if already at end
+        } else { // ArrowUp
+          if (panel._arrowIdx <= 0) {
+            // Return to the search box
+            _rgOwnerSetArrow(panel, listId, -1);
+            if (searchEl) searchEl.focus();
+          } else {
+            _rgOwnerSetArrow(panel, listId, panel._arrowIdx - 1);
+          }
+        }
+        return;
+      }
+
+      // --- Space: toggle highlighted row (only when arrow nav is active) ---
+      if (e.key === ' ' && panel._arrowIdx >= 0) {
+        e.preventDefault();
+        const visibleRows = [...document.querySelectorAll('#' + listId + ' .rg-owner-row')]
+          .filter(r => r.style.display !== 'none');
+        const row = visibleRows[panel._arrowIdx];
+        if (row) {
+          const savedIdx = panel._arrowIdx; // _rgToggleOwner resets arrow state; save first
+          _rgToggleOwner(row, side);
+          _rgOwnerSetArrow(panel, listId, savedIdx); // restore highlight at same row
+        }
+        return;
+      }
+
+      // --- All remaining keys: route to the search box ---
+      if (document.activeElement === searchEl) return; // already there — let input handle it
+      if (e.key === 'Enter') { _rgOwnerSearchKey(e, side); return; }
       if (e.key === 'Backspace') {
         if (!searchEl) return;
         searchEl.value = searchEl.value.slice(0, -1);
-        _rgOwnerSearch(side, searchEl.value);
+        _rgOwnerSearch(side, searchEl.value); // also resets arrow state via _rgOwnerSearch
         searchEl.focus();
         e.preventDefault();
         return;
@@ -10219,7 +10279,7 @@ function _rgToggleOwnerDropdown(side) {
       if (e.key.length === 1) {  // printable character
         if (!searchEl) return;
         searchEl.value += e.key;
-        _rgOwnerSearch(side, searchEl.value);
+        _rgOwnerSearch(side, searchEl.value); // also resets arrow state via _rgOwnerSearch
         searchEl.focus();
         e.preventDefault();
       }
@@ -10232,12 +10292,14 @@ function _rgToggleOwnerDropdown(side) {
         if (path.includes(panel) || path.includes(btn)) return;
         panel.classList.remove('open');
         if (panel._keyCapture) { document.removeEventListener('keydown', panel._keyCapture); panel._keyCapture = null; }
+        _rgOwnerSetArrow(panel, listId, -1); // clear highlight
         document.removeEventListener('click', _close);
       });
     }, 0);
   } else {
     panel.classList.remove('open');
     if (panel._keyCapture) { document.removeEventListener('keydown', panel._keyCapture); panel._keyCapture = null; }
+    _rgOwnerSetArrow(panel, listId, -1); // clear highlight
   }
 }
 
@@ -10261,9 +10323,12 @@ function _rgToggleOwner(row, side) {
   else                _rgArrOwnerFilter = filter;
   _rgUpdateOwnerBtn(side);
   _rgApplyCatFilter();
-  // Return focus to the search input so the next keystroke is captured immediately
+  // Return focus to the search input and reset arrow-key navigation state
   const searchEl = document.getElementById(side === 'dep' ? 'rgDepOwnerSearch' : 'rgArrOwnerSearch');
   if (searchEl) searchEl.focus();
+  const panelId2 = side === 'dep' ? 'rgDepOwnerPanel' : 'rgArrOwnerPanel';
+  const pnl = document.getElementById(panelId2);
+  if (pnl) _rgOwnerSetArrow(pnl, listId, -1); // clear arrow highlight (mouse click resets nav)
 }
 
 function _rgAllOwners(side) {
@@ -10291,6 +10356,9 @@ function _rgAllOwners(side) {
   _rgUpdateOwnerBtn(side);
   _rgApplyCatFilter();
   if (searchEl) searchEl.focus();
+  const panelIdA = side === 'dep' ? 'rgDepOwnerPanel' : 'rgArrOwnerPanel';
+  const pnlA = document.getElementById(panelIdA);
+  if (pnlA) _rgOwnerSetArrow(pnlA, listId, -1); // All/None resets arrow nav
 }
 
 function _rgNoOwners(side) {
@@ -10316,6 +10384,9 @@ function _rgNoOwners(side) {
   _rgUpdateOwnerBtn(side);
   _rgApplyCatFilter();
   if (searchEl) searchEl.focus();
+  const panelIdN = side === 'dep' ? 'rgDepOwnerPanel' : 'rgArrOwnerPanel';
+  const pnlN = document.getElementById(panelIdN);
+  if (pnlN) _rgOwnerSetArrow(pnlN, listId, -1); // All/None resets arrow nav
 }
 
 function _rgUpdateOwnerBtn(side) {
@@ -10673,8 +10744,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
+          <span class="release-version">v2.21.14</span>
+          <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner panel: arrow-key navigation and spacebar toggle</strong> — while a Dep Owners or Arr Owners panel is open, pressing ↓ moves a highlight down through the visible (filtered) rows; ↑ moves back up, and arrowing above the first row returns focus to the search box. Pressing Space toggles the highlighted row checked or unchecked. Space only acts as a toggle when arrow navigation is active — if no row is highlighted (the cursor is in the search box), Space types a space character as normal, allowing names with spaces to be searched correctly. Highlighting is preserved after each Space toggle so you can toggle, move, toggle without lifting your hands.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
           <span class="release-version">v2.21.13</span>
-          <span class="release-date">May 4, 2026 &middot; Current</span>
+          <span class="release-date">May 4, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
