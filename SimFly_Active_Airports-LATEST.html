@@ -2962,6 +2962,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-th-link:hover { text-decoration:underline; opacity:0.85; }
   [data-rg-tip] { cursor:default; }
   [data-rg-tip]:hover { background:rgba(255,255,255,0.04); }
+  /* Sticky col/row headers must stay opaque — generic [data-rg-tip]:hover makes them semi-transparent, causing scrolled cells to bleed through */
+  .rg-matrix th[data-rg-tip]:hover { background:var(--panel); }
+  body.light-mode .rg-matrix th[data-rg-tip]:hover { background:#f0ecdf; }
   .rg-matrix td { padding:0.3rem 0.68rem; border:1px solid rgba(26,58,106,0.35); text-align:center; color:var(--text); cursor:pointer; font-family:'Courier New',Courier,monospace; }
   .rg-matrix td:hover:not(.rg-same) { background:rgba(0,200,255,0.11); }
   .rg-matrix td.rg-selected { background:rgba(0,200,255,0.18) !important; color:var(--accent); font-weight:700; }
@@ -3318,7 +3321,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.22.8';
+const APP_VERSION = '2.22.13';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9386,8 +9389,8 @@ function _rgHighlightDots() {
     const fill = _rgCatOf(a.icao) || '#00c8ff';
     const sel  = a.icao === _rgDotSelDep;
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
-      renderer: _rgCanvasRenderer, radius: sel ? 12 : 9,
-      weight: sel ? 3 : 1, color: sel ? '#00ffff' : 'rgba(0,0,0,0.55)',
+      renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
+      weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
       fillColor: fill, fillOpacity: sel ? 1 : (_rgMapSat ? 0.88 : 0.75), interactive: true,
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -9403,8 +9406,8 @@ function _rgHighlightDots() {
     const fill = _rgCatOf(a.icao) || '#ff6a00';
     const sel  = a.icao === _rgDotSelArr;
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
-      renderer: _rgCanvasRenderer, radius: sel ? 12 : 9,
-      weight: sel ? 3 : 1, color: sel ? '#ffff44' : 'rgba(0,0,0,0.55)',
+      renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
+      weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
       fillColor: fill, fillOpacity: sel ? 1 : (_rgMapSat ? 0.88 : 0.75), interactive: true,
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -9754,11 +9757,6 @@ function rgReset(silent) {
   clearTimeout(_rgMatRefreshTm);
   _rgDragMode   = null;
   _rgSortPivot  = null;
-  _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
-  _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
-  _globalCatFilter = new Set([1,2,3,4,5,6,7]);
-  document.querySelectorAll('#rgResultsBar .dist-cat-btn').forEach(b => b.classList.add('active'));
-  document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
   _rgRemoveHandles();
   [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
    _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
@@ -9807,11 +9805,6 @@ function rgExploreReturn() {
   clearTimeout(_rgMatRefreshTm);
   _rgDragMode  = null;
   _rgSortPivot = null;
-  _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
-  _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
-  _globalCatFilter = new Set([1,2,3,4,5,6,7]);
-  document.querySelectorAll('#rgResultsBar .dist-cat-btn').forEach(b => b.classList.add('active'));
-  document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
   _rgRemoveHandles();
   [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
    _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
@@ -10866,6 +10859,7 @@ function _rgSelectCell(td, depIcao, arrIcao, nm) {
     arrIcao + (arrRec ? '  ' + arrRec.rec.name : '');
   document.getElementById('rgSelNm').textContent = nm + ' nm';
   document.getElementById('rgSelRoute').classList.add('visible');
+  _rgHighlightDots(); // re-render dots so selected airports get the black-ring indicator
 }
 
 function rgSendToFlightPlanner() {
@@ -11066,8 +11060,68 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.22.8</span>
+          <span class="release-version">v2.22.13</span>
           <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Sticky column and row headers no longer bleed cell content on hover</b> — the generic <code>[data-rg-tip]:hover</code> rule applied a semi-transparent background to all tooltip-hosting elements, including the sticky matrix headers, making them see-through when hovered. Overriding that rule with a solid <code>var(--panel)</code> background on sticky matrix headers prevents scrolled cell text from bleeding through in both dark and light mode.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.12</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Matrix cell click shows black-ring selection on map dots</b> — clicking a distance cell in the matrix set the selected dep/arr ICAOs but did not call <code>_rgHighlightDots()</code>, so the dots kept their unselected appearance. Added the call at the end of <code>_rgSelectCell</code> so every selection path (matrix cell, row header, column header, dot click) consistently renders the weight-5 black ring.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.11</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Selected airport indicators: solid black ring</b> — the departure and arrival dot-selection highlights (formerly a thin cyan / yellow stroke) are now a 5 px solid black ring at radius 13, making the selected airport clearly visible at a glance regardless of map tile or category colour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.10</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Category filters preserved across region selections</b> — clicking Select Regions or Done was resetting all category filters (dep, arr, and global) back to "all active." Category filter state now persists for the duration of the session; only the per-filter toggle buttons change it.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.9</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Max per region: added 500, 750, and 1000 options</b> — the airport cap selector now goes up to 1000 airports per region for large-area analysis.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.8</span>
+          <span class="release-date">May 5, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -15528,6 +15582,9 @@ function rgSendToFlightPlanner() {
           <option value="50">50</option>
           <option value="100" selected>100</option>
           <option value="250">250</option>
+          <option value="500">500</option>
+          <option value="750">750</option>
+          <option value="1000">1000</option>
         </select>
         <span class="rg-perf-warn" id="rgPerfWarn" style="display:none;">⚠ Large matrix — may be slow</span>
       </div>
