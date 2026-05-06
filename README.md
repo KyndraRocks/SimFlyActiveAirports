@@ -17,12 +17,12 @@ Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFl
 ## Features
 
 ### Point-to-Point Distance
-Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click.
+Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click. Typing a valid owned ICAO auto-selects that pilot's owner entry in the matrix dropdowns.
 
 ### Owner Distance Matrix
-Select departure and arrival fleet owners from dropdown menus to generate a full distance matrix — every combination of their airports, at a glance. Sort any row or column by distance, filter by distance range or airport category, and click any cell to populate the ICAO fields.
+Choose departure and arrival fleet owners from searchable dropdown panels to generate a full distance matrix — every combination of their airports, at a glance. The owner panels support live text filtering, keyboard navigation (arrows, Space to toggle, Enter to clear the filter), and show each pilot's airport count in the current view.
 
-ICAO labels carry per-category colors (1–7) so airport tier is immediately visible. The sticky departure-row and arrival-column headers stay pinned as you scroll, and the **⊙ pivot sort bullseye** on each header lets you sort the opposite axis by distance to that airport with a single click — cycle through ⊙ → ▲ nearest → ▼ farthest → ⊙ clear.
+ICAO labels carry per-category colors (1–7) so airport tier is immediately visible. Each row and column header shows a colored owner stripe bar — click it to lock the matrix to just that owner's airports on that axis. The sticky headers stay pinned as you scroll, and the **⊙ pivot sort bullseye** on each header lets you sort the opposite axis by distance to that airport with a single click — cycle through ⊙ → ▲ nearest → ▼ farthest → ⊙ clear.
 
 ### Independent Dep / Arr Category Filters
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
@@ -30,7 +30,9 @@ The category filter shows two side-by-side groups — one for departure airports
 ### Region Mode
 A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
 
-**Rolling map routing** — click any airport dot on the map (inside or outside a region circle) to set a route: first click sets departure, second click sets arrival and draws the route line. Every subsequent click rolls the chain forward — departure becomes the previous arrival, and the new click becomes the new arrival. The selected pair is immediately reflected in the main screen departure and arrival fields. A **✕ Clear** button in the header removes the current selection; the route and selection rings persist through ⊙ DONE and ⊙ Select Regions so you can reference or extend the pair while drawing new regions. Selecting a cell in the distance matrix or clicking a row/column header also routes through the same chain.
+**Rolling map routing** — click any airport dot on the map (inside or outside a region circle) to set a route: first click sets departure, second click sets arrival and draws the route line. Every subsequent click rolls the chain forward — departure becomes the previous arrival, and the new click becomes the new arrival. The selected pair is immediately reflected in the main screen departure and arrival fields. A **✕ Clear** button in the header removes the current selection; the route and selection rings persist through ⊙ DONE and ⊙ Select Regions so you can reference or extend the pair while drawing new regions. Selecting a cell in the distance matrix or clicking a row/column header routes through the same chain. **Double-click** any dot to zoom the map to that airport.
+
+**Send to Flight Planner →** closes Region Mode and populates the main screen with the selected departure, arrival, and category filter state — ready to file on SimBrief in one more click.
 
 A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map — toggling it also live-syncs both dep and arr category filters on the main screen. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier and take precedence over the map filter within their region rings. Category filter selections are preserved when re-entering region mode.
 
@@ -49,7 +51,7 @@ Once departure and arrival ICAOs are set, the **File on SimBrief →** button li
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
 
 ### Owner Profile Links
-When a pilot's SimFly profile URL is recorded in the Recip Tracker Gist, their name becomes a clickable link in the matrix tooltips, Distance Map info cards, and the Departure/Arrival Airport Owner dropdowns. Owner profile coverage extends across the full Pilot Directory, including pilots who don't otherwise appear in your tracked-routes data.
+When a pilot's SimFly profile URL is on record, their name becomes a clickable link in the matrix tooltips, Distance Map info cards, and the owner dropdown panels.
 
 ### Airport Info & External Links
 Click any ICAO to open a tooltip with runway details, surface type, elevation, and direct links to external resources.
