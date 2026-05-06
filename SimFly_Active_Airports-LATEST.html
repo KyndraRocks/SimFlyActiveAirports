@@ -972,6 +972,27 @@
     opacity: 0.35;
     pointer-events: none;
   }
+  /* Custom owner dropdown — styled to match region owner panels */
+  .dist-owner-dd-wrap { position:relative; width:100%; }
+  .dist-owner-dd-btn { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:5px; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.3rem; font-weight:500; padding:0.38rem 0.65rem; outline:none; cursor:pointer; text-align:left; transition:border-color 0.2s, box-shadow 0.2s; white-space:nowrap; }
+  .dist-owner-dd-btn .dd-caret { color:var(--muted); font-size:0.85em; flex-shrink:0; margin-left:0.3rem; }
+  .dist-owner-dd-btn:focus { border-color:var(--accent); box-shadow:var(--glow); }
+  .dist-owner-dd-btn.has-value { color:var(--text); border-color:rgba(0,200,255,0.35); }
+  .dist-owner-dd-btn.dist-select--pinned { opacity:0.35; pointer-events:none; }
+  .dist-owner-dd-panel { display:none; position:absolute; left:0; top:calc(100% + 4px); min-width:100%; max-width:min(520px,90vw); background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.55); z-index:9500; overflow:hidden; }
+  .dist-owner-dd-panel.open { display:block; }
+  .dist-owner-dd-panel.open-up { top:auto; bottom:calc(100% + 4px); }
+  .dist-owner-dd-list { max-height:260px; overflow-y:auto; padding:0.3rem 0; }
+  .dist-owner-dd-row { display:flex; align-items:center; gap:0.75rem; padding:0.39rem 0.9rem; cursor:pointer; user-select:none; white-space:nowrap; }
+  .dist-owner-dd-row:hover { background:rgba(0,200,255,0.07); }
+  .dist-owner-dd-row.selected { background:rgba(0,200,255,0.12); }
+  .dist-owner-dd-name { flex:1; font-family:'Rajdhani',sans-serif; font-size:1.5rem; color:var(--text); }
+  .dist-owner-dd-row.selected .dist-owner-dd-name { color:var(--accent); }
+  .dist-owner-dd-count { font-family:'Rajdhani',sans-serif; font-size:1.15rem; color:var(--muted); min-width:2.5ch; text-align:right; }
+  .dist-owner-dd-blank { padding:0.39rem 0.9rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.3rem; cursor:pointer; user-select:none; }
+  .dist-owner-dd-blank:hover { background:rgba(0,200,255,0.07); }
+  .dist-owner-dd-blank.selected { color:var(--accent); }
+  .dist-owner-dd-row.focused, .dist-owner-dd-blank.focused { background:rgba(0,200,255,0.16); box-shadow:inset 2px 0 0 rgba(0,200,255,0.55); }
 
   .dist-matrix-wrap {
     display: none;
@@ -3159,16 +3180,32 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       <div class="dist-owner-row" id="distOwnerRow">
         <div class="dist-owner-field">
           <span class="dist-label dist-label--owner" id="distDepOwnerLabel">Departure Airport Owner</span>
-          <select class="dist-select" id="distDepOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Departure airport owner">
+          <select style="display:none" class="dist-select" id="distDepOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Departure airport owner">
             <option value="">— select owner —</option>
           </select>
+          <div class="dist-owner-dd-wrap" id="distDepOwnerDdWrap">
+            <button class="dist-owner-dd-btn" id="distDepOwnerBtn" onclick="_distOwnerDdToggle('dep')" onkeydown="_distDdKey(event,'dep')" aria-haspopup="listbox" aria-label="Departure airport owner">
+              <span id="distDepOwnerDdLabel">— select owner —</span><span class="dd-caret">▾</span>
+            </button>
+            <div class="dist-owner-dd-panel" id="distDepOwnerDdPanel">
+              <div class="dist-owner-dd-list" id="distDepOwnerDdList"></div>
+            </div>
+          </div>
         </div>
         <button class="dist-owner-swap-btn" id="distOwnerSwapBtn" onclick="_distSwapOwners()" title="Swap Departure and Arrival owners" tabindex="-1">⇄</button>
         <div class="dist-owner-field">
           <span class="dist-label dist-label--owner" id="distArrOwnerLabel">Arrival Airport Owner</span>
-          <select class="dist-select" id="distArrOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Arrival airport owner">
+          <select style="display:none" class="dist-select" id="distArrOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Arrival airport owner">
             <option value="">— select owner —</option>
           </select>
+          <div class="dist-owner-dd-wrap" id="distArrOwnerDdWrap">
+            <button class="dist-owner-dd-btn" id="distArrOwnerBtn" onclick="_distOwnerDdToggle('arr')" onkeydown="_distDdKey(event,'arr')" aria-haspopup="listbox" aria-label="Arrival airport owner">
+              <span id="distArrOwnerDdLabel">— select owner —</span><span class="dd-caret">▾</span>
+            </button>
+            <div class="dist-owner-dd-panel" id="distArrOwnerDdPanel">
+              <div class="dist-owner-dd-list" id="distArrOwnerDdList"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="dist-matrix-wrap" id="distMatrixWrap">
@@ -3281,7 +3318,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.21.15';
+const APP_VERSION = '2.22.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -5047,14 +5084,14 @@ function _applyUrlParams() {
     const sel = document.getElementById('distDepOwner');
     if (sel) {
       const opt = Array.from(sel.options).find(o => o.value === _urlParams.depOwner);
-      if (opt) { sel.value = _urlParams.depOwner; ownerChanged = true; }
+      if (opt) { sel.value = _urlParams.depOwner; _distSyncOwnerBtn('dep'); ownerChanged = true; }
     }
   }
   if (_urlParams.arrOwner) {
     const sel = document.getElementById('distArrOwner');
     if (sel) {
       const opt = Array.from(sel.options).find(o => o.value === _urlParams.arrOwner);
-      if (opt) { sel.value = _urlParams.arrOwner; ownerChanged = true; }
+      if (opt) { sel.value = _urlParams.arrOwner; _distSyncOwnerBtn('arr'); ownerChanged = true; }
     }
   }
   if (ownerChanged) renderDistMatrix();
@@ -5158,6 +5195,7 @@ function onDistInput(el) {
       if (which === 'dep') _pendingHighlightDep = icao;
       else                 _pendingHighlightArr = icao;
       sel.value = owner.name;
+      _distSyncOwnerBtn(which);
       // If sticky sort is active, set the pivot now so renderDistMatrix re-sorts
       const tbl = document.getElementById('distMatrix');
       if (which === 'dep' && _distSort.stickyCol && tbl) {
@@ -5302,7 +5340,7 @@ function _distLookupOwner(which) {
   const owners = _getOwnerData();
   const owner  = owners.find(o => o.airports.some(a => a.icao === icao));
   const sel    = document.getElementById(which === 'dep' ? 'distDepOwner' : 'distArrOwner');
-  if (owner && sel) sel.value = owner.name;
+  if (owner && sel) { sel.value = owner.name; _distSyncOwnerBtn(which); }
 
   // Set the pin and render
   if (which === 'dep') _pinnedDep = icao;
@@ -5347,6 +5385,8 @@ function _distSyncPinnedDropdown(which) {
   if (!sel) return;
   const pinned = which === 'dep' ? !!_pinnedDep : !!_pinnedArr;
   sel.classList.toggle('dist-select--pinned', pinned);
+  const ddBtn = document.getElementById(which === 'dep' ? 'distDepOwnerBtn' : 'distArrOwnerBtn');
+  if (ddBtn) ddBtn.classList.toggle('dist-select--pinned', pinned);
 }
 
 function _clearDistNmTip() {
@@ -5664,6 +5704,172 @@ function _getOwnerData() {
   return owners;
 }
 
+// ── Custom owner dropdown state ────────────────────────────────────────────
+const _distDdBuf        = { dep:'', arr:'' };
+const _distDdTimer      = { dep:null, arr:null };
+const _distDdArrow      = { dep:-1, arr:-1 };
+const _panelKeyHandlers = { dep:null, arr:null };
+
+// ── Custom owner dropdown helpers ─────────────────────────────────────────
+
+function _distDdRows(which) {
+  const panelId = which === 'dep' ? 'distDepOwnerDdPanel' : 'distArrOwnerDdPanel';
+  const panel   = document.getElementById(panelId);
+  return panel ? [...panel.querySelectorAll('.dist-owner-dd-blank, .dist-owner-dd-row')] : [];
+}
+
+function _distDdSetFocus(which, idx) {
+  const rows = _distDdRows(which);
+  rows.forEach(r => r.classList.remove('focused'));
+  _distDdArrow[which] = idx;
+  if (idx >= 0 && idx < rows.length) {
+    rows[idx].classList.add('focused');
+    rows[idx].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function _distDdKey(e, which) {
+  const panelId = which === 'dep' ? 'distDepOwnerDdPanel' : 'distArrOwnerDdPanel';
+  const panel   = document.getElementById(panelId);
+  if (!panel) return;
+  const isOpen  = panel.classList.contains('open');
+
+  if (e.key === 'Escape') {
+    if (isOpen) {
+      panel.classList.remove('open');
+      clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
+      const btn = document.getElementById(which === 'dep' ? 'distDepOwnerBtn' : 'distArrOwnerBtn');
+      if (btn) btn.focus();
+    }
+    return;
+  }
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!isOpen) _distOwnerDdToggle(which);
+    const rows = _distDdRows(which);
+    if (!rows.length) return;
+    _distDdSetFocus(which, e.key === 'ArrowDown'
+      ? Math.min(_distDdArrow[which] + 1, rows.length - 1)
+      : (_distDdArrow[which] <= 0 ? -1 : _distDdArrow[which] - 1));
+    clearTimeout(_distDdTimer[which]); _distDdBuf[which] = '';
+    return;
+  }
+
+  if ((e.key === 'Enter' || e.key === ' ') && isOpen && _distDdArrow[which] >= 0) {
+    e.preventDefault();
+    const rows = _distDdRows(which);
+    if (rows[_distDdArrow[which]]) _distOwnerDdClick(rows[_distDdArrow[which]], which);
+    clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
+    return;
+  }
+
+  if (e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (!isOpen) _distOwnerDdToggle(which);
+    clearTimeout(_distDdTimer[which]);
+    _distDdBuf[which] += e.key.toLowerCase();
+    _distDdTimer[which] = setTimeout(() => { _distDdBuf[which] = ''; }, 600);
+    const ownerRows = _distDdRows(which).filter(r => r.classList.contains('dist-owner-dd-row'));
+    const matchIdx  = ownerRows.findIndex(r => (r.dataset.owner || '').toLowerCase().startsWith(_distDdBuf[which]));
+    if (matchIdx >= 0) _distDdSetFocus(which, matchIdx + 1); // +1 for blank row at index 0
+  }
+}
+
+function _distOwnerDdToggle(which) {
+  const panelId = which === 'dep' ? 'distDepOwnerDdPanel' : 'distArrOwnerDdPanel';
+  const btnId   = which === 'dep' ? 'distDepOwnerBtn'     : 'distArrOwnerBtn';
+  const otherId = which === 'dep' ? 'distArrOwnerDdPanel' : 'distDepOwnerDdPanel';
+  const otherW  = which === 'dep' ? 'arr'                  : 'dep';
+  const panel   = document.getElementById(panelId);
+  const btn     = document.getElementById(btnId);
+  const other   = document.getElementById(otherId);
+  if (!panel || !btn) return;
+  if (other) {
+    other.classList.remove('open');
+    if (_panelKeyHandlers[otherW]) {
+      document.removeEventListener('keydown', _panelKeyHandlers[otherW]);
+      _panelKeyHandlers[otherW] = null;
+    }
+  }
+  const opening = !panel.classList.contains('open');
+  if (opening) {
+    panel.classList.remove('open-up');
+    panel.classList.add('open');
+    const r  = btn.getBoundingClientRect();
+    const ph = panel.offsetHeight;
+    panel.classList.toggle('open-up', r.bottom + 4 + ph > window.innerHeight);
+    const selId = which === 'dep' ? 'distDepOwner' : 'distArrOwner';
+    const val   = (document.getElementById(selId) || {}).value || '';
+    panel.querySelectorAll('.dist-owner-dd-row, .dist-owner-dd-blank').forEach(row => {
+      row.classList.toggle('selected', row.dataset.owner === val);
+      row.classList.remove('focused');
+    });
+    _distDdArrow[which] = -1;
+    // Document-level fallback handler — only fires when button does not have focus
+    if (_panelKeyHandlers[which]) document.removeEventListener('keydown', _panelKeyHandlers[which]);
+    const kh = function(e) {
+      if (!panel.classList.contains('open')) {
+        document.removeEventListener('keydown', kh);
+        if (_panelKeyHandlers[which] === kh) _panelKeyHandlers[which] = null;
+        return;
+      }
+      if (document.activeElement === btn) return; // button's onkeydown handles it
+      _distDdKey(e, which);
+    };
+    _panelKeyHandlers[which] = kh;
+    document.addEventListener('keydown', kh);
+    setTimeout(() => {
+      const outside = function(e) {
+        if (!panel.contains(e.target) && e.target !== btn) {
+          panel.classList.remove('open');
+          document.removeEventListener('mousedown', outside, true);
+          document.removeEventListener('keydown', kh);
+          if (_panelKeyHandlers[which] === kh) _panelKeyHandlers[which] = null;
+          clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
+        }
+      };
+      document.addEventListener('mousedown', outside, true);
+    }, 0);
+  } else {
+    panel.classList.remove('open');
+    if (_panelKeyHandlers[which]) {
+      document.removeEventListener('keydown', _panelKeyHandlers[which]);
+      _panelKeyHandlers[which] = null;
+    }
+    clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
+  }
+}
+
+function _distOwnerDdClick(el, which) {
+  _distOwnerDdSelect(which, el.dataset.owner || '');
+}
+
+function _distOwnerDdSelect(which, value) {
+  const selId   = which === 'dep' ? 'distDepOwner'        : 'distArrOwner';
+  const panelId = which === 'dep' ? 'distDepOwnerDdPanel' : 'distArrOwnerDdPanel';
+  const sel     = document.getElementById(selId);
+  const panel   = document.getElementById(panelId);
+  if (sel) {
+    sel.value = value;
+    sel.dispatchEvent(new Event('change'));
+  }
+  if (panel) panel.classList.remove('open');
+  _distSyncOwnerBtn(which);
+}
+
+function _distSyncOwnerBtn(which) {
+  const selId   = which === 'dep' ? 'distDepOwner'       : 'distArrOwner';
+  const labelId = which === 'dep' ? 'distDepOwnerDdLabel' : 'distArrOwnerDdLabel';
+  const btnId   = which === 'dep' ? 'distDepOwnerBtn'    : 'distArrOwnerBtn';
+  const sel     = document.getElementById(selId);
+  const label   = document.getElementById(labelId);
+  const btn     = document.getElementById(btnId);
+  if (!sel || !label || !btn) return;
+  const val = sel.value;
+  label.textContent = val || '— select owner —';
+  btn.classList.toggle('has-value', !!val);
+}
+
 function refreshOwnerDropdowns() {
   const owners = _getOwnerData();
   const row    = document.getElementById('distOwnerRow');
@@ -5694,6 +5900,22 @@ function refreshOwnerDropdowns() {
 
   if (owners.find(o => o.name === prevDep)) depSel.value = prevDep;
   if (owners.find(o => o.name === prevArr)) arrSel.value = prevArr;
+
+  // Populate custom dropdown panels
+  ['dep', 'arr'].forEach(side => {
+    const listEl = document.getElementById(side === 'dep' ? 'distDepOwnerDdList' : 'distArrOwnerDdList');
+    if (!listEl) return;
+    const blankRow = `<div class="dist-owner-dd-blank" data-owner="" onclick="_distOwnerDdClick(this,'${side}')">— select owner —</div>`;
+    const rows = owners.map(o => {
+      const safe = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+      const disp = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      return `<div class="dist-owner-dd-row" data-owner="${safe}" onclick="_distOwnerDdClick(this,'${side}')">` +
+             `<span class="dist-owner-dd-name">${disp}</span>` +
+             `<span class="dist-owner-dd-count">${o.airports.length}</span></div>`;
+    }).join('');
+    listEl.innerHTML = blankRow + rows;
+    _distSyncOwnerBtn(side);
+  });
 
   _updateLookupBtns();
   renderDistMatrix();
@@ -6852,6 +7074,8 @@ function _distSwapOwners() {
 
   depSel.value = oldArr;
   arrSel.value = oldDep;
+  _distSyncOwnerBtn('dep');
+  _distSyncOwnerBtn('arr');
 
   // Capture current highlights so we can cross them after the swap:
   // the old col ICAO (an ARR airport) will become the new row highlight (now a DEP),
@@ -7815,8 +8039,8 @@ function clearDist() {
   // matching the normal onchange behaviour of these dropdowns.
   const depOwnerEl = document.getElementById('distDepOwner');
   const arrOwnerEl = document.getElementById('distArrOwner');
-  if (depOwnerEl) depOwnerEl.value = '';
-  if (arrOwnerEl) arrOwnerEl.value = '';
+  if (depOwnerEl) { depOwnerEl.value = ''; _distSyncOwnerBtn('dep'); }
+  if (arrOwnerEl) { arrOwnerEl.value = ''; _distSyncOwnerBtn('arr'); }
   window._urlFltNum = '';
   // Clear the selected aircraft and reset the MTOW load slider to 100%
   // (load-time default). _acSelect(null) nulls _acSelectedCode and
@@ -8089,7 +8313,7 @@ function closeReleaseNotes(e) {
 // the last element (Tab) or the first (Shift+Tab), we redirect it back into
 // the cycle rather than letting it escape to browser chrome.
 (function () {
-  const TRAP_IDS = ['distDep', 'distArr', 'distDepOwner', 'distArrOwner'];
+  const TRAP_IDS = ['distDep', 'distArr', 'distDepOwnerBtn', 'distArrOwnerBtn'];
 
   // Return the subset of trap elements that are currently visible and enabled.
   // Owner dropdowns are hidden when fewer than 2 owners exist; skip them so Tab
@@ -8556,6 +8780,9 @@ let _rgTileLayer  = null;   // current base tile layer
 let _rgMapSat     = false;  // false = street (default), true = satellite
 let _rgRouteLayer = null;   // selected-cell airport-to-airport route line
 let _rgSortMode   = 'alpha'; // 'alpha' | 'owner'
+let _rgZoomedToIcao  = null;  // ICAO currently zoomed into, or null
+let _rgPreZoomState  = null;  // { center, zoom } saved before zoom-in
+let _rgDblClickActive = false; // prevents movestart from clearing state during our own setView
 
 // Results
 let _rgDepAirports     = [];  // filtered + capped display set
@@ -8810,7 +9037,7 @@ async function _rgInitMap() {
     return;
   }
 
-  _rgMap = L.map('rgMapContainer', { zoomControl: true, center: [30, 0], zoom: 3 });
+  _rgMap = L.map('rgMapContainer', { zoomControl: true, center: [30, 0], zoom: 3, doubleClickZoom: false });
 
   // Start on street/chart tiles (better for regional planning than satellite)
   _rgMapSat   = false;
@@ -8822,7 +9049,8 @@ async function _rgInitMap() {
   _rgMap.on('mousedown', _rgMapMouseDown);
   _rgMap.on('mousemove', _rgMapMouseMove);
   _rgMap.on('mouseup',   _rgMapMouseUp);
-  _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); });
+  _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); if (!_rgDblClickActive) { _rgZoomedToIcao = null; _rgPreZoomState = null; } });
+  _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
 
   // Render all airport dots asynchronously so the map appears first
   setTimeout(_rgRenderDots, 120);
@@ -9009,6 +9237,8 @@ function _rgRenderDots() {
       color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
     });
     _rgBindDotTip(m, ap.icao, rec, ownerName);
+    const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = ap.icao;
+    m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.addTo(_rgDotLayer);
   }
 }
@@ -9118,6 +9348,28 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   _rgRouteLayer = [glow, line, core, depRing, arrRing, infoLabel];
 }
 
+function _rgDblClickAirport(lat, lng, icao) {
+  if (!_rgMap) return;
+  if (_rgZoomedToIcao !== null) {
+    // Second double-click — restore previous view
+    if (_rgPreZoomState) {
+      _rgDblClickActive = true;
+      _rgMap.setView(_rgPreZoomState.center, _rgPreZoomState.zoom, { animate: true });
+    }
+    _rgZoomedToIcao = null;
+    _rgPreZoomState = null;
+  } else {
+    // First double-click — zoom to ~3 NM width
+    _rgPreZoomState = { center: _rgMap.getCenter(), zoom: _rgMap.getZoom() };
+    const W = _rgMap.getContainer().clientWidth || 600;
+    const cosLat = Math.cos(lat * Math.PI / 180);
+    const zoom = Math.log2(156543.03392 * cosLat * W / (3 * 1852));
+    _rgDblClickActive = true;
+    _rgMap.setView([lat, lng], Math.round(zoom), { animate: true });
+    _rgZoomedToIcao = icao;
+  }
+}
+
 function _rgHighlightDots() {
   if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
   if (!_rgMap) return;
@@ -9141,6 +9393,7 @@ function _rgHighlightDots() {
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const depIcao = a.icao;
     m.on('click', () => _rgHighlightDepRow(depIcao));
+    m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, depIcao));
     m.addTo(_rgHiLayer);
   }
 
@@ -9157,6 +9410,7 @@ function _rgHighlightDots() {
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const arrIcao = a.icao;
     m.on('click', () => _rgHighlightArrCol(arrIcao));
+    m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, arrIcao));
     m.addTo(_rgHiLayer);
   }
 }
@@ -9491,8 +9745,7 @@ function rgUndo() {
     _rgMap.dragging.enable();
     _rgPhase = 'ruler';
     _rgSetCursor('ruler');
-    document.getElementById('rgResultsBar').classList.remove('visible');
-    document.getElementById('rgMatrixWrap').classList.remove('visible');
+    _rgCollapseMatrix();
   }
   _rgUpdatePhaseText();
 }
@@ -9501,10 +9754,6 @@ function rgReset(silent) {
   clearTimeout(_rgMatRefreshTm);
   _rgDragMode   = null;
   _rgSortPivot  = null;
-  _rgMeasureActive = false;
-  _rgClearMeasure(); // also calls _rgSyncClearBtn
-  const rulerBtn = document.getElementById('rgRulerBtn');
-  if (rulerBtn) rulerBtn.classList.remove('active');
   _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
   _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
   _globalCatFilter = new Set([1,2,3,4,5,6,7]);
@@ -9538,21 +9787,57 @@ function rgReset(silent) {
   _rgHideNmLabel();
   document.getElementById('rgUndoBtn').disabled = true;
   if (!silent) {
-    document.getElementById('rgResultsBar').classList.remove('visible');
-    document.getElementById('rgMatrixWrap').classList.remove('visible');
+    _rgCollapseMatrix();
   }
   _rgUpdatePhaseText();
 }
 
-function rgExploreReturn() {
-  // Collapse just the bottom results panel and return to free-explore map mode.
-  // Region circles remain on the map — _rgBeginSelection → rgReset clears them when the
-  // user starts a new selection.
-  if (_rgMap) _rgMap.dragging.enable();
-  _rgDragMode = null;
-  _rgHideNmLabel();
+function _rgCollapseMatrix() {
   document.getElementById('rgResultsBar').classList.remove('visible');
   document.getElementById('rgMatrixWrap').classList.remove('visible');
+  // Reset any manual split position so the map reclaims full available height
+  const mapEl = document.getElementById('rgMapContainer');
+  if (mapEl) mapEl.style.flex = '';
+  if (_rgMap) setTimeout(() => _rgMap.invalidateSize(), 50);
+}
+
+function rgExploreReturn() {
+  // Same teardown as rgReset but intentionally skips measure state so distance
+  // measurements survive clicking Done.
+  clearTimeout(_rgMatRefreshTm);
+  _rgDragMode  = null;
+  _rgSortPivot = null;
+  _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
+  _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
+  _globalCatFilter = new Set([1,2,3,4,5,6,7]);
+  document.querySelectorAll('#rgResultsBar .dist-cat-btn').forEach(b => b.classList.add('active'));
+  document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
+  _rgRemoveHandles();
+  [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
+   _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
+  _rgDepFill = _rgDepRing = _rgDepPin = null;
+  _rgRangeGlow = null; _rgRangeRing = null; _rgRangeLabel = null;
+  _rgDepOwnerFilter = null;
+  _rgArrOwnerFilter = null;
+  _rgStripeOwnerDep = null; _rgStripeOwnerArr = null;
+  _rgStripeFilterDep = null; _rgStripeFilterArr = null;
+  _rgArrFill = _rgArrRing = _rgArrPin = null;
+  _rgRadLine = _rgRulerLine = null;
+  if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
+  _rgClearHeroLine();
+  _rgClearRouteHL();
+  if (_rgMap) _rgMap.dragging.enable();
+  _rgDepCenter = null; _rgDepRadiusNm = 0;
+  _rgArrCenter = null; _rgArrRadiusNm = 0;
+  _rgDepAirports = []; _rgArrAirports = [];
+  _rgDepAirportsFull = []; _rgArrAirportsFull = [];
+  _rgRegionIcaos = null;
+  _rgRenderDots();
+  _rgSelCell = null; _rgSelDep = null; _rgSelArr = null;
+  _rgDotSelDep = null; _rgDotSelArr = null;
+  _rgHideNmLabel();
+  document.getElementById('rgUndoBtn').disabled = true;
+  _rgCollapseMatrix();
   _rgPhase = 'explore';
   _rgSetCursor('');
   _rgUpdatePhaseText();
@@ -10453,27 +10738,50 @@ function _rgClickOwnerStripe(ownerName, side) {
 
 // ── Cell selection ───────────────────────────────────────────────────────
 
+function _rgRouteFromDots(depIcao, arrIcao) {
+  const depEntry = _rgDepAirports.find(a => a.icao === depIcao);
+  const arrEntry = _rgArrAirports.find(a => a.icao === arrIcao);
+  if (!depEntry || !arrEntry) return;
+  const nm = Math.round(_haversineNm(depEntry.rec.latitude, depEntry.rec.longitude,
+                                      arrEntry.rec.latitude, arrEntry.rec.longitude));
+  if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
+  _rgClearMatrixHL();
+  _rgDrawRouteHL(depIcao, arrIcao, nm);
+  _rgSelDep = depIcao;
+  _rgSelArr = arrIcao;
+  document.getElementById('rgSelDep').textContent = depIcao + '  ' + depEntry.rec.name;
+  document.getElementById('rgSelArr').textContent = arrIcao + '  ' + arrEntry.rec.name;
+  document.getElementById('rgSelNm').textContent = nm + ' nm';
+  document.getElementById('rgSelRoute').classList.add('visible');
+}
+
 function _rgHighlightDepRow(icao) {
   _rgDotSelDep = icao;
-  const matEl = document.getElementById('rgMatrix');
-  if (!matEl) return;
   if (_rgDotSelArr) {
-    // Both sides set — find the intersection cell and do a full selection
-    const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + icao + '"]');
-    if (depTh) {
-      const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + _rgDotSelArr + '"]');
-      if (td && !td.classList.contains('rg-same')) {
-        _rgSelectCell(td, icao, _rgDotSelArr, parseInt(td.textContent) || 0);
-        _rgHighlightDots();
-        return;
+    // Both sides set — try matrix cell first, fall back to direct coordinate route
+    const matEl = document.getElementById('rgMatrix');
+    if (matEl) {
+      const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + icao + '"]');
+      if (depTh) {
+        const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + _rgDotSelArr + '"]');
+        if (td && !td.classList.contains('rg-same')) {
+          _rgSelectCell(td, icao, _rgDotSelArr, parseInt(td.textContent) || 0);
+          _rgHighlightDots();
+          return;
+        }
       }
     }
+    _rgRouteFromDots(icao, _rgDotSelArr);
+    _rgHighlightDots();
+    return;
   }
   // Only dep side — clear dep row highlights, preserve arr column highlights
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) { _rgHighlightDots(); return; }
   if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
   matEl.querySelectorAll('tr.rg-row-hl').forEach(r => r.classList.remove('rg-row-hl'));
   const th = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + icao + '"]');
-  if (!th) return;
+  if (!th) { _rgHighlightDots(); return; }
   const tr = th.closest('tr');
   if (tr) {
     tr.classList.add('rg-row-hl');
@@ -10484,21 +10792,27 @@ function _rgHighlightDepRow(icao) {
 
 function _rgHighlightArrCol(icao) {
   _rgDotSelArr = icao;
-  const matEl = document.getElementById('rgMatrix');
-  if (!matEl) return;
   if (_rgDotSelDep) {
-    // Both sides set — find the intersection cell and do a full selection
-    const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + _rgDotSelDep + '"]');
-    if (depTh) {
-      const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + icao + '"]');
-      if (td && !td.classList.contains('rg-same')) {
-        _rgSelectCell(td, _rgDotSelDep, icao, parseInt(td.textContent) || 0);
-        _rgHighlightDots();
-        return;
+    // Both sides set — try matrix cell first, fall back to direct coordinate route
+    const matEl = document.getElementById('rgMatrix');
+    if (matEl) {
+      const depTh = matEl.querySelector('th.rg-row-hdr[data-rg-tip="' + _rgDotSelDep + '"]');
+      if (depTh) {
+        const td = depTh.closest('tr').querySelector('td[data-rg-arr="' + icao + '"]');
+        if (td && !td.classList.contains('rg-same')) {
+          _rgSelectCell(td, _rgDotSelDep, icao, parseInt(td.textContent) || 0);
+          _rgHighlightDots();
+          return;
+        }
       }
     }
+    _rgRouteFromDots(_rgDotSelDep, icao);
+    _rgHighlightDots();
+    return;
   }
   // Only arr side — clear arr col highlights, preserve dep row highlights
+  const matEl = document.getElementById('rgMatrix');
+  if (!matEl) { _rgHighlightDots(); return; }
   if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
   matEl.querySelectorAll('td.rg-col-hl').forEach(c => c.classList.remove('rg-col-hl'));
   matEl.querySelectorAll('td[data-rg-arr="' + icao + '"]').forEach(td => {
@@ -10540,6 +10854,8 @@ function _rgSelectCell(td, depIcao, arrIcao, nm) {
 
   _rgSelDep = depIcao;
   _rgSelArr = arrIcao;
+  _rgDotSelDep = depIcao;
+  _rgDotSelArr = arrIcao;
 
   const depRec = _rgDepAirports.find(a => a.icao === depIcao);
   const arrRec = _rgArrAirports.find(a => a.icao === arrIcao);
@@ -10748,10 +11064,122 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.8</span>
+          <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region dot click re-routes after matrix cell selection</b> — clicking a matrix cell sets the active pair but did not update the dot-selection state (<code>_rgDotSelDep</code> / <code>_rgDotSelArr</code>), so a subsequent dot click found no companion and fell through to plain row/column highlighting. <code>_rgSelectCell</code> now also writes those two variables, so clicking any dot after a matrix selection immediately reroutes to the new airport.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.7</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region dot click immediately routes when companion is already selected</b> — clicking an airport dot in the source or destination region now draws the route line and populates the selection panel immediately if a companion airport is already selected in the other region. Previously, the route only updated when the matrix cell existed and was found; clicks that fell through the matrix lookup (no matrix built, or airport filtered out of matrix rows/columns) merely highlighted the row/column without drawing a route.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.6</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>ICAO entry auto-selects owner in custom dropdown</b> — typing a valid owned ICAO in the departure or arrival field was setting the hidden select value but not updating the visible dropdown button label. Added <code>_distSyncOwnerBtn</code> call after the auto-select so the button reflects the chosen owner immediately.</li>
+          <li><b>Distance measurements survive region reset</b> — clicking Select Regions (and any dep-circle-too-small rejection) was wiping saved distance measurements because <code>rgReset</code> called <code>_rgClearMeasure</code>. Measure state is now independent of region selection reset; only the measure tool's own Clear All button clears measurements.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.5</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Owner dropdowns: type-to-jump works from button focus (no click required)</b> — when the owner button has keyboard focus (e.g. reached via Tab), typing any character immediately opens the panel and starts matching — no mouse click needed first. Arrow keys also open the panel from button focus. Keyboard state (buffer, highlighted row) is now module-level so it persists correctly across open/close cycles.</li>
+          <li><b>Done button now clears the region selection</b> — clicking Done was leaving circles on the map instead of ending the selection. Done now clears all circles, collapses the matrix panel, expands the map, and returns to the <em>Select Regions</em> button — ready to start a new selection whenever you choose.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.4</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Owner dropdowns: arrow-key navigation</b> — ↓ / ↑ move the highlight through the owner list (matching the Region owner panel behaviour). ↑ past the first row clears the highlight. Space confirms the highlighted row in addition to Enter. Arrow movement resets the type-to-jump buffer so the two modes don't interfere.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.3</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Owner dropdown type-to-jump: multi-character search</b> — characters typed within 600 ms are accumulated before matching, so typing <em>K Y N</em> quickly finds <em>Kyndra</em> rather than jumping to K, then Y, then N separately. The buffer resets automatically after 600 ms of inactivity.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.22.2</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Owner dropdowns: panel positioning fixed</b> — the panel was appearing in the wrong position because the <code>.panel</code> CSS animation retains <code>transform:translateY(0)</code> which creates a containing block for <code>position:fixed</code> children. Switched the dropdown panel to <code>position:absolute</code> relative to its own wrapper, eliminating the offset. Opens downward by default and flips upward automatically when near the bottom of the viewport.</li>
+          <li><b>Owner dropdowns: type-to-jump restored</b> — typing a character while the dropdown is open scrolls to and highlights the first owner whose name starts with that letter, replicating the native <code>&lt;select&gt;</code> behaviour. Press Enter to confirm or Escape to dismiss.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.22.1</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region map expands to full screen when distance matrix closes</b> — closing the results panel (Done, Undo back past results, or Reset) now resets any manual split position and gives the map the full available height. A shared <code>_rgCollapseMatrix()</code> helper binds all three close paths so any future feature that hides the matrix gets this behaviour automatically.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.22.0</span>
+          <span class="release-date">May 5, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region map: double-click airport to zoom in</b> — double-clicking any airport dot on the region map zooms the view to approximately 3 NM width centered on that airport. A second double-click on the same airport restores the previous map view. Any manual pan or zoom resets the toggle, ready for the next double-click.</li>
+          <li><b>Main screen owner dropdowns: unified style</b> — the Departure Owner and Arrival Owner selectors now use the same Rajdhani font and panel style as the Region owner filter menus. Each owner row shows the airport count right-justified at the far right of the row, matching the Region panel layout.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.21.15</span>
-          <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-date">May 5, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
