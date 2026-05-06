@@ -3321,7 +3321,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.23.5';
+const APP_VERSION = '2.23.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8854,6 +8854,9 @@ function openRegionModal() {
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
   document.addEventListener('mouseup', _rgDocMouseUp);
+  const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
+  const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
+  if (mainDep && mainArr) { _rgDotSelDep = mainDep; _rgDotSelArr = mainArr; }
   loadAirportDB()
     .then(() => _rgInitMap())
     .catch(e => console.error('Region modal: DB load failed', e));
@@ -9040,6 +9043,10 @@ async function _rgInitMap() {
   if (_rgMap) {
     setTimeout(() => _rgMap.invalidateSize(), 60);
     _rgUpdatePhaseText();
+    if (_rgDotSelDep && _rgDotSelArr) {
+      _rgRouteFromDots(_rgDotSelDep, _rgDotSelArr);
+      _rgHighlightDots();
+    }
     return;
   }
 
@@ -9059,7 +9066,13 @@ async function _rgInitMap() {
   _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
 
   // Render all airport dots asynchronously so the map appears first
-  setTimeout(_rgRenderDots, 120);
+  setTimeout(() => {
+    _rgRenderDots();
+    if (_rgDotSelDep && _rgDotSelArr) {
+      _rgRouteFromDots(_rgDotSelDep, _rgDotSelArr);
+      _rgHighlightDots();
+    }
+  }, 120);
 
   _rgPhase = 'explore';
   _rgSetCursor('');
@@ -11236,10 +11249,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.23.6</span>
+          <span class="release-date">May 6, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Main screen route pre-loads into Region Mode on open</b> — if both Departure and Arrival are filled on the main screen when ⊙ Regions is clicked, those ICAOs are pre-set as <code>_rgDotSelDep</code>/<code>_rgDotSelArr</code> before the map initialises. On first open the route is drawn immediately after the background dots render (120 ms); on subsequent opens it is drawn in the map-ready path before returning.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.23.5</span>
-          <span class="release-date">May 6, 2026 &middot; Current</span>
+          <span class="release-date">May 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
