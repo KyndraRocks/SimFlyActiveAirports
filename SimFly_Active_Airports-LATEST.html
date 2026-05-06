@@ -3350,7 +3350,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.24.6';
+const APP_VERSION = '2.24.7';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8890,6 +8890,14 @@ function openRegionModal() {
   const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
   const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
   if (mainDep && mainArr) { _rgDotSelDep = mainDep; _rgDotSelArr = mainArr; }
+  // Sync Airport Owners filter to the main-screen owner selection on every open.
+  const depOwner = (document.getElementById('distDepOwner')?.value || '').trim();
+  const arrOwner = (document.getElementById('distArrOwner')?.value || '').trim();
+  const selectedOwners = [...new Set([depOwner, arrOwner].filter(Boolean))];
+  _rgMapOwnerFilter = selectedOwners.length ? new Set(selectedOwners) : null;
+  _rgBuildMapOwnerList();
+  _rgUpdateMapOwnerBtn();
+  _rgApplyMapOwnerFilter(); // no-op until map initialises; dots will render with the filter already set
   loadAirportDB()
     .then(() => _rgInitMap())
     .catch(e => console.error('Region modal: DB load failed', e));
@@ -11665,10 +11673,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.24.7</span>
+          <span class="release-date">May 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region Mode opens with Airport Owners filter pre-synced to main screen</b> — when Departure or Arrival owners are selected on the main screen, opening Region Mode now immediately applies the same owner(s) to the Airport Owners map filter, so the map opens showing only those pilots' airports. If both owners are selected, both appear. If neither is selected, the filter shows all airports as before.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.24.6</span>
-          <span class="release-date">May 6, 2026 &middot; Current</span>
+          <span class="release-date">May 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
