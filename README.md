@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.22.13**
+**Current version: v2.23.5**
 
 ---
 
@@ -28,9 +28,11 @@ ICAO labels carry per-category colors (1–7) so airport tier is immediately vis
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
 
 ### Region Mode
-A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a click-to-highlight map dot system. Clicking an airport dot on the map — or clicking a cell in the results matrix — highlights the selected departure and arrival airports with a solid black ring so they're easy to spot at a glance.
+A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
 
-A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier — and take precedence over the map filter within their region rings, so you can globally suppress a category while still seeing it inside a specific region. Category filter selections are preserved when re-entering region mode.
+**Rolling map routing** — click any airport dot on the map (inside or outside a region circle) to set a route: first click sets departure, second click sets arrival and draws the route line. Every subsequent click rolls the chain forward — departure becomes the previous arrival, and the new click becomes the new arrival. The selected pair is immediately reflected in the main screen departure and arrival fields. A **✕ Clear** button in the header removes the current selection; the route and selection rings persist through ⊙ DONE and ⊙ Select Regions so you can reference or extend the pair while drawing new regions. Selecting a cell in the distance matrix or clicking a row/column header also routes through the same chain.
+
+A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map — toggling it also live-syncs both dep and arr category filters on the main screen. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier and take precedence over the map filter within their region rings. Category filter selections are preserved when re-entering region mode.
 
 Region mode includes a **Measure Distance** ruler with magnetic heading sourced from the NOAA WMM API for sub-degree accuracy and **Undo** / **Clear All** controls for multi-segment sessions, a selectable airport cap per region (100 · 250 · 500 · 750 · 1,000), and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open — or while the dropdown button itself has keyboard focus — opens the panel and routes to the filter box, no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
 

@@ -3321,7 +3321,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.22.13';
+const APP_VERSION = '2.23.5';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8798,6 +8798,9 @@ let _rgSelDep      = null;
 let _rgSelArr      = null;
 let _rgDotSelDep   = null;   // ICAO selected via dep dot click
 let _rgDotSelArr   = null;   // ICAO selected via arr dot click
+let _rgClickTimer       = null;   // debounce timer so dblclick can cancel a pending single click
+let _rgDragJustEnded    = false;  // guard: ignore dot clicks fired by region-draw mouseup
+let _rgSelOverlayLayer  = null;   // lightweight ring overlay for selected background dots
 
 // Category filter (dep and arr are independent)
 let _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
@@ -9241,6 +9244,7 @@ function _rgRenderDots() {
     });
     _rgBindDotTip(m, ap.icao, rec, ownerName);
     const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = ap.icao;
+    m.on('click',   () => _rgMapDotClick(_dIcao));
     m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.addTo(_rgDotLayer);
   }
@@ -9297,9 +9301,11 @@ function _rgClearRouteHL() {
 function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   _rgClearRouteHL();
   if (!_rgMap) return;
-  const depEntry = _rgDepAirports.find(a => a.icao === depIcao);
-  const arrEntry = _rgArrAirports.find(a => a.icao === arrIcao);
-  if (!depEntry || !arrEntry) return;
+  const depEntry = (_rgDepAirports && _rgDepAirports.find(a => a.icao === depIcao))
+    || (function() { const r = lookupICAO(depIcao); return r ? { rec: r } : null; })();
+  const arrEntry = (_rgArrAirports && _rgArrAirports.find(a => a.icao === arrIcao))
+    || (function() { const r = lookupICAO(arrIcao); return r ? { rec: r } : null; })();
+  if (!depEntry || !arrEntry || !depEntry.rec || !depEntry.rec.latitude) return;
 
   // Dedicated panes keep the route line above the hero line regardless of draw order.
   // routeLinePane (450) > overlayPane (400); routeLabelPane (650) > markerPane (600).
@@ -9353,6 +9359,7 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
 
 function _rgDblClickAirport(lat, lng, icao) {
   if (!_rgMap) return;
+  clearTimeout(_rgClickTimer); _rgClickTimer = null;
   if (_rgZoomedToIcao !== null) {
     // Second double-click — restore previous view
     if (_rgPreZoomState) {
@@ -9395,7 +9402,7 @@ function _rgHighlightDots() {
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const depIcao = a.icao;
-    m.on('click', () => _rgHighlightDepRow(depIcao));
+    m.on('click', () => _rgMapDotClick(depIcao));
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, depIcao));
     m.addTo(_rgHiLayer);
   }
@@ -9412,10 +9419,63 @@ function _rgHighlightDots() {
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const arrIcao = a.icao;
-    m.on('click', () => _rgHighlightArrCol(arrIcao));
+    m.on('click', () => _rgMapDotClick(arrIcao));
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, arrIcao));
     m.addTo(_rgHiLayer);
   }
+
+  _rgRefreshSelOverlay();
+}
+
+// Draw selection rings for background dots (airports not in _rgHiLayer) that
+// have been selected via _rgMapDotClick.  Kept as a tiny separate layer so the
+// expensive _rgRenderDots rebuild is never needed just to show a ring.
+function _rgRefreshSelOverlay() {
+  _rgUpdateClearDotBtn();
+  if (_rgSelOverlayLayer) { _rgSelOverlayLayer.remove(); _rgSelOverlayLayer = null; }
+  if (!_rgMap) return;
+
+  const inDep = icao => _rgDepAirports && _rgDepAirports.some(a => a.icao === icao);
+  const inArr = icao => _rgArrAirports && _rgArrAirports.some(a => a.icao === icao);
+
+  const rings = [];
+  if (_rgDotSelDep && !inDep(_rgDotSelDep)) rings.push(_rgDotSelDep);
+  if (_rgDotSelArr && !inArr(_rgDotSelArr) && _rgDotSelArr !== _rgDotSelDep) rings.push(_rgDotSelArr);
+  if (!rings.length) return;
+
+  if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
+  _rgSelOverlayLayer = L.layerGroup().addTo(_rgMap);
+  for (const icao of rings) {
+    const rec = lookupICAO(icao);
+    if (!rec || !rec.latitude) continue;
+    const fill = _rgCatOf(icao) || (_rgMapSat ? '#a8d8f0' : '#3a7090');
+    L.circleMarker([rec.latitude, rec.longitude], {
+      renderer: _rgCanvasRenderer,
+      radius: 13, weight: 5,
+      color: '#000000', fillColor: fill, fillOpacity: 1,
+      interactive: false,
+    }).addTo(_rgSelOverlayLayer);
+  }
+}
+
+function _rgUpdateClearDotBtn() {
+  const btn = document.getElementById('rgClearDotSelBtn');
+  if (btn) btn.style.display = (_rgDotSelDep || _rgDotSelArr) ? '' : 'none';
+}
+
+function _rgClearDotSel() {
+  _rgDotSelDep = null; _rgDotSelArr = null;
+  if (_rgSelOverlayLayer) { _rgSelOverlayLayer.remove(); _rgSelOverlayLayer = null; }
+  _rgSelCell = null; _rgSelDep = null; _rgSelArr = null;
+  const matEl = document.getElementById('rgMatrix');
+  if (matEl) {
+    matEl.querySelectorAll('tr.rg-row-hl').forEach(r => r.classList.remove('rg-row-hl'));
+    matEl.querySelectorAll('td.rg-col-hl').forEach(c => c.classList.remove('rg-col-hl'));
+    matEl.querySelectorAll('td.rg-selected').forEach(c => c.classList.remove('rg-selected'));
+  }
+  document.getElementById('rgSelRoute').classList.remove('visible');
+  _rgClearRouteHL();
+  _rgHighlightDots();
 }
 
 // ── Drag / resize helpers ──────────────────────────────────────────────
@@ -9695,6 +9755,8 @@ function _rgLockDep() {
   _rgSetCursor('ruler');
   document.getElementById('rgUndoBtn').disabled = false;
   _rgUpdatePhaseText();
+  _rgDragJustEnded = true;
+  setTimeout(() => { _rgDragJustEnded = false; }, 300);
 }
 
 function _rgLockArr() {
@@ -9721,6 +9783,8 @@ function _rgLockArr() {
   _rgDrawHeroLine();
   _rgComputeAndRender();
   _rgDrawHandles();
+  _rgDragJustEnded = true;
+  setTimeout(() => { _rgDragJustEnded = false; }, 300);
 }
 
 // ── Undo / Reset ────────────────────────────────────────────────────────
@@ -9770,7 +9834,6 @@ function rgReset(silent) {
   _rgRadLine = _rgRulerLine = null;
   if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
   _rgClearHeroLine();
-  _rgClearRouteHL();
   if (_rgMap) _rgMap.dragging.enable();
   _rgDepCenter = null; _rgDepRadiusNm = 0;
   _rgArrCenter = null; _rgArrRadiusNm = 0;
@@ -9778,8 +9841,8 @@ function rgReset(silent) {
   _rgDepAirportsFull = []; _rgArrAirportsFull = [];
   _rgRegionIcaos = null;
   _rgRenderDots();
+  _rgRefreshSelOverlay();
   _rgSelCell = null; _rgSelDep = null; _rgSelArr = null;
-  _rgDotSelDep = null; _rgDotSelArr = null;
   _rgPhase = 'idle';
   _rgSetCursor('cross');
   _rgHideNmLabel();
@@ -9818,7 +9881,6 @@ function rgExploreReturn() {
   _rgRadLine = _rgRulerLine = null;
   if (_rgHiLayer) { _rgHiLayer.remove(); _rgHiLayer = null; }
   _rgClearHeroLine();
-  _rgClearRouteHL();
   if (_rgMap) _rgMap.dragging.enable();
   _rgDepCenter = null; _rgDepRadiusNm = 0;
   _rgArrCenter = null; _rgArrRadiusNm = 0;
@@ -9826,8 +9888,8 @@ function rgExploreReturn() {
   _rgDepAirportsFull = []; _rgArrAirportsFull = [];
   _rgRegionIcaos = null;
   _rgRenderDots();
+  _rgRefreshSelOverlay();
   _rgSelCell = null; _rgSelDep = null; _rgSelArr = null;
-  _rgDotSelDep = null; _rgDotSelArr = null;
   _rgHideNmLabel();
   document.getElementById('rgUndoBtn').disabled = true;
   _rgCollapseMatrix();
@@ -10168,7 +10230,7 @@ function _rgRenderMatrix() {
     const aIspivot = _rgSortPivot && _rgSortPivot.icao === a.icao && _rgSortPivot.axis === 'arr';
     const aDotLbl  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
     const aDotTip  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest dep first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest dep first — click to clear' : 'Alpha — click to clear') : 'Sort dep airports by distance to ' + a.icao;
-    const aStripe  = `<div class="rg-owner-stripe rg-stripe-col${oi && _rgStripeOwnerArr === oi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${col}"${oi ? ` data-rg-owner="${_rgX(oi.name)}" data-rg-side="arr" title="${_rgX(oi.name)}"` : ''}></div>`;
+    const aStripe  = `<div class="rg-owner-stripe rg-stripe-col${oi && _rgStripeOwnerArr === oi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${col}"${oi ? ` data-rg-owner="${_rgX(oi.name)}" data-rg-side="arr" title="Show airports owned by${_rgX(oi.name)}"` : ''}></div>`;
     hdr += `<th class="rg-col-hdr" style="--rg-oc:${col}" data-rg-tip="${a.icao}">${aStripe}${icaoSpan}${ownerSpan}<button class="rg-sort-dot${aIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${a.icao}','arr')" title="${aDotTip}">${aDotLbl}</button></th>`;
   }
   hdr += '</tr>';
@@ -10188,7 +10250,7 @@ function _rgRenderMatrix() {
     const dIspivot = _rgSortPivot && _rgSortPivot.icao === d.icao && _rgSortPivot.axis === 'dep';
     const dDotLbl  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
     const dDotTip  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest arr first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest arr first — click to clear' : 'Alpha — click to clear') : 'Sort arr airports by distance to ' + d.icao;
-    const dStripe  = `<div class="rg-owner-stripe rg-stripe-row${doi && _rgStripeOwnerDep === doi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${dcol}"${doi ? ` data-rg-owner="${_rgX(doi.name)}" data-rg-side="dep" title="${_rgX(doi.name)}"` : ''}></div>`;
+    const dStripe  = `<div class="rg-owner-stripe rg-stripe-row${doi && _rgStripeOwnerDep === doi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${dcol}"${doi ? ` data-rg-owner="${_rgX(doi.name)}" data-rg-side="dep" title="Show airports owned by${_rgX(doi.name)}"` : ''}></div>`;
     let row = `<th class="rg-row-hdr" style="--rg-oc:${dcol}" data-rg-tip="${d.icao}">${dStripe}${dicaoSpan}${downerSpan}<button class="rg-sort-dot${dIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${d.icao}','dep')" title="${dDotTip}">${dDotLbl}</button></th>`;
 
     for (const a of sortedArr) {
@@ -10208,8 +10270,7 @@ function _rgRenderMatrix() {
   matEl.innerHTML = '<thead>' + rows[0] + '</thead><tbody>' + rows.slice(1).join('') + '</tbody>';
   _rgRefreshOwnerLinks();
   document.getElementById('rgSelRoute').classList.remove('visible');
-  _rgSelCell = null; _rgDotSelDep = null; _rgDotSelArr = null;
-  _rgClearRouteHL();
+  _rgSelCell = null;
   _rgInitTooltipDelegate();
   _rgInitColResize();
   _rgBuildOwnerDropdown();
@@ -10372,18 +10433,21 @@ function _rgToggleGlobalCat(btn) {
   else _globalCatFilter.add(cat);
   btn.classList.toggle('active');
   _rgRenderDots();
+  _rgSyncGlobalCatToMain();
 }
 
 function _rgAllGlobalCats() {
   for (let i = 1; i <= 7; i++) _globalCatFilter.add(i);
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
   _rgRenderDots();
+  _rgSyncGlobalCatToMain();
 }
 
 function _rgNoneGlobalCats() {
   _globalCatFilter.clear();
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.remove('active'));
   _rgRenderDots();
+  _rgSyncGlobalCatToMain();
 }
 
 function _rgInvertGlobalCats() {
@@ -10393,6 +10457,108 @@ function _rgInvertGlobalCats() {
     else                           { _globalCatFilter.add(cat);    b.classList.add('active');    }
   });
   _rgRenderDots();
+  _rgSyncGlobalCatToMain();
+}
+
+// ── Main-screen category filter sync ─────────────────────────────────────────
+
+function _rgSyncGlobalCatToMain() {
+  ['dep', 'arr'].forEach(side => {
+    const rowId = side === 'dep' ? 'distCatDepRow' : 'distCatArrRow';
+    document.querySelectorAll(`#${rowId} .dist-cat-btn`).forEach(btn => {
+      btn.classList.toggle('active', _globalCatFilter.has(+btn.dataset.cat));
+    });
+  });
+  _distApplyFilter();
+}
+
+function _rgSyncMatrixCatToMain() {
+  ['dep', 'arr'].forEach(side => {
+    const rgFilter  = side === 'dep' ? _rgDepCatFilter : _rgArrCatFilter;
+    const mainRowId = side === 'dep' ? 'distCatDepRow'  : 'distCatArrRow';
+    document.querySelectorAll(`#${mainRowId} .dist-cat-btn`).forEach(btn => {
+      btn.classList.toggle('active', rgFilter.has(+btn.dataset.cat));
+    });
+  });
+  _distApplyFilter();
+}
+
+// ── Map dot rolling route selection ──────────────────────────────────────────
+// Clicking any airport dot on the region map (background or explore phase)
+// follows a rolling dep→arr chain:  1st click = dep, 2nd = arr,
+// 3rd+ shifts: dep ← old arr, arr ← new click.
+
+function _rgMapDotClick(icao) {
+  // Suppress clicks that are really the mouseup at the end of a region-draw drag.
+  if (_rgDragJustEnded) return;
+  // Delay execution so a double-click can cancel before it fires — browsers fire
+  // two click events before dblclick, so without this a dblclick would also advance
+  // the routing chain twice before zooming.
+  clearTimeout(_rgClickTimer);
+  _rgClickTimer = setTimeout(() => { _rgClickTimer = null; _rgMapDotClickExec(icao); }, 250);
+}
+
+function _rgMapDotClickExec(icao) {
+  if (_rgPhase !== 'explore' && _rgPhase !== 'results') return;
+
+  const selRoute = document.getElementById('rgSelRoute');
+  const selDep   = document.getElementById('rgSelDep');
+  const selArr   = document.getElementById('rgSelArr');
+  const selNm    = document.getElementById('rgSelNm');
+
+  if (!_rgDotSelDep) {
+    // First click — stage as departure, show pending in route bar
+    _rgDotSelDep = icao;
+    const rec = lookupICAO(icao);
+    if (selDep) selDep.textContent = icao + (rec && rec.name ? '  ' + rec.name : '');
+    if (selArr) selArr.textContent = '—';
+    if (selNm)  selNm.textContent  = '';
+    if (selRoute) selRoute.classList.add('visible');
+    _rgHighlightDots();
+    return;
+  }
+
+  // Rolling advance: if both sides already filled, shift the chain
+  if (_rgDotSelArr) _rgDotSelDep = _rgDotSelArr;
+  _rgDotSelArr = icao;
+
+  // If both airports exist in the current region matrix, use the cell
+  if (_rgPhase === 'results') {
+    const matEl = document.getElementById('rgMatrix');
+    if (matEl) {
+      const depTh = matEl.querySelector(`th.rg-row-hdr[data-rg-tip="${_rgDotSelDep}"]`);
+      if (depTh) {
+        const td = depTh.closest('tr').querySelector(`td[data-rg-arr="${_rgDotSelArr}"]`);
+        if (td && !td.classList.contains('rg-same')) {
+          _rgSelectCell(td, _rgDotSelDep, _rgDotSelArr, parseInt(td.textContent) || 0);
+          _rgHighlightDots();
+          return;
+        }
+      }
+    }
+  }
+
+  // Fallback: direct coordinate route (outside region or in explore phase)
+  const depR = lookupICAO(_rgDotSelDep);
+  const arrR = lookupICAO(_rgDotSelArr);
+  if (!depR || !arrR || !depR.latitude) { _rgHighlightDots(); return; }
+
+  const nm = Math.round(_haversineNm(depR.latitude, depR.longitude, arrR.latitude, arrR.longitude));
+  _rgDrawRouteHL(_rgDotSelDep, _rgDotSelArr, nm);
+
+  _rgSelDep = _rgDotSelDep;
+  _rgSelArr = _rgDotSelArr;
+  if (selDep) selDep.textContent = _rgDotSelDep + (depR.name ? '  ' + depR.name : '');
+  if (selArr) selArr.textContent = _rgDotSelArr + (arrR.name ? '  ' + arrR.name : '');
+  if (selNm)  selNm.textContent  = nm + ' nm';
+  if (selRoute) selRoute.classList.add('visible');
+
+  const mainDep = document.getElementById('distDep');
+  const mainArr = document.getElementById('distArr');
+  if (mainDep) { mainDep.value = _rgDotSelDep; onDistInput(mainDep); }
+  if (mainArr) { mainArr.value = _rgDotSelArr; onDistInput(mainArr); }
+
+  _rgHighlightDots();
 }
 
 // ── Owner filter ──────────────────────────────────────────────────────────
@@ -10732,9 +10898,11 @@ function _rgClickOwnerStripe(ownerName, side) {
 // ── Cell selection ───────────────────────────────────────────────────────
 
 function _rgRouteFromDots(depIcao, arrIcao) {
-  const depEntry = _rgDepAirports.find(a => a.icao === depIcao);
-  const arrEntry = _rgArrAirports.find(a => a.icao === arrIcao);
-  if (!depEntry || !arrEntry) return;
+  const depEntry = (_rgDepAirports && _rgDepAirports.find(a => a.icao === depIcao))
+    || (function() { const r = lookupICAO(depIcao); return r ? { rec: r } : null; })();
+  const arrEntry = (_rgArrAirports && _rgArrAirports.find(a => a.icao === arrIcao))
+    || (function() { const r = lookupICAO(arrIcao); return r ? { rec: r } : null; })();
+  if (!depEntry || !arrEntry || !depEntry.rec || !depEntry.rec.latitude) return;
   const nm = Math.round(_haversineNm(depEntry.rec.latitude, depEntry.rec.longitude,
                                       arrEntry.rec.latitude, arrEntry.rec.longitude));
   if (_rgSelCell) { _rgSelCell.classList.remove('rg-selected'); _rgSelCell = null; }
@@ -10742,10 +10910,14 @@ function _rgRouteFromDots(depIcao, arrIcao) {
   _rgDrawRouteHL(depIcao, arrIcao, nm);
   _rgSelDep = depIcao;
   _rgSelArr = arrIcao;
-  document.getElementById('rgSelDep').textContent = depIcao + '  ' + depEntry.rec.name;
-  document.getElementById('rgSelArr').textContent = arrIcao + '  ' + arrEntry.rec.name;
+  document.getElementById('rgSelDep').textContent = depIcao + (depEntry.rec.name ? '  ' + depEntry.rec.name : '');
+  document.getElementById('rgSelArr').textContent = arrIcao + (arrEntry.rec.name ? '  ' + arrEntry.rec.name : '');
   document.getElementById('rgSelNm').textContent = nm + ' nm';
   document.getElementById('rgSelRoute').classList.add('visible');
+  const _rfd_dep = document.getElementById('distDep');
+  const _rfd_arr = document.getElementById('distArr');
+  if (_rfd_dep) { _rfd_dep.value = depIcao; onDistInput(_rfd_dep); }
+  if (_rfd_arr) { _rfd_arr.value = arrIcao; onDistInput(_rfd_arr); }
 }
 
 function _rgHighlightDepRow(icao) {
@@ -10859,6 +11031,10 @@ function _rgSelectCell(td, depIcao, arrIcao, nm) {
     arrIcao + (arrRec ? '  ' + arrRec.rec.name : '');
   document.getElementById('rgSelNm').textContent = nm + ' nm';
   document.getElementById('rgSelRoute').classList.add('visible');
+  const _rsc_dep = document.getElementById('distDep');
+  const _rsc_arr = document.getElementById('distArr');
+  if (_rsc_dep) { _rsc_dep.value = depIcao; onDistInput(_rsc_dep); }
+  if (_rsc_arr) { _rsc_arr.value = arrIcao; onDistInput(_rsc_arr); }
   _rgHighlightDots(); // re-render dots so selected airports get the black-ring indicator
 }
 
@@ -10870,6 +11046,7 @@ function rgSendToFlightPlanner() {
   // renders the main matrix, and highlights the dep row / arr column.
   if (depEl) { depEl.value = _rgSelDep; onDistInput(depEl); }
   if (arrEl) { arrEl.value = _rgSelArr; onDistInput(arrEl); }
+  _rgSyncMatrixCatToMain();
   closeRegionModal();
   if (depEl) depEl.focus();
 }
@@ -11028,7 +11205,8 @@ function rgSendToFlightPlanner() {
             <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
             Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners; press <strong>Enter</strong> to clear the search and return to the full list (selections are preserved). While search text is active, <strong>All</strong> and <strong>None</strong> apply only to the visible rows — hidden rows keep their current state. Use <strong>All</strong> or <strong>None</strong> with no search text to select or clear the complete list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
-            <strong>Map dot selection</strong> — clicking any airport dot on the map highlights the corresponding row or column in the matrix and places a white ring around that dot. Click a departure-side dot to highlight its dep row; click an arrival-side dot to highlight its arr column. If both sides have been clicked, the cell at their intersection is selected and the route appears in the strip above the matrix.<br/><br/>
+            <strong>Map dot selection</strong> — click any airport dot on the map to build a route using a rolling chain: the <strong>first click</strong> sets the departure; the <strong>second click</strong> sets the arrival and draws the route. Each <strong>subsequent click</strong> advances the chain — the previous arrival becomes the new departure and the clicked airport becomes the new arrival. This works on both the colored in-region dots and the background dots outside the region circles. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not advance the routing chain.<br/><br/>
+            <strong>Map category filter</strong> — the <strong>Map</strong> filter buttons at the top of the region screen also control the main screen departure and arrival category filters: toggling a category on the map instantly applies the same selection to both the Dep and Arr filter rows on the main screen.<br/><br/>
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
@@ -11060,8 +11238,89 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v2.23.5</span>
+          <span class="release-date">May 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Route line persists when new regions are drawn</b> — <code>_rgRenderMatrix</code> was still calling <code>_rgClearRouteHL()</code> when the matrix rendered after completing the arrival region draw, erasing the previously selected route. The route now survives the full region-draw cycle and is only cleared by the explicit ✕ Clear button.</li>
+          <li><b>Owner color bar tooltip wording</b> — changed from "Filter airports owned by …" to "Show airports owned by …" to match the actual click behavior (filtering to just that owner's airports, not hiding all others).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.23.4</span>
+          <span class="release-date">May 6, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Route line persists through Done and Select Regions</b> — <code>_rgClearRouteHL()</code> was still called in both <code>rgReset</code> and <code>rgExploreReturn</code>, erasing the dep→arr route line even though the airport pair was now preserved. Both functions now skip the route clear so the line stays visible alongside the selection rings.</li>
+          <li><b>Region-draw mouseup no longer triggers dot-click routing</b> — releasing the mouse over an airport dot at the end of an arrival (or departure) region drag was firing <code>_rgMapDotClick</code> as a false positive, immediately pairing that airport with any previously selected airport. A short-lived <code>_rgDragJustEnded</code> guard (300 ms) is now set when <code>_rgLockArr</code> or <code>_rgLockDep</code> finishes; <code>_rgMapDotClick</code> silently ignores any click that arrives while the guard is active.</li>
+          <li><b>✕ Clear button shows correctly when selections are inside region circles</b> — <code>_rgUpdateClearDotBtn</code> was only reached when at least one selected airport fell outside the region circles (triggering the overlay ring path). Moving the call to the top of <code>_rgRefreshSelOverlay</code> ensures it always runs, so the button appears and disappears correctly for all selection states.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.23.3</span>
+          <span class="release-date">May 6, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Done and Select Regions preserve the selected airport pair</b> — clicking ⊙ DONE or ⊙ Select Regions no longer clears <code>_rgDotSelDep</code>/<code>_rgDotSelArr</code>; the selection rings stay visible on the map across both transitions. Matrix rebuild (drawing new regions) also preserves the pair so you can reference it while setting up a new region.</li>
+          <li><b>✕ Clear button explicitly removes the selection</b> — a new ✕ Clear button appears in the region header whenever an airport pair is selected and hides itself when the selection is empty, giving a deliberate path to clear the pair without having to close and reopen Region Mode.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.23.2</span>
+          <span class="release-date">May 6, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Region dot clicks integrate with the rolling chain</b> — clicking an airport inside a departure or arrival region now goes through the same rolling chain logic as background dot clicks (<code>_rgMapDotClick</code>), so a region-circle airport can pair with an airport selected outside the region and vice versa. Previously, clicking inside a region only called the row/column highlight directly, bypassing the chain and ignoring any airport selected outside the region circles.</li>
+          <li><b>Cross-region routes work for any dot pair</b> — route drawing in <code>_rgRouteFromDots</code> now falls back to <code>lookupICAO</code> when either airport is not in the current region arrays, so a route can be drawn between a background dot and a region dot or between two background dots without requiring both airports to be inside a region.</li>
+          <li><b>Owner color bar tooltip says "Show airports owned by…"</b> — hovering the colored bar at the top of an arrival column or left edge of a departure row now shows a descriptive tooltip rather than just the owner name, making the click behavior self-documenting.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.23.1</span>
+          <span class="release-date">May 6, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Selection ring appears on background map dots</b> — clicking an airport dot outside the region circles now shows the same weight-5 black ring as in-region highlighted dots, via a lightweight overlay layer (<code>_rgSelOverlayLayer</code>) that sits above the background dot layer. The overlay is cleared automatically when regions reset or the matrix rebuilds, and rebuilds in <code>_rgHighlightDots()</code> so it stays in sync with all selection paths.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.23.0</span>
+          <span class="release-date">May 6, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Map category filter syncs to main screen</b> — toggling any of the category buttons in the Map filter at the top of the region screen now immediately updates both the departure and arrival category filters on the main screen to match, keeping both UIs in sync without manual re-entry.</li>
+          <li><b>Send to Flight Planner uses matrix dep/arr category filters</b> — when a region has been set and the matrix dep/arr category filters differ from the global Map filter, clicking Send to Flight Planner applies those specific dep/arr category settings to the main screen rather than the Map-wide filter, so the matrix's filtering intent carries through.</li>
+          <li><b>Click airports on the region map to set routes</b> — airport dots on the main region map (outside the matrix sub-UI) are now clickable for route selection. First click sets the departure; second click sets the arrival and draws the route. Third and subsequent clicks roll the chain forward: departure becomes the previous arrival and the new click becomes the new arrival. Works in both explore and results phases.</li>
+          <li><b>Region and matrix selections auto-update main screen</b> — selecting a departure/arrival pair anywhere in the region UI (map dot click, matrix cell click, or highlighted dot click) now immediately writes those ICAOs to the main screen departure and arrival fields and triggers owner auto-selection, without requiring a separate Send to Flight Planner click.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v2.22.13</span>
-          <span class="release-date">May 5, 2026 &middot; Current</span>
+          <span class="release-date">May 5, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -15479,6 +15738,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ Select Regions</button>
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ DONE</button>
+        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
