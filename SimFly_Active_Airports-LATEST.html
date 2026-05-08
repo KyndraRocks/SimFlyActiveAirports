@@ -3105,7 +3105,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-dt-scenery { display:inline-block; font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:700; letter-spacing:0.03em; color:#111; background:#e8e000; border-radius:3px; padding:0.05rem 0.38rem; margin-top:0.12rem; }
   .rg-sl-dot-icon { display:inline-block; width:0.72em; height:0.72em; border-radius:50%; background-color:currentColor; position:relative; vertical-align:-0.04em; flex-shrink:0; box-shadow:0 0 0 1.5px rgba(0,0,0,0.45); }
   .rg-sl-dot-icon::after { content:''; position:absolute; width:40%; height:40%; background-color:#000; border-radius:50%; top:50%; left:50%; transform:translate(-50%,-50%); }
-  .rg-btn.rg-sl-split { padding:0; cursor:default; display:flex; align-items:stretch; overflow:hidden; font-size:0.88rem; }
+  .rg-btn.rg-sl-split { padding:0; cursor:default; display:flex; align-items:stretch; overflow:hidden; font-size:0.88rem; align-self:stretch; }
   .rg-btn.rg-sl-split:hover { border-color:var(--border); color:var(--text); }
   .rg-sl-mode { padding:0.22rem 0.65rem; cursor:pointer; display:flex; align-items:center; gap:0.38em; white-space:nowrap; }
   .rg-sl-mode:hover { background:rgba(255,255,255,0.07); color:var(--accent); }
@@ -3496,7 +3496,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.18';
+const APP_VERSION = '2.29.20';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9715,11 +9715,12 @@ let _rgSortPivot = null; // null | { icao, axis: 'dep'|'arr', mode: 'nearest'|'f
 let _rgSplitDrag    = null;
 
 // Drag / resize (results phase)
-let _rgDragMode     = null;
-let _rgResizeDrag   = null;   // active col/row resize drag state   // null | 'dep_center' | 'arr_center' | 'dep_edge' | 'arr_edge'
-let _rgDepHandle    = null;   // L.marker — visual edge resize handle (dep)
-let _rgArrHandle    = null;   // L.marker — visual edge resize handle (arr)
-let _rgMatRefreshTm = null;   // debounce timer for matrix refresh during drag
+let _rgDragMode      = null;
+let _rgDragMeasSnap  = null;  // saved {origin,toLL,mouseLat,mouseLng} at meas-drag mousedown
+let _rgResizeDrag    = null;  // active col/row resize drag state   // null | 'dep_center' | 'arr_center' | 'dep_edge' | 'arr_edge'
+let _rgDepHandle     = null;  // L.marker — visual edge resize handle (dep)
+let _rgArrHandle     = null;  // L.marker — visual edge resize handle (arr)
+let _rgMatRefreshTm  = null;  // debounce timer for matrix refresh during drag
 
 // ── Open / Close ───────────────────────────────────────────────────────
 
@@ -9783,11 +9784,7 @@ function _rgClearMeasureLive() {
 
 function _rgClearMeasure() {
   _rgClearMeasureLive();
-  for (const m of _rgMeasureSaved) {
-    if (m.line)   m.line.remove();
-    if (m.circle) m.circle.remove();
-    if (m.label)  m.label.remove();
-  }
+  for (const m of _rgMeasureSaved) _rgRemoveMeasureEntry(m);
   _rgMeasureSaved = [];
   _rgSyncClearBtn();
 }
@@ -9802,9 +9799,7 @@ function _rgSyncClearBtn() {
 function rgClearMeasurements() {
   if (!_rgMeasureSaved.length) return;
   const m = _rgMeasureSaved.pop();
-  if (m.line)   m.line.remove();
-  if (m.circle) m.circle.remove();
-  if (m.label)  m.label.remove();
+  _rgRemoveMeasureEntry(m);
   _rgSyncClearBtn();
 }
 
@@ -10405,6 +10400,25 @@ function _rgRefreshSelOverlay() {
   }
 }
 
+// Tooltip for the selected-route ICAO chips shown in the region-mode header.
+// Called from inline onmouseenter handlers — builds content live so current
+// weather data is always included if it has been fetched.
+function _rgHdrChipTip(icao, cx, cy) {
+  if (!window._tipAPI) return;
+  _tipAPI.showLive(() => {
+    const rec = airportDB && airportDB.get(icao.toUpperCase());
+    if (!rec) return `<strong>${icao}</strong>`;
+    const ownerName = _rgOwnerMap && _rgOwnerMap.get(icao.toUpperCase());
+    const owned = !!ownerName;
+    let html = _buildTooltipHtml(icao, rec,
+      owned ? `Click to view SimFly details for ${icao}` : false,
+      null, ownerName, null);
+    const wx = _wxTooltipHtml(icao);
+    if (wx) html += `<span class="tip-ac-section"><span class="tip-ac-label">Weather</span>${wx}</span>`;
+    return html;
+  }, cx, cy);
+}
+
 function _rgUpdateClearDotBtn() {
   const btn = document.getElementById('rgClearDotSelBtn');
   if (btn) btn.style.display = (_rgDotSelDep || _rgDotSelArr) ? '' : 'none';
@@ -10422,12 +10436,15 @@ function _rgUpdateClearDotBtn() {
     if (!icao) return `<span class="rg-hdr-ri rg-hdr-ri-pending">—</span>`;
     const col   = _rgCatOf(icao);
     const style = col ? ` style="color:${col}"` : '';
+    const tip   = ` onmouseenter="_rgHdrChipTip('${icao}',event.clientX,event.clientY)"` +
+                  ` onmouseleave="if(window._tipAPI)_tipAPI.hide()"` +
+                  ` onmousemove="if(window._tipAPI)_tipAPI.move(event.clientX,event.clientY)"`;
     const owned = _rgOwnerMap && _rgOwnerMap.has(icao.toUpperCase());
     if (owned) {
       return `<a class="rg-hdr-ri" href="https://simfly.io/assets/airport/${icao}/details"` +
-             ` target="_blank" rel="noopener"${style}>${icao}</a>`;
+             ` target="_blank" rel="noopener"${style}${tip}>${icao}</a>`;
     }
-    return `<span class="rg-hdr-ri"${style}>${icao}</span>`;
+    return `<span class="rg-hdr-ri"${style}${tip}>${icao}</span>`;
   }
 
   hdr.className = 'visible';
@@ -10464,10 +10481,10 @@ function _rgDestLL(lat, lng, bearingDeg, nm) {
   return L.latLng(φ2 * 180 / Math.PI, λ2 * 180 / Math.PI);
 }
 
-function _rgHandleIcon(color) {
+function _rgHandleIcon(color, title) {
   return L.divIcon({
     className: '',
-    html: `<div class="rg-resize-handle" style="border-color:${color}" title="Drag to resize region"></div>`,
+    html: `<div class="rg-resize-handle" style="border-color:${color}" title="${title || 'Drag to resize region'}"></div>`,
     iconSize: [20, 20], iconAnchor: [10, 10],
   });
 }
@@ -10489,6 +10506,84 @@ function _rgDrawHandles() {
 function _rgRemoveHandles() {
   if (_rgDepHandle) { _rgDepHandle.remove(); _rgDepHandle = null; }
   if (_rgArrHandle) { _rgArrHandle.remove(); _rgArrHandle = null; }
+}
+
+// ── Measurement circle drag support ─────────────────────────────────────
+
+// Hit-test saved measurement handles; returns 'meas_center_N' / 'meas_edge_N' or null.
+function _rgMeasureHitTest(e) {
+  if (!_rgMeasureSaved.length || !_rgMap) return null;
+  const mp = e.containerPoint;
+  const px = ll => {
+    const p = _rgMap.latLngToContainerPoint(L.latLng(ll.lat, ll.lng));
+    return Math.hypot(p.x - mp.x, p.y - mp.y);
+  };
+  for (let i = 0; i < _rgMeasureSaved.length; i++) {
+    const m = _rgMeasureSaved[i];
+    if (!m.origin) continue;
+    if (px(m.origin) < _RG_CENTER_TOL) return `meas_center_${i}`;
+    if (m.toLL) {
+      const nm     = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+      const edgeLL = _rgDestLL(m.origin.lat, m.origin.lng, 90, nm);
+      if (px(edgeLL) < _RG_EDGE_TOL) return `meas_edge_${i}`;
+    }
+  }
+  return null;
+}
+
+// Create or reposition the edge-resize handle for saved measurement i.
+function _rgDrawMeasureHandles(i) {
+  const m = _rgMeasureSaved[i];
+  if (!m || !_rgMap) return;
+  const nm     = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+  const edgeLL = _rgDestLL(m.origin.lat, m.origin.lng, 90, nm);
+  if (!m.edgeHandle) {
+    m.edgeHandle = L.marker([edgeLL.lat, edgeLL.lng], {
+      icon: _rgHandleIcon('#cc44ff', 'Drag to resize measurement'),
+      interactive: false, keyboard: false, zIndexOffset: 500,
+    }).addTo(_rgMap);
+  } else {
+    m.edgeHandle.setLatLng([edgeLL.lat, edgeLL.lng]);
+  }
+}
+
+// Remove all Leaflet objects for a saved measurement entry.
+function _rgRemoveMeasureEntry(m) {
+  if (m.line)       m.line.remove();
+  if (m.circle)     m.circle.remove();
+  if (m.label)      m.label.remove();
+  if (m.pin)        m.pin.remove();
+  if (m.edgeHandle) { m.edgeHandle.remove(); m.edgeHandle = null; }
+}
+
+// Redraw circle / line / label / handle for saved measurement i after origin or toLL changed.
+function _rgRedrawMeasureEntry(i) {
+  const m = _rgMeasureSaved[i];
+  if (!m) return;
+  const { origin, toLL } = m;
+  const nm      = _haversineNm(origin.lat, origin.lng, toLL.lat, toLL.lng);
+  const trueBrg = _rgTrueBearing(origin.lat, origin.lng, toLL.lat, toLL.lng);
+  const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
+  let mbPart;
+  if (!m.decl) {
+    mbPart = '---° M';
+  } else {
+    const magBrg = ((trueBrg - m.decl.decl) + 360) % 360;
+    const mbStr  = Math.round(magBrg).toString().padStart(3, '0');
+    mbPart = (m.decl.approx ? '≈' : '') + mbStr + '° M';
+  }
+  m.circle.setLatLng([origin.lat, origin.lng]);
+  m.circle.setRadius(nm * 1852);
+  m.line.setLatLngs([[origin.lat, origin.lng], [toLL.lat, toLL.lng]]);
+  m.pin.setLatLng([origin.lat, origin.lng]);
+  const midLL = _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.58);
+  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
+    `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;` +
+    `background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
+    `${Math.round(nm)} nm &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
+  m.label.setLatLng([midLL.lat, midLL.lng]);
+  m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
+  _rgDrawMeasureHandles(i);
 }
 
 // px tolerance for hit-testing drag targets
@@ -10547,12 +10642,56 @@ function _rgApplyDrag(e) {
     _rgArrRing.setRadius(nm * 1852);
     _rgDrawHandles();
     _rgScheduleMatrixRefresh();
+
+  } else if (_rgDragMode.startsWith('meas_center_')) {
+    const idx = parseInt(_rgDragMode.slice(12));
+    const m   = _rgMeasureSaved[idx];
+    if (!m || !_rgDragMeasSnap) return;
+    const newOrigin = {
+      lat: e.latlng.lat + (_rgDragMeasSnap.origin.lat - _rgDragMeasSnap.mouseLat),
+      lng: e.latlng.lng + (_rgDragMeasSnap.origin.lng - _rgDragMeasSnap.mouseLng),
+    };
+    const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
+    const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
+    m.origin = newOrigin;
+    m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
+    _rgRedrawMeasureEntry(idx);
+
+  } else if (_rgDragMode.startsWith('meas_edge_')) {
+    const idx = parseInt(_rgDragMode.slice(10));
+    const m   = _rgMeasureSaved[idx];
+    if (!m || !_rgDragMeasSnap) return;
+    const brg = _rgTrueBearing(
+      _rgDragMeasSnap.origin.lat, _rgDragMeasSnap.origin.lng,
+      _rgDragMeasSnap.toLL.lat,   _rgDragMeasSnap.toLL.lng);
+    const nm  = Math.max(1, _haversineNm(m.origin.lat, m.origin.lng, e.latlng.lat, e.latlng.lng));
+    m.toLL = _rgDestLL(m.origin.lat, m.origin.lng, brg, nm);
+    _rgRedrawMeasureEntry(idx);
   }
 }
 
 // ── Phase: mouse events ────────────────────────────────────────────────
 
 function _rgMapMouseDown(e) {
+  // Measurement handle drag takes priority in all phases (handles are persistent)
+  if (_rgMeasureSaved.length) {
+    const mhit = _rgMeasureHitTest(e);
+    if (mhit) {
+      const idx = parseInt(mhit.split('_').pop());
+      const m   = _rgMeasureSaved[idx];
+      _rgDragMeasSnap = {
+        origin:   { lat: m.origin.lat, lng: m.origin.lng },
+        toLL:     { lat: m.toLL.lat,   lng: m.toLL.lng },
+        mouseLat: e.latlng.lat,
+        mouseLng: e.latlng.lng,
+      };
+      _rgDragMode = mhit;
+      _rgMap.dragging.disable();
+      _rgSetCursor(mhit.includes('center') ? 'grab' : 'resize');
+      L.DomEvent.stopPropagation(e);
+      return;
+    }
+  }
   if (_rgMeasureActive) {
     _rgClearMeasureLive(); // discard any partially-started drag; saved measurements stay
     _rgMeasureOrigin = e.latlng;
@@ -10625,8 +10764,20 @@ function _rgMapMouseMove(e) {
   _rgLastLL = e.latlng;
   const cp  = e.originalEvent;
 
+  // Measurement handle drag is active in any phase
+  if (_rgDragMode && _rgDragMode.startsWith('meas_')) {
+    _rgApplyDrag(e);
+    return;
+  }
+
   if (_rgMeasureActive) {
-    if (_rgMeasureOrigin) _rgUpdateMeasure(e.latlng);
+    if (_rgMeasureOrigin) {
+      _rgUpdateMeasure(e.latlng);
+    } else if (_rgMeasureSaved.length) {
+      // Cursor hints for draggable handles when not mid-draw
+      const mhit = _rgMeasureHitTest(e);
+      _rgSetCursor(mhit ? (mhit.includes('center') ? 'grab' : 'resize') : 'cross');
+    }
     return; // always return early — prevent phase handlers from overriding the crosshair cursor
   }
 
@@ -10663,8 +10814,8 @@ function _rgMapMouseMove(e) {
     if (_rgDragMode) {
       _rgApplyDrag(e);
     } else {
-      // Cursor hint while hovering over drag targets
-      const hit = _rgDragHitTest(e);
+      // Cursor hint while hovering over drag targets (region + measurement handles)
+      const hit = _rgDragHitTest(e) || _rgMeasureHitTest(e);
       _rgSetCursor(hit ? (hit.includes('center') ? 'grab' : 'resize') : '');
     }
   } else {
@@ -10674,11 +10825,13 @@ function _rgMapMouseMove(e) {
 
 function _rgEndDrag() {
   if (!_rgDragMode) return false;
+  const wasMeas = _rgDragMode.startsWith('meas_');
   _rgDragMode = null;
+  _rgDragMeasSnap = null;
   clearTimeout(_rgMatRefreshTm);
   _rgMap.dragging.enable();
   _rgSetCursor('');
-  _rgComputeAndRender();
+  if (!wasMeas) _rgComputeAndRender();
   _rgDragJustEnded = true;
   setTimeout(() => { _rgDragJustEnded = false; }, 300);
   return true;
@@ -10689,7 +10842,22 @@ function _rgMapMouseUp() {
     _rgMeasureDraw = false;
     _rgMap.dragging.enable();
     if (_rgMeasureLine) {
-      _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
+      const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
+      const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
+      const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
+        radius: 5, weight: 2, color: '#cc44ff', fillColor: '#cc44ff', fillOpacity: 1, interactive: false,
+      }).addTo(_rgMap);
+      const savedIdx = _rgMeasureSaved.length;
+      _rgMeasureSaved.push({
+        line:   _rgMeasureLine,
+        circle: _rgMeasureCircle,
+        label:  _rgMeasureLabel,
+        origin: savedOrigin,
+        toLL:   savedToLL,
+        decl:   _rgMeasureDecl,
+        pin,
+      });
+      _rgDrawMeasureHandles(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
@@ -10707,8 +10875,23 @@ function _rgDocMouseUp() {
   if (_rgMeasureDraw) {
     _rgMeasureDraw = false;
     if (_rgMap) _rgMap.dragging.enable();
-    if (_rgMeasureLine) {
-      _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
+    if (_rgMeasureLine && _rgMap) {
+      const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
+      const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
+      const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
+        radius: 5, weight: 2, color: '#cc44ff', fillColor: '#cc44ff', fillOpacity: 1, interactive: false,
+      }).addTo(_rgMap);
+      const savedIdx = _rgMeasureSaved.length;
+      _rgMeasureSaved.push({
+        line:   _rgMeasureLine,
+        circle: _rgMeasureCircle,
+        label:  _rgMeasureLabel,
+        origin: savedOrigin,
+        toLL:   savedToLL,
+        decl:   _rgMeasureDecl,
+        pin,
+      });
+      _rgDrawMeasureHandles(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
@@ -12574,6 +12757,8 @@ function rgSendToFlightPlanner() {
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
             <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Click a result or press ↑/↓ to navigate and Enter to select — the map flies to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
+            <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link.<br/><br/>
+            <strong>Measure Distance</strong> — click <strong>📐 Measure Distance</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance in nm, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -12615,10 +12800,36 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.29.20</span>
+          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Route ICAO chips now show full airport tooltips</b> — hovering the selected departure or arrival ICAO in the region-mode header shows the same rich tooltip as the main screen: airport name, IATA code, city, owner (with profile link), SimFly category, elevation, runway details (length, width, surface, lighting), and — if weather has been fetched — the full decoded weather section (flight category, raw METAR, wind, visibility, sky, temp/dew, altimeter). The tooltip is built live at hover time so any weather fetched after the chips were displayed is always included.</li>
+          <li><b>Measurement drag release no longer fires dot selection</b> — confirmed: moving or resizing a saved measurement ruler (center drag or edge drag) routes through <code>_rgEndDrag()</code>, which sets the 300 ms <code>_rgDragJustEnded</code> guard. Any airport dot under the cursor at release is suppressed identically to region-circle and measurement-draw drags.</li>
+          <li><b>Scenery split button matches adjacent button height</b> — the <em>⬤ Scenery / Highlight / Only</em> split button was shorter than the Measure Distance and Close buttons due to its smaller <code>font-size</code>. Fixed with <code>align-self: stretch</code> so it fills the header row's cross-axis height and aligns flush with all neighboring buttons.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.29.19</span>
+          <span class="release-date">May 8, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Measurement circles are now movable and resizable</b> — saved measurement rulers can be dragged and resized just like region circles. Grab the origin pin (center handle, 20 px tolerance) to translate the whole measurement — origin and endpoint move together, preserving direction and distance. Grab the edge handle (magenta resize handle placed at the 90° east point of the ring, 16 px tolerance) to resize the radius while keeping the bearing locked to the angle at the time the drag started. Cursor changes to a grab hand over the center and a resize arrow over the edge, consistent with region circle handles.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.29.18</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
