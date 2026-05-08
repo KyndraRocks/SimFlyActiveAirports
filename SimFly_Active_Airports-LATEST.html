@@ -2841,7 +2841,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #regionModal.open { display:flex; }
   .rg-modal { background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 0 50px rgba(0,200,255,0.14); width:92vw; height:92vh; display:flex; flex-direction:column; overflow:clip; }
   .rg-modal-hdr { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:0.5rem; padding:0.5rem 1rem; border-bottom:1px solid var(--border); background:var(--panel); flex-shrink:0; }
-  .rg-hdr-left  { display:flex; align-items:center; gap:0.5rem; min-width:0; justify-self:start; }
+  .rg-hdr-left  { display:flex; align-items:center; gap:0.5rem; min-width:0; justify-self:stretch; }
+  /* Selected route ICAOs in header */
+  #rgHdrRoute { display:none; align-items:center; gap:0.45em; margin-left:auto; padding:0 0.5rem; flex-shrink:0; }
+  #rgHdrRoute.visible { display:flex; }
+  .rg-hdr-ri { font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.05rem; letter-spacing:0.05em; text-decoration:none; color:var(--accent); cursor:pointer; }
+  .rg-hdr-ri:hover { text-decoration:underline; opacity:0.85; }
+  .rg-hdr-ri-pending { color:var(--muted); cursor:default; }
+  .rg-hdr-ri-sep { color:var(--muted); font-size:0.85rem; padding:0 0.05em; }
   .rg-hdr-center { display:flex; align-items:center; gap:0.35rem; justify-self:center; }
   .rg-hdr-right { display:flex; align-items:center; gap:0.45rem; justify-self:stretch; flex-shrink:0; }
   .rg-hdr-flex-spacer { flex:1; }
@@ -3489,7 +3496,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.14';
+const APP_VERSION = '2.29.15';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10401,6 +10408,29 @@ function _rgRefreshSelOverlay() {
 function _rgUpdateClearDotBtn() {
   const btn = document.getElementById('rgClearDotSelBtn');
   if (btn) btn.style.display = (_rgDotSelDep || _rgDotSelArr) ? '' : 'none';
+
+  const hdr = document.getElementById('rgHdrRoute');
+  if (!hdr) return;
+
+  if (!_rgDotSelDep && !_rgDotSelArr) {
+    hdr.className = '';
+    hdr.innerHTML = '';
+    return;
+  }
+
+  function _riChip(icao) {
+    if (!icao) return `<span class="rg-hdr-ri rg-hdr-ri-pending">—</span>`;
+    const col = _rgCatOf(icao);
+    const style = col ? ` style="color:${col}"` : '';
+    return `<a class="rg-hdr-ri" href="https://simfly.io/assets/airport/${icao}/details"` +
+           ` target="_blank" rel="noopener"${style}>${icao}</a>`;
+  }
+
+  hdr.className = 'visible';
+  hdr.innerHTML =
+    _riChip(_rgDotSelDep) +
+    `<span class="rg-hdr-ri-sep">→</span>` +
+    _riChip(_rgDotSelArr || null);
 }
 
 function _rgClearDotSel() {
@@ -12575,10 +12605,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.29.15</span>
+          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Selected route ICAOs shown as links in the region mode header</b> — when one or both airports are selected on the map, their ICAOs appear in the header between the Clear Route button and the category filter circles, colored by SimFly category. Each ICAO is a clickable link to the SimFly airport details page. Updates live with every dot click and rolling advance; clears with the ✕ Clear route button.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.29.14</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -17616,6 +17658,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ DONE</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
+        <div id="rgHdrRoute"></div>
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
         <span class="dist-cat-filter-label" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>
