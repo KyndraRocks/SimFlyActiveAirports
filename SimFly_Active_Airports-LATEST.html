@@ -3130,10 +3130,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Hide X close button while backup banner is demanding a choice */
   #sceneryModal:has(#slBackupBanner.visible) .modal-close { visibility:hidden; pointer-events:none; }
   /* Scenery button glow when library has unsaved changes */
-  .rg-btn.rg-sl-split.sl-dirty-glow { animation:slDirtyGlow 1.8s ease-in-out infinite alternate; }
+  .rg-btn.rg-sl-split.sl-dirty-glow { animation:slDirtyGlow 1.5s ease-in-out infinite alternate; }
   @keyframes slDirtyGlow {
-    from { box-shadow:0 0 4px rgba(232,224,0,0.2); }
-    to   { box-shadow:0 0 18px rgba(232,224,0,0.7), 0 0 0 1.5px rgba(232,224,0,0.5); }
+    from { box-shadow:0 0 8px rgba(232,224,0,0.55), 0 0 0 1px rgba(232,224,0,0.4); border-color:rgba(232,224,0,0.5); }
+    to   { box-shadow:0 0 22px rgba(232,224,0,0.95), 0 0 40px rgba(232,224,0,0.5), 0 0 0 2px rgba(232,224,0,0.7); border-color:rgba(232,224,0,0.9); }
   }
   .sl-bkp-btn { font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:600; padding:0.18rem 0.72rem; border-radius:4px; border:1px solid; cursor:pointer; background:none; white-space:nowrap; }
   .sl-bkp-save { border-color:rgba(232,224,0,0.5); color:#e8e000; }
@@ -3485,7 +3485,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.11';
+const APP_VERSION = '2.29.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8946,23 +8946,30 @@ function _slAdd(entry) {
   const norm = { icao: u, addon: entry.addon || '', type: entry.type || '', sim: entry.sim || '', notes: entry.notes || '' };
   if (idx >= 0) arr[idx] = norm; else arr.push(norm);
   _slSave(arr);
-  _slDirty = true;
+  _slDirty++;
 }
 let _slMapMode  = false;
 let _slToastTmr = null;
-let _slDirty    = false;  // true if library changed since last export or modal open
+let _slDirty    = 0;  // count of changes since last export; 0 = clean
 
 function _slDelete(icao) {
   const u = (icao || '').toUpperCase();
   _slSave(_slLoad().filter(e => e.icao.toUpperCase() !== u));
-  _slDirty = true;
+  _slDirty++;
 }
 
 // ── Scenery Library UI ─────────────────────────────────────────────────
 
 function _slSetBannerVisible(show) {
-  document.getElementById('slBackupBanner')?.classList.toggle('visible', show);
-  document.getElementById('rgSceneryBtn')?.classList.toggle('sl-dirty-glow', show);
+  document.getElementById('slBackupBanner')?.classList.toggle('visible', !!show);
+  document.getElementById('rgSceneryBtn')?.classList.toggle('sl-dirty-glow', !!show);
+  if (show) {
+    const msg = document.getElementById('slDirtyCountMsg');
+    if (msg) {
+      const n = _slDirty;
+      msg.textContent = `${n} unsaved change${n === 1 ? '' : 's'} — download a backup before closing?`;
+    }
+  }
 }
 
 function openSceneryModal() {
@@ -9058,7 +9065,7 @@ function _slToggleFromMap(icao) {
     // Auto-enable Highlight so the black dot appears on the map immediately
     if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
   }
-  _slDirty = true;
+  _slDirty++;
   _slUpdateToggles();
   if (document.getElementById('sceneryModal')?.classList.contains('open'))
     _slRenderList(document.getElementById('slSearch')?.value || '');
@@ -9311,7 +9318,7 @@ function _slExportJson() {
   a.href = url; a.download = 'simfly-scenery-library.json';
   a.click();
   URL.revokeObjectURL(url);
-  _slDirty = false;
+  _slDirty = 0;
   _slSetBannerVisible(false);
 }
 
@@ -12563,10 +12570,23 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.29.12</span>
+          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Scenery button dirty glow is now clearly visible</b> — the pulsing yellow glow on the ⬤ Scenery button is much stronger: it starts with a clearly visible ring and pulses to a bright 22 px yellow halo with border-color animation, so the unsaved-changes reminder is hard to miss.</li>
+          <li><b>Unsaved-changes banner shows the exact change count</b> — the backup banner now reads "N unsaved changes — download a backup before closing?" so you know precisely how many edits are pending. Count increments for every add, edit, delete, paste, or shift-click toggle.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.29.11</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -17456,7 +17476,7 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" style="padding:0;">
       <!-- Backup nudge — shown when closing with unsaved changes -->
       <div class="sl-backup-banner" id="slBackupBanner">
-        <span style="flex:1">Unsaved changes — download a backup before closing?</span>
+        <span id="slDirtyCountMsg" style="flex:1">Unsaved changes — download a backup before closing?</span>
         <button class="sl-bkp-btn sl-bkp-save" onclick="_slBackupAndClose()">💾 Download &amp; Close</button>
         <button class="sl-bkp-btn sl-bkp-dismiss" onclick="_slDoClose()">Close anyway</button>
       </div>
