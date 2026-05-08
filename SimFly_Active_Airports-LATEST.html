@@ -3124,9 +3124,17 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Drag-and-drop drop zone */
   #sceneryModal.sl-drag-over .modal { outline:2px dashed var(--accent); outline-offset:-3px; background:rgba(0,200,255,0.04); }
   /* Unsaved-changes backup banner */
-  .sl-backup-banner { display:none; align-items:center; gap:0.6rem; flex-wrap:wrap; padding:0.5rem 1.5rem; background:rgba(232,224,0,0.07); border-top:1px solid rgba(232,224,0,0.28); font-family:'Rajdhani',sans-serif; font-size:0.95rem; color:#bfab00; }
+  .sl-backup-banner { display:none; align-items:center; gap:0.6rem; flex-wrap:wrap; padding:0.55rem 1.5rem; background:rgba(232,224,0,0.08); border-bottom:2px solid rgba(232,224,0,0.4); font-family:'Rajdhani',sans-serif; font-size:0.95rem; color:#bfab00; }
   .sl-backup-banner.visible { display:flex; }
-  body.light-mode .sl-backup-banner { background:rgba(180,155,0,0.07); color:#6a5a00; border-top-color:rgba(180,155,0,0.32); }
+  body.light-mode .sl-backup-banner { background:rgba(180,155,0,0.07); color:#6a5a00; border-bottom-color:rgba(180,155,0,0.32); }
+  /* Hide X close button while backup banner is demanding a choice */
+  #sceneryModal:has(#slBackupBanner.visible) .modal-close { visibility:hidden; pointer-events:none; }
+  /* Scenery button glow when library has unsaved changes */
+  .rg-btn.rg-sl-split.sl-dirty-glow { animation:slDirtyGlow 1.8s ease-in-out infinite alternate; }
+  @keyframes slDirtyGlow {
+    from { box-shadow:0 0 4px rgba(232,224,0,0.2); }
+    to   { box-shadow:0 0 18px rgba(232,224,0,0.7), 0 0 0 1.5px rgba(232,224,0,0.5); }
+  }
   .sl-bkp-btn { font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:600; padding:0.18rem 0.72rem; border-radius:4px; border:1px solid; cursor:pointer; background:none; white-space:nowrap; }
   .sl-bkp-save { border-color:rgba(232,224,0,0.5); color:#e8e000; }
   .sl-bkp-save:hover { background:rgba(232,224,0,0.13); }
@@ -3477,7 +3485,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.9';
+const APP_VERSION = '2.29.10';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8952,11 +8960,16 @@ function _slDelete(icao) {
 
 // ── Scenery Library UI ─────────────────────────────────────────────────
 
+function _slSetBannerVisible(show) {
+  document.getElementById('slBackupBanner')?.classList.toggle('visible', show);
+  document.getElementById('rgSceneryBtn')?.classList.toggle('sl-dirty-glow', show);
+}
+
 function openSceneryModal() {
   const el = document.getElementById('sceneryModal');
   if (!el) return;
   el.classList.add('open');
-  document.getElementById('slBackupBanner')?.classList.toggle('visible', _slDirty);
+  _slSetBannerVisible(_slDirty);
   _slShowOnboardIfEmpty();
   _slRenderList('');
   const srch = document.getElementById('slSearch');
@@ -8972,13 +8985,13 @@ function closeSceneryModal(e) {
 }
 
 function _slCloseBtn() {
-  if (_slDirty) { document.getElementById('slBackupBanner')?.classList.add('visible'); return; }
+  if (_slDirty) { _slSetBannerVisible(true); return; }
   _slDoClose();
 }
 
 function _slDoClose() {
   _slDirty = false;
-  document.getElementById('slBackupBanner')?.classList.remove('visible');
+  _slSetBannerVisible(false);
   document.getElementById('sceneryModal')?.classList.remove('open');
   const ac = document.getElementById('slAutocomplete');
   if (ac) ac.style.display = 'none';
@@ -9298,7 +9311,7 @@ function _slExportJson() {
   a.click();
   URL.revokeObjectURL(url);
   _slDirty = false;
-  document.getElementById('slBackupBanner')?.classList.remove('visible');
+  _slSetBannerVisible(false);
 }
 
 // ── Folder scan (File System Access API — Chrome/Edge only) ───────────
@@ -12551,8 +12564,22 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.29.9</span>
+          <span class="release-version">v2.29.10</span>
           <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Unsaved-changes banner moved to top of Scenery Library modal</b> — the banner now appears immediately below the modal header rather than at the bottom, so it is the first thing seen when the modal opens with pending changes.</li>
+          <li><b>X close button hidden while banner is visible</b> — the close button is suppressed while the backup prompt is showing, requiring users to explicitly choose "Download &amp; Close" or "Close anyway" rather than bypassing the prompt entirely.</li>
+          <li><b>Scenery button glows when library has unsaved changes</b> — the ⬤ Scenery split button pulses with a yellow glow whenever the dirty flag is set, drawing attention to pending changes even when the modal is closed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.29.9</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -17414,6 +17441,12 @@ function rgSendToFlightPlanner() {
       <button class="modal-close" onclick="_slCloseBtn()">&times;</button>
     </div>
     <div class="modal-body" style="padding:0;">
+      <!-- Backup nudge — shown when closing with unsaved changes -->
+      <div class="sl-backup-banner" id="slBackupBanner">
+        <span style="flex:1">Unsaved changes — download a backup before closing?</span>
+        <button class="sl-bkp-btn sl-bkp-save" onclick="_slBackupAndClose()">💾 Download &amp; Close</button>
+        <button class="sl-bkp-btn sl-bkp-dismiss" onclick="_slDoClose()">Close anyway</button>
+      </div>
       <div class="sl-search-row">
         <input type="text" id="slSearch" class="sl-search" placeholder="Filter by ICAO or addon…"
                oninput="_slRenderList(this.value)" autocomplete="off" spellcheck="false">
@@ -17480,12 +17513,6 @@ function rgSendToFlightPlanner() {
         <div class="sl-scan-empty" id="slScanEmpty" style="display:none;">No airports found in folder names.</div>
       </div>
 
-      <!-- Backup nudge — shown when closing with unsaved changes -->
-      <div class="sl-backup-banner" id="slBackupBanner">
-        <span style="flex:1">Unsaved changes — download a backup before closing?</span>
-        <button class="sl-bkp-btn sl-bkp-save" onclick="_slBackupAndClose()">💾 Download &amp; Close</button>
-        <button class="sl-bkp-btn sl-bkp-dismiss" onclick="_slDoClose()">Close anyway</button>
-      </div>
       <div class="sl-footer">
         <!-- Normal footer buttons -->
         <span id="slFooterNormal" style="display:contents;">
