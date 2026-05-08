@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.24.7**
+**Current version: v2.29.6**
 
 ---
 
@@ -26,6 +26,23 @@ ICAO labels carry per-category colors (1–7) so airport tier is immediately vis
 
 ### Independent Dep / Arr Category Filters
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
+
+### Scenery Library
+Track which airports you have add-on scenery installed for. The library is stored in your browser's localStorage and persists across sessions.
+
+**Adding airports:**
+- **Shift+click** any airport dot on the Region Mode map to toggle it in or out of the library. The first add automatically enables Highlight mode.
+- **Paint mode** — click **📍 Add from map** in the library modal to enter a persistent paint mode: click airport dots one-by-one without holding Shift.
+- **Autocomplete add** — type an ICAO in the Add Airport field; results from the global airport database appear as you type.
+- **Paste ICAOs** — paste any block of text containing ICAOs (space-, comma-, or newline-separated). Tokens are validated against the airport database; unrecognized codes are skipped with a count shown.
+- **Import file** — drag and drop (or browse for) a previously exported JSON backup, an X-Plane `scenery_packs.ini`, or an MSFS `scenery.cfg`. ICAOs are extracted automatically.
+
+**Display modes** — the **⬤ Scenery** split button in the toolbar cycles through three states:
+- **Off** — no scenery indicators shown
+- **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
+- **Only** — the map and the region distance matrix filter to scenery-library airports only
+
+**Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library. If you have unsaved changes — including via shift-click on the map — opening the modal shows a banner prompting you to export before closing.
 
 ### Region Mode
 A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
