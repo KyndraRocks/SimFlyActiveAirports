@@ -3496,7 +3496,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.17';
+const APP_VERSION = '2.29.18';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10679,6 +10679,8 @@ function _rgEndDrag() {
   _rgMap.dragging.enable();
   _rgSetCursor('');
   _rgComputeAndRender();
+  _rgDragJustEnded = true;
+  setTimeout(() => { _rgDragJustEnded = false; }, 300);
   return true;
 }
 
@@ -10689,6 +10691,8 @@ function _rgMapMouseUp() {
     if (_rgMeasureLine) {
       _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgDragJustEnded = true;
+      setTimeout(() => { _rgDragJustEnded = false; }, 300);
     }
     _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
     _rgSyncClearBtn();
@@ -10706,6 +10710,8 @@ function _rgDocMouseUp() {
     if (_rgMeasureLine) {
       _rgMeasureSaved.push({ line: _rgMeasureLine, circle: _rgMeasureCircle, label: _rgMeasureLabel });
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgDragJustEnded = true;
+      setTimeout(() => { _rgDragJustEnded = false; }, 300);
     }
     _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
     _rgSyncClearBtn();
@@ -12611,8 +12617,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.29.17</span>
+          <span class="release-version">v2.29.18</span>
           <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Drag release no longer triggers route selection</b> — releasing the mouse after dragging a region circle handle, a measurement ruler line, or a range ring no longer fires the airport/route selection logic. The existing guard (<code>_rgDragJustEnded</code>) was already in place for the initial circle-draw drag but was missing from three other drag-end paths: circle handle resize/move, and ruler drag end (both the map-level and document-level mouseup handlers).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.29.17</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
