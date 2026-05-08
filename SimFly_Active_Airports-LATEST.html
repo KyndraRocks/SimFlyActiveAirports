@@ -3074,12 +3074,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-onboard-label { font-family:'Orbitron',monospace; font-size:0.7rem; letter-spacing:0.1em; color:var(--text); text-transform:uppercase; margin-bottom:0.22rem; }
   .sl-onboard-desc { font-family:'Rajdhani',sans-serif; font-size:0.9rem; color:var(--muted); line-height:1.3; }
   /* Map mode banner */
-  .sl-map-banner { display:none; position:absolute; top:0; left:0; right:0; z-index:1200; align-items:center; gap:0.7rem; padding:0.42rem 0.9rem; background:rgba(0,18,30,0.88); border-bottom:1px solid rgba(0,200,255,0.4); font-family:'Rajdhani',sans-serif; font-size:0.93rem; color:var(--accent); backdrop-filter:blur(4px); }
-  body.light-mode .sl-map-banner { background:rgba(220,240,255,0.9); }
+  .sl-map-banner { display:none; position:absolute; top:0; left:0; right:0; z-index:1200; align-items:center; gap:0.8rem; padding:0.65rem 1.1rem; background:rgba(38,28,0,0.97); border-bottom:2px solid #e8e000; box-shadow:0 3px 22px rgba(232,224,0,0.35); font-family:'Rajdhani',sans-serif; font-size:1rem; font-weight:700; color:#e8e000; backdrop-filter:blur(6px); animation:slMapBannerPulse 2.4s ease-in-out infinite alternate; }
+  @keyframes slMapBannerPulse {
+    from { box-shadow:0 3px 14px rgba(232,224,0,0.25); border-bottom-color:rgba(232,224,0,0.7); }
+    to   { box-shadow:0 3px 30px rgba(232,224,0,0.55); border-bottom-color:#e8e000; }
+  }
+  body.light-mode .sl-map-banner { background:rgba(255,248,200,0.97); color:#7a5e00; border-bottom-color:#c8a000; }
   .sl-map-banner.active { display:flex; }
-  .sl-map-banner-hint { color:var(--muted); font-size:0.86rem; }
-  .sl-map-banner-done { margin-left:auto; background:none; border:1px solid rgba(0,200,255,0.4); color:var(--accent); border-radius:4px; font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:600; padding:0.12rem 0.65rem; cursor:pointer; }
-  .sl-map-banner-done:hover { background:rgba(0,200,255,0.15); }
+  .sl-map-banner-hint { color:rgba(232,224,0,0.6); font-size:0.9rem; font-weight:500; }
+  body.light-mode .sl-map-banner-hint { color:rgba(120,90,0,0.7); }
+  .sl-map-banner-done { margin-left:auto; background:rgba(232,224,0,0.12); border:1.5px solid rgba(232,224,0,0.7); color:#e8e000; border-radius:4px; font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:700; padding:0.18rem 0.8rem; cursor:pointer; transition:background 0.15s, border-color 0.15s; }
+  .sl-map-banner-done:hover { background:rgba(232,224,0,0.25); border-color:#e8e000; }
+  body.light-mode .sl-map-banner-done { background:rgba(200,160,0,0.12); border-color:rgba(200,160,0,0.7); color:#7a5e00; }
+  body.light-mode .sl-map-banner-done:hover { background:rgba(200,160,0,0.25); }
   #rgSceneryBtn.sl-paint-active { background:rgba(0,200,255,0.14); border-color:rgba(0,200,255,0.6); color:var(--accent); }
   /* Toast */
   #slToast { position:fixed; bottom:2.2rem; left:50%; transform:translateX(-50%) translateY(0.8rem); background:rgba(16,22,34,0.93); color:#fff; font-family:'Rajdhani',sans-serif; font-size:0.97rem; font-weight:600; padding:0.42rem 1.15rem; border-radius:20px; border:1px solid rgba(0,200,255,0.38); pointer-events:none; opacity:0; transition:opacity 0.18s, transform 0.18s; z-index:30000; white-space:nowrap; }
@@ -3470,7 +3477,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.29.6';
+const APP_VERSION = '2.29.9';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10330,7 +10337,8 @@ function _rgApplySceneryState() {
   _rgTipHtmlCache = null;
   _rgRenderDots();
   _rgHighlightDots();
-  if (_rgOnlyScenery && typeof renderDistMatrix === 'function') renderDistMatrix();
+  if (_rgPhase === 'results') _rgRenderMatrix();
+  else if (typeof renderDistMatrix === 'function') renderDistMatrix();
 }
 
 // Draw selection rings for background dots (airports not in _rgHiLayer) that
@@ -11060,8 +11068,13 @@ let _rgOwnerLookupCache = null;
 
 function _rgRenderMatrix() {
   const matEl = document.getElementById('rgMatrix');
-  const dep   = _rgDepAirports;
-  const arr   = _rgArrAirports;
+  let dep = _rgDepAirports;
+  let arr = _rgArrAirports;
+
+  if (_rgOnlyScenery) {
+    dep = dep.filter(a => _slHas(a.icao));
+    arr = arr.filter(a => _slHas(a.icao));
+  }
 
   if (!dep.length || !arr.length) {
     matEl.innerHTML = '<tr><td class="rg-matrix-msg">No airports found in ' +
@@ -12536,10 +12549,46 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.29.9</span>
+          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Scenery edit mode banner is now conspicuous</b> — the map paint mode bar is now bold amber-yellow with a slow pulsing glow, matching the scenery active colour scheme, so it clearly signals that click-to-add mode is in effect. Previously it blended into the dark map background.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.29.8</span>
+          <span class="release-date">May 8, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Matrix restores all airports when Only mode is turned off</b> — cycling from Only back to Highlight or Off now immediately rebuilds the matrix with the full airport set. Previously the matrix stayed filtered because the refresh was conditional on <code>_rgOnlyScenery</code> being true; it now fires on every scenery state change.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.29.7</span>
+          <span class="release-date">May 8, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Only mode now filters the region matrix in Select Regions results</b> — the region matrix rendered after drawing dep/arr circles was reading <code>_rgDepAirports</code> and <code>_rgArrAirports</code> without applying the scenery filter. Both arrays are now filtered to scenery-library airports when Only mode is active, matching the map. Mode changes and library edits also refresh the region matrix when results are visible.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.29.6</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>

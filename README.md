@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.29.6**
+**Current version: v2.29.9**
 
 ---
 
@@ -40,7 +40,7 @@ Track which airports you have add-on scenery installed for. The library is store
 **Display modes** — the **⬤ Scenery** split button in the toolbar cycles through three states:
 - **Off** — no scenery indicators shown
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
-- **Only** — the map and the region distance matrix filter to scenery-library airports only
+- **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
 
 **Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library. If you have unsaved changes — including via shift-click on the map — opening the modal shows a banner prompting you to export before closing.
 
