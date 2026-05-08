@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.29.10**
+**Current version: v2.29.11**
 
 ---
 
@@ -42,7 +42,7 @@ Track which airports you have add-on scenery installed for. The library is store
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
 - **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
 
-**Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button pulses with a yellow glow as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss.
+**Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button pulses with a yellow glow as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the glow persists on the button and the banner reappears the next time you open the modal, until you actually export.
 
 ### Region Mode
 A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
