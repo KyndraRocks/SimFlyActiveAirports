@@ -3534,7 +3534,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.34.6';
+const APP_VERSION = '2.35.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -5235,6 +5235,7 @@ const _urlParams = (() => {
       depOwner: (p.get('depOwner') || '').trim(),
       arrOwner: (p.get('arrOwner') || '').trim(),
       fltnum:   (p.get('fltnum')   || '').trim().toUpperCase(),
+      pilots:   (p.get('pilots')   || '').trim(),
       ac: p.get('acCode') ? {
         code:     (p.get('acCode')  || '').trim().toUpperCase(),
         label:    (p.get('acLabel') || '').trim(),
@@ -5247,7 +5248,7 @@ const _urlParams = (() => {
         payloadPct: p.get('acPayloadPct') ? parseInt(p.get('acPayloadPct'), 10) : 0,
       } : null,
     };
-  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', ac:null }; }
+  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', pilots:'', ac:null }; }
 })();
 
 // Expose for future aircraft-aware filtering
@@ -5263,7 +5264,7 @@ let _urlParamsApplied = false;
 
 function _applyUrlParams() {
   if (_urlParamsApplied) return;
-  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac;
+  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac || _urlParams.pilots;
   if (!hasAny) { _urlParamsApplied = true; return; }
 
 
@@ -5328,6 +5329,12 @@ function _applyUrlParams() {
   if (ownerChanged) renderDistMatrix();
 
   _urlParamsApplied = true;
+
+  // pilots= param: open region map pre-filtered to the named owners
+  if (_urlParams.pilots) {
+    const pilotNames = _urlParams.pilots.split(',').map(s => s.trim()).filter(Boolean);
+    if (pilotNames.length) openRegionModal(new Set(pilotNames));
+  }
 }
 
 // ── Panel toggle ───────────────────────────────────────────────────────────
@@ -10019,7 +10026,7 @@ let _rgMatRefreshTm  = null;  // debounce timer for matrix refresh during drag
 
 // ── Open / Close ───────────────────────────────────────────────────────
 
-function openRegionModal() {
+function openRegionModal(forceOwnerFilter) {
   const modal = document.getElementById('regionModal');
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -10027,11 +10034,16 @@ function openRegionModal() {
   const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
   const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
   if (mainDep && mainArr) { _rgDotSelDep = mainDep; _rgDotSelArr = mainArr; }
-  // Sync Airport Owners filter to the main-screen owner selection on every open.
-  const depOwner = (document.getElementById('distDepOwner')?.value || '').trim();
-  const arrOwner = (document.getElementById('distArrOwner')?.value || '').trim();
-  const selectedOwners = [...new Set([depOwner, arrOwner].filter(Boolean))];
-  _rgMapOwnerFilter = selectedOwners.length ? new Set(selectedOwners) : null;
+  // If called with an explicit owner set (e.g. from Recip Tracker pilots= URL param), use it;
+  // otherwise sync to whatever dep/arr owners are selected on the main screen.
+  if (forceOwnerFilter) {
+    _rgMapOwnerFilter = forceOwnerFilter;
+  } else {
+    const depOwner = (document.getElementById('distDepOwner')?.value || '').trim();
+    const arrOwner = (document.getElementById('distArrOwner')?.value || '').trim();
+    const selectedOwners = [...new Set([depOwner, arrOwner].filter(Boolean))];
+    _rgMapOwnerFilter = selectedOwners.length ? new Set(selectedOwners) : null;
+  }
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
   _rgApplyMapOwnerFilter(); // no-op until map initialises; dots will render with the filter already set
@@ -13308,10 +13320,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.35.0</span>
+          <span class="release-date">May 9, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pilot group launch from Recip Tracker</strong> &mdash; accepts a new <code>pilots=</code> URL parameter containing a comma-separated list of owner names. When present, the app opens directly to the region map with the Owner filter pre-set to exactly those pilots — all other owners are hidden. Triggered by the new <b>🗺 Send to AA →</b> button in Recip Tracker's Balance Queue selection mode.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.34.6</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
