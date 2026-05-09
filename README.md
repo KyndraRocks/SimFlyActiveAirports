@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.32.2**
+**Current version: v2.34.6**
 
 ---
 
@@ -71,6 +71,11 @@ A **Map category filter** in the header bar hides entire airport categories from
 Region mode includes a **Measure Distance** ruler with magnetic heading sourced from the NOAA WMM API for sub-degree accuracy. Saved measurements are **movable and resizable** — grab the origin handle to translate the whole measurement (direction and distance preserved), or the edge handle to resize the radius with bearing locked to the drag-start angle; both handle types give the same grab/resize cursor feedback as region circles. **Undo** / **Clear All** controls manage multi-segment sessions, a selectable airport cap per region (100 · 250 · 500 · 750 · 1,000), and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open — or while the dropdown button itself has keyboard focus — opens the panel and routes to the filter box, no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
 
 Use **↩ Undo** to step back one phase within the region-drawing flow. Click **⊙ DONE** (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay visible for reference. Click **⊙ Select Regions** to start a fresh selection. Use **✕ Close** to exit Region Mode entirely. The main-screen **✕ Reset** button also closes Region Mode and clears all region state.
+
+### Pilot Payout Map
+Click **💰 Payout** in the toolbar to overlay pilot payout percentages on every airport dot. Dots are color-coded along a red → orange → yellow → green gradient (0% payout = mid-grey; 60%+ = full green). The payout percentage is shown in every airport tooltip on both the dot hover tooltip and the matrix/distance map tooltips.
+
+A **legend** appears in the top-right corner of the map showing the gradient bar and the 0% / 60%+ endpoints. The legend also serves as a **filter slider** — drag anywhere on the gradient bar to set a minimum payout threshold. Airports below the threshold disappear from both the map dots and the distance matrix instantly, and a **"Hide < N%"** label shows the active cutoff. Drag back to 0 to clear the filter. Toggling Payout mode off resets the filter automatically.
 
 ### Distance Map
 An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded. When a route is highlighted on the map, the departure and arrival info cards display a **Weather** section with the same decoded breakdown as the badge-hover tooltip (METAR, flight category, wind, visibility, sky, temp/dew, altimeter).
