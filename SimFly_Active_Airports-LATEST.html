@@ -3532,7 +3532,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.32.1';
+const APP_VERSION = '2.32.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9303,7 +9303,9 @@ function _slRenderList(query) {
       const rec   = typeof lookupICAO === 'function' ? lookupICAO(e.icao) : null;
       const name  = rec ? (rec.name || '') : '';
       const color = (typeof _rgCatOf === 'function') ? (_rgCatOf(e.icao) || '#555') : '#555';
-      const addon = [e.addon, e.type].filter(Boolean).join(' · ');
+      // Addon/type metadata is preserved in the entry and exported to JSON, but
+      // intentionally not rendered in the row — it disrupted star alignment when
+      // some rows had it and others didn't. (Search still matches addon text.)
       const icaoSafe = e.icao.replace(/'/g, "\\'");
       const starsHtml = _slStarsHtml(e.rating || 0, { interactive: true, icao: e.icao });
       li.innerHTML =
@@ -9311,7 +9313,6 @@ function _slRenderList(query) {
         `<span class="sl-icao">${e.icao}</span>` +
         `<span class="sl-name">${name}</span>` +
         starsHtml +
-        (addon ? `<span class="sl-addon">${addon}</span>` : '') +
         `<button class="sl-del-btn" onclick="_slConfirmDelete('${icaoSafe}')" title="Remove from library">✕</button>`;
       list.appendChild(li);
     });
@@ -13207,10 +13208,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.32.2</span>
+          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><b>Scenery Library — addon/sim text no longer disrupts star alignment</b> — rows that had an <code>addon</code> or <code>type</code> value (e.g. <em>MSFS</em>, <em>Orbx EU North</em>) were rendering it as a chip between the rating badge and the delete button, which pushed those rows&rsquo; stars out of column alignment with their neighbours. The chip is now suppressed in the row layout so every row&rsquo;s stars line up exactly. The data itself is still preserved on each entry — it round-trips through Export / Import JSON, and the search box still matches against it — it&rsquo;s just no longer rendered as an inline chip in the list.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.32.1</span>
-          <span class="release-date">May 8, 2026 &middot; Current</span>
+          <span class="release-date">May 8, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
