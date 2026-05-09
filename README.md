@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.29.20**
+**Current version: v2.32.1**
 
 ---
 
@@ -28,21 +28,32 @@ ICAO labels carry per-category colors (1–7) so airport tier is immediately vis
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
 
 ### Scenery Library
-Track which airports you have add-on scenery installed for. The library is stored in your browser's localStorage and persists across sessions.
+Track which airports you have add-on scenery installed for, and rate the quality of each one. The library is stored in your browser's localStorage and persists across sessions.
 
 **Adding airports:**
 - **Shift+click** any airport dot on the Region Mode map to toggle it in or out of the library. The first add automatically enables Highlight mode.
+- **Right-click (or long-press) any airport dot** to open the **Quick-Rate popover** — set a star rating right from the map. If the airport isn't already in the library, rating it adds it.
 - **Paint mode** — click **📍 Add from map** in the library modal to enter a persistent paint mode: click airport dots one-by-one without holding Shift.
 - **Autocomplete add** — type an ICAO in the Add Airport field; results from the global airport database appear as you type.
 - **Paste ICAOs** — paste any block of text containing ICAOs (space-, comma-, or newline-separated). Tokens are validated against the airport database; unrecognized codes are skipped with a count shown.
 - **Import file** — drag and drop (or browse for) a previously exported JSON backup, an X-Plane `scenery_packs.ini`, or an MSFS `scenery.cfg`. ICAOs are extracted automatically.
+
+**Star ratings (0–5, half-star granularity)** — every airport in the library has an interactive 5-star rating shown next to its name. Click the **left half** of a star for a half rating, the **right half** for a full rating; click the same half again to clear back to zero. A live hover preview fills the stars (and a numeric `X.X/5` badge) up to the cursor position so you always know what you're about to set. Ratings are saved automatically, round-trip through Export / Import JSON, and are also shown in the airport's tooltip on the region map.
+
+**Quick-Rate popover** — **right-click** any airport dot (or **long-press** for ~½ second on touch devices) to open a small floating popover anchored to that dot. The popover shows the ICAO, airport name, the same big interactive star widget, and whether the airport is currently in your library. Setting a rating on a non-library airport adds it to the library automatically, and turns on Highlight so the black scenery dot appears immediately. Close with **×**, **Esc**, by clicking elsewhere, or by zooming the map.
+
+**Sort and filter** — two dropdowns above the list:
+- **Show** — *All airports*, *SimFly-owned only* (filters to airports still owned by an active SimFly player), *Rated only*, or *Unrated only*.
+- **Sort** — *ICAO (A–Z)*, *Rating (high to low)*, or *Airport name (A–Z)*.
+
+The text search box also matches the full airport name in addition to ICAO and addon. The footer shows `X of Y airports` whenever a filter is active, and the empty-state message tailors itself to the chosen filter. Sort and filter selections are persisted to localStorage so your preference survives reloads and new sessions.
 
 **Display modes** — the **⬤ Scenery** split button in the toolbar cycles through three states:
 - **Off** — no scenery indicators shown
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
 - **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
 
-**Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button pulses with a yellow glow as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the glow persists on the button and the banner reappears the next time you open the modal, until you actually export. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
+**Backup & restore** — use **Export JSON** in the overflow menu (⋯) to download your library (ratings included). If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button pulses with a yellow glow as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the glow persists on the button and the banner reappears the next time you open the modal, until you actually export. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
 
 ### Region Mode
 A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
