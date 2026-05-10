@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.37.4**
+**Current version: v2.38.3**
 
 ---
 
@@ -70,9 +70,24 @@ A **Map category filter** in the header bar hides entire airport categories from
 
 **Region map search** — a floating search box in the top-left corner of the map lets you find any airport by ICAO, name, or owner name. Up to 10 results appear ranked by relevance, with your loaded (owned) airports ranked above non-owned airports from the global OurAirports database. When the query matches an owner name, a **⊙ Filter map →** row appears at the top — selecting it applies the Airport Owners filter to that owner and zooms the map to fit all their airports. Individual airport rows fly the map to that location at close zoom. Keyboard: ↑/↓ to navigate, Enter to activate the top result, Esc to dismiss.
 
-Region mode includes a **📐 Distance** ruler — click **📐 Distance** in the toolbar to activate it. Magnetic heading is sourced from the NOAA WMM API for sub-degree accuracy. Saved measurements are **movable and resizable** — grab the origin handle to translate the whole measurement (direction and distance preserved), or the edge handle to resize the radius with bearing locked to the drag-start angle; both handle types give the same grab/resize cursor feedback as region circles. **Undo** / **Clear All** controls manage multi-segment sessions, a selectable airport cap per region (100 · 250 · 500 · 750 · 1,000), and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open — or while the dropdown button itself has keyboard focus — opens the panel and routes to the filter box, no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
+Region mode includes a **📐 Measurement** ruler — click **📐 Measurement** in the toolbar to activate it. The on-map label adapts units to the scale: at 20,000 ft and under it shows feet and meters; above that threshold it shows nautical miles and kilometres (two decimal places up to 100 nm, whole numbers above). Magnetic heading is sourced from the NOAA WMM API for sub-degree accuracy. Saved measurements are **movable and resizable** — grab the origin handle to translate the whole measurement (direction and distance preserved), or the edge handle to resize the radius with bearing locked to the drag-start angle; both handle types give the same grab/resize cursor feedback as region circles. **Undo** / **Clear All** controls manage multi-segment sessions, a selectable airport cap per region (100 · 250 · 500 · 750 · 1,000), and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open — or while the dropdown button itself has keyboard focus — opens the panel and routes to the filter box, no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
 
 Before drawing the first region circle, a **Cancel** button is available — clicking it returns to the region-selector state without drawing anything. During drawing, use **↩ Undo** to step back one phase within the region-drawing flow. Click **⊙ DONE** (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay visible for reference. Click **⊙ Select Regions** to start a fresh selection. Use **✕ Close** to exit Region Mode entirely. The main-screen **✕ Reset** button also closes Region Mode and clears all region state.
+
+### Filter Status Strip
+A row of chips overlaid on the region map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.
+
+| Chip | When shown | Click action |
+|---|---|---|
+| **Category Colors** / **Payout Colors** | Always | Toggle between color modes |
+| **Pilot Payout ≥ N%** | Payout mode on + threshold > 0 | ✕ clears the threshold |
+| **Scenery Indicator** | Highlight overlay active | Advance to Only Detailed Scenery mode |
+| **Only Detailed Scenery** | Only-scenery mode active | Turn scenery mode off |
+| **Rating ≥ N stars** | Star filter active + threshold > 0 | ✕ turns filter off |
+| **Category Filtering** | Any of the 7 map categories hidden | ✕ restores all categories |
+| **N Pilots Displayed** | Airport Owners filter active | ✕ shows all pilots |
+
+The strip clips automatically when it nears the right edge of the map and never overlaps any other controls.
 
 ### Pilot Payout Map
 Click **💰 Payout** in the toolbar to overlay pilot payout percentages on every airport dot. Dots use a piecewise color scale designed around the SimFly membership tiers: 0% = mid-grey; 1–20% = red through orange-red (the non-premium cap); 20–50% = orange through amber; 50% = pure yellow; 60%+ = pure green. The 50%–60% range gets the most hue separation — a full yellow-to-green shift — making it easy to spot airports where premium pilots have set higher-than-minimum payouts. Tooltip payout labels match the dot color. The payout percentage is shown in every airport tooltip on both the dot hover tooltip and the matrix/distance map tooltips.

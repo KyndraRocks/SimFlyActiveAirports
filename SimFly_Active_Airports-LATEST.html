@@ -2856,6 +2856,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-center .dist-cat-btn { width:1.6rem; height:1.6rem; font-size:0.83rem; }
   .rg-hdr-center .dist-cat-invert-btn { font-size:0.78rem; padding:0.1rem 0.4rem; }
   .rg-hdr-center .dist-cat-filter-label { font-size:0.85rem; }
+  /* Breadcrumb filter status strip — map overlay to the right of the search bar */
+  .rg-map-breadcrumbs { position:absolute; top:11px; left:256px; right:8px; z-index:1000; display:flex; align-items:center; gap:0.3rem; overflow:hidden; pointer-events:none; }
+  .rg-bc { display:inline-flex; align-items:center; gap:0.22rem; padding:0.12rem 0.55rem; background:rgba(10,18,36,0.88); border:1px solid rgba(255,255,255,0.22); border-radius:999px; font-size:0.77rem; font-family:'Rajdhani',sans-serif; font-weight:600; white-space:nowrap; cursor:pointer; user-select:none; flex-shrink:0; color:rgba(255,255,255,0.78); letter-spacing:0.03em; transition:background 0.12s,border-color 0.12s; pointer-events:all; }
+  .rg-bc:hover { background:rgba(30,45,80,0.95); border-color:rgba(255,255,255,0.38); color:#fff; }
+  .rg-bc-x { opacity:0.5; font-size:0.65rem; line-height:1; padding:0 0.1rem; margin-left:0.08rem; }
+  .rg-bc-x:hover { opacity:1; }
   .rg-phase-text { font-family:'Rajdhani',sans-serif; font-size:1.38rem; color:var(--text); line-height:1.35; min-width:0; }
   .rg-phase-badge { display:inline-block; font-family:'Orbitron',monospace; font-size:0.87rem; font-weight:700; letter-spacing:0.06em; padding:0.225rem 0.75rem; border-radius:20px; margin-right:0.675rem; vertical-align:middle; }
   .rg-phase-badge.dep  { background:rgba(0,200,255,0.18); color:var(--accent); border:1px solid rgba(0,200,255,0.4); }
@@ -3534,7 +3540,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.37.4';
+const APP_VERSION = '2.38.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9473,6 +9479,7 @@ function _slUpdateToggles() {
   } else {
     lbl.textContent = '⬤ Scenery';
   }
+  _rgUpdateBreadcrumbs();
 }
 
 function _slCycleMode() {
@@ -10219,10 +10226,20 @@ function _rgUpdateMeasure(toLL) {
     _rgMeasureLine.setLatLngs([origin, [toLL.lat, toLL.lng]]);
   }
 
+  const ft = distM / 0.3048;
+  let distStr;
+  if (ft <= 20000) {
+    distStr = `${Math.round(ft).toLocaleString('en-US')} ft &nbsp;·&nbsp; ${Math.round(distM).toLocaleString('en-US')} m`;
+  } else if (nm <= 100) {
+    distStr = `${nm.toFixed(2)} nm &nbsp;·&nbsp; ${(distM / 1000).toFixed(2)} km`;
+  } else {
+    distStr = `${Math.round(nm)} nm &nbsp;·&nbsp; ${Math.round(distM / 1000)} km`;
+  }
+
   const midLL = _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
   const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
-    `${Math.round(nm)} nm &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
+    `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
 
   if (!_rgMeasureLabel) {
     _rgMeasureLabel = L.marker([midLL.lat, midLL.lng], {
@@ -11830,6 +11847,7 @@ function _rgTogglePayoutMode() {
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgPayoutSliderInput(val) {
@@ -11847,6 +11865,7 @@ function _rgPayoutSliderInput(val) {
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgUpdateBreadcrumbs();
 }
 
 // ── Scenery Star Rating Filter ─────────────────────────────────────────────
@@ -11874,6 +11893,7 @@ function _rgToggleStarFilter() {
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgUpdateBreadcrumbs();
 }
 
 // Recalculates the vertical offset of rgStarFilterLegend so it sits below
@@ -11922,6 +11942,7 @@ function _rgStarFltClick(e) {
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgUpdateStarFilterLabel() {
@@ -12311,6 +12332,7 @@ function _rgToggleGlobalCat(btn) {
   btn.classList.toggle('active');
   _rgRenderDots();
   _rgSyncGlobalCatToMain();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgAllGlobalCats() {
@@ -12318,6 +12340,7 @@ function _rgAllGlobalCats() {
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
   _rgRenderDots();
   _rgSyncGlobalCatToMain();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgNoneGlobalCats() {
@@ -12325,6 +12348,7 @@ function _rgNoneGlobalCats() {
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.remove('active'));
   _rgRenderDots();
   _rgSyncGlobalCatToMain();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgInvertGlobalCats() {
@@ -12335,6 +12359,90 @@ function _rgInvertGlobalCats() {
   });
   _rgRenderDots();
   _rgSyncGlobalCatToMain();
+  _rgUpdateBreadcrumbs();
+}
+
+// ── Breadcrumb filter status strip ─────────────────────────────────────────
+// Rebuilds the at-a-glance filter status chips in the region map header.
+// Call whenever any filter state changes.
+
+function _rgUpdateBreadcrumbs() {
+  const container = document.getElementById('rgBreadcrumbs');
+  if (!container) return;
+  container.innerHTML = '';
+
+  function mkChip(text, onClickBody, onClickX) {
+    const chip = document.createElement('span');
+    chip.className = 'rg-bc';
+    const lbl = document.createElement('span');
+    lbl.textContent = text;
+    chip.appendChild(lbl);
+    if (onClickBody) {
+      chip.addEventListener('click', e => { if (!e.target.classList.contains('rg-bc-x')) onClickBody(); });
+    }
+    if (onClickX) {
+      const x = document.createElement('span');
+      x.className = 'rg-bc-x';
+      x.textContent = '✕';
+      x.title = 'Remove filter';
+      x.addEventListener('click', e => { e.stopPropagation(); onClickX(); });
+      chip.appendChild(x);
+    }
+    return chip;
+  }
+
+  // 1. Display Mode — always visible; clicking toggles mode
+  container.appendChild(mkChip(
+    _rgPayoutMode ? 'Payout Colors' : 'Category Colors',
+    _rgTogglePayoutMode,
+    null
+  ));
+
+  // 2. Pilot Payout filter — grouped right after "Payout Colors"
+  if (_rgPayoutMode && _rgPayoutFilter > 0) {
+    container.appendChild(mkChip(
+      `Pilot Payout >= ${_rgPayoutFilter}%`,
+      null,
+      () => _rgPayoutSliderInput(0)
+    ));
+  }
+
+  // 3. Scenery mode — shown when Highlight or Only is active
+  if (_rgOnlyScenery) {
+    container.appendChild(mkChip('Only Detailed Scenery', _slCycleMode, null));
+  } else if (_rgShowScenery && _slLoad().length > 0) {
+    container.appendChild(mkChip('Scenery Indicator', _slCycleMode, null));
+  }
+
+  // 4. Scenery Quality filter — grouped right after the Scenery chip
+  if (_rgStarFilterMode && _rgStarFilter > 0) {
+    const starStr = (_rgStarFilter % 1 === 0.5) ? _rgStarFilter.toFixed(1) : String(_rgStarFilter);
+    container.appendChild(mkChip(
+      `Rating >= ${starStr} stars`,
+      null,
+      () => { if (_rgStarFilterMode) _rgToggleStarFilter(); }
+    ));
+  }
+
+  // 5. Category Filtering — only when at least one cat is hidden
+  if (_globalCatFilter.size < 7) {
+    container.appendChild(mkChip('Category Filtering', null, _rgAllGlobalCats));
+  }
+
+  // 6. Pilot Filtering — only when filter is active
+  if (_rgMapOwnerFilter !== null) {
+    const n = _rgMapOwnerFilter.size;
+    container.appendChild(mkChip(
+      `${n} Pilot${n !== 1 ? 's' : ''} Displayed`,
+      null,
+      () => {
+        _rgMapOwnerFilter = null;
+        document.querySelectorAll('#rgMapOwnerList .rg-owner-row').forEach(r => r.classList.add('active'));
+        _rgUpdateMapOwnerBtn();
+        _rgApplyMapOwnerFilter();
+      }
+    ));
+  }
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -12948,6 +13056,7 @@ function _rgUpdateMapOwnerBtn() {
     lbl.textContent = `: ${active} / ${total}`;
     btn.classList.add('filtered');
   }
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgApplyMapOwnerFilter() {
@@ -13463,7 +13572,7 @@ function rgSendToFlightPlanner() {
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
             <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Click a result or press ↑/↓ to navigate and Enter to select — the map flies to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link.<br/><br/>
-            <strong>Distance</strong> — click <strong>📐 Distance</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance in nm, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -13510,6 +13619,22 @@ function rgSendToFlightPlanner() {
         </div>
       </div>
 
+      <div class="help-feature">
+        <div class="help-feature-icon">🔖</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Filter Status Strip</div>
+          <div class="help-feature-desc">
+            The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
+            <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
+            <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
+            <strong>N Pilots Displayed</strong> — appears when the Airport Owners filter is active and shows how many pilots&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all pilots.<br/><br/>
+            <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
+            <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
+            The strip truncates automatically if it would overlap the category circles, always leaving at least 30 px of clearance.
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -13531,10 +13656,61 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.3</span>
+          <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter strip nudged down 3px</strong> &mdash; breadcrumb overlay shifted from top 8px to 11px for better vertical alignment with the search bar.</li>
+          <li><strong>Contextual chip grouping</strong> &mdash; <em>Pilot Payout &ge; N%</em> now appears immediately after <em>Payout Colors</em> so the two payout chips read as a unit. <em>Rating &ge; N stars</em> now appears immediately after the Scenery chip so scenery-related filters stay grouped together. Category Filtering and Pilot Filtering follow at the end.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.2</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery mode breadcrumb</strong> &mdash; the filter status strip now includes a scenery chip as its second element. Shows <em>Scenery Indicator</em> when the Highlight overlay is active, or <em>Only Detailed Scenery</em> when the map is filtered to scenery airports only. Clicking <em>Scenery Indicator</em> advances to <em>Only Detailed Scenery</em>; clicking <em>Only Detailed Scenery</em> turns the mode off and removes the chip.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.38.1</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter status strip moved to the map</strong> &mdash; the breadcrumb filter chips are now an overlay on the region map, positioned to the right of the search bar, rather than in the header bar where they crowded out space at lower screen resolutions.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.38.0</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Breadcrumb filter status strip</strong> &mdash; the region map header now shows a live strip of filter breadcrumbs between the Measurement button and the category circles. Each chip represents an active filter: Display Mode (Category Colors / Payout Colors), Category Filtering, Pilots Displayed, Pilot Payout minimum, and Scenery Rating minimum. Chips that can be toggled off carry an &times; button; clicking the Display Mode chip toggles between color modes. The strip truncates before overlapping the category circles.</li>
+          <li><strong>Renamed Distance to Measurement</strong> &mdash; the ruler button label is now &ldquo;Measurement&rdquo; to better reflect that it shows both distance and bearing.</li>
+          <li><strong>Smart distance units in measurement label</strong> &mdash; the on-map measurement label now switches units based on distance. At 20,000 ft and under it shows feet and meters (whole numbers). Above that threshold it shows nautical miles and kilometres; values at or below 100 nm display to two decimal places, above 100 nm display as whole numbers.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.37.4</span>
-          <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -19050,7 +19226,7 @@ function rgSendToFlightPlanner() {
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <div id="rgHdrRoute"></div>
         <div class="rg-hdr-sep"></div>
-        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Distance</button>
+        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Measurement</button>
         <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
       </div>
@@ -19149,6 +19325,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="rg-map-search-results" id="rgMapSearchResults"></div>
       </div>
+      <div id="rgBreadcrumbs" class="rg-map-breadcrumbs"></div>
       <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
     </div>
     <div id="rgVSplit" class="rg-vsplit" onmousedown="_rgSplitDown(event)"></div>
