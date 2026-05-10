@@ -3534,7 +3534,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.37.2';
+const APP_VERSION = '2.37.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11191,6 +11191,7 @@ function _rgMapMouseDown(e) {
     return;
   }
   if (_rgPhase === 'explore') return;
+  if (e.originalEvent.button !== 0) return;
   if (_rgPhase === 'results') {
     const hit = _rgDragHitTest(e);
     if (!hit) return;
@@ -11442,6 +11443,10 @@ function _rgLockArr() {
 // ── Undo / Reset ────────────────────────────────────────────────────────
 
 function rgUndo() {
+  if (_rgPhase === 'idle') {
+    rgExploreReturn();
+    return;
+  }
   if (_rgPhase === 'dep_drag' || _rgPhase === 'ruler') {
     [_rgDepFill, _rgDepRing, _rgDepPin, _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel]
       .forEach(l => { if (l) l.remove(); });
@@ -11594,7 +11599,15 @@ function _rgUpdatePhaseText() {
   const newRegionsBtn = document.getElementById('rgNewRegionsBtn');
   const drawingPhases = ['idle', 'dep_drag', 'ruler', 'arr_drag'];
   if (selBtn)        selBtn.style.display        = _rgPhase === 'explore' ? '' : 'none';
-  if (undoBtn)       undoBtn.style.display       = drawingPhases.includes(_rgPhase) ? '' : 'none';
+  if (undoBtn) {
+    undoBtn.style.display = drawingPhases.includes(_rgPhase) ? '' : 'none';
+    if (_rgPhase === 'idle') {
+      undoBtn.disabled  = false;
+      undoBtn.innerHTML = 'Cancel';
+    } else {
+      undoBtn.innerHTML = '&#x21A9; Undo';
+    }
+  }
   if (newRegionsBtn) newRegionsBtn.style.display = _rgPhase === 'results' ? '' : 'none';
 }
 
@@ -11661,7 +11674,6 @@ function _rgComputeAndRender() {
     _rgRefreshFilteredAirports();
     _rgHighlightDots();
     _rgRenderMatrix();
-    _rgUpdateSummary();
   }, 30);
 }
 
@@ -11697,8 +11709,9 @@ function _rgUpdateSortLabel() {
   }
 }
 
-function _rgUpdateSummary() {
-  const dep = _rgDepAirports.length, arr = _rgArrAirports.length;
+function _rgUpdateSummary(depCount, arrCount) {
+  const dep = depCount ?? _rgDepAirports.length;
+  const arr = arrCount ?? _rgArrAirports.length;
   document.getElementById('rgResultsSummary').innerHTML =
     `<b>${dep}</b> dep airports &times; <b>${arr}</b> arr airports = <b>${dep * arr}</b> routes`;
 }
@@ -12020,6 +12033,7 @@ function _rgRenderMatrix() {
   if (!dep.length || !arr.length) {
     matEl.innerHTML = '<tr><td class="rg-matrix-msg">No airports found in ' +
       (!dep.length ? 'departure' : 'arrival') + ' region — try a larger radius.</td></tr>';
+    _rgUpdateSummary(dep.length, arr.length);
     return;
   }
 
@@ -12137,6 +12151,7 @@ function _rgRenderMatrix() {
   _rgInitColResize();
   _rgBuildOwnerDropdown();
   _rgUpdateSortLabel();
+  _rgUpdateSummary(dep.length, arr.length);
 }
 
 function _rgX(s) {
@@ -12732,7 +12747,6 @@ function _rgApplyCatFilter() {
   _rgRefreshFilteredAirports();
   _rgHighlightDots();
   _rgRenderMatrix();
-  _rgUpdateSummary();
 }
 
 // ── Map-wide owner filter ────────────────────────────────────────────────────
@@ -12940,7 +12954,6 @@ function _rgApplyMapOwnerFilter() {
   if (_rgPhase === 'results') {
     _rgRefreshFilteredAirports();
     _rgRenderMatrix();
-    _rgUpdateSummary();
   }
   _rgRenderDots();
   _rgHighlightDots();
@@ -13520,8 +13533,33 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v2.37.4</span>
+          <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Statistics row always in sync with the matrix</strong> &mdash; the <em>N dep airports × N arr airports = N routes</em> summary now updates on every matrix render, including when scenery, payout, or star-rating filters change the visible airport set. The displayed counts now reflect the filtered matrix rather than the raw region totals.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.37.3</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region drawing — left-click only</strong> &mdash; right-click and right-drag are now ignored while drawing departure and arrival regions, preventing accidental region starts from context-menu interactions.</li>
+          <li><strong>Cancel button before drawing departure region</strong> &mdash; when the map is in the "ready to draw" state (before any drag has started), the Undo button is now enabled and labeled <em>Cancel</em>. Clicking it returns to the Select Region state without drawing anything.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v2.37.2</span>
-          <span class="release-date">May 9, 2026 &middot; Current</span>
+          <span class="release-date">May 9, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
