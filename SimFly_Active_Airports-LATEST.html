@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.11';
+const APP_VERSION = '2.38.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10286,6 +10286,23 @@ async function _rgFetchDeclForOrigin() {
   }
 }
 
+// Smart-units formatter for measurement labels: feet/meters at runway scale,
+// fractional nm at small map scale, whole nm at long-haul scale. Used by both
+// the live-drawing label (_rgUpdateMeasure) and the saved-measurement redraw
+// (_rgRedrawMeasureEntry) so resizing a saved measurement renders identically
+// to drawing a fresh one.
+function _rgFmtMeasDist(nm) {
+  const distM = nm * 1852;
+  const ft    = distM / 0.3048;
+  if (ft <= 20000) {
+    return `${Math.round(ft).toLocaleString('en-US')} ft &nbsp;·&nbsp; ${Math.round(distM).toLocaleString('en-US')} m`;
+  }
+  if (nm <= 100) {
+    return `${nm.toFixed(2)} nm &nbsp;·&nbsp; ${(distM / 1000).toFixed(2)} km`;
+  }
+  return `${Math.round(nm)} nm &nbsp;·&nbsp; ${Math.round(distM / 1000)} km`;
+}
+
 function _rgUpdateMeasure(toLL) {
   if (!_rgMeasureOrigin || !_rgMap) return;
   _rgMeasureLastLL = toLL;
@@ -10320,15 +10337,7 @@ function _rgUpdateMeasure(toLL) {
     _rgMeasureLine.setLatLngs([origin, [toLL.lat, toLL.lng]]);
   }
 
-  const ft = distM / 0.3048;
-  let distStr;
-  if (ft <= 20000) {
-    distStr = `${Math.round(ft).toLocaleString('en-US')} ft &nbsp;·&nbsp; ${Math.round(distM).toLocaleString('en-US')} m`;
-  } else if (nm <= 100) {
-    distStr = `${nm.toFixed(2)} nm &nbsp;·&nbsp; ${(distM / 1000).toFixed(2)} km`;
-  } else {
-    distStr = `${Math.round(nm)} nm &nbsp;·&nbsp; ${Math.round(distM / 1000)} km`;
-  }
+  const distStr = _rgFmtMeasDist(nm);
 
   const midLL = _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
   const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
@@ -11211,7 +11220,7 @@ function _rgRedrawMeasureEntry(i) {
   const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;` +
     `background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
-    `${Math.round(nm)} nm &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
+    `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
   m.label.setLatLng([midLL.lat, midLL.lng]);
   m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
   _rgDrawMeasureHandles(i);
@@ -11295,7 +11304,10 @@ function _rgApplyDrag(e) {
     const brg = _rgTrueBearing(
       _rgDragMeasSnap.origin.lat, _rgDragMeasSnap.origin.lng,
       _rgDragMeasSnap.toLL.lat,   _rgDragMeasSnap.toLL.lng);
-    const nm  = Math.max(1, _haversineNm(m.origin.lat, m.origin.lng, e.latlng.lat, e.latlng.lng));
+    // 0.001 nm (~6 ft) floor avoids zero-length bearing math while letting the
+    // user resize down to runway-scale measurements. Region-circle resize keeps
+    // its 1 nm floor — those are airport-selection radii, not distance readouts.
+    const nm  = Math.max(0.001, _haversineNm(m.origin.lat, m.origin.lng, e.latlng.lat, e.latlng.lng));
     m.toLL = _rgDestLL(m.origin.lat, m.origin.lng, brg, nm);
     _rgRedrawMeasureEntry(idx);
   }
@@ -13839,8 +13851,21 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.38.11</span>
+          <span class="release-version">v2.38.12</span>
           <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance measurements can now be resized down to runway scale</strong> &mdash; the 1&nbsp;nm minimum on the saved-measurement edge handle is replaced with a tiny <strong>~6 ft</strong> floor (just enough to avoid zero-length bearing math). You can now grab the resize handle on a saved measurement and drag it down to read runway lengths or other small distances directly off the map. Region-circle resize keeps its 1&nbsp;nm floor since those are airport-selection radii, not distance readouts.</li>
+          <li><strong>Saved-measurement label now uses smart units</strong> &mdash; previously the label always rendered as <code>X nm</code> after a resize, which would show <code>0 nm</code> for runway-scale measurements. The saved label now uses the same unit ladder as live drawing: feet and meters at 20,000&nbsp;ft and under, two-decimal nm/km up to 100&nbsp;nm, whole nm/km above that. Live drawing and saved redraw share a single formatter so they can&rsquo;t drift apart.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.11</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
