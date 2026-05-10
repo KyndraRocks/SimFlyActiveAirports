@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.10';
+const APP_VERSION = '2.38.11';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3577,6 +3577,18 @@ const WX_NEAREST_MAX_NM = 100;              // fallback cap: ignore nearest > 10
 
 let _wxCache    = new Map(); // icao → { data, fetchedAt, isNearest, nearestIcao, nearestDistNm }
 let _wxFetching = false;
+const _WX_CACHE_MAX = 500;   // LRU-on-write cap; well above realistic single-session usage
+// Insert/refresh helper that bounds _wxCache. Re-inserting an existing key
+// moves it to the end of insertion order so frequently-refreshed entries
+// don't get evicted before stale ones.
+function _wxCacheSet(icao, value) {
+  if (_wxCache.has(icao)) _wxCache.delete(icao);
+  else if (_wxCache.size >= _WX_CACHE_MAX) {
+    const oldest = _wxCache.keys().next().value;
+    if (oldest != null) _wxCache.delete(oldest);
+  }
+  _wxCache.set(icao, value);
+}
 // ── Theme toggle ─────────────────────────────────────────────────────────────────────────
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light-mode');
@@ -8986,7 +8998,7 @@ async function _wxFetch() {
       const found = new Set();
       (json.data || []).forEach(d => {
         if (!d.icao) return;
-        _wxCache.set(d.icao, { data: d, fetchedAt: Date.now(), isNearest: false });
+        _wxCacheSet(d.icao, { data: d, fetchedAt: Date.now(), isNearest: false });
         found.add(d.icao);
         document.querySelectorAll(`.wx-badge-slot[data-wx-icao="${d.icao}"]`).forEach(slot => {
           slot.innerHTML = _wxBadgeHtml(d.icao);
@@ -9012,9 +9024,9 @@ async function _wxFetch() {
           const [lon, lat] = d.station.geometry.coordinates;
           const distNm = _haversineNm(reqRec.latitude, reqRec.longitude, lat, lon);
           if (distNm > WX_NEAREST_MAX_NM) return;
-          _wxCache.set(icao, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: distNm });
+          _wxCacheSet(icao, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: distNm });
         } else {
-          _wxCache.set(icao, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: null });
+          _wxCacheSet(icao, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: null });
         }
         document.querySelectorAll(`.wx-badge-slot[data-wx-icao="${icao}"]`).forEach(slot => {
           slot.innerHTML = _wxBadgeHtml(icao);
@@ -10020,9 +10032,13 @@ let _rgOwnerMap   = new Map(); // ICAO.toUpperCase() → owner name (built in _r
 let _rgTipTimer   = null;   // delayed-tooltip timer handle
 // ── Memory-reduction caches ────────────────────────────────────────────
 let _rgCanvasRenderer  = null;   // shared L.canvas() — created once, reused by both layers
+let _rgRouteLineRenderer = null; // shared L.canvas() for route-line rings — created once on first route draw
 let _rgTipHtmlCache    = null;   // Map<ICAO→html> — tooltip HTML built once per dot render pass
 let _ownerDataCache    = null;   // parsed result of _getOwnerData()
 let _ownerDataCacheKey = null;   // textarea value that produced the cache
+// ── Mouse-move RAF coalescer ───────────────────────────────────────────
+let _rgMmRafId   = 0;            // pending requestAnimationFrame handle (0 = none)
+let _rgMmPending = null;          // most recent mousemove event awaiting frame
 let _rgRangeRing  = null;   // aircraft range ring centered on dep region
 
 // Phase: 'explore' | 'idle' | 'dep_drag' | 'ruler' | 'arr_drag' | 'results'
@@ -10705,7 +10721,8 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   const line = L.polyline(coords, { color: '#ffd166', weight: 4,  opacity: 0.45, interactive: false, pane: 'routeLinePane' });
   const core = L.polyline(coords, { color: '#ffffff', weight: 1.5, opacity: 0.9, interactive: false, pane: 'routeLinePane' });
 
-  const renderer = L.canvas({ padding: 0.5, pane: 'routeLinePane' });
+  if (!_rgRouteLineRenderer) _rgRouteLineRenderer = L.canvas({ padding: 0.5, pane: 'routeLinePane' });
+  const renderer = _rgRouteLineRenderer;
   const depRing  = L.circleMarker(depLL, {
     renderer, radius: 7, weight: 2,
     color: '#00c8ff', fillColor: '#00c8ff', fillOpacity: 0.2, interactive: false,
@@ -11376,8 +11393,23 @@ function _rgMapMouseDown(e) {
   }
 }
 
+// Thin coalescer: synchronous _rgLastLL update for any reader, but the
+// expensive body (DOM updates, hit-tests) runs at most once per animation frame.
+// The most recent event is always used — intermediate events within the same
+// frame are dropped (their coordinates are already superseded).
 function _rgMapMouseMove(e) {
   _rgLastLL = e.latlng;
+  _rgMmPending = e;
+  if (_rgMmRafId) return;
+  _rgMmRafId = requestAnimationFrame(() => {
+    _rgMmRafId = 0;
+    const ev = _rgMmPending;
+    _rgMmPending = null;
+    if (ev) _rgMapMouseMoveBody(ev);
+  });
+}
+
+function _rgMapMouseMoveBody(e) {
   const cp  = e.originalEvent;
 
   // Measurement handle drag is active in any phase
@@ -13807,8 +13839,22 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.38.10</span>
+          <span class="release-version">v2.38.11</span>
           <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Smoother panning in dense regions</strong> &mdash; the Region Mode mouse-move handler is now coalesced with <code>requestAnimationFrame</code>, so per-pointer-event work happens at most once per frame. Reduces jerkiness when panning the map across high-density areas like Europe. Functional behavior is identical &mdash; updates simply happen at frame rate instead of pointer-event rate.</li>
+          <li><strong>Bounded weather cache</strong> &mdash; the in-memory weather cache (<code>_wxCache</code>) is now capped at 500 entries with LRU-on-write eviction. Prevents unbounded memory growth in long sessions that fetch weather across many airports. The cap is well above realistic single-session usage, so refetches are rare in practice.</li>
+          <li><strong>Route-line canvas renderer reused</strong> &mdash; <code>_rgDrawRouteHL</code> was creating a fresh <code>L.canvas()</code> renderer on every route selection, leaving orphaned canvas DOM elements behind. The renderer is now created once and reused across all route selections, mirroring the shared-renderer pattern already used by the dot layers.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.10</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
