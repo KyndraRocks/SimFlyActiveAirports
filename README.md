@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.38.9**
+**Current version: v2.38.10**
 
 ---
 
@@ -96,10 +96,14 @@ A **legend** appears in the top-right corner of the map showing the gradient bar
 
 The gray **0% dot** on the legend is also a one-click toggle — click it to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue.
 
+Click the **✕** in the legend's top-right corner to close the panel — same as clicking **💰 Payout** in the toolbar.
+
 ### Scenery Rating Filter
 Click **⭐ Rating** in the Region Mode toolbar to open the Scenery Rating filter panel. Hover over the five stars to preview a minimum threshold, then click to set it — airports in your Scenery Library with a rating below that value are hidden from both the map dots and the distance matrix. Half-star increments are supported: hover or click the **left half** of a star to set a .5 threshold (e.g. 2.5★), the **right half** for the whole-star value. Click the same value again to clear the filter.
 
 Airports not in your Scenery Library, or in the library with no rating set, are always hidden when any threshold is active. When the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it with automatic spacing so both panels remain accessible.
+
+Click the **✕** in the panel's top-right corner to close it — same as clicking **⭐ Rating** in the toolbar.
 
 ### Distance Map
 An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded. When a route is highlighted on the map, the departure and arrival info cards display a **Weather** section with the same decoded breakdown as the badge-hover tooltip (METAR, flight category, wind, visibility, sky, temp/dew, altimeter).
