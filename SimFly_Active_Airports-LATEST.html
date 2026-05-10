@@ -2862,7 +2862,31 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-bc:hover { background:rgba(30,45,80,0.95); border-color:rgba(255,255,255,0.38); color:#fff; }
   .rg-bc-x { opacity:0.5; font-size:0.65rem; line-height:1; padding:0 0.1rem; margin-left:0.08rem; }
   .rg-bc-x:hover { opacity:1; }
-  .rg-phase-text { font-family:'Rajdhani',sans-serif; font-size:1.38rem; color:var(--text); line-height:1.35; min-width:0; }
+  /* Category-data unavailable warning — shown only when both Gist fetch and localStorage cache fail */
+  .rg-cat-warning { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.5rem; padding:0.45rem 0.9rem; background:rgba(80,30,0,0.94); border:1px solid rgba(255,160,60,0.6); border-radius:6px; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:#ffd9a0; pointer-events:all; max-width:80%; box-shadow:0 2px 10px rgba(0,0,0,0.45); }
+  .rg-cat-warning.visible { display:flex; }
+  .rg-cat-warning-icon { font-size:1.05rem; }
+  .rg-cat-warning-close { background:none; border:none; color:rgba(255,217,160,0.7); cursor:pointer; padding:0 0.2rem; font-size:1rem; line-height:1; }
+  .rg-cat-warning-close:hover { color:#fff; }
+  .rg-phase-text { font-family:'Rajdhani',sans-serif; font-size:1.38rem; color:var(--text); line-height:1.35; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* Drawing-phase instruction overlay — sits on the map during region-drawing flow */
+  /* (idle/dep_drag/ruler/arr_drag) so the header doesn't have to carry long text. */
+  .rg-phase-overlay { position:absolute; top:55px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.55rem; padding:0.4rem 1.05rem; background:rgba(5,15,30,0.94); border:1px solid rgba(0,200,255,0.45); border-radius:999px; font-family:'Rajdhani',sans-serif; font-size:1.05rem; line-height:1.2; color:#fff; box-shadow:0 2px 14px rgba(0,0,0,0.55); pointer-events:none; max-width:80%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rg-phase-overlay.visible { display:flex; }
+  .rg-phase-overlay .rg-phase-badge { font-family:'Orbitron',monospace; font-size:0.78rem; font-weight:700; letter-spacing:0.06em; padding:0.18rem 0.62rem; border-radius:14px; flex-shrink:0; margin:0; vertical-align:baseline; }
+  /* Narrow-viewport polish — progressive collapse so the header stays on a */
+  /* single row without elements colliding. The Measurement label is the */
+  /* first to collide with the central Map cat filter, so it drops earliest. */
+  @media (max-width: 1700px) {
+    #rgRulerBtn .rg-btn-label { display:none; }
+  }
+  @media (max-width: 1500px) {
+    .rg-modal-hdr { gap:0.4rem; padding:0.45rem 0.8rem; }
+    .rg-modal-hdr .rg-btn { padding:0.45rem 0.65rem; font-size:0.92rem; }
+    .rg-hdr-left  { gap:0.35rem; }
+    .rg-hdr-right { gap:0.35rem; }
+    .rg-btn-label { display:none; }
+  }
   .rg-phase-badge { display:inline-block; font-family:'Orbitron',monospace; font-size:0.87rem; font-weight:700; letter-spacing:0.06em; padding:0.225rem 0.75rem; border-radius:20px; margin-right:0.675rem; vertical-align:middle; }
   .rg-phase-badge.dep  { background:rgba(0,200,255,0.18); color:var(--accent); border:1px solid rgba(0,200,255,0.4); }
   .rg-phase-badge.arr  { background:rgba(255,106,0,0.18); color:var(--accent2); border:1px solid rgba(255,106,0,0.4); }
@@ -3540,7 +3564,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.3';
+const APP_VERSION = '2.38.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3640,13 +3664,49 @@ let aircraftDB = new Map();   // Map: ICAO_Code → {label, brand, model, cat, s
 let dbLookupDB = new Map(); // Map: SimFly code → OurAirports ident (DB_LOOKUP cross-mappings, e.g. EGON → GB-0464)
 let dbLoadPromise = null;
 
+// True when the category CSV could not be loaded from the Gist OR localStorage.
+// Drives the on-map warning banner shown by _rgCheckCategoryWarning().
+let _categoryDbFailed = false;
+
+const CATEGORY_CACHE_KEY = 'simfly_category_csv';
+
+// Resilient category-CSV loader: 3-attempt retry with backoff, sanity-checks the
+// response, caches every successful payload to localStorage, and falls back to
+// the cache when all network attempts fail. Returns '' only when both the Gist
+// and the cache are unavailable (sets _categoryDbFailed for the banner).
+async function fetchCategoryCsvWithRetry() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const r = await fetch(CATEGORY_URL);
+      if (r.ok) {
+        const txt = await r.text();
+        if (txt && /^\s*ICAO\b/i.test(txt)) {
+          try { localStorage.setItem(CATEGORY_CACHE_KEY, txt); } catch(e) {}
+          return txt;
+        }
+      }
+    } catch(e) { /* swallow — will retry or fall back */ }
+    if (attempt < 2) await new Promise(res => setTimeout(res, 500 * (attempt + 1)));
+  }
+  try {
+    const cached = localStorage.getItem(CATEGORY_CACHE_KEY);
+    if (cached) {
+      console.warn('Category CSV fetch failed after 3 attempts — using localStorage cache');
+      return cached;
+    }
+  } catch(e) {}
+  console.warn('Category CSV unavailable and no cache — categoryDB will be empty');
+  _categoryDbFailed = true;
+  return '';
+}
+
 function loadAirportDB() {
   if (dbLoadPromise) return dbLoadPromise;
   dbLoadPromise = Promise.all([
     fetch(OURAIRPORTS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch airport database'); return r.text(); }),
     fetch(REGIONS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch regions database'); return r.text(); }),
     fetch(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch runway database'); return r.text(); }),
-    fetch(CATEGORY_URL).then(r => r.ok ? r.text() : '').catch(() => ''),
+    fetchCategoryCsvWithRetry(),
     fetch(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => ''),
     fetch(OVERRIDE_URL).then(r => r.ok ? r.text() : '{}').catch(() => '{}'),
     fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -10059,7 +10119,22 @@ let _rgMatRefreshTm  = null;  // debounce timer for matrix refresh during drag
 
 // ── Open / Close ───────────────────────────────────────────────────────
 
+// Apply aircraft-category descriptions to every region-mode category-filter
+// button (Map row uses data-rg-gcat; Dep/Arr rows use data-rg-cat). Lazy-init
+// guarded by a flag so it only runs once per session — the buttons are static
+// HTML so we don't need to repeat this on each modal open.
+let _rgCatTitlesInited = false;
+function _rgInitCatButtonTitles() {
+  if (_rgCatTitlesInited) return;
+  document.querySelectorAll('.dist-cat-btn[data-rg-cat], .dist-cat-btn[data-rg-gcat]').forEach(b => {
+    const cat = +(b.dataset.rgCat || b.dataset.rgGcat);
+    if (cat >= 1 && cat <= 7 && _AC_CAT_DESC[cat]) b.title = _AC_CAT_DESC[cat];
+  });
+  _rgCatTitlesInited = true;
+}
+
 function openRegionModal(forceOwnerFilter) {
+  _rgInitCatButtonTitles();
   const modal = document.getElementById('regionModal');
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -10314,6 +10389,21 @@ async function _rgInitMap() {
   _rgPhase = 'explore';
   _rgSetCursor('');
   _rgUpdatePhaseText();
+  _rgCheckCategoryWarning();
+}
+
+// Show the on-map warning banner only when category data is genuinely missing
+// (Gist fetch retries failed AND no localStorage cache was available). This is
+// the failure mode that produces uniformly-gray dots — without category colors,
+// _rgCatOf() returns null for every airport.
+function _rgCheckCategoryWarning() {
+  const banner = document.getElementById('rgCategoryWarning');
+  if (!banner) return;
+  if (_categoryDbFailed && categoryDB && categoryDB.size === 0) {
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
 }
 
 function _rgToggleLayer() {
@@ -11610,7 +11700,17 @@ function _rgUpdatePhaseText() {
     ruler:    '<span class="rg-phase-badge arr">STEP 2</span>Click &amp; drag to define the <b>arrival region</b>',
     arr_drag: '<span class="rg-phase-badge arr">ARR</span>Drag to set radius — release to lock arrival region',
   };
-  el.innerHTML = msgs[_rgPhase] || '';
+  // Render drawing-phase instructions on the map (centered overlay) instead of
+  // the header — keeps the header compact on narrow viewports and puts the
+  // instruction near where the user is interacting. Header phase-text is left
+  // empty during drawing; explore/results phases never set it here either.
+  const drawingMsg = msgs[_rgPhase] || '';
+  const overlay = document.getElementById('rgPhaseOverlay');
+  if (overlay) {
+    overlay.innerHTML = drawingMsg;
+    overlay.classList.toggle('visible', !!drawingMsg);
+  }
+  el.innerHTML = '';
   const selBtn        = document.getElementById('rgSelectBtn');
   const undoBtn       = document.getElementById('rgUndoBtn');
   const newRegionsBtn = document.getElementById('rgNewRegionsBtn');
@@ -11861,11 +11961,40 @@ function _rgPayoutSliderInput(val) {
   if (zn) zn.style.width = x + 'px';
   if (lb) lb.style.display = _rgPayoutFilter > 0 ? '' : 'none';
   if (vl) vl.textContent = _rgPayoutFilter;
+  _rgUpdatePayoutZeroDot();
   _rgRepositionFilterPanels();
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
   _rgUpdateBreadcrumbs();
+}
+
+// Toggle the payout filter between 0% (show all) and 1% (hide 0% airports)
+// from a click on the gray 0% legend dot. Also keeps the native slider's
+// numeric value in sync so a follow-up drag starts from the right place.
+function _rgPayoutToggleZero() {
+  const newVal = _rgPayoutFilter === 0 ? 1 : 0;
+  const sl = document.getElementById('rgPayoutSlider');
+  if (sl) sl.value = newVal;
+  _rgPayoutSliderInput(newVal);
+}
+
+// Reflect the current filter state on the 0% legend dot: when the filter is
+// active (≥ 1%), the dot represents the hidden bucket — dim it and update the
+// tooltip to advertise the reverse action. Called from _rgPayoutSliderInput
+// so the dot stays in sync with both slider drags and zero-dot clicks.
+function _rgUpdatePayoutZeroDot() {
+  const dot = document.getElementById('rgPayoutZeroDot');
+  if (!dot) return;
+  if (_rgPayoutFilter > 0) {
+    dot.style.opacity = '0.35';
+    dot.style.boxShadow = 'inset 0 0 0 2px rgba(255,204,68,0.85)';
+    dot.title = 'Click to show airports with 0% payout';
+  } else {
+    dot.style.opacity = '';
+    dot.style.boxShadow = '';
+    dot.title = 'Click to hide airports with 0% payout';
+  }
 }
 
 // ── Scenery Star Rating Filter ─────────────────────────────────────────────
@@ -13614,6 +13743,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
             A legend in the lower-left corner of the map shows the gradient scale while the mode is active. Click the button again to return to standard category/owner coloring.<br/><br/>
+            <strong>Quick toggle for 0% airports</strong> &mdash; click the gray dot on the legend to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue. The slider can still be used for any other threshold above 1%.<br/><br/>
             Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.
           </div>
         </div>
@@ -13658,8 +13788,68 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.38.3</span>
+          <span class="release-version">v2.38.8</span>
           <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode header narrow-viewport tuning</strong> &mdash; raised the breakpoints so the header stops colliding earlier on common laptop widths. Below <strong>1700&nbsp;px</strong> the &ldquo;Measurement&rdquo; label drops first (it&rsquo;s the closest button to the central Map cat filter, so it collided earliest); below <strong>1500&nbsp;px</strong> the rest of the labels drop and padding tightens. Above 1700&nbsp;px nothing changes.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.7</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode header reflows cleanly on narrow displays</strong> &mdash; the &ldquo;STEP 1: Click &amp; drag&hellip;&rdquo; instruction text now appears as a centered pill on the map during the drawing flow rather than wrapping vertically in the header. The header itself tightens its padding and drops the text labels on <strong>📐 Measurement</strong>, <strong>💰 Payout</strong>, <strong>⭐ Rating</strong>, and <strong>✕ Close</strong> below 1400 px wide (icons remain, with full descriptions still on hover via the existing tooltips). High-resolution displays are unaffected.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.6</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode tooltip pass</strong> &mdash; added or improved hover tooltips on previously-bare region-mode controls so every action is discoverable without trial and error. The 21 category-filter buttons (Map, Dep, and Arr rows) now describe their aircraft tier on hover (e.g. <em>Cat 5 — Business jet / Regional jet</em>). The <strong>↩ Undo</strong>, <strong>⊙ DONE</strong>, <strong>✕ Close</strong>, payout legend slider, vertical map/matrix splitter, scenery edit-mode <em>✕ Done</em> banner, and <strong>Send to Flight Planner →</strong> button all gained explanatory tooltips. Skipped low-value spots where placeholders or labels already say enough.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.5</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pilot Payout 0% dot is now a toggle</strong> &mdash; the gray dot on the Pilot Payout legend is now interactive. Click it once to set the filter to 1% (hides every airport with no payout set); click it again to clear the filter back to 0% (shows everything). When the filter is active the dot dims and gains a yellow inset ring so the toggle state is visible at a glance.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.38.4</span>
+          <span class="release-date">May 10, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Resilient category data load</strong> &mdash; the airport category fetch from GitHub now retries up to three times with backoff on transient failures, falls back to a localStorage cache of the last successful response when all retries fail, and surfaces a clear on-map warning banner when even the cache is unavailable. Resolves a rare race condition that could leave the region map rendering every airport as a uniform dark-gray dot.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.3</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -19220,13 +19410,13 @@ function rgSendToFlightPlanner() {
     <div class="rg-modal-hdr">
       <div class="rg-hdr-left">
         <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ Select Regions</button>
-        <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none">↩ Undo</button>
-        <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ DONE</button>
+        <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
+        <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <div id="rgHdrRoute"></div>
         <div class="rg-hdr-sep"></div>
-        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Measurement</button>
+        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
         <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
       </div>
@@ -19261,8 +19451,8 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" title="Color airports by pilot payout percentage" tabindex="-1">💰 Payout</button>
-        <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ Rating</button>
+        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" title="Color airports by pilot payout percentage" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
+        <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
           <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤ Scenery</span>
@@ -19270,24 +19460,25 @@ function rgSendToFlightPlanner() {
           <span class="rg-sl-edit" onclick="openSceneryModal()" title="Manage scenery library">✏</span>
         </div>
         <div class="rg-hdr-sep"></div>
-        <button class="rg-btn rg-btn-close" onclick="closeRegionModal()">✕ Close</button>
+        <button class="rg-btn rg-btn-close" onclick="closeRegionModal()" title="Exit Region Mode and return to the main screen">✕ <span class="rg-btn-label">Close</span></button>
       </div>
     </div>
     <div id="rgMapContainer">
+      <div id="rgPhaseOverlay" class="rg-phase-overlay"></div>
       <div class="sl-map-banner" id="slMapBanner">
         <span>📍 Scenery edit mode — click any airport dot to add or remove it</span>
         <span class="sl-map-banner-hint">· Shift+click works anytime without this mode</span>
-        <button class="sl-map-banner-done" onclick="_slExitMapMode()">✕ Done</button>
+        <button class="sl-map-banner-done" onclick="_slExitMapMode()" title="Exit scenery edit mode (Shift+click still works without it)">✕ Done</button>
       </div>
       <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;margin-bottom:7px;">PILOT PAYOUT</div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:21px;height:21px;border-radius:50%;background:#7a7a90;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;"></div>
+          <div id="rgPayoutZeroDot" onclick="_rgPayoutToggleZero()" title="Click to hide airports with 0% payout" style="width:21px;height:21px;border-radius:50%;background:#7a7a90;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;cursor:pointer;transition:box-shadow 0.12s,opacity 0.12s;"></div>
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">0%</span>
           <div style="position:relative;width:120px;height:15px;flex-shrink:0;border-radius:4px;">
             <div style="position:absolute;inset:0;border-radius:4px;background:linear-gradient(to right,hsl(0,100%,57%),hsl(20,100%,55%) 33%,hsl(45,100%,52%) 67%,hsl(60,100%,50%) 83%,hsl(120,100%,45%));"></div>
             <div id="rgPayoutFilteredZone" style="position:absolute;top:0;left:0;bottom:0;width:0;background:rgba(0,0,0,0.62);border-radius:4px 0 0 4px;pointer-events:none;"></div>
-            <input type="range" id="rgPayoutSlider" min="0" max="60" value="0" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0;padding:0;" oninput="_rgPayoutSliderInput(this.value)">
+            <input type="range" id="rgPayoutSlider" min="0" max="60" value="0" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0;padding:0;" oninput="_rgPayoutSliderInput(this.value)" title="Drag to set a minimum payout — airports below the threshold are hidden from the map and matrix">
             <div id="rgPayoutThumb" style="position:absolute;top:-2px;bottom:-2px;left:0;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(0,0,0,0.9);pointer-events:none;display:none;"></div>
           </div>
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">60%+</span>
@@ -19326,9 +19517,14 @@ function rgSendToFlightPlanner() {
         <div class="rg-map-search-results" id="rgMapSearchResults"></div>
       </div>
       <div id="rgBreadcrumbs" class="rg-map-breadcrumbs"></div>
+      <div id="rgCategoryWarning" class="rg-cat-warning">
+        <span class="rg-cat-warning-icon">⚠</span>
+        <span class="rg-cat-warning-text">Airport category data unavailable — category colors disabled. Refresh to retry.</span>
+        <button class="rg-cat-warning-close" onclick="document.getElementById('rgCategoryWarning').classList.remove('visible')" title="Dismiss">✕</button>
+      </div>
       <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
     </div>
-    <div id="rgVSplit" class="rg-vsplit" onmousedown="_rgSplitDown(event)"></div>
+    <div id="rgVSplit" class="rg-vsplit" onmousedown="_rgSplitDown(event)" title="Drag to resize the map versus the route matrix"></div>
     <div class="rg-results-bar" id="rgResultsBar">
       <div class="rg-cap-row">
         <span class="rg-cap-lbl" title="Sort order for airports in the route matrix">Sort:</span>
@@ -19417,7 +19613,7 @@ function rgSendToFlightPlanner() {
         <span class="rg-sel-arrow">→</span>
         <span class="rg-sel-arr" id="rgSelArr"></span>
         <span class="rg-sel-nm"  id="rgSelNm"></span>
-        <button class="rg-sel-send" onclick="rgSendToFlightPlanner()">Send to Flight Planner →</button>
+        <button class="rg-sel-send" onclick="rgSendToFlightPlanner()" title="Close Region Mode and populate the main screen with this departure, arrival, and category filter state">Send to Flight Planner →</button>
       </div>
       <div id="rgMatrixScroll">
         <table class="rg-matrix" id="rgMatrix"></table>

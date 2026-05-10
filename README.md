@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.38.3**
+**Current version: v2.38.8**
 
 ---
 
@@ -93,6 +93,8 @@ The strip clips automatically when it nears the right edge of the map and never 
 Click **💰 Payout** in the toolbar to overlay pilot payout percentages on every airport dot. Dots use a piecewise color scale designed around the SimFly membership tiers: 0% = mid-grey; 1–20% = red through orange-red (the non-premium cap); 20–50% = orange through amber; 50% = pure yellow; 60%+ = pure green. The 50%–60% range gets the most hue separation — a full yellow-to-green shift — making it easy to spot airports where premium pilots have set higher-than-minimum payouts. Tooltip payout labels match the dot color. The payout percentage is shown in every airport tooltip on both the dot hover tooltip and the matrix/distance map tooltips.
 
 A **legend** appears in the top-right corner of the map showing the gradient bar and the 0% / 60%+ endpoints. The legend also serves as a **filter slider** — drag anywhere on the gradient bar to set a minimum payout threshold. Airports below the threshold disappear from both the map dots and the distance matrix instantly, and a **"Hide < N%"** label shows the active cutoff. Drag back to 0 to clear the filter. Toggling Payout mode off resets the filter automatically.
+
+The gray **0% dot** on the legend is also a one-click toggle — click it to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue.
 
 ### Scenery Rating Filter
 Click **⭐ Rating** in the Region Mode toolbar to open the Scenery Rating filter panel. Hover over the five stars to preview a minimum threshold, then click to set it — airports in your Scenery Library with a rating below that value are hidden from both the map dots and the distance matrix. Half-star increments are supported: hover or click the **left half** of a star to set a .5 threshold (e.g. 2.5★), the **right half** for the whole-star value. Click the same value again to clear the filter.
