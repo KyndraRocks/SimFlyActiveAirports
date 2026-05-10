@@ -3534,7 +3534,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.35.0';
+const APP_VERSION = '2.37.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -4197,6 +4197,13 @@ function downloadImportTxt() {
 }
 
 function downloadImportXlsx() {
+  if (typeof XLSX === 'undefined') {
+    const importErrorEl = document.getElementById('importError');
+    const msg = '⚠ Excel export unavailable — spreadsheet library failed to load. Try refreshing the page.';
+    if (importErrorEl) { importErrorEl.style.display = 'block'; importErrorEl.textContent = msg; }
+    else { alert(msg); }
+    return;
+  }
   const content = document.getElementById('importResultPreview').value;
   if (!content.trim()) return;
   const rows = [['Owner', 'Airports']];
@@ -5933,6 +5940,10 @@ function _getOwnerData() {
     if (airports.length > 0) {
       airports.sort((a, b) => a.icao.localeCompare(b.icao));
       owners.push({ name, airports });
+    } else if (icaos.size > 0) {
+      // All of this pilot's ICAOs failed to resolve — warn once per cache rebuild so the
+      // drop is visible in DevTools without cluttering the UI.
+      console.warn(`[AA] Pilot "${name}" omitted — none of their ICAO(s) resolved in the airport database:`, [...icaos]);
     }
   }
   owners.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
@@ -6109,6 +6120,7 @@ function _distSyncOwnerBtn(which) {
 }
 
 function refreshOwnerDropdowns() {
+  _rgOwnerLookupCache = null; // invalidate stale cache so tooltips don't show old owner associations
   const owners = _getOwnerData();
   const row    = document.getElementById('distOwnerRow');
   const depSel = document.getElementById('distDepOwner');
@@ -6132,7 +6144,11 @@ function refreshOwnerDropdowns() {
   const prevArr = arrSel.value;
 
   const blank = '<option value="">— select owner —</option>';
-  const opts  = owners.map(o => `<option value="${o.name.replace(/"/g,'&quot;')}">${o.name} (${o.airports.length})</option>`).join('');
+  const opts  = owners.map(o => {
+    const safeVal  = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const safeText = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<option value="${safeVal}">${safeText} (${o.airports.length})</option>`;
+  }).join('');
   depSel.innerHTML = blank + opts;
   arrSel.innerHTML = blank + opts;
 
@@ -6145,8 +6161,8 @@ function refreshOwnerDropdowns() {
     if (!listEl) return;
     const blankRow = `<div class="dist-owner-dd-blank" data-owner="" onclick="_distOwnerDdClick(this,'${side}')">— select owner —</div>`;
     const rows = owners.map(o => {
-      const safe = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-      const disp = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      const safe = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      const disp = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       return `<div class="dist-owner-dd-row" data-owner="${safe}" onclick="_distOwnerDdClick(this,'${side}')">` +
              `<span class="dist-owner-dd-name">${disp}</span>` +
              `<span class="dist-owner-dd-count">${o.airports.length}</span></div>`;
@@ -6453,7 +6469,7 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
   }
   if (payoutDB) {
     const pct = payoutDB.get(icao.toUpperCase()) ?? 0;
-    const color = pct >= 50 ? '#44cc44' : pct >= 30 ? '#e8c000' : pct > 0 ? '#e87030' : '#888';
+    const color = pct > 50 ? 'hsl(120,100%,42%)' : pct >= 50 ? 'hsl(60,100%,50%)' : pct >= 25 ? 'hsl(45,100%,60%)' : pct > 0 ? 'hsl(18,100%,62%)' : '#888';
     html += `<span class="tip-line" style="color:${color}">Pilot Payout: ${pct}%</span>`;
   }
   if (categoryDB) {
@@ -6634,6 +6650,11 @@ function renderDistMatrix() {
   if (_rgOnlyScenery) {
     depAirports = depAirports.filter(a => _slHas(a.icao));
     arrAirports = arrAirports.filter(a => _slHas(a.icao));
+  }
+
+  if (_rgStarFilterMode && _rgStarFilter > 0) {
+    depAirports = depAirports.filter(a => _rgStarFiltCheck(a.icao));
+    arrAirports = arrAirports.filter(a => _rgStarFiltCheck(a.icao));
   }
 
   // Validate pivot ICAO against current owner sets — clear if no longer present
@@ -9181,7 +9202,7 @@ function openSceneryModal() {
   const srch = document.getElementById('slSearch');
   if (srch) {
     srch.value = '';
-    if (_slLoad().length > 0) setTimeout(() => srch.focus(), 50);
+    if (_slLoad().length > 0) requestAnimationFrame(() => srch.focus());
   }
 }
 
@@ -9627,7 +9648,8 @@ function _slExportJson() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = 'simfly-scenery-library.json';
+  const _slTs = new Date().toISOString().slice(0, 19).replace('T', '-').replace(/:/g, '');
+  a.href = url; a.download = `simfly-scenery-library-${_slTs}.json`;
   a.click();
   URL.revokeObjectURL(url);
   _slDirty = 0;
@@ -9755,7 +9777,7 @@ function _slScanImport() {
 
 function _slScanCancel() {
   _slSetScanMode(false);
-  _slRenderList(document.getElementById('slSearch').value || '');
+  _slRenderList(document.getElementById('slSearch')?.value || '');
 }
 
 // ── FS Addon Compare import (HAR or single-page JSON) ──────────────────
@@ -9767,6 +9789,7 @@ function _slFsacFileChange(e) {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { _slShowToast('File too large — max 50 MB'); return; }
   _slSetScanMode(true);
   document.getElementById('slScanTitle').textContent = 'Reading file…';
   const reader = new FileReader();
@@ -9885,6 +9908,7 @@ function _slReadIniFile(file) {
 
 // ── Drag-and-drop JSON / scenery-config onto the modal ────────────────
 function _slHandleDroppedFile(file) {
+  if (file.size > 50 * 1024 * 1024) { _slShowToast('File too large — max 50 MB'); return; }
   const name = file.name.toLowerCase();
   if (name.endsWith('.json'))                          _slReadJsonFile(file);
   else if (name.endsWith('.ini') || name.endsWith('.cfg') || name.endsWith('.xml')) _slReadIniFile(file);
@@ -9952,8 +9976,10 @@ let _rgRulerLine  = null;   // measuring line during ruler phase
 let _rgHeroLayers = [];     // center-to-center hero line + midpoint label
 let _rgTileLayer  = null;   // current base tile layer
 let _rgMapSat     = false;  // false = street (default), true = satellite
-let _rgPayoutMode   = false;  // true = color dots by pilot payout % (green gradient)
-let _rgPayoutFilter = 0;     // minimum payout % to show; airports below this are hidden in payout mode
+let _rgPayoutMode     = false;  // true = color dots by pilot payout % (red→orange→green gradient)
+let _rgPayoutFilter   = 0;     // minimum payout % to show; airports below this are hidden in payout mode
+let _rgStarFilterMode = false;  // star rating filter panel active
+let _rgStarFilter     = 0;      // minimum star rating to show (0 = off, 1–5)
 let _rgRouteLayer = null;   // selected-cell airport-to-airport route line
 let _rgSortMode   = 'alpha'; // 'alpha' | 'owner'
 let _rgZoomedToIcao  = null;  // ICAO currently zoomed into, or null
@@ -10132,23 +10158,31 @@ async function _rgFetchDeclForOrigin() {
   const lat = _rgMeasureOrigin.lat;
   const lon = _rgMeasureOrigin.lng;
   const key = `${lat.toFixed(1)}_${lon.toFixed(1)}`;
+  // Returns true if the measurement that triggered this fetch is no longer active —
+  // the user cancelled or started a new one while the network request was in flight.
+  const isStale = () => !_rgMeasureOrigin ||
+    `${_rgMeasureOrigin.lat.toFixed(1)}_${_rgMeasureOrigin.lng.toFixed(1)}` !== key;
   if (_rgDeclCache.has(key)) {
     _rgMeasureDecl = _rgDeclCache.get(key);
     if (_rgMeasureLastLL) _rgUpdateMeasure(_rgMeasureLastLL);
     return;
   }
+  let decl;
   try {
     const url = `https://www.ngdc.noaa.gov/geomag-web/calculators/calculateDeclination` +
       `?lat1=${lat.toFixed(4)}&lon1=${lon.toFixed(4)}&key=zNEw7&resultFormat=json`;
     const res  = await fetch(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    _rgMeasureDecl = { decl: data.result[0].declination, approx: false };
+    decl = { decl: data.result[0].declination, approx: false };
   } catch (_) {
-    _rgMeasureDecl = { decl: _rgMagDeclDipole(lat, lon), approx: true };
+    decl = { decl: _rgMagDeclDipole(lat, lon), approx: true };
   }
-  _rgDeclCache.set(key, _rgMeasureDecl);
-  if (_rgMeasureOrigin && _rgMeasureLastLL) _rgUpdateMeasure(_rgMeasureLastLL);
+  _rgDeclCache.set(key, decl); // always cache — location data is valid regardless of whether this measurement is still active
+  if (!isStale()) {
+    _rgMeasureDecl = decl;
+    if (_rgMeasureLastLL) _rgUpdateMeasure(_rgMeasureLastLL);
+  }
 }
 
 function _rgUpdateMeasure(toLL) {
@@ -10382,7 +10416,7 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
     const payoutHtml = (() => {
       if (!payoutDB) return '';
       const pct = payoutDB.get(icaoUpper) ?? 0;
-      const col = pct >= 50 ? '#44cc44' : pct >= 30 ? '#e8c000' : pct > 0 ? '#e87030' : '#888';
+      const col = pct > 50 ? 'hsl(120,100%,42%)' : pct >= 50 ? 'hsl(60,100%,50%)' : pct >= 25 ? 'hsl(45,100%,60%)' : pct > 0 ? 'hsl(18,100%,62%)' : '#888';
       return `<span class="rg-dt-payout" style="color:${col}">Pilot Payout: ${pct}%</span>`;
     })();
     html =
@@ -10453,6 +10487,7 @@ function _rgRenderDots() {
   pending.sort((a, b) => a.catNum - b.catNum);
   for (const { ap, rec, catNum, ownerName } of pending) {
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(ap.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
+    if (!_rgStarFiltCheck(ap.icao)) continue;
     const fillColor   = _rgPayoutMode ? _rgPayoutColor(ap.icao) : (_rgCatOf(ap.icao) || (_rgMapSat ? '#a8d8f0' : '#3a7090'));
     const fillOpacity = _rgPayoutMode ? 1 : (_rgMapSat ? 0.88 : 0.75);
     const m = L.circleMarker([rec.latitude, rec.longitude], {
@@ -10630,6 +10665,7 @@ function _rgHighlightDots() {
     if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
+    if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgPayoutMode ? _rgPayoutColor(a.icao) : (_rgCatOf(a.icao) || '#00c8ff');
     const sel  = a.icao === _rgDotSelDep;
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
@@ -10667,6 +10703,7 @@ function _rgHighlightDots() {
     if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
+    if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgPayoutMode ? _rgPayoutColor(a.icao) : (_rgCatOf(a.icao) || '#ff6a00');
     const sel  = a.icao === _rgDotSelArr;
     const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
@@ -10760,6 +10797,7 @@ function _rgRefreshRatePopover() {
   const icao    = _rgRatePopoverIcao;
   const rec     = (typeof lookupICAO === 'function') ? lookupICAO(icao) : null;
   const name    = rec ? (rec.name || '') : '';
+  const esc     = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const slEntry = _slGet(icao);
   const inLib   = !!slEntry;
   const rating  = slEntry ? (+slEntry.rating || 0) : 0;
@@ -10767,7 +10805,7 @@ function _rgRefreshRatePopover() {
     `<button class="rg-rate-close" onclick="_rgCloseRatePopover()" title="Close (Esc)">×</button>` +
     `<div class="rg-rate-hdr">` +
       `<span class="rg-rate-icao">${icao}</span>` +
-      (name ? `<span class="rg-rate-name">${name}</span>` : '') +
+      (name ? `<span class="rg-rate-name">${esc(name)}</span>` : '') +
     `</div>` +
     (!inLib ? `<div class="rg-rate-hint">Setting a rating will add this airport to your Scenery Library.</div>` : '') +
     _slStarsHtml(rating, { interactive: true, icao }) +
@@ -11128,6 +11166,7 @@ function _rgMapMouseDown(e) {
     const mhit = _rgMeasureHitTest(e);
     if (mhit) {
       const idx = parseInt(mhit.split('_').pop());
+      if (isNaN(idx) || !_rgMeasureSaved[idx]) return; // guard against malformed hit string
       const m   = _rgMeasureSaved[idx];
       _rgDragMeasSnap = {
         origin:   { lat: m.origin.lat, lng: m.origin.lng },
@@ -11291,7 +11330,7 @@ function _rgMapMouseUp() {
   if (_rgMeasureDraw) {
     _rgMeasureDraw = false;
     _rgMap.dragging.enable();
-    if (_rgMeasureLine) {
+    if (_rgMeasureLine && _rgMeasureLastLL) {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
@@ -11325,7 +11364,7 @@ function _rgDocMouseUp() {
   if (_rgMeasureDraw) {
     _rgMeasureDraw = false;
     if (_rgMap) _rgMap.dragging.enable();
-    if (_rgMeasureLine && _rgMap) {
+    if (_rgMeasureLine && _rgMap && _rgMeasureLastLL) {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
@@ -11515,7 +11554,9 @@ function rgExploreReturn() {
 
 function _rgShowNmLabel(ev, text, isArr) {
   const lbl  = document.getElementById('rgNmLabel');
-  const rect = document.getElementById('rgMapContainer').getBoundingClientRect();
+  const cont = document.getElementById('rgMapContainer');
+  if (!lbl || !cont) return;
+  const rect = cont.getBoundingClientRect();
   lbl.textContent = text;
   lbl.style.left  = (ev.clientX - rect.left) + 'px';
   lbl.style.top   = (ev.clientY - rect.top)  + 'px';
@@ -11607,6 +11648,7 @@ function _rgComputeAndRender() {
   matEl.innerHTML = '<tr><td class="rg-matrix-msg">Computing airports…</td></tr>';
 
   setTimeout(() => {
+    if (_rgPhase !== 'results' || !_rgDepCenter || !_rgArrCenter) return; // phase/state may have changed during the yield
     _rgDepAirportsFull = _rgAirportsInCircle(
       _rgDepCenter.lat, _rgDepCenter.lng, _rgDepRadiusNm);
     _rgArrAirportsFull = _rgAirportsInCircle(
@@ -11663,10 +11705,44 @@ function _rgUpdateSummary() {
 
 // ── Owner colour palette ─────────────────────────────────────────────────
 
+// 64-color owner palette — spread across the full hue wheel.
+// Lightness targets: 52–68% for most hues so dots read on both the default
+// CartoDB Voyager street tiles (light cream background) and satellite tiles
+// (dark background). Yellows and yellow-greens use L 47–55% because those
+// hues appear perceptually bright and wash out at higher lightness on light maps.
 const _RG_PALETTE = [
-  '#4db8ff','#ff6b6b','#69e06e','#ffd166','#c77dff',
-  '#ff9f43','#00d2d3','#ff78c4','#7bed9f','#a29bfe',
-  '#fd79a8','#55efc4','#fdcb6e','#74b9ff','#e17055',
+  // Reds
+  '#ff5252','#ff6b6b','#ff8a80','#e55039',
+  // Orange-reds
+  '#ff6348','#e17055','#ff7043','#e07020',
+  // Oranges
+  '#ff9f43','#ffa94d','#ff922b','#e67e22',
+  // Amber / yellow-orange
+  '#ffd166','#fdcb6e','#f7b731','#ffb142',
+  // Yellows — lower L for light-map contrast
+  '#f9ca24','#f0c330','#e6b800','#fcc200',
+  // Yellow-greens — lower L for light-map contrast
+  '#a8c820','#b8d32a','#8ab330','#b5cc1e',
+  // Greens
+  '#69e06e','#26de81','#2ecc71','#00b341',
+  // Light greens / mint
+  '#7bed9f','#55e88a','#44bd32','#0eb56e',
+  // Mint teals
+  '#55efc4','#26d0af','#00b5a3','#0abf9e',
+  // Teals / cyans
+  '#00d2d3','#00cec9','#26c6da','#00acc1',
+  // Sky blues
+  '#4db8ff','#74b9ff','#339af0','#3498db',
+  // Blues
+  '#228be6','#2980b9','#5c7cfa','#4c6ef5',
+  // Periwinkles / indigo
+  '#a29bfe','#748ffc','#845ef7','#7950f2',
+  // Purples
+  '#c77dff','#cc5de8','#be4bdb','#ae3ec9',
+  // Pinks
+  '#ff78c4','#ff6eb4','#f06595','#f368e0',
+  // Rose / hot pink
+  '#fd79a8','#e64980','#e84393','#ff4d88',
 ];
 
 function _rgOwnerColor(name) {
@@ -11686,16 +11762,38 @@ function _rgCatOf(icao) {
   return cat ? (_RG_CAT_COLORS[+cat] || null) : null;
 }
 
-// Returns a vivid hue-sweep fill for payout mode.
-// 0% (or unlisted) → mid-grey.  1%→60%+: red (hue 0°) → orange → yellow → green (hue 120°).
+// Returns a hue-sweep fill for payout mode.
+// Anchored so 50% = yellow (hue 60°) and 60% = green (hue 120°) for maximum discrimination
+// at the premium-member cap where most airports cluster.
+// 0%      → mid-grey
+// 1–20%   → red → orange-red     (hue   0°–20°) — full non-premium range
+// 20–40%  → orange-red → amber   (hue  20°–45°)
+// 40–50%  → amber → yellow       (hue  45°–60°) — transition into the key zone
+// 50–60%+ → yellow → green       (hue  60°–120°) — 60° spread on 10 pct points
 function _rgPayoutColor(icao) {
   if (!payoutDB) return null;
   const pct = payoutDB.get((icao || '').toUpperCase()) ?? 0;
   if (pct === 0) return '#7a7a90';
-  const t   = Math.min(pct, 60) / 60;
-  const hue = Math.round(t * 120);
-  const lit = Math.round(60 - t * 15);   // 60% at red → 45% at green
-  return `hsl(${hue},100%,${lit}%)`;
+  const p = Math.min(pct, 60);
+  let hue, lit;
+  if (p <= 20) {
+    const t = p / 20;
+    hue = t * 20;              // 0° → 20°
+    lit = 57 - t * 2;          // 57% → 55%
+  } else if (p <= 40) {
+    const t = (p - 20) / 20;
+    hue = 20 + t * 25;         // 20° → 45°
+    lit = 55 - t * 3;          // 55% → 52%
+  } else if (p <= 50) {
+    const t = (p - 40) / 10;
+    hue = 45 + t * 15;         // 45° → 60°  (amber → yellow)
+    lit = 52 - t * 2;          // 52% → 50%
+  } else {
+    const t = (p - 50) / 10;
+    hue = 60 + t * 60;         // 60° → 120°  (yellow → green, 60° on 10 pct points)
+    lit = 50 - t * 5;          // 50% → 45%
+  }
+  return `hsl(${Math.round(hue)},100%,${Math.round(lit)}%)`;
 }
 
 function _rgTogglePayoutMode() {
@@ -11715,6 +11813,7 @@ function _rgTogglePayoutMode() {
     if (zn) zn.style.width = '0';
     if (lb) lb.style.display = 'none';
   }
+  _rgRepositionFilterPanels();
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
@@ -11731,9 +11830,92 @@ function _rgPayoutSliderInput(val) {
   if (zn) zn.style.width = x + 'px';
   if (lb) lb.style.display = _rgPayoutFilter > 0 ? '' : 'none';
   if (vl) vl.textContent = _rgPayoutFilter;
+  _rgRepositionFilterPanels();
   _rgRenderDots();
   _rgHighlightDots();
   if (_rgPhase === 'results') _rgRenderMatrix();
+}
+
+// ── Scenery Star Rating Filter ─────────────────────────────────────────────
+// Filter panel that hides airports (dots + matrix rows/cols) below a minimum
+// scenery star rating.  Uses the same .sl-star CSS as the Quick-Rate popover.
+
+function _rgStarFiltCheck(icao) {
+  if (!_rgStarFilterMode || _rgStarFilter === 0) return true;
+  const entry = _slGet(icao);
+  return !!entry && (+(entry.rating) || 0) >= _rgStarFilter;
+}
+
+function _rgToggleStarFilter() {
+  _rgStarFilterMode = !_rgStarFilterMode;
+  const btn = document.getElementById('rgStarFilterBtn');
+  if (btn) btn.classList.toggle('active', _rgStarFilterMode);
+  const leg = document.getElementById('rgStarFilterLegend');
+  if (leg) leg.style.display = _rgStarFilterMode ? '' : 'none';
+  if (!_rgStarFilterMode && _rgStarFilter > 0) {
+    _rgStarFilter = 0;
+    _rgStarFltSetStars(0);
+    _rgUpdateStarFilterLabel();
+  }
+  _rgRepositionFilterPanels();
+  _rgRenderDots();
+  _rgHighlightDots();
+  if (_rgPhase === 'results') _rgRenderMatrix();
+}
+
+// Recalculates the vertical offset of rgStarFilterLegend so it sits below
+// rgPayoutLegend when both panels are visible, with 10 px spacing.
+function _rgRepositionFilterPanels() {
+  const payoutLeg = document.getElementById('rgPayoutLegend');
+  const starLeg   = document.getElementById('rgStarFilterLegend');
+  if (!starLeg) return;
+  const payoutVisible = payoutLeg && payoutLeg.style.display !== 'none';
+  starLeg.style.top = payoutVisible ? (50 + payoutLeg.offsetHeight + 10) + 'px' : '50px';
+}
+
+function _rgStarFltSetStars(val) {
+  const w = document.getElementById('rgStarFilterWidget');
+  if (!w) return;
+  w.querySelectorAll('.sl-star').forEach((s, idx) => {
+    const fill = val >= idx + 1 ? 100 : val >= idx + 0.5 ? 50 : 0;
+    s.style.setProperty('--fill', fill + '%');
+  });
+}
+
+function _rgStarFltHover(e) {
+  const star = e.target.closest('.sl-star');
+  if (!star) return;
+  const i = +star.dataset.i;
+  const rect = star.getBoundingClientRect();
+  const half = (e.clientX - rect.left) < rect.width / 2;
+  _rgStarFltSetStars(half ? i - 0.5 : i);
+}
+
+function _rgStarFltLeave() {
+  _rgStarFltSetStars(_rgStarFilter);
+}
+
+function _rgStarFltClick(e) {
+  const star = e.target.closest('.sl-star');
+  if (!star) return;
+  const i = +star.dataset.i;
+  const rect = star.getBoundingClientRect();
+  const half = (e.clientX - rect.left) < rect.width / 2;
+  const v = half ? i - 0.5 : i;
+  _rgStarFilter = (Math.abs(_rgStarFilter - v) < 0.01) ? 0 : v;  // click same star = clear
+  _rgStarFltSetStars(_rgStarFilter);
+  _rgUpdateStarFilterLabel();
+  _rgRepositionFilterPanels();  // label show/hide changes panel height
+  _rgRenderDots();
+  _rgHighlightDots();
+  if (_rgPhase === 'results') _rgRenderMatrix();
+}
+
+function _rgUpdateStarFilterLabel() {
+  const lb = document.getElementById('rgStarFilterLabel');
+  const vl = document.getElementById('rgStarFilterValue');
+  if (lb) lb.style.display = _rgStarFilter > 0 ? '' : 'none';
+  if (vl) vl.textContent = (_rgStarFilter % 1 === 0.5) ? _rgStarFilter.toFixed(1) : _rgStarFilter;
 }
 
 function _rgBuildOwnerLookup() {
@@ -11830,13 +12012,18 @@ function _rgRenderMatrix() {
     arr = arr.filter(a => (payoutDB.get(a.icao.toUpperCase()) ?? 0) >= _rgPayoutFilter);
   }
 
+  if (_rgStarFilterMode && _rgStarFilter > 0) {
+    dep = dep.filter(a => _rgStarFiltCheck(a.icao));
+    arr = arr.filter(a => _rgStarFiltCheck(a.icao));
+  }
+
   if (!dep.length || !arr.length) {
     matEl.innerHTML = '<tr><td class="rg-matrix-msg">No airports found in ' +
       (!dep.length ? 'departure' : 'arrival') + ' region — try a larger radius.</td></tr>';
     return;
   }
 
-  _rgOwnerLookupCache = _rgBuildOwnerLookup();
+  if (!_rgOwnerLookupCache) _rgOwnerLookupCache = _rgBuildOwnerLookup();
   const ownerOf = icao => _rgOwnerLookupCache.get(icao.toUpperCase());
 
   const catNumOf = icao => +(categoryDB && categoryDB.get(icao.toUpperCase())) || 999;
@@ -11953,7 +12140,7 @@ function _rgRenderMatrix() {
 }
 
 function _rgX(s) {
-  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ── Column / row resize ────────────────────────────────────────────────
@@ -13263,7 +13450,7 @@ function rgSendToFlightPlanner() {
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
             <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Click a result or press ↑/↓ to navigate and Enter to select — the map flies to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link.<br/><br/>
-            <strong>Measure Distance</strong> — click <strong>📐 Measure Distance</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance in nm, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
+            <strong>Distance</strong> — click <strong>📐 Distance</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance in nm, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -13288,11 +13475,22 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">⭐</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Scenery Star Rating Filter</div>
+          <div class="help-feature-desc">
+            The <strong>⭐ Rating</strong> button in the Region Mode header opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter.<br/><br/>
+            The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">💰</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Pilot Payout Map</div>
           <div class="help-feature-desc">
-            The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. Each airport dot is shaded on a green gradient — light green for low payout, deep forest green for 60%+ payout. Grey dots indicate airports with no payout data available.<br/><br/>
+            The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
             A legend in the lower-left corner of the map shows the gradient scale while the mode is active. Click the button again to return to standard category/owner coloring.<br/><br/>
             Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.
           </div>
@@ -13320,10 +13518,122 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.37.2</span>
+          <span class="release-date">May 9, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout tooltip color at 50% corrected</strong> &mdash; the pilot payout tooltip label now shows yellow at exactly 50% payout, matching the dot color on the map. Previously it showed green (the &gt;50% color) due to a misaligned threshold in both the owner-mode and region-mode tooltip renderers.</li>
+          <li><strong>Button labels updated</strong> &mdash; the ruler button is now labeled <strong>📐 Distance</strong> (was <em>Measure</em>) and the scenery filter button is now labeled <strong>⭐ Rating</strong> (was <em>Stars</em>). Help text updated to match.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.37.1</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Star filter panel — matches payout panel width</strong> &mdash; the Scenery Rating filter panel now has a minimum width of 271 px, matching the Payout filter panel so both panels align neatly when open together. The five rating stars are evenly distributed across the full width of the panel for a cleaner layout.</li>
+          <li><strong>Half-star increments in the star filter</strong> &mdash; hovering over the left half of a star sets a half-star threshold (e.g., ★★½ = 2.5), and hovering over the right half sets the full-star threshold. Clicking locks the threshold at the previewed value; clicking the same half or whole star again clears it. The label now shows one decimal place for half values (e.g., <em>Hide &lt; ★2.5</em>).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.37.0</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery star rating filter</strong> &mdash; a new <strong>⭐ Stars</strong> button in the Region Mode header opens a filter panel. Hover the five stars to preview a threshold, then click to set it — airports with a scenery rating below the threshold are hidden on the map and removed from both the region and owner-mode distance matrices. Click the same star again to clear. Airports not in your Scenery Library (or with no rating) are always hidden when any threshold is active. When both the Payout and Stars filter panels are open simultaneously, the Stars panel slides beneath the Payout panel with automatic spacing.</li>
+          <li><strong>Toolbar rearrangement</strong> &mdash; the <strong>📐 Measure</strong> button and its Undo / Clear All controls have moved from the right side of the header to the left side (next to the Select Regions / DONE buttons), grouping map-drawing tools on the left and filter tools on the right. The button is relabeled <em>Measure</em> (was <em>Measure Distance</em>) to save space.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.36.0</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout gradient — anchored 50% = yellow, 60% = green</strong> &mdash; the payout color scale now uses explicit anchor points instead of a plain linear sweep. 50% maps to pure yellow (hue 60°) and 60% maps to pure green (hue 120°), giving the most critical 10-percentage-point range a full 60° of hue separation — an unmistakable yellow-to-green shift. The lower range is compressed: 1–20% runs red through orange-red (the entire non-premium zone), 20–40% runs orange through amber, and 40–50% transitions from amber to yellow. The legend gradient bar and labels have been updated to match. Rationale: SimFly non-premium players cap at 20% pilot payout; premium/prime members cap at 60%. Airports at 50% and 60% now show strikingly different colors.</li>
+          <li><strong>Scenery Library export — timestamped filename</strong> &mdash; exported scenery library files are now named <code>simfly-scenery-library-YYYY-MM-DD-HHMMSS.json</code> (e.g. <code>simfly-scenery-library-2026-05-09-142035.json</code>), preventing filename collisions when saving multiple backups in the same session.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.35.4</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library file import — 50 MB size limit</strong> &mdash; files dropped onto the Scenery Library modal or selected via the file picker are now rejected with a toast if they exceed 50 MB, preventing the browser from freezing while attempting to read an accidentally-dropped large binary.</li>
+          <li><strong>Rate popover — airport name HTML escaped</strong> &mdash; the Quick-Rate popover now escapes <code>&amp;</code>, <code>&lt;</code>, <code>&gt;</code>, and <code>"</code> in the airport name before injecting it as innerHTML, preventing DOM corruption from names that include special characters.</li>
+          <li><strong>Scenery Library modal focus — <code>requestAnimationFrame</code> instead of <code>setTimeout</code></strong> &mdash; the search field inside the Scenery Library modal now acquires focus on the next paint frame rather than after a fixed 50 ms delay, making focus reliable even under CPU load while avoiding an arbitrary timer.</li>
+          <li><strong>Measure NM label — null guard</strong> &mdash; <code>_rgShowNmLabel</code> now verifies both the label element and map container exist before reading <code>getBoundingClientRect()</code>, preventing a crash if the region map has not yet been initialised when a mouse event fires.</li>
+          <li><strong>Scan cancel — optional chaining on search field</strong> &mdash; <code>_slScanCancel</code> now uses <code>?.value</code> when reading the search field, so cancelling a scan before the DOM is fully ready can no longer throw a <code>TypeError</code>.</li>
+          <li><strong>Owner lookup cache — skip rebuild when already warm</strong> &mdash; <code>_rgBuildOwnerLookup()</code> is now only called when <code>_rgOwnerLookupCache</code> is null; because <code>refreshOwnerDropdowns</code> already clears the cache on every data change (v2.35.2), redundant rebuilds during a single render pass are eliminated.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.35.3</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner colour palette expanded — 15 → 64 colours</strong> &mdash; the region map dot and legend palette now contains 64 hand-curated colours spanning the full hue wheel. With 15 colours, the birthday-problem odds of two pilots in a 6-person group sharing a colour exceeded 65%; the 64-colour palette reduces this to around 20% for the same group size. All colours are tuned for the dual-mode constraint: L 52–68% for most hues (readable on both the default CartoDB street tiles and satellite tiles), dropping to L 47–55% for yellows and yellow-greens which appear perceptually bright on light backgrounds. Note: because the palette size changed, all existing pilot-to-colour assignments will shift — this is expected.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.35.2</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Unresolvable pilot warning</strong> &mdash; when a pilot's airports are all absent from the airport database, a <code>console.warn</code> now fires once per cache rebuild (DevTools &rsaquo; Console) naming the pilot and their unresolvable ICAOs, instead of silently dropping them from the matrix with no indication.</li>
+          <li><strong>Declination fetch — stale-write guard</strong> &mdash; if the user cancels a measurement while the NOAA declination API request is still in flight, the resolved value is now discarded rather than written to <code>_rgMeasureDecl</code>, preventing a stale result from corrupting the next measurement's magnetic bearing.</li>
+          <li><strong>Matrix debounce — phase and null guard</strong> &mdash; the 30 ms yield inside <code>_rgComputeAndRender</code> now checks that <code>_rgPhase === 'results'</code> and that both circle centres are non-null before computing airport lists, preventing a dereference crash if state changes during the yield.</li>
+          <li><strong>Owner lookup cache invalidated on re-import</strong> &mdash; calling <code>refreshOwnerDropdowns</code> (triggered by every KML re-import) now clears <code>_rgOwnerLookupCache</code>, so region-map tooltips immediately reflect the new owner data instead of showing stale associations until the next matrix render.</li>
+          <li><strong>Region matrix HTML escaper — <code>&gt;</code> added</strong> &mdash; <code>_rgX()</code> now escapes <code>&gt;</code> in addition to <code>&amp;</code>, <code>"</code>, and <code>&lt;</code>, closing the last gap that could produce malformed HTML from names containing a right-angle bracket.</li>
+          <li><strong>Measure handle drag — NaN index guard</strong> &mdash; the mousedown hit-test handler now validates the parsed index before accessing <code>_rgMeasureSaved[idx]</code>; a malformed hit string can no longer produce a <code>NaN</code> index that throws on the subsequent <code>.origin.lat</code> access.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.35.1</span>
+          <span class="release-date">May 9, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Excel export — CDN load guard</strong> &mdash; if the SheetJS library fails to load from its CDN, the export button now shows a clear error message instead of crashing silently with an unhandled <code>ReferenceError</code>.</li>
+          <li><strong>Owner dropdown — HTML escaping</strong> &mdash; owner names are now fully escaped before being inserted into dropdown option and custom list HTML, preventing DOM corruption or script injection from names containing <code>&lt;</code>, <code>&gt;</code>, or <code>&amp;</code> characters.</li>
+          <li><strong>Measure mode — click-without-drag crash</strong> &mdash; fixed a <code>TypeError</code> thrown when the user clicked (mousedown then mouseup with no drag) while in measure mode; the position state is now null-checked in both mouse-up handlers before use.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.35.0</span>
-          <span class="release-date">May 9, 2026 &middot; Current</span>
+          <span class="release-date">May 9, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -18701,6 +19011,10 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <div id="rgHdrRoute"></div>
+        <div class="rg-hdr-sep"></div>
+        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Distance</button>
+        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
+        <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
         <span class="dist-cat-filter-label" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>
@@ -18733,11 +19047,8 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 Measure Distance</button>
-        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
-        <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
-        <div class="rg-hdr-sep"></div>
         <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" title="Color airports by pilot payout percentage" tabindex="-1">💰 Payout</button>
+        <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ Rating</button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
           <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤ Scenery</span>
@@ -18760,7 +19071,7 @@ function rgSendToFlightPlanner() {
           <div style="width:21px;height:21px;border-radius:50%;background:#7a7a90;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;"></div>
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">0%</span>
           <div style="position:relative;width:120px;height:15px;flex-shrink:0;border-radius:4px;">
-            <div style="position:absolute;inset:0;border-radius:4px;background:linear-gradient(to right,hsl(0,100%,60%),hsl(30,100%,56%),hsl(60,100%,53%),hsl(90,100%,49%),hsl(120,100%,45%));"></div>
+            <div style="position:absolute;inset:0;border-radius:4px;background:linear-gradient(to right,hsl(0,100%,57%),hsl(20,100%,55%) 33%,hsl(45,100%,52%) 67%,hsl(60,100%,50%) 83%,hsl(120,100%,45%));"></div>
             <div id="rgPayoutFilteredZone" style="position:absolute;top:0;left:0;bottom:0;width:0;background:rgba(0,0,0,0.62);border-radius:4px 0 0 4px;pointer-events:none;"></div>
             <input type="range" id="rgPayoutSlider" min="0" max="60" value="0" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0;padding:0;" oninput="_rgPayoutSliderInput(this.value)">
             <div id="rgPayoutThumb" style="position:absolute;top:-2px;bottom:-2px;left:0;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(0,0,0,0.9);pointer-events:none;display:none;"></div>
@@ -18768,10 +19079,28 @@ function rgSendToFlightPlanner() {
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">60%+</span>
         </div>
         <div style="margin-left:65px;width:120px;display:flex;justify-content:space-between;font-size:0.96rem;color:#666;padding-top:2px;">
-          <span>red</span><span>org</span><span>yel</span><span>grn</span>
+          <span>1%</span><span>20%</span><span>40%</span><span>60%+</span>
         </div>
         <div id="rgPayoutFilterLabel" style="margin-top:5px;font-family:'Rajdhani',sans-serif;font-size:0.96rem;color:#ffcc44;text-align:center;display:none;">Hide &lt; <span id="rgPayoutFilterValue">0</span>%</div>
       </div>
+
+      <div id="rgStarFilterLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+        <div style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;margin-bottom:8px;">SCENERY RATING</div>
+        <span class="sl-stars sl-stars-interactive" id="rgStarFilterWidget"
+              style="display:flex;justify-content:space-between;font-size:1.9rem;cursor:pointer;"
+              title="Hover to preview threshold — click a star to set; click the same star again to clear"
+              onmousemove="_rgStarFltHover(event)"
+              onmouseleave="_rgStarFltLeave()"
+              onclick="_rgStarFltClick(event)">
+          <span class="sl-star" data-i="1" style="--fill:0%"></span>
+          <span class="sl-star" data-i="2" style="--fill:0%"></span>
+          <span class="sl-star" data-i="3" style="--fill:0%"></span>
+          <span class="sl-star" data-i="4" style="--fill:0%"></span>
+          <span class="sl-star" data-i="5" style="--fill:0%"></span>
+        </span>
+        <div id="rgStarFilterLabel" style="display:none;margin-top:5px;font-family:'Rajdhani',sans-serif;font-size:0.96rem;color:#ffcc44;text-align:center;">Hide &lt; ★<span id="rgStarFilterValue">0</span></div>
+      </div>
+
       <div class="rg-nm-label" id="rgNmLabel"></div>
       <div class="rg-map-search-wrap" id="rgMapSearchWrap">
         <div class="rg-map-search-input-row">
