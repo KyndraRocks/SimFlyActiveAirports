@@ -2849,6 +2849,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-ri:hover { text-decoration:underline; opacity:0.85; }
   .rg-hdr-ri-pending { color:var(--muted); cursor:default; }
   .rg-hdr-ri-sep { color:var(--muted); font-size:1.25rem; padding:0 0.05em; }
+  .rg-hdr-ri-swap { background:none; border:none; color:var(--muted); font-size:1.45rem; padding:0 0.15em; cursor:pointer; line-height:1; transition:color 0.12s,transform 0.18s; }
+  .rg-hdr-ri-swap:hover { color:var(--accent); transform:scale(1.18); }
+  .rg-hdr-ri-swap:active { transform:scale(0.95); }
   .rg-hdr-center { display:flex; align-items:center; gap:0.35rem; justify-self:center; }
   .rg-hdr-right { display:flex; align-items:center; gap:0.45rem; justify-self:stretch; flex-shrink:0; }
   .rg-hdr-flex-spacer { flex:1; }
@@ -3564,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.8';
+const APP_VERSION = '2.38.9';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11043,10 +11046,26 @@ function _rgUpdateClearDotBtn() {
   }
 
   hdr.className = 'visible';
-  hdr.innerHTML =
-    _riChip(_rgDotSelDep) +
-    `<span class="rg-hdr-ri-sep">→</span>` +
-    _riChip(_rgDotSelArr || null);
+  // When both endpoints are set, the separator becomes an interactive ⇄ swap
+  // button. While only the departure is chosen (mid-route-selection), keep the
+  // simple → arrow so it doesn't suggest an action that would do nothing.
+  const sep = (_rgDotSelDep && _rgDotSelArr)
+    ? `<button class="rg-hdr-ri-swap" onclick="_rgSwapDotSel()" title="Swap departure and arrival">⇄</button>`
+    : `<span class="rg-hdr-ri-sep">→</span>`;
+  hdr.innerHTML = _riChip(_rgDotSelDep) + sep + _riChip(_rgDotSelArr || null);
+}
+
+// Swap the dot-selected departure and arrival, keeping the route line, matrix
+// highlights, and main-screen ICAO inputs all in sync. Mirrors the existing
+// _distSwapIcaos pattern on the main screen for consistent UX.
+function _rgSwapDotSel() {
+  if (!_rgDotSelDep || !_rgDotSelArr) return;
+  const tmp = _rgDotSelDep;
+  _rgDotSelDep = _rgDotSelArr;
+  _rgDotSelArr = tmp;
+  _rgRouteFromDots(_rgDotSelDep, _rgDotSelArr);
+  _rgUpdateClearDotBtn();
+  _rgHighlightDots();
 }
 
 function _rgClearDotSel() {
@@ -13700,7 +13719,7 @@ function rgSendToFlightPlanner() {
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
             <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Click a result or press ↑/↓ to navigate and Enter to select — the map flies to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
-            <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link.<br/><br/>
+            <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
@@ -13788,8 +13807,21 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.38.8</span>
+          <span class="release-version">v2.38.9</span>
           <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region Mode header layout swap</strong> &mdash; the <strong>📐 Measurement</strong> button now sits next to <strong>⊙ Select Regions / ⊙ DONE</strong> on the far left, and <strong>✕ Clear route</strong> moves immediately after it. This puts the related controls together and keeps the central route info chips uncluttered.</li>
+          <li><strong>Click the arrow between route chips to swap dep/arr</strong> &mdash; when both a departure and arrival airport are selected via dot-click routing, the separator between the two ICAO chips is now an interactive <strong>⇄</strong> button. Click it to swap departure and arrival in one click; the route line, matrix highlight, and main-screen ICAO inputs all update together.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.8</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -19412,13 +19444,12 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ Select Regions</button>
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
-        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
-        <span class="rg-phase-text" id="rgPhaseText"></span>
-        <div id="rgHdrRoute"></div>
-        <div class="rg-hdr-sep"></div>
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
         <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
+        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
+        <span class="rg-phase-text" id="rgPhaseText"></span>
+        <div id="rgHdrRoute"></div>
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
         <span class="dist-cat-filter-label" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>

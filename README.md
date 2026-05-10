@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.38.8**
+**Current version: v2.38.9**
 
 ---
 
@@ -58,7 +58,7 @@ The text search box also matches the full airport name in addition to ICAO and a
 ### Region Mode
 A full-screen map-based region selector for cross-region matrix planning. Draw circles around departure and arrival regions to pull in every player-owned airport in those areas, then explore the resulting distance matrix with sticky headers, owner stripe click-to-filter, and a rolling dot-click routing system.
 
-**Rolling map routing** — click any airport dot on the map (inside or outside a region circle) to set a route: first click sets departure, second click sets arrival and draws the route line. Every subsequent click rolls the chain forward — departure becomes the previous arrival, and the new click becomes the new arrival. The selected pair is immediately reflected in the main screen departure and arrival fields. The departure and arrival ICAOs are displayed as large chips in the header — SimFly-owned airports render as clickable links to their SimFly details page; **hovering either chip** shows the full airport tooltip (name, owner, category, elevation, runway details, and live weather if fetched). A **✕ Clear** button in the header removes the current selection; the route and selection rings persist through ⊙ DONE and ⊙ Select Regions so you can reference or extend the pair while drawing new regions. Selecting a cell in the distance matrix or clicking a row/column header routes through the same chain. **Double-click** any dot to zoom the map to that airport.
+**Rolling map routing** — click any airport dot on the map (inside or outside a region circle) to set a route: first click sets departure, second click sets arrival and draws the route line. Every subsequent click rolls the chain forward — departure becomes the previous arrival, and the new click becomes the new arrival. The selected pair is immediately reflected in the main screen departure and arrival fields. The departure and arrival ICAOs are displayed as large chips in the header — SimFly-owned airports render as clickable links to their SimFly details page; **hovering either chip** shows the full airport tooltip (name, owner, category, elevation, runway details, and live weather if fetched). The **⇄** button between the two chips swaps departure and arrival in one click, syncing the route line, matrix highlight, and main-screen ICAO inputs together. A **✕ Clear** button in the header removes the current selection; the route and selection rings persist through ⊙ DONE and ⊙ Select Regions so you can reference or extend the pair while drawing new regions. Selecting a cell in the distance matrix or clicking a row/column header routes through the same chain. **Double-click** any dot to zoom the map to that airport.
 
 **Send to Flight Planner →** closes Region Mode and populates the main screen with the selected departure, arrival, and category filter state — ready to file on SimBrief in one more click.
 
