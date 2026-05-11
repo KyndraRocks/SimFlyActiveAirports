@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.38.12**
+**Current version: v2.38.13**
 
 ---
 
@@ -79,13 +79,15 @@ A row of chips overlaid on the region map to the right of the search bar shows e
 
 | Chip | When shown | Click action |
 |---|---|---|
-| **Category Colors** / **Payout Colors** | Always | Toggle between color modes |
+| **Category Colors (N)** / **Payout Colors (N)** | Always | Toggle between color modes |
 | **Pilot Payout ≥ N%** | Payout mode on + threshold > 0 | ✕ clears the threshold |
 | **Scenery Indicator** | Highlight overlay active | Advance to Only Detailed Scenery mode |
 | **Only Detailed Scenery** | Only-scenery mode active | Turn scenery mode off |
 | **Rating ≥ N stars** | Star filter active + threshold > 0 | ✕ turns filter off |
 | **Category Filtering** | Any of the 7 map categories hidden | ✕ restores all categories |
 | **N Pilots Displayed** | Airport Owners filter active | ✕ shows all pilots |
+
+The **Category Colors** / **Payout Colors** chip includes a live parenthesised count of how many airport dots are currently visible on the map under all active filters — e.g. *Category Colors (1,247)*. The count updates instantly whenever any filter changes.
 
 The strip clips automatically when it nears the right edge of the map and never overlaps any other controls.
 

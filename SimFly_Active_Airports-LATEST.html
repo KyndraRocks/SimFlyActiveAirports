@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.12';
+const APP_VERSION = '2.38.13';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10030,6 +10030,12 @@ let _rgRegionIcaos = null;  // Set of ICAOs in either full region — owned excl
 let _rgHiLayer    = null;   // canvas layer: highlighted dots after selection
 let _rgOwnerMap   = new Map(); // ICAO.toUpperCase() → owner name (built in _rgRenderDots)
 let _rgTipTimer   = null;   // delayed-tooltip timer handle
+// ── Visible-dot tracking ───────────────────────────────────────────────
+// Each Set holds the ICAOs that survived every active filter and got drawn in
+// its respective layer. Union size drives the count shown in the Display Mode
+// breadcrumb chip. Sets are repopulated by _rgRenderDots / _rgHighlightDots.
+let _rgVisibleIcaosFromDots = new Set();
+let _rgVisibleIcaosFromHi   = new Set();
 // ── Memory-reduction caches ────────────────────────────────────────────
 let _rgCanvasRenderer  = null;   // shared L.canvas() — created once, reused by both layers
 let _rgRouteLineRenderer = null; // shared L.canvas() for route-line rings — created once on first route draw
@@ -10593,8 +10599,9 @@ function _rgRenderDots() {
   if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
   _rgTipHtmlCache = new Map();
   _rgDotLayer = L.layerGroup().addTo(_rgMap);
+  _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
-  if (!ownerData || !ownerData.length) return;
+  if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
   // Build / refresh the ICAO→owner lookup used by _rgHighlightDots
   _rgOwnerMap = new Map();
   for (const owner of ownerData)
@@ -10645,6 +10652,7 @@ function _rgRenderDots() {
       _rgShowRatePopover(m.getLatLng(), _dIcao);
     });
     m.addTo(_rgDotLayer);
+    _rgVisibleIcaosFromDots.add(ap.icao.toUpperCase());
     if (_rgShowScenery && _slHas(ap.icao)) {
       L.circleMarker([rec.latitude, rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
@@ -10652,6 +10660,7 @@ function _rgRenderDots() {
       }).addTo(_rgDotLayer);
     }
   }
+  _rgUpdateBreadcrumbs();
 }
 
 // ── Hero line (center-to-center) ─────────────────────────────────────────
@@ -10792,6 +10801,7 @@ function _rgHighlightDots() {
   // every filter toggle (which is the hot path: every owner/cat filter tap).
   if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
   _rgHiLayer = L.layerGroup().addTo(_rgMap);
+  _rgVisibleIcaosFromHi = new Set();
 
   const _hiCatOf = icao => +(categoryDB && categoryDB.get(icao.toUpperCase())) || 0;
 
@@ -10825,6 +10835,7 @@ function _rgHighlightDots() {
       _rgShowRatePopover(m.getLatLng(), depIcao);
     });
     m.addTo(_rgHiLayer);
+    _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
     if (_rgShowScenery && _slHas(a.icao)) {
       L.circleMarker([a.rec.latitude, a.rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
@@ -10863,6 +10874,7 @@ function _rgHighlightDots() {
       _rgShowRatePopover(m.getLatLng(), arrIcao);
     });
     m.addTo(_rgHiLayer);
+    _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
     if (_rgShowScenery && _slHas(a.icao)) {
       L.circleMarker([a.rec.latitude, a.rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
@@ -10872,6 +10884,7 @@ function _rgHighlightDots() {
   }
 
   _rgRefreshSelOverlay();
+  _rgUpdateBreadcrumbs();
 }
 
 function _rgApplySceneryState() {
@@ -12558,6 +12571,19 @@ function _rgInvertGlobalCats() {
 // Rebuilds the at-a-glance filter status chips in the region map header.
 // Call whenever any filter state changes.
 
+// Returns the unique count of airport dots currently visible on the map, across
+// both the background dot layer (_rgRenderDots) and the in-region highlight layer
+// (_rgHighlightDots). An ICAO can in principle appear in both sets after a region
+// has been drawn — the union dedupes so the count matches what the user actually
+// sees rather than the raw marker count.
+function _rgGetVisibleDotCount() {
+  if (!_rgVisibleIcaosFromHi.size) return _rgVisibleIcaosFromDots.size;
+  if (!_rgVisibleIcaosFromDots.size) return _rgVisibleIcaosFromHi.size;
+  const seen = new Set(_rgVisibleIcaosFromDots);
+  for (const icao of _rgVisibleIcaosFromHi) seen.add(icao);
+  return seen.size;
+}
+
 function _rgUpdateBreadcrumbs() {
   const container = document.getElementById('rgBreadcrumbs');
   if (!container) return;
@@ -12583,12 +12609,14 @@ function _rgUpdateBreadcrumbs() {
     return chip;
   }
 
-  // 1. Display Mode — always visible; clicking toggles mode
-  container.appendChild(mkChip(
-    _rgPayoutMode ? 'Payout Colors' : 'Category Colors',
-    _rgTogglePayoutMode,
-    null
-  ));
+  // 1. Display Mode — always visible; clicking toggles mode. The trailing
+  // count is the union of every ICAO drawn by _rgRenderDots and _rgHighlightDots
+  // so it always matches the number of dots actually visible on the world map
+  // under the current combination of filters.
+  const visCount = _rgGetVisibleDotCount();
+  const modeLbl  = (_rgPayoutMode ? 'Payout Colors' : 'Category Colors')
+                 + ` (${visCount.toLocaleString('en-US')})`;
+  container.appendChild(mkChip(modeLbl, _rgTogglePayoutMode, null));
 
   // 2. Pilot Payout filter — grouped right after "Payout Colors"
   if (_rgPayoutMode && _rgPayoutFilter > 0) {
@@ -13851,8 +13879,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.38.12</span>
+          <span class="release-version">v2.38.13</span>
           <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live visible-airport count on the Display Mode chip</strong> &mdash; the <strong>Category Colors</strong> / <strong>Payout Colors</strong> breadcrumb chip now shows a parenthesised count of how many airport dots are actually visible on the world map under the current combination of filters (e.g. <em>Category Colors (1,247)</em>). The count is recomputed every time dots are re-rendered, so it stays in sync with category filters, pilot filters, the payout threshold, the scenery-rating threshold, only-scenery mode, and region rings &mdash; whether they shrink or grow the visible set.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.38.12</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
