@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.16';
+const APP_VERSION = '2.38.19';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3834,8 +3834,9 @@ function loadAirportDB() {
       const iElev   = idx('elevation_ft');
       const iIata   = idx('iata_code');
       const iMuni   = idx('municipality');
-      const iCntry  = idx('iso_country');
-      const iRegion = idx('iso_region');
+      const iCntry     = idx('iso_country');
+      const iRegion    = idx('iso_region');
+      const iContinent = idx('continent');
 
       airportDB = new Map();
 
@@ -3847,9 +3848,10 @@ function loadAirportDB() {
         const lon = parseFloat(cols[iLon]);
         if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) continue;
 
-        const muni     = (cols[iMuni]   || '').replace(/^"|"$/g, '').trim();
-        const subCode  = (cols[iRegion] || '').replace(/^"|"$/g, '').trim();
-        const rawCntry = (cols[iCntry]  || '').replace(/^"|"$/g, '').trim();
+        const muni        = (cols[iMuni]      || '').replace(/^"|"$/g, '').trim();
+        const subCode     = (cols[iRegion]   || '').replace(/^"|"$/g, '').trim();
+        const rawCntry    = (cols[iCntry]    || '').replace(/^"|"$/g, '').trim();
+        const rawContinent = (cols[iContinent] || '').replace(/^"|"$/g, '').trim();
         const subdivision = (subCode && regionDB.has(subCode)) ? regionDB.get(subCode) : '';
         let country = rawCntry;
         if (rawCntry) {
@@ -3864,6 +3866,11 @@ function loadAirportDB() {
           _rgCountryNameToIso.set(country.toLowerCase(), rawCntry);
         }
 
+        // Accumulate country → continent map from OurAirports data
+        if (rawContinent && rawCntry) {
+          if (!_rgIsoToContinent.has(rawCntry)) _rgIsoToContinent.set(rawCntry, rawContinent);
+        }
+
         const record = {
           name        : (cols[iName]  || '').replace(/^"|"$/g, '').trim(),
           latitude    : lat,
@@ -3872,6 +3879,7 @@ function loadAirportDB() {
           iata        : (cols[iIata]  || '').replace(/^"|"$/g, '').trim() || 'N/A',
           city        : [muni, subDisplay, country].filter(Boolean).join(', '),
           iso_country : rawCntry,
+          continent   : rawContinent,
         };
 
         const gps = (cols[iGps] || '').replace(/^"|"$/g, '').trim().toUpperCase();
@@ -10113,10 +10121,31 @@ let _rgDepOwnerFilter = null;
 let _rgArrOwnerFilter = null;
 let _rgMapOwnerFilter   = null; // map-wide owner filter — Set of owner names, null = show all
 let _rgMapCountryFilter = null; // map-wide country filter — Set of ISO codes, null = show all
+let _rgPinnedIcaos      = new Set(); // ICAOs explicitly pinned via search; always rendered
 // Country name lookup tables — populated during airportDB parse
 let _rgCountryIsoToName = new Map(); // 'DE' → 'Germany'
 let _rgCountryNameToIso = new Map(); // 'germany' → 'DE'
 let _rgMapSrAdditive    = false;     // true when last search was prefixed with '+'
+let _rgMapSrNegative    = false;     // true when last search was prefixed with '-'
+
+// Continent name lookups — hardcoded
+const _RG_CONTINENT_NAMES = {'AF':'Africa','AN':'Antarctica','AS':'Asia','EU':'Europe','NA':'North America','OC':'Oceania','SA':'South America'};
+const _RG_CONTINENT_NAME_TO_CODE = Object.fromEntries(Object.entries(_RG_CONTINENT_NAMES).map(([k,v])=>[v.toLowerCase(),k]));
+// Fallback country→continent for any ISO codes not found in OurAirports continent column
+const _RG_COUNTRY_CONTINENT_FALLBACK = {
+  'GB':'EU','DE':'EU','FR':'EU','IT':'EU','ES':'EU','NL':'EU','BE':'EU','CH':'EU','AT':'EU','SE':'EU','NO':'EU','DK':'EU','FI':'EU','PL':'EU','CZ':'EU','HU':'EU','PT':'EU','IE':'EU','GR':'EU','RO':'EU','UA':'EU','BY':'EU','MD':'EU','RS':'EU','HR':'EU','SI':'EU','BA':'EU','ME':'EU','MK':'EU','AL':'EU','BG':'EU','SK':'EU','EE':'EU','LV':'EU','LT':'EU','LU':'EU','MT':'EU','CY':'EU','IS':'EU',
+  'US':'NA','CA':'NA','MX':'NA','GT':'NA','BZ':'NA','SV':'NA','HN':'NA','NI':'NA','CR':'NA','PA':'NA','CU':'NA','JM':'NA','HT':'NA','DO':'NA','TT':'NA','BB':'NA','BS':'NA','LC':'NA','VC':'NA','GD':'NA','AG':'NA','DM':'NA','KN':'NA',
+  'BR':'SA','AR':'SA','CL':'SA','CO':'SA','VE':'SA','PE':'SA','EC':'SA','BO':'SA','PY':'SA','UY':'SA','GY':'SA','SR':'SA',
+  'CN':'AS','JP':'AS','KR':'AS','IN':'AS','ID':'AS','TH':'AS','MY':'AS','PH':'AS','SG':'AS','VN':'AS','MM':'AS','KH':'AS','LA':'AS','BD':'AS','LK':'AS','NP':'AS','PK':'AS','IR':'AS','IQ':'AS','SA':'AS','AE':'AS','QA':'AS','KW':'AS','BH':'AS','OM':'AS','YE':'AS','JO':'AS','SY':'AS','LB':'AS','IL':'AS','PS':'AS','KZ':'AS','UZ':'AS','TM':'AS','KG':'AS','TJ':'AS','AZ':'AS','AM':'AS','GE':'AS','MN':'AS','TW':'AS','HK':'AS','MO':'AS','BN':'AS','TL':'AS','RU':'AS','TR':'AS',
+  'NG':'AF','EG':'AF','ZA':'AF','KE':'AF','ET':'AF','GH':'AF','TZ':'AF','DZ':'AF','MA':'AF','MZ':'AF','UG':'AF','AO':'AF','MG':'AF','SN':'AF','ZM':'AF','ZW':'AF','SD':'AF','SS':'AF','TN':'AF','LY':'AF','SO':'AF','CD':'AF','CG':'AF','GA':'AF','CF':'AF','TD':'AF','NE':'AF','ML':'AF','BF':'AF','MR':'AF','GN':'AF','SL':'AF','LR':'AF','GM':'AF','CV':'AF','GQ':'AF','ER':'AF','DJ':'AF','SC':'AF','MU':'AF','MW':'AF','LS':'AF','SZ':'AF','BW':'AF','NA':'AF','BJ':'AF','TG':'AF','RW':'AF','BI':'AF','CI':'AF','CM':'AF',
+  'AU':'OC','NZ':'OC','PG':'OC','FJ':'OC','SB':'OC','VU':'OC','WS':'OC','TO':'OC','FM':'OC','PW':'OC','MH':'OC','KI':'OC','TV':'OC','NR':'OC'
+};
+let _rgIsoToContinent      = new Map(); // built from OurAirports data during parse
+let _rgMapContinentFilter  = null;      // Set of continent codes, null=show all
+let _rgExcludedOwners      = new Set();
+let _rgExcludedCountries   = new Set();
+let _rgExcludedContinents  = new Set();
+let _rgExcludedIcaos       = new Set();
 
 // Stripe quick-filter — click owner stripe to isolate; click again to restore
 let _rgStripeOwnerDep  = null;   // currently locked owner name (dep), or null
@@ -10633,10 +10662,19 @@ function _rgRenderDots() {
       if (!rec || !rec.latitude || !rec.longitude) continue;
       const catNum = +(categoryDB && categoryDB.get(ap.icao.toUpperCase())) || 0;
       if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) continue;
-      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
-        const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(owner.name);
-        const inCountry = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
-        if (!inOwner && !inCountry) continue;
+      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+        const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(owner.name);
+        const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
+        const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
+        const isPinned    = _rgPinnedIcaos.has(ap.icao.toUpperCase());
+        if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+      }
+      if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+        const icaoUp2 = ap.icao.toUpperCase();
+        if (_rgExcludedIcaos.has(icaoUp2)) continue;
+        if (_rgExcludedOwners.size && _rgExcludedOwners.has(owner.name)) continue;
+        if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
+        if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
       }
       if (_rgOnlyScenery && !_slHas(ap.icao)) continue;
       pending.push({ ap, rec, catNum, ownerName: owner.name });
@@ -10676,6 +10714,39 @@ function _rgRenderDots() {
       }).addTo(_rgDotLayer);
     }
   }
+
+  // Non-owned pinned airports — rendered as gray dots regardless of active filters
+  for (const icaoUp of _rgPinnedIcaos) {
+    if (_rgOwnerMap.has(icaoUp)) continue; // owned → already handled in main loop above
+    if (_rgRegionIcaos && _rgRegionIcaos.has(icaoUp)) continue;
+    const rec = lookupICAO(icaoUp);
+    if (!rec || !rec.latitude || !rec.longitude) continue;
+    if (_rgExcludedIcaos.has(icaoUp)) continue;
+    if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
+    if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
+    const m = L.circleMarker([rec.latitude, rec.longitude], {
+      renderer: _rgCanvasRenderer, radius: 9, weight: 1,
+      color: 'rgba(0,0,0,0.55)', fillColor: '#7a7a90', fillOpacity: 0.75, interactive: true,
+    });
+    _rgBindDotTip(m, icaoUp, rec, null);
+    const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = icaoUp;
+    _rgAttachLongPress(m, _dIcao);
+    m.on('click', (e) => {
+      if (m._rgLpFired && m._rgLpFired()) return;
+      if ((e.originalEvent.shiftKey || _slMapMode) && (_rgPhase === 'explore' || _rgPhase === 'results'))
+        { _slToggleFromMap(_dIcao); return; }
+      _rgMapDotClick(_dIcao);
+    });
+    m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
+    m.on('contextmenu', (e) => {
+      if (e.originalEvent) e.originalEvent.preventDefault();
+      m.closeTooltip();
+      _rgShowRatePopover(m.getLatLng(), _dIcao);
+    });
+    m.addTo(_rgDotLayer);
+    _rgVisibleIcaosFromDots.add(icaoUp);
+  }
+
   _rgUpdateBreadcrumbs();
 }
 
@@ -10824,10 +10895,22 @@ function _rgHighlightDots() {
   // Active dep airports — sorted by catNum so stacking order matches background layer
   const depSorted = [..._rgDepAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of depSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
-      const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
-      const inCountry = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
-      if (!inOwner && !inCountry) continue;
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+      const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
+      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
+      const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
+      if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+    }
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+      const icaoUp = a.icao.toUpperCase();
+      if (_rgExcludedIcaos.has(icaoUp)) continue;
+      const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
+      if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
+      if (a.rec) {
+        if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
+      }
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
@@ -10867,10 +10950,22 @@ function _rgHighlightDots() {
   // Active arr airports — sorted by catNum so stacking order matches background layer
   const arrSorted = [..._rgArrAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of arrSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
-      const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
-      const inCountry = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
-      if (!inOwner && !inCountry) continue;
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+      const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
+      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
+      const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
+      if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+    }
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+      const icaoUp = a.icao.toUpperCase();
+      if (_rgExcludedIcaos.has(icaoUp)) continue;
+      const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
+      if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
+      if (a.rec) {
+        if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
+      }
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
@@ -12696,12 +12791,61 @@ function _rgUpdateBreadcrumbs() {
     const label = n === 1
       ? (_rgCountryIsoToName.get([..._rgMapCountryFilter][0]) || [..._rgMapCountryFilter][0])
       : `${n} Countries`;
-    container.appendChild(mkChip(
+    const countryChip = mkChip(
       label,
       null,
       () => { _rgMapCountryFilter = null; _rgRenderDots(); _rgHighlightDots(); }
+    );
+    if (n > 1) {
+      const names = [..._rgMapCountryFilter]
+        .map(iso => _rgCountryIsoToName.get(iso) || iso)
+        .sort();
+      countryChip.title = names.join('\n');
+    }
+    container.appendChild(countryChip);
+  }
+
+  // 8. Pinned airports — only when any are pinned
+  if (_rgPinnedIcaos.size > 0) {
+    const n = _rgPinnedIcaos.size;
+    const label = n === 1 ? [..._rgPinnedIcaos][0] : `${n} Pinned`;
+    container.appendChild(mkChip(
+      label,
+      null,
+      () => { _rgPinnedIcaos.clear(); _rgRenderDots(); _rgHighlightDots(); }
     ));
   }
+
+  // 9. Continent include filter
+  if (_rgMapContinentFilter !== null) {
+    const codes = [..._rgMapContinentFilter];
+    const label = codes.length === 1 ? (_RG_CONTINENT_NAMES[codes[0]] || codes[0]) : `${codes.length} Continents`;
+    const continentChip = mkChip(label, null, () => { _rgMapContinentFilter = null; _rgRenderDots(); _rgHighlightDots(); });
+    if (codes.length > 1) {
+      continentChip.title = codes.map(c => _RG_CONTINENT_NAMES[c] || c).sort().join('\n');
+    }
+    container.appendChild(continentChip);
+  }
+
+  // 10-13. Exclude chips — styled with red/danger border+text
+  function mkExcludeChip(label, onX) {
+    const c = mkChip(`−${label}`, null, onX);
+    c.style.borderColor = 'rgba(255,80,80,0.45)';
+    c.style.color = 'rgba(255,140,140,0.9)';
+    return c;
+  }
+  for (const o of _rgExcludedOwners)
+    container.appendChild(mkExcludeChip(o, () => { _rgExcludedOwners.delete(o); _rgApplyMapOwnerFilter(); _rgUpdateBreadcrumbs(); }));
+  for (const iso of _rgExcludedCountries) {
+    const name = _rgCountryIsoToName.get(iso) || iso;
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedCountries.delete(iso); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+  }
+  for (const code of _rgExcludedContinents) {
+    const name = _RG_CONTINENT_NAMES[code] || code;
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedContinents.delete(code); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+  }
+  for (const icao of _rgExcludedIcaos)
+    container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -13353,6 +13497,10 @@ function _rgClickOwnerStripe(ownerName, side) {
 
 let _rgMapSrIdx = -1;
 
+function _rgRecContinent(rec) {
+  return rec.continent || _rgIsoToContinent.get(rec.iso_country || '') || _RG_COUNTRY_CONTINENT_FALLBACK[rec.iso_country || ''] || '';
+}
+
 function _rgMapSrInput(q) {
   const xclear = document.getElementById('rgMapSearchXClear');
   if (xclear) xclear.classList.toggle('visible', q.length > 0);
@@ -13360,7 +13508,8 @@ function _rgMapSrInput(q) {
   if (!q.trim()) { _rgMapSrClose(); return; }
   const raw = q.trim();
   _rgMapSrAdditive = raw.startsWith('+');
-  const search = _rgMapSrAdditive ? raw.slice(1).trim() : raw;
+  _rgMapSrNegative = !_rgMapSrAdditive && raw.startsWith('-');
+  const search = (_rgMapSrAdditive || _rgMapSrNegative) ? raw.slice(1).trim() : raw;
   if (!search) { _rgMapSrClose(); return; }
   _rgMapSrRender(search);
 }
@@ -13404,32 +13553,66 @@ function _rgMapSrCountryQuery(q) {
   return results.slice(0, 3);
 }
 
+function _rgMapSrContinentQuery(q) {
+  if (q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const ownerData = _getOwnerData();
+  const ownedByCont = new Map();
+  if (ownerData && airportDB) {
+    for (const owner of ownerData)
+      for (const ap of (owner.airports || [])) {
+        const rec = airportDB.get(ap.icao.toUpperCase());
+        if (!rec) continue;
+        const cont = _rgRecContinent(rec);
+        if (cont) ownedByCont.set(cont, (ownedByCont.get(cont) || 0) + 1);
+      }
+  }
+  const results = [];
+  for (const [code, name] of Object.entries(_RG_CONTINENT_NAMES)) {
+    if (!name.toLowerCase().includes(ql)) continue;
+    const count = ownedByCont.get(code) || 0;
+    if (count === 0) continue;
+    results.push({ name, code, count, startsWith: name.toLowerCase().startsWith(ql) });
+  }
+  results.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return results;
+}
+
 function _rgMapSrRender(q) {
   const res = document.getElementById('rgMapSearchResults');
   if (!res) return;
-  const owners    = _rgMapSrOwnerQuery(q);
-  const countries = _rgMapSrCountryQuery(q);
-  const airports  = _rgMapSrQuery(q);
-  if (!owners.length && !countries.length && !airports.length) {
+  const owners     = _rgMapSrOwnerQuery(q);
+  const countries  = _rgMapSrCountryQuery(q);
+  const continents = _rgMapSrContinentQuery(q);
+  const airports   = _rgMapSrQuery(q);
+  if (!owners.length && !countries.length && !continents.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
   }
   const esc     = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const escAttr = s => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const actionText = _rgMapSrNegative ? 'Exclude &rarr;' : 'Filter map &rarr;';
   let rowIdx = 0;
   const ownerRows = owners.map(o =>
     `<div class="rg-map-sr rg-map-sr-owner" data-type="owner" data-owner="${escAttr(o.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
     `<span class="rg-map-sr-icao">⊙</span>` +
     `<span class="rg-map-sr-info">${esc(o.name)} <span class="rg-map-sr-city">· ${o.count} airport${o.count !== 1 ? 's' : ''}</span></span>` +
-    `<span class="rg-map-sr-owner-action">Filter map →</span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+    `</div>`
+  );
+  const continentRows = continents.map(c =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="continent" data-code="${escAttr(c.code)}" data-name="${escAttr(c.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">🌍</span>` +
+    `<span class="rg-map-sr-info">${esc(c.name)} <span class="rg-map-sr-city">· ${c.count} SimFly airport${c.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
   const countryRows = countries.map(c =>
     `<div class="rg-map-sr rg-map-sr-owner" data-type="country" data-iso="${escAttr(c.iso)}" data-name="${escAttr(c.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
     `<span class="rg-map-sr-icao">🌍</span>` +
     `<span class="rg-map-sr-info">${esc(c.name)} <span class="rg-map-sr-city">· ${c.count} SimFly airport${c.count !== 1 ? 's' : ''}</span></span>` +
-    `<span class="rg-map-sr-owner-action">Filter map →</span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
   const apRows = airports.map(r => {
@@ -13439,7 +13622,7 @@ function _rgMapSrRender(q) {
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...countryRows, ...apRows].join('');
+  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -13474,18 +13657,42 @@ function _rgMapSrQuery(q) {
 }
 
 function _rgMapSrActivateEl(el) {
-  if (el.dataset.type === 'owner')   _rgMapSrFilterToOwner(el.dataset.owner);
+  if (el.dataset.type === 'owner')        _rgMapSrFilterToOwner(el.dataset.owner);
+  else if (el.dataset.type === 'continent') _rgMapSrFilterToContinent(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'country') _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
 }
 
+function _rgClearAllSearchFilters() {
+  _rgMapOwnerFilter     = null;
+  _rgMapCountryFilter   = null;
+  _rgMapContinentFilter = null;
+  _rgPinnedIcaos.clear();
+  _rgExcludedOwners.clear();
+  _rgExcludedCountries.clear();
+  _rgExcludedContinents.clear();
+  _rgExcludedIcaos.clear();
+  _rgBuildMapOwnerList();
+  _rgUpdateMapOwnerBtn();
+}
+
 function _rgMapSrFilterToOwner(ownerName) {
+  if (_rgMapSrNegative) {
+    if (_rgMapOwnerFilter && _rgMapOwnerFilter.has(ownerName)) {
+      _rgMapOwnerFilter.delete(ownerName);
+      if (_rgMapOwnerFilter.size === 0) _rgMapOwnerFilter = null;
+    } else {
+      _rgExcludedOwners.add(ownerName);
+    }
+    _rgBuildMapOwnerList(); _rgUpdateMapOwnerBtn(); _rgApplyMapOwnerFilter();
+    _rgMapSrClear(); return;
+  }
   if (_rgMapSrAdditive) {
     if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
     _rgMapOwnerFilter.add(ownerName);
   } else {
-    _rgMapOwnerFilter   = new Set([ownerName]);
-    _rgMapCountryFilter = null;
+    _rgClearAllSearchFilters();
+    _rgMapOwnerFilter = new Set([ownerName]);
   }
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
@@ -13507,14 +13714,21 @@ function _rgMapSrFilterToOwner(ownerName) {
 }
 
 function _rgMapSrFilterToCountry(iso, displayName) {
+  if (_rgMapSrNegative) {
+    if (_rgMapCountryFilter && _rgMapCountryFilter.has(iso)) {
+      _rgMapCountryFilter.delete(iso);
+      if (_rgMapCountryFilter.size === 0) _rgMapCountryFilter = null;
+    } else {
+      _rgExcludedCountries.add(iso);
+    }
+    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+  }
   if (_rgMapSrAdditive) {
     if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
     _rgMapCountryFilter.add(iso);
   } else {
+    _rgClearAllSearchFilters();
     _rgMapCountryFilter = new Set([iso]);
-    _rgMapOwnerFilter   = null;
-    _rgBuildMapOwnerList();
-    _rgUpdateMapOwnerBtn();
   }
   _rgRenderDots();
   _rgHighlightDots();
@@ -13536,10 +13750,65 @@ function _rgMapSrFilterToCountry(iso, displayName) {
   _rgMapSrClear();
 }
 
+function _rgMapSrFilterToContinent(code, name) {
+  if (_rgMapSrNegative) {
+    if (_rgMapContinentFilter && _rgMapContinentFilter.has(code)) {
+      _rgMapContinentFilter.delete(code);
+      if (_rgMapContinentFilter.size === 0) _rgMapContinentFilter = null;
+    } else {
+      _rgExcludedContinents.add(code);
+    }
+    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+  }
+  if (_rgMapSrAdditive) {
+    if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
+    _rgMapContinentFilter.add(code);
+  } else {
+    _rgClearAllSearchFilters();
+    _rgMapContinentFilter = new Set([code]);
+  }
+  _rgRenderDots();
+  _rgHighlightDots();
+  // Zoom to fit owned airports on this continent
+  if (_rgMap && airportDB && !_rgMapSrAdditive) {
+    const ownerData = _getOwnerData();
+    const coords = [];
+    if (ownerData) {
+      for (const owner of ownerData)
+        for (const ap of (owner.airports || [])) {
+          const rec = airportDB.get(ap.icao.toUpperCase());
+          if (rec && _rgRecContinent(rec) === code && rec.latitude && rec.longitude)
+            coords.push([rec.latitude, rec.longitude]);
+        }
+    }
+    if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
+    else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
+  }
+  if (!_rgMapSrAdditive) { _rgBuildMapOwnerList(); _rgUpdateMapOwnerBtn(); }
+  _rgMapSrClear();
+}
+
 function _rgMapSrSelect(icao) {
   if (!_rgMap) return;
   const rec = lookupICAO(icao);
   if (!rec || !rec.latitude || !rec.longitude) return;
+  const icaoUp = icao.toUpperCase();
+  if (_rgMapSrNegative) {
+    if (_rgPinnedIcaos.has(icaoUp)) {
+      _rgPinnedIcaos.delete(icaoUp);
+    } else {
+      _rgExcludedIcaos.add(icaoUp);
+    }
+    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+  }
+  if (_rgMapSrAdditive) {
+    _rgPinnedIcaos.add(icaoUp);
+  } else {
+    _rgClearAllSearchFilters();
+    _rgPinnedIcaos.add(icaoUp);
+  }
+  _rgRenderDots();
+  _rgHighlightDots();
   _rgMap.flyTo([rec.latitude, rec.longitude], 9, { duration: 0.6 });
   _rgMapSrClear();
 }
@@ -13905,8 +14174,9 @@ function rgSendToFlightPlanner() {
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
-            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Owner rows show as <strong>⊙ Pilot → Filter map</strong> (click to hide all other dots); country rows show as <strong>🌍 Country → Filter map</strong> (click to filter to SimFly-owned airports in that country and zoom to fit). Click an airport row or press ↑/↓ and Enter to fly the map to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
-            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to add the results to the current filter instead of replacing it. For example: search <em>Kyndra</em> to show Kyndra&rsquo;s airports; then <em>+StarVen</em> to also show StarVen&rsquo;s airports; then <em>+Germany</em> to also show all SimFly airports in Germany. Each active filter appears as a chip in the filter status strip with a ✕ to remove it individually. A non-prefixed search replaces all active filters.<br/><br/>
+            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), and country rows (<strong>🌍</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports, zooming to fit. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it.<br/><br/>
+            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, continent, and pinned filters and replaces them with the new result.<br/><br/>
+            <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
@@ -13993,10 +14263,49 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.38.19</span>
+          <span class="release-date">May 11, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Tooltip on &ldquo;N Countries&rdquo; and &ldquo;N Continents&rdquo; breadcrumb chips</strong> &mdash; when the filter status strip shows a multi-item chip (e.g. <em>3 Countries</em> or <em>2 Continents</em>), hovering now reveals a sorted list of the individual names. Single-item chips already show the name directly and are unaffected.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.38.18</span>
+          <span class="release-date">May 11, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Continent search in Region Mode map search</strong> &mdash; typing a continent name (e.g. <em>Europe</em>, <em>Asia</em>, <em>North America</em>) in the map search box now shows a 🌍 continent row. Selecting it filters the map to all SimFly-owned airports on that continent and zooms to fit them. Supports additive <code>+</code> to layer continents on top of existing filters. A continent chip appears in the filter status strip with a ✕ to clear it.</li>
+          <li><strong>Negation search with &ldquo;&minus;&rdquo; prefix</strong> &mdash; prefixing a search with <code>&minus;</code> removes rather than adds. <em>&minus;Germany</em> excludes all SimFly airports in Germany; <em>&minus;Europe</em> excludes all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter (if present) or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned (if pinned) or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude. Action text changes to <strong>Exclude &rarr;</strong> in the dropdown when in negation mode.</li>
+          <li><strong>Continent data from OurAirports</strong> &mdash; continent codes (AF, AN, AS, EU, NA, OC, SA) are read from the <code>continent</code> column of the airports.csv parse and mapped per ISO country code. A hardcoded fallback table covers countries whose continent is absent from the OurAirports data.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.38.17</span>
+          <span class="release-date">May 11, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>ICAO search pins airports on the map</strong> &mdash; selecting an airport result in the Region Mode map search now pins that airport as a visible dot rather than just flying to it. SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot (matching the 0% payout color). The pinned airport&rsquo;s tooltip uses the OurAirports database (name, elevation, runway data — no owner line for non-owned airports). A chip for the pinned ICAO (or <em>N Pinned</em> for multiple) appears in the filter status strip with a ✕ to clear.</li>
+          <li><strong>Additive airport pinning with &ldquo;+&rdquo; prefix</strong> &mdash; prefixing an ICAO search with <code>+</code> adds the airport to the existing map view instead of replacing the current filter. Example: search <em>Germany</em> to filter to SimFly airports in Germany; then search <em>+EGLL</em> to also display EGLL as a gray dot. Works across all filter types: a non-prefixed airport search replaces owner, country, and pinned filters; a <code>+</code>-prefixed search accumulates.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.38.16</span>
-          <span class="release-date">May 11, 2026 &middot; Current</span>
+          <span class="release-date">May 11, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
