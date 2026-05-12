@@ -3300,9 +3300,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         <!-- col 3: Help / Reset / SimBrief — right-aligned -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.35rem;justify-self:end;">
           <div style="display:flex;gap:0.5rem;">
+            <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:var(--accent);color:var(--accent);" onclick="openRegionModal()" aria-label="Region airport selector" title="Select departure and arrival regions on a map" tabindex="-1">⊙ Regions</button>
             <button class="btn-action btn-help" onclick="openHelp()" aria-label="Help" title="How to use this tool" tabindex="-1">? Help</button>
             <button class="btn-action btn-clear" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="clearDist()" aria-label="Reset flight planner" tabindex="-1">✕ Reset</button>
-            <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.35);color:var(--accent);" onclick="openRegionModal()" aria-label="Region airport selector" title="Select departure and arrival regions on a map" tabindex="-1">⊙ Regions</button>
           </div>
           <button class="btn-action" id="simbriefBtn"
                   style="font-size:1.17rem;padding:0.3rem 0.9rem;background:rgba(255,106,0,0.15);border-color:var(--accent2);color:var(--accent2);white-space:nowrap;width:100%;justify-content:center;"
@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.13';
+const APP_VERSION = '2.38.16';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3858,6 +3858,12 @@ function loadAirportDB() {
         }
         const subDisplay = (subdivision && subdivision !== muni && subdivision !== country && subdivision !== '(unassigned)') ? subdivision : '';
 
+        // Accumulate country name → ISO maps for region-map search
+        if (rawCntry && country) {
+          if (!_rgCountryIsoToName.has(rawCntry)) _rgCountryIsoToName.set(rawCntry, country);
+          _rgCountryNameToIso.set(country.toLowerCase(), rawCntry);
+        }
+
         const record = {
           name        : (cols[iName]  || '').replace(/^"|"$/g, '').trim(),
           latitude    : lat,
@@ -3865,6 +3871,7 @@ function loadAirportDB() {
           elevation_ft: parseFloat(cols[iElev]) || 0,
           iata        : (cols[iIata]  || '').replace(/^"|"$/g, '').trim() || 'N/A',
           city        : [muni, subDisplay, country].filter(Boolean).join(', '),
+          iso_country : rawCntry,
         };
 
         const gps = (cols[iGps] || '').replace(/^"|"$/g, '').trim().toUpperCase();
@@ -10104,7 +10111,12 @@ let _globalCatFilter = new Set([1,2,3,4,5,6,7]);
 // Owner filters — null = all owners visible; Set of included owner names otherwise
 let _rgDepOwnerFilter = null;
 let _rgArrOwnerFilter = null;
-let _rgMapOwnerFilter = null; // map-wide filter — applies to all dots, independent of dep/arr
+let _rgMapOwnerFilter   = null; // map-wide owner filter — Set of owner names, null = show all
+let _rgMapCountryFilter = null; // map-wide country filter — Set of ISO codes, null = show all
+// Country name lookup tables — populated during airportDB parse
+let _rgCountryIsoToName = new Map(); // 'DE' → 'Germany'
+let _rgCountryNameToIso = new Map(); // 'germany' → 'DE'
+let _rgMapSrAdditive    = false;     // true when last search was prefixed with '+'
 
 // Stripe quick-filter — click owner stripe to isolate; click again to restore
 let _rgStripeOwnerDep  = null;   // currently locked owner name (dep), or null
@@ -10621,7 +10633,11 @@ function _rgRenderDots() {
       if (!rec || !rec.latitude || !rec.longitude) continue;
       const catNum = +(categoryDB && categoryDB.get(ap.icao.toUpperCase())) || 0;
       if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) continue;
-      if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(owner.name)) continue;
+      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
+        const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(owner.name);
+        const inCountry = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
+        if (!inOwner && !inCountry) continue;
+      }
       if (_rgOnlyScenery && !_slHas(ap.icao)) continue;
       pending.push({ ap, rec, catNum, ownerName: owner.name });
     }
@@ -10808,7 +10824,11 @@ function _rgHighlightDots() {
   // Active dep airports — sorted by catNum so stacking order matches background layer
   const depSorted = [..._rgDepAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of depSorted) {
-    if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
+      const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
+      const inCountry = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      if (!inOwner && !inCountry) continue;
+    }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
     if (!_rgStarFiltCheck(a.icao)) continue;
@@ -10847,7 +10867,11 @@ function _rgHighlightDots() {
   // Active arr airports — sorted by catNum so stacking order matches background layer
   const arrSorted = [..._rgArrAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of arrSorted) {
-    if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null) {
+      const inOwner   = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
+      const inCountry = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      if (!inOwner && !inCountry) continue;
+    }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
     if (!_rgStarFiltCheck(a.icao)) continue;
@@ -12627,11 +12651,13 @@ function _rgUpdateBreadcrumbs() {
     ));
   }
 
-  // 3. Scenery mode — shown when Highlight or Only is active
+  // 3. Scenery mode — always shown
   if (_rgOnlyScenery) {
-    container.appendChild(mkChip('Only Detailed Scenery', _slCycleMode, null));
+    container.appendChild(mkChip('Airports w Scenery Only', _slCycleMode, null));
   } else if (_rgShowScenery && _slLoad().length > 0) {
-    container.appendChild(mkChip('Scenery Indicator', _slCycleMode, null));
+    container.appendChild(mkChip('Black Dot = Has Scenery', _slCycleMode, null));
+  } else {
+    container.appendChild(mkChip('No Scenery Indicator', _slCycleMode, null));
   }
 
   // 4. Scenery Quality filter — grouped right after the Scenery chip
@@ -12653,7 +12679,7 @@ function _rgUpdateBreadcrumbs() {
   if (_rgMapOwnerFilter !== null) {
     const n = _rgMapOwnerFilter.size;
     container.appendChild(mkChip(
-      `${n} Pilot${n !== 1 ? 's' : ''} Displayed`,
+      `${n} Owner${n !== 1 ? 's' : ''} Displayed`,
       null,
       () => {
         _rgMapOwnerFilter = null;
@@ -12661,6 +12687,19 @@ function _rgUpdateBreadcrumbs() {
         _rgUpdateMapOwnerBtn();
         _rgApplyMapOwnerFilter();
       }
+    ));
+  }
+
+  // 7. Country Filtering — only when filter is active
+  if (_rgMapCountryFilter !== null) {
+    const n = _rgMapCountryFilter.size;
+    const label = n === 1
+      ? (_rgCountryIsoToName.get([..._rgMapCountryFilter][0]) || [..._rgMapCountryFilter][0])
+      : `${n} Countries`;
+    container.appendChild(mkChip(
+      label,
+      null,
+      () => { _rgMapCountryFilter = null; _rgRenderDots(); _rgHighlightDots(); }
     ));
   }
 }
@@ -13319,7 +13358,11 @@ function _rgMapSrInput(q) {
   if (xclear) xclear.classList.toggle('visible', q.length > 0);
   _rgMapSrIdx = -1;
   if (!q.trim()) { _rgMapSrClose(); return; }
-  _rgMapSrRender(q.trim());
+  const raw = q.trim();
+  _rgMapSrAdditive = raw.startsWith('+');
+  const search = _rgMapSrAdditive ? raw.slice(1).trim() : raw;
+  if (!search) { _rgMapSrClose(); return; }
+  _rgMapSrRender(search);
 }
 
 function _rgMapSrOwnerQuery(q) {
@@ -13336,33 +13379,67 @@ function _rgMapSrOwnerQuery(q) {
     .slice(0, 3);
 }
 
+function _rgMapSrCountryQuery(q) {
+  if (!_rgCountryNameToIso.size || q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const ownerData = _getOwnerData();
+  // Count SimFly-owned airports per ISO country code
+  const ownedByIso = new Map();
+  if (ownerData && airportDB) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        const rec = airportDB.get(ap.icao.toUpperCase());
+        if (rec && rec.iso_country) ownedByIso.set(rec.iso_country, (ownedByIso.get(rec.iso_country) || 0) + 1);
+      }
+    }
+  }
+  const results = [];
+  for (const [nameLower, iso] of _rgCountryNameToIso) {
+    if (!nameLower.includes(ql)) continue;
+    const count = ownedByIso.get(iso) || 0;
+    if (count === 0) continue;
+    results.push({ name: _rgCountryIsoToName.get(iso) || iso, iso, count, startsWith: nameLower.startsWith(ql) });
+  }
+  results.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return results.slice(0, 3);
+}
+
 function _rgMapSrRender(q) {
   const res = document.getElementById('rgMapSearchResults');
   if (!res) return;
-  const owners   = _rgMapSrOwnerQuery(q);
-  const airports = _rgMapSrQuery(q);
-  if (!owners.length && !airports.length) {
+  const owners    = _rgMapSrOwnerQuery(q);
+  const countries = _rgMapSrCountryQuery(q);
+  const airports  = _rgMapSrQuery(q);
+  if (!owners.length && !countries.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
   }
   const esc     = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const escAttr = s => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-  const ownerRows = owners.map((o, i) =>
-    `<div class="rg-map-sr rg-map-sr-owner" data-type="owner" data-owner="${escAttr(o.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${i})">` +
+  let rowIdx = 0;
+  const ownerRows = owners.map(o =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="owner" data-owner="${escAttr(o.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
     `<span class="rg-map-sr-icao">⊙</span>` +
     `<span class="rg-map-sr-info">${esc(o.name)} <span class="rg-map-sr-city">· ${o.count} airport${o.count !== 1 ? 's' : ''}</span></span>` +
     `<span class="rg-map-sr-owner-action">Filter map →</span>` +
     `</div>`
   );
-  const apRows = airports.map((r, i) => {
+  const countryRows = countries.map(c =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="country" data-iso="${escAttr(c.iso)}" data-name="${escAttr(c.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">🌍</span>` +
+    `<span class="rg-map-sr-info">${esc(c.name)} <span class="rg-map-sr-city">· ${c.count} SimFly airport${c.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">Filter map →</span>` +
+    `</div>`
+  );
+  const apRows = airports.map(r => {
     const meta = [r.city, r.owner].filter(Boolean).map(esc).join(' · ');
-    return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${owners.length + i})">` +
+    return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
       `<span class="rg-map-sr-icao">${esc(r.icao)}</span>` +
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...apRows].join('');
+  res.innerHTML = [...ownerRows, ...countryRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -13397,16 +13474,24 @@ function _rgMapSrQuery(q) {
 }
 
 function _rgMapSrActivateEl(el) {
-  if (el.dataset.type === 'owner') _rgMapSrFilterToOwner(el.dataset.owner);
+  if (el.dataset.type === 'owner')   _rgMapSrFilterToOwner(el.dataset.owner);
+  else if (el.dataset.type === 'country') _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
 }
 
 function _rgMapSrFilterToOwner(ownerName) {
-  _rgMapOwnerFilter = new Set([ownerName]);
+  if (_rgMapSrAdditive) {
+    if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
+    _rgMapOwnerFilter.add(ownerName);
+  } else {
+    _rgMapOwnerFilter   = new Set([ownerName]);
+    _rgMapCountryFilter = null;
+  }
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
   _rgApplyMapOwnerFilter();
-  if (_rgMap) {
+  if (_rgMap && !_rgMapSrAdditive) {
+    // Zoom to this owner's airports only when doing a fresh (non-additive) filter
     const ownerData = _getOwnerData();
     const owner = ownerData && ownerData.find(o => o.name === ownerName);
     if (owner && owner.airports) {
@@ -13417,6 +13502,36 @@ function _rgMapSrFilterToOwner(ownerName) {
       if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
       else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
     }
+  }
+  _rgMapSrClear();
+}
+
+function _rgMapSrFilterToCountry(iso, displayName) {
+  if (_rgMapSrAdditive) {
+    if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
+    _rgMapCountryFilter.add(iso);
+  } else {
+    _rgMapCountryFilter = new Set([iso]);
+    _rgMapOwnerFilter   = null;
+    _rgBuildMapOwnerList();
+    _rgUpdateMapOwnerBtn();
+  }
+  _rgRenderDots();
+  _rgHighlightDots();
+  // Zoom to fit the owned airports in this country
+  if (_rgMap && airportDB && !_rgMapSrAdditive) {
+    const ownerData = _getOwnerData();
+    const coords = [];
+    if (ownerData) {
+      for (const owner of ownerData)
+        for (const ap of (owner.airports || [])) {
+          const rec = airportDB.get(ap.icao.toUpperCase());
+          if (rec && rec.iso_country === iso && rec.latitude && rec.longitude)
+            coords.push([rec.latitude, rec.longitude]);
+        }
+    }
+    if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
+    else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
   }
   _rgMapSrClear();
 }
@@ -13790,7 +13905,8 @@ function rgSendToFlightPlanner() {
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
-            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Click a result or press ↑/↓ to navigate and Enter to select — the map flies to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
+            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, or city to filter all loaded airports; up to 10 matches appear ranked by exactness. Owner rows show as <strong>⊙ Pilot → Filter map</strong> (click to hide all other dots); country rows show as <strong>🌍 Country → Filter map</strong> (click to filter to SimFly-owned airports in that country and zoom to fit). Click an airport row or press ↑/↓ and Enter to fly the map to that airport. Press Esc or click ✕ to dismiss.<br/><br/>
+            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to add the results to the current filter instead of replacing it. For example: search <em>Kyndra</em> to show Kyndra&rsquo;s airports; then <em>+StarVen</em> to also show StarVen&rsquo;s airports; then <em>+Germany</em> to also show all SimFly airports in Germany. Each active filter appears as a chip in the filter status strip with a ✕ to remove it individually. A non-prefixed search replaces all active filters.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
@@ -13848,7 +13964,7 @@ function rgSendToFlightPlanner() {
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
-            <strong>N Pilots Displayed</strong> — appears when the Airport Owners filter is active and shows how many pilots&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all pilots.<br/><br/>
+            <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
             <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
             The strip truncates automatically if it would overlap the category circles, always leaving at least 30 px of clearance.
@@ -13877,10 +13993,48 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.38.16</span>
+          <span class="release-date">May 11, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Country search in Region Mode map search</strong> &mdash; typing a country name (e.g. <em>Germany</em>) in the map search box now shows a 🌍 country result row alongside owner and airport rows. Selecting it applies a country filter to the map, showing only SimFly-owned airports in that country and zooming the map to fit them. A <strong>Germany</strong> chip appears in the filter status strip with a ✕ to clear it.</li>
+          <li><strong>Additive search with &ldquo;+&rdquo; prefix</strong> &mdash; prefixing any search with <code>+</code> adds the new results to the existing map filter instead of replacing it. For example: search <em>Kyndra</em> → filter to Kyndra&rsquo;s airports; search <em>+StarVen</em> → add StarVen&rsquo;s airports; search <em>+Germany</em> → also show all SimFly airports in Germany. Works for both owner and country results. Non-prefixed searches replace all active filters. The breadcrumb strip shows a chip for each active filter so you can clear them independently.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.38.15</span>
+          <span class="release-date">May 11, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Select Regions button styled white like Measurement</strong> &mdash; removed the accent-blue background and border overrides from the Region Mode <strong>⊙ Select Regions</strong> button so it matches the neutral white style of the <strong>📐 Measurement</strong> button.</li>
+          <li><strong>Main toolbar button order changed</strong> &mdash; the three right-hand buttons are now ordered <strong>⊙ Regions → ? Help → ✕ Reset</strong> (previously ? Help → ✕ Reset → ⊙ Regions), placing the Regions entry point first.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.38.14</span>
+          <span class="release-date">May 11, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery breadcrumb chip always visible, with clearer labels</strong> &mdash; the Scenery chip in the filter status strip is now always shown, cycling through three states: <strong>No Scenery Indicator</strong> (off), <strong>Black Dot = Has Scenery</strong> (Highlight mode), and <strong>Airports w Scenery Only</strong> (Only mode). Previously the chip was hidden when scenery was off. The new labels describe the visual and filtering effect at a glance.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.38.13</span>
-          <span class="release-date">May 10, 2026 &middot; Current</span>
+          <span class="release-date">May 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -14022,7 +14176,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="release-divider"></div>
         <ul class="release-notes">
-          <li><strong>Scenery mode breadcrumb</strong> &mdash; the filter status strip now includes a scenery chip as its second element. Shows <em>Scenery Indicator</em> when the Highlight overlay is active, or <em>Only Detailed Scenery</em> when the map is filtered to scenery airports only. Clicking <em>Scenery Indicator</em> advances to <em>Only Detailed Scenery</em>; clicking <em>Only Detailed Scenery</em> turns the mode off and removes the chip.</li>
+          <li><strong>Scenery mode breadcrumb</strong> &mdash; the filter status strip now includes a scenery chip as its second element. Shows <em>Black Dot = Has Scenery</em> when the Highlight overlay is active, or <em>Airports w Scenery Only</em> when the map is filtered to scenery airports only. Clicking <em>Black Dot = Has Scenery</em> advances to <em>Airports w Scenery Only</em>; clicking <em>Airports w Scenery Only</em> turns the mode off and removes the chip.</li>
         </ul>
       </div>
 
@@ -14046,7 +14200,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="release-divider"></div>
         <ul class="release-notes">
-          <li><strong>Breadcrumb filter status strip</strong> &mdash; the region map header now shows a live strip of filter breadcrumbs between the Measurement button and the category circles. Each chip represents an active filter: Display Mode (Category Colors / Payout Colors), Category Filtering, Pilots Displayed, Pilot Payout minimum, and Scenery Rating minimum. Chips that can be toggled off carry an &times; button; clicking the Display Mode chip toggles between color modes. The strip truncates before overlapping the category circles.</li>
+          <li><strong>Breadcrumb filter status strip</strong> &mdash; the region map header now shows a live strip of filter breadcrumbs between the Measurement button and the category circles. Each chip represents an active filter: Display Mode (Category Colors / Payout Colors), Category Filtering, Owners Displayed, Pilot Payout minimum, and Scenery Rating minimum. Chips that can be toggled off carry an &times; button; clicking the Display Mode chip toggles between color modes. The strip truncates before overlapping the category circles.</li>
           <li><strong>Renamed Distance to Measurement</strong> &mdash; the ruler button label is now &ldquo;Measurement&rdquo; to better reflect that it shows both distance and bearing.</li>
           <li><strong>Smart distance units in measurement label</strong> &mdash; the on-map measurement label now switches units based on distance. At 20,000 ft and under it shows feet and meters (whole numbers). Above that threshold it shows nautical miles and kilometres; values at or below 100 nm display to two decimal places, above 100 nm display as whole numbers.</li>
         </ul>
@@ -19564,7 +19718,7 @@ function rgSendToFlightPlanner() {
   <div class="rg-modal">
     <div class="rg-modal-hdr">
       <div class="rg-hdr-left">
-        <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0">⊙ Select Regions</button>
+        <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;flex-shrink:0">⊙ Select Regions</button>
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>

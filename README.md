@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.38.13**
+**Current version: v2.38.16**
 
 ---
 
@@ -68,7 +68,9 @@ A **Map category filter** in the header bar hides entire airport categories from
 
 **Cross-app pilot group launch** — passing a `pilots=` URL parameter (comma-separated pilot names, e.g. `?pilots=Alice,Bob`) opens the app directly into Region Mode with the Airport Owners filter pre-set to exactly those pilots. The SimFly Reciprocation Tracker uses this to send a selected group from the Balance Queue straight to the region map with one click.
 
-**Region map search** — a floating search box in the top-left corner of the map lets you find any airport by ICAO, name, or owner name. Up to 10 results appear ranked by relevance, with your loaded (owned) airports ranked above non-owned airports from the global OurAirports database. When the query matches an owner name, a **⊙ Filter map →** row appears at the top — selecting it applies the Airport Owners filter to that owner and zooms the map to fit all their airports. Individual airport rows fly the map to that location at close zoom. Keyboard: ↑/↓ to navigate, Enter to activate the top result, Esc to dismiss.
+**Region map search** — a floating search box in the top-left corner of the map lets you find any airport by ICAO, name, or owner name. Up to 10 results appear ranked by relevance, with your loaded (owned) airports ranked above non-owned airports from the global OurAirports database. When the query matches an owner name, a **⊙ Filter map →** row appears — selecting it filters the map to that owner's airports and zooms to fit. When the query matches a country name (e.g. *Germany*), a **🌍 Filter map →** row appears showing the count of SimFly-owned airports in that country — selecting it filters the map to those airports and zooms to fit. A chip for each active filter appears in the filter status strip with a ✕ to clear it independently. Individual airport rows fly the map to that location at close zoom. Keyboard: ↑/↓ to navigate, Enter to activate the top result, Esc to dismiss.
+
+**Additive search** — prefix any search with `+` to add its results to the existing map filter rather than replacing it. For example: search *Kyndra* to show Kyndra's airports; then *+StarVen* to also show StarVen's airports; then *+Germany* to also show all SimFly airports in Germany. Each active filter gets its own breadcrumb chip. A non-prefixed search replaces all active filters.
 
 Region mode includes a **📐 Measurement** ruler — click **📐 Measurement** in the toolbar to activate it. The on-map label adapts units to the scale: at 20,000 ft and under it shows feet and meters; above that threshold it shows nautical miles and kilometres (two decimal places up to 100 nm, whole numbers above). Magnetic heading is sourced from the NOAA WMM API for sub-degree accuracy. Saved measurements are **movable and resizable** — grab the origin handle to translate the whole measurement (direction and distance preserved), or the edge handle to resize the radius with bearing locked to the drag-start angle; both handle types give the same grab/resize cursor feedback as region circles. Resizing works all the way down to runway scale — drag the edge handle in to read off runway lengths in feet directly from the map. The saved label uses the same smart-units ladder as the live label, so a resized measurement renders identically to a freshly drawn one. **Undo** / **Clear All** controls manage multi-segment sessions, a selectable airport cap per region (100 · 250 · 500 · 750 · 1,000), and searchable **Dep / Arr owner dropdowns** with live text filtering. Each owner entry shows their airport count for the region in parentheses (e.g. *Pilot One (3)*), and the panel expands to fit the widest name automatically. Any character typed while a panel is open — or while the dropdown button itself has keyboard focus — opens the panel and routes to the filter box, no click required. Arrow keys move a highlight through the filtered names; Space toggles the highlighted row checked or unchecked; Enter clears the filter while preserving selections. New pilots appear auto-deselected by default.
 
@@ -81,11 +83,13 @@ A row of chips overlaid on the region map to the right of the search bar shows e
 |---|---|---|
 | **Category Colors (N)** / **Payout Colors (N)** | Always | Toggle between color modes |
 | **Pilot Payout ≥ N%** | Payout mode on + threshold > 0 | ✕ clears the threshold |
-| **Scenery Indicator** | Highlight overlay active | Advance to Only Detailed Scenery mode |
-| **Only Detailed Scenery** | Only-scenery mode active | Turn scenery mode off |
+| **No Scenery Indicator** | Always (scenery off) | Turn on Highlight overlay |
+| **Black Dot = Has Scenery** | Highlight overlay active | Advance to Airports w Scenery Only mode |
+| **Airports w Scenery Only** | Only-scenery mode active | Turn scenery mode off |
 | **Rating ≥ N stars** | Star filter active + threshold > 0 | ✕ turns filter off |
 | **Category Filtering** | Any of the 7 map categories hidden | ✕ restores all categories |
-| **N Pilots Displayed** | Airport Owners filter active | ✕ shows all pilots |
+| **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners |
+| **[Country name]** | Country filter active (via search) | ✕ clears country filter |
 
 The **Category Colors** / **Payout Colors** chip includes a live parenthesised count of how many airport dots are currently visible on the map under all active filters — e.g. *Category Colors (1,247)*. The count updates instantly whenever any filter changes.
 
