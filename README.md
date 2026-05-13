@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.39.0**
+**Current version: v2.39.2**
 
 ---
 
@@ -90,7 +90,7 @@ A row of chips overlaid on the region map to the right of the search bar shows e
 | **Airports w Scenery Only** | Only-scenery mode active | Turn scenery mode off |
 | **Rating ≥ N stars** | Star filter active + threshold > 0 | ✕ turns filter off |
 | **Category Filtering** | Any of the 7 map categories hidden | ✕ restores all categories |
-| **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners |
+| **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners; hover to see names + airport counts |
 | **[Country name]** / **N Countries** | Country filter active (via search) | ✕ clears country filter; hover "N Countries" to see list |
 | **[Continent name]** / **N Continents** | Continent filter active (via search) | ✕ clears continent filter; hover "N Continents" to see list |
 | **[ICAO]** / **N Pinned** | Specific airport(s) pinned via ICAO search | ✕ clears pinned airports |

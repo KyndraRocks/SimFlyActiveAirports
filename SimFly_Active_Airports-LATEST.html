@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.39.0';
+const APP_VERSION = '2.39.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12821,7 +12821,7 @@ function _rgUpdateBreadcrumbs() {
   // 6. Pilot Filtering — only when filter is active
   if (_rgMapOwnerFilter !== null) {
     const n = _rgMapOwnerFilter.size;
-    container.appendChild(mkChip(
+    const ownerChip = mkChip(
       `${n} Owner${n !== 1 ? 's' : ''} Displayed`,
       null,
       () => {
@@ -12830,7 +12830,12 @@ function _rgUpdateBreadcrumbs() {
         _rgUpdateMapOwnerBtn();
         _rgApplyMapOwnerFilter();
       }
-    ));
+    );
+    const _ownerCountMap = new Map((_getOwnerData() || []).map(o => [o.name, o.airports.length]));
+    ownerChip.title = [..._rgMapOwnerFilter].sort()
+      .map(name => { const c = _ownerCountMap.get(name); return c != null ? `${name} (${c})` : name; })
+      .join('\n');
+    container.appendChild(ownerChip);
   }
 
   // 7. Country Filtering — only when filter is active
@@ -14312,10 +14317,34 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.39.2</span>
+          <span class="release-date">May 12, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;N Owners Displayed&rdquo; chip tooltip shows airport counts</strong> &mdash; the hover tooltip on the filter status chip now lists each owner name followed by their airport count in parentheses, e.g. <em>Kyndra (8)</em>, matching the style used in the Dep / Arr owner dropdowns and region-mode owner panel.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.39.1</span>
+          <span class="release-date">May 12, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Tooltip on &ldquo;N Owners Displayed&rdquo; breadcrumb chip</strong> &mdash; hovering the filter status chip now shows a sorted list of all the owner names currently included in the Airport Owners filter. Consistent with the existing hover tooltips on the &ldquo;N Countries&rdquo; and &ldquo;N Continents&rdquo; chips.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.39.0</span>
-          <span class="release-date">May 12, 2026 &middot; Current</span>
+          <span class="release-date">May 12, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
