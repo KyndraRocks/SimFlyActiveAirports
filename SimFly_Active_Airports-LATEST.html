@@ -3567,7 +3567,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.38.19';
+const APP_VERSION = '2.39.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3935,6 +3935,10 @@ function loadAirportDB() {
       }
       // Re-render selector with fresh data (called again after URL params apply)
       _acRenderSelector();
+
+      // Restore previously selected aircraft + load sliders from localStorage.
+      // No-op when URL params (?acCode=…) are present — the URL launch wins.
+      _acRestoreFromStorage();
 
       // Trigger any pending recalculations after DB loads
       refreshOwnerDropdowns();
@@ -4453,6 +4457,47 @@ let _acSelectedCode   = null;
 let _acMtowPct    = 100;
 // Payload as % of max payload capacity (0 = OEW only, 100 = max payload)
 let _acPayloadPct =   0;
+
+// ── Aircraft selection persistence ────────────────────────────────────────
+// Selected aircraft + load sliders survive page reloads via localStorage.
+// URL params (?acCode=…) still take precedence when launched from Recip Tracker.
+const _AC_LS_KEY = 'simfly_aa_aircraft';
+function _acSavePrefs() {
+  try {
+    localStorage.setItem(_AC_LS_KEY, JSON.stringify({
+      code:       _acSelectedCode || null,
+      mtowPct:    _acMtowPct,
+      payloadPct: _acPayloadPct,
+    }));
+  } catch(e) {}
+}
+function _acLoadPrefs() {
+  try {
+    const raw = localStorage.getItem(_AC_LS_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return {
+      code:       o && o.code ? String(o.code).toUpperCase() : null,
+      mtowPct:    (o && o.mtowPct    != null && o.mtowPct    >= 0 && o.mtowPct    <= 100) ? o.mtowPct    : 100,
+      payloadPct: (o && o.payloadPct != null && o.payloadPct >= 0 && o.payloadPct <= 100) ? o.payloadPct :   0,
+    };
+  } catch(e) { return null; }
+}
+// Apply persisted selection after aircraftDB finishes loading. Skipped if the
+// URL carried an acCode (Recip Tracker launch wins).
+function _acRestoreFromStorage() {
+  if (_urlParams && _urlParams.ac && _urlParams.ac.code) return;
+  const p = _acLoadPrefs();
+  if (!p) return;
+  _acMtowPct    = p.mtowPct;
+  _acPayloadPct = p.payloadPct;
+  if (p.code && aircraftDB.has(p.code)) {
+    _acActiveCategory = aircraftDB.get(p.code).simfly_cat || _acActiveCategory;
+    _acSelect(p.code, /*keepCollapsed=*/true);
+  } else {
+    _acUpdateMtowUI();
+  }
+}
 
 // ── SVG silhouettes, one per SimFly category ─────────────────────────────────
 // All drawn as right-facing side profiles in a 64x28 viewBox.
@@ -5044,6 +5089,7 @@ function _acUpdateMtowUI() {
 // Called on every slider tick (oninput) — update UI and re-evaluate filter dimming
 function _acSetMtowPct(pct) {
   _acMtowPct = Math.max(0, Math.min(100, parseInt(pct, 10)));
+  _acSavePrefs();
   if (window._urlAc) {
     window._urlAc.mtowPct    = _acMtowPct;
     window._urlAc.payloadPct = _acPayloadPct;
@@ -5068,6 +5114,7 @@ function _acSetMtowPct(pct) {
 // Called on every payload slider tick (oninput)
 function _acSetPayloadPct(pct) {
   _acPayloadPct = Math.max(0, Math.min(100, parseInt(pct, 10)));
+  _acSavePrefs();
   if (window._urlAc) {
     window._urlAc.payloadPct = _acPayloadPct;
     window._urlAc.mtowPct    = _acMtowPct;
@@ -5103,6 +5150,7 @@ function _acTogglePanel() {
 
 function _acSelect(code, keepCollapsed) {
   _acSelectedCode = code || null;
+  _acSavePrefs();
   const ac = code ? aircraftDB.get(code) : null;
   window._urlAc = ac ? {
     code,
@@ -5390,7 +5438,7 @@ function _applyUrlParams() {
       // minimized; the user can expand it manually if they want to adjust load.
       _acSelect(ac.code, /*keepCollapsed=*/true);
       const dbAc = aircraftDB.get(ac.code);
-      if (dbAc && dbAc.cat) { _acActiveCategory = dbAc.cat; _acRenderSelector(); }
+      if (dbAc && dbAc.simfly_cat) { _acActiveCategory = dbAc.simfly_cat; _acRenderSelector(); }
       // _acSelect already built _urlAc with mtowPct/_acPayloadPct, so no patch needed.
     } else {
       // DB not loaded or code unknown — keep raw URL params in window._urlAc
@@ -14072,6 +14120,7 @@ function rgSendToFlightPlanner() {
             Click the <strong>Aircraft</strong> header to expand the panel. Use the category tabs to filter by aircraft type, then click any chip to select an aircraft. The spec strip shows takeoff distance, landing distance, and range — both at full MTOW and adjusted for your current fuel and payload settings.<br/><br/>
             The <strong>Fuel</strong> slider sets fuel load as a percentage of max capacity. The <strong>Payload</strong> slider sets passenger/cargo load as a percentage of max payload. Both sliders feed into the adjusted performance column and affect the suitability check. The stacked <strong>Weights</strong> bar shows OEW, payload, and fuel as proportions of MTOW.<br/><br/>
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
+            Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
         </div>
@@ -14263,10 +14312,23 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.39.0</span>
+          <span class="release-date">May 12, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft selection now persists between sessions</strong> &mdash; the currently selected aircraft, MTOW%, and payload% are written to <code>localStorage</code> under <code>simfly_aa_aircraft</code> the moment any of them change, and restored on every subsequent page load after the aircraft database finishes loading. The app reopens with your last setup intact — no need to re-pick your aircraft every time. URL launches from Recip Tracker (Plan Flight or Send N to AA) still override the saved state for that session and are themselves persisted, so a route launch becomes your new default until you change it.</li>
+          <li><strong>URL-launched aircraft now lands on the correct category tab</strong> &mdash; when launched from Recip Tracker with an <code>?acCode=…</code> parameter, the aircraft selector previously set its active category tab from the wrong field (the aircraft's broad type-class string like &ldquo;Turboprop&rdquo; instead of the numeric SimFly category 1–7). The mismatch was masked by a downstream self-correcting fallback, but the redundant rebuild has been cleaned up to read <code>simfly_cat</code> directly.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.38.19</span>
-          <span class="release-date">May 11, 2026 &middot; Current</span>
+          <span class="release-date">May 11, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
