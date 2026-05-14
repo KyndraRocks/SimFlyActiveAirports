@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.39.2**
+**Current version: v2.39.6**
 
 ---
 
@@ -26,6 +26,8 @@ ICAO labels carry per-category colors (1–7) so airport tier is immediately vis
 
 ### Independent Dep / Arr Category Filters
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only.
+
+In the region-mode matrix, every dep-side control (the **Dep Owners** dropdown, the **Dep** label, the *All / None / Invert* buttons, the per-airport sort dots on the row headers, and the **DEP** half of the corner cell) renders in **cyan** to match the departure region circle. Every arr-side control renders in **orange** to match the arrival circle. The colour-coding is continuous in idle and hover states, so the side of the route is unmistakable at a glance when scanning the matrix.
 
 ### Scenery Library
 Track which airports you have add-on scenery installed for, and rate the quality of each one. The library is stored in your browser's localStorage and persists across sessions.
@@ -127,6 +129,8 @@ Once departure and arrival ICAOs are set, the **File on SimBrief →** button li
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
+
+Aircraft chips, category tabs, top accent bars, and ICAO code labels all share the same per-category palette as the airport dots and matrix headers (red / orange / yellow / green / cyan / blue / magenta for SimFly categories 1–7), so the aircraft category and its corresponding airport tier read in the same hue throughout the app.
 
 Your selection is **remembered between sessions** — the aircraft, fuel%, and payload% are saved to your browser's localStorage the moment you change them, so the app reopens with your last setup intact. Launches from the Reciprocation Tracker (Plan Flight or Send N to AA) still override the saved state for that session, and themselves become the new saved default until you change it.
 

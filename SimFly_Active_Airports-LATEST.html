@@ -2906,6 +2906,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-sort-dot.active { opacity:1; color:var(--accent); }
   .rg-matrix th.rg-col-hdr:not(.rg-corner) .rg-sort-dot { top:12px; right:4px; }
   .rg-matrix th.rg-row-hdr .rg-sort-dot { top:4px; right:5px; }
+  /* Sort dots colour-coded by axis to match the region circles — dep cyan, arr orange */
+  .rg-matrix th.rg-row-hdr .rg-sort-dot,
+  .rg-matrix th.rg-row-hdr .rg-sort-dot:hover,
+  .rg-matrix th.rg-row-hdr .rg-sort-dot.active { color:#00c8ff; }
+  .rg-matrix th.rg-col-hdr:not(.rg-corner) .rg-sort-dot,
+  .rg-matrix th.rg-col-hdr:not(.rg-corner) .rg-sort-dot:hover,
+  .rg-matrix th.rg-col-hdr:not(.rg-corner) .rg-sort-dot.active { color:#ff6a00; }
   .rg-matrix th.rg-col-hdr:not(.rg-corner), .rg-matrix th.rg-row-hdr { padding-right:1.6rem !important; }
   #rgMapContainer { flex:1 1 0; min-height:260px; position:relative; }
   #rgMapContainer.rg-cross  .leaflet-container, #rgMapContainer.rg-cross  { cursor:crosshair !important; }
@@ -2925,6 +2932,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #rgResultsBar .dist-cat-btn.active { color:var(--rg-cat-color,var(--accent)); background:rgba(0,200,255,0.12); border-color:var(--rg-cat-color,rgba(0,200,255,0.45)); box-shadow:0 0 6px color-mix(in srgb,var(--rg-cat-color,#00c8ff) 35%,transparent); }
   .rg-cat-acc-btn { font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:600; padding:0.15rem 0.4rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:3px; cursor:pointer; }
   .rg-cat-acc-btn:hover { border-color:var(--accent); color:var(--accent); }
+  /* Dep/arr-themed All/None/Invert buttons — match the region-circle colours */
+  #rgDepCatFilterRow .rg-cat-acc-btn,
+  #rgDepCatFilterRow .dist-cat-invert-btn,
+  #rgDepOwnerPanel  .rg-cat-acc-btn { color:#00c8ff; }
+  #rgDepCatFilterRow .rg-cat-acc-btn:hover,
+  #rgDepCatFilterRow .dist-cat-invert-btn:hover,
+  #rgDepOwnerPanel  .rg-cat-acc-btn:hover { color:#00c8ff; border-color:#00c8ff; }
+  #rgArrCatFilterRow .rg-cat-acc-btn,
+  #rgArrCatFilterRow .dist-cat-invert-btn,
+  #rgArrOwnerPanel  .rg-cat-acc-btn { color:#ff6a00; }
+  #rgArrCatFilterRow .rg-cat-acc-btn:hover,
+  #rgArrCatFilterRow .dist-cat-invert-btn:hover,
+  #rgArrOwnerPanel  .rg-cat-acc-btn:hover { color:#ff6a00; border-color:#ff6a00; }
   .rg-col-resize { position:absolute; top:0; right:-1px; bottom:0; width:7px; cursor:col-resize; z-index:6; background:transparent; }
   .rg-col-resize:hover, .rg-col-resize.rg-drag-active { background:rgba(0,200,255,0.3); }
   .rg-row-resize { position:absolute; left:0; right:0; bottom:-1px; height:6px; cursor:row-resize; z-index:6; background:transparent; }
@@ -3567,7 +3587,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.39.2';
+const APP_VERSION = '2.39.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -4501,15 +4521,17 @@ function _acRestoreFromStorage() {
 
 // ── SVG silhouettes, one per SimFly category ─────────────────────────────────
 // All drawn as right-facing side profiles in a 64x28 viewBox.
-// SimFly category accent colours — used for card top bars and ICAO labels
+// SimFly category accent colours — kept in sync with _RG_CAT_COLORS (line ~12148)
+// so aircraft chips, tabs, and ICAO labels read in the same hue as the airport
+// category they correspond to.
 const _AC_CAT_COLORS = {
-  1: '#00e676',   // green   — light GA, all airports
-  2: '#00c8a0',   // teal    — GA twin / light turboprop
-  3: '#00c8ff',   // cyan    — turboprop single (app accent)
-  4: '#48a9ff',   // sky     — large turboprop
-  5: '#a78bfa',   // violet  — biz/regional jet
-  6: '#ff6a00',   // orange  — narrowbody
-  7: '#ff3d5a',   // red     — widebody (most restrictive)
+  1: '#FF4040',   // red     — light GA, all airports
+  2: '#FF8800',   // orange  — GA twin / light turboprop
+  3: '#FFEE00',   // yellow  — turboprop single
+  4: '#44FF44',   // green   — large turboprop
+  5: '#00DDFF',   // cyan    — biz/regional jet
+  6: '#4466FF',   // blue    — narrowbody
+  7: '#FF44FF',   // magenta — widebody (most restrictive)
 };
 
 function _acCatCount(cat) {
@@ -12073,7 +12095,7 @@ function _rgUpdateSummary(depCount, arrCount) {
   const dep = depCount ?? _rgDepAirports.length;
   const arr = arrCount ?? _rgArrAirports.length;
   document.getElementById('rgResultsSummary').innerHTML =
-    `<b>${dep}</b> dep airports &times; <b>${arr}</b> arr airports = <b>${dep * arr}</b> routes`;
+    `<span style="color:#00c8ff"><b>${dep}</b> dep airports</span> &times; <span style="color:#ff6a00"><b>${arr}</b> arr airports</span> = <b>${dep * arr}</b> routes`;
 }
 
 // ── Owner colour palette ─────────────────────────────────────────────────
@@ -12486,7 +12508,7 @@ function _rgRenderMatrix() {
   const rows = [];
 
   // Header row (arrival airports = columns)
-  let hdr = '<tr><th class="rg-col-hdr rg-corner">DEP \\ ARR</th>';
+  let hdr = '<tr><th class="rg-col-hdr rg-corner"><span style="color:#00c8ff">DEP</span> \\ <span style="color:#ff6a00">ARR</span></th>';
   for (const a of sortedArr) {
     const oi  = ownerOf(a.icao);
     const col = oi ? oi.color : 'rgba(255,255,255,0.1)';
@@ -14317,10 +14339,58 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.39.6</span>
+          <span class="release-date">May 13, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft chip colours now match airport category colours</strong> &mdash; the aircraft selector chips, category tabs, top accent bars, and ICAO code labels now use the same per-category palette as the airport dots and matrix headers: red / orange / yellow / green / cyan / blue / magenta for SimFly categories 1&ndash;7. Previously the aircraft selector used its own separate palette (green / teal / cyan / sky / violet / orange / red), making it harder to tell at a glance which aircraft category corresponds to which airport category. The colour now propagates through every spot driven by <code>--ac-cat-color</code>: chip top-bar, selected-state border + glow, and the Orbitron ICAO code text.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.39.5</span>
+          <span class="release-date">May 13, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region-matrix <em>All</em> / <em>None</em> / <em>Invert</em> buttons colour-coded by axis</strong> &mdash; extending the dep/arr theming across the region-mode toolbar: the <em>All</em>, <em>None</em>, and <em>Invert</em> buttons in the departure category-filter row, plus the <em>All</em> / <em>None</em> buttons inside the <em>Dep Owners</em> dropdown panel, all render in cyan (<code>#00c8ff</code>). The same buttons on the arrival side (<em>Arr</em> category row and <em>Arr Owners</em> panel) render in orange (<code>#ff6a00</code>). Hover state now keeps the dep/arr colour for both text and border instead of switching to the generic accent cyan, so the side-of-route signal stays continuous as the cursor moves across the bar.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.39.4</span>
+          <span class="release-date">May 13, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region-matrix sort dots colour-coded by axis</strong> &mdash; the per-airport <em>⊙</em> sort dots in the region matrix now pick up the dep / arr colour scheme: dots on the departure row headers render in cyan (<code>#00c8ff</code>) and dots on the arrival column headers render in orange (<code>#ff6a00</code>), matching the region circles. Idle dots stay dim and brighten on hover or when locked as the sort pivot, but the colour is now consistent in all three states instead of switching to the generic accent cyan.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.39.3</span>
+          <span class="release-date">May 13, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region-matrix dep/arr controls colour-coded to match the region circles</strong> &mdash; on the region-mode matrix screen, the <em>Dep Owners</em> menu, <em>Dep</em> category-filter label, and the <em>N dep airports</em> count in the results summary now render in the same cyan (<code>#00c8ff</code>) as the departure region circle. The <em>Arr Owners</em> menu, <em>Arr</em> label, and <em>N arr airports</em> count match the orange (<code>#ff6a00</code>) arrival circle. The top-left <em>DEP \ ARR</em> corner cell of the matrix also splits its label so <em>DEP</em> reads cyan and <em>ARR</em> reads orange. Makes the side-of-route at a glance unmistakable when scanning the matrix.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.39.2</span>
-          <span class="release-date">May 12, 2026 &middot; Current</span>
+          <span class="release-date">May 12, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -20249,7 +20319,7 @@ function rgSendToFlightPlanner() {
         </select>
       </div>
       <div class="rg-owner-wrap" id="rgDepOwnerFilterWrap" style="margin-left:100px">
-        <button id="rgDepOwnerBtn" class="rg-owner-btn" onclick="_rgToggleOwnerDropdown('dep')" title="Filter departure airports by owner" tabindex="-1">Dep Owners<span id="rgDepOwnerBtnLabel"></span> ▾</button>
+        <button id="rgDepOwnerBtn" class="rg-owner-btn" style="color:#00c8ff" onclick="_rgToggleOwnerDropdown('dep')" title="Filter departure airports by owner" tabindex="-1">Dep Owners<span id="rgDepOwnerBtnLabel"></span> ▾</button>
         <div id="rgDepOwnerPanel" class="rg-owner-panel">
           <div class="rg-owner-panel-hdr">
             <span class="rg-owner-panel-title">Filter dep owners</span>
@@ -20264,7 +20334,7 @@ function rgSendToFlightPlanner() {
         </div>
       </div>
       <div class="rg-inline-filter" id="rgDepCatFilterRow" style="margin-left:100px">
-        <span class="dist-cat-filter-label" title="Filter departure airports by SimFly category">Dep</span>
+        <span class="dist-cat-filter-label" style="color:#00c8ff" title="Filter departure airports by SimFly category">Dep</span>
         <button class="rg-cat-acc-btn" onclick="_rgAllCats('dep')" title="Show all departure categories" tabindex="-1">All</button>
         <button class="rg-cat-acc-btn" onclick="_rgNoneCats('dep')" title="Hide all departure categories" tabindex="-1">None</button>
         <button class="dist-cat-btn active" data-rg-cat="1" data-rg-side="dep" style="--rg-cat-color:#FF4040" onclick="_rgToggleCat(this)" tabindex="-1">1</button>
@@ -20278,7 +20348,7 @@ function rgSendToFlightPlanner() {
       </div>
       <span class="rg-results-summary" id="rgResultsSummary"></span>
       <div class="rg-inline-filter" id="rgArrCatFilterRow" style="margin-right:100px">
-        <span class="dist-cat-filter-label" title="Filter arrival airports by SimFly category">Arr</span>
+        <span class="dist-cat-filter-label" style="color:#ff6a00" title="Filter arrival airports by SimFly category">Arr</span>
         <button class="rg-cat-acc-btn" onclick="_rgAllCats('arr')" title="Show all arrival categories" tabindex="-1">All</button>
         <button class="rg-cat-acc-btn" onclick="_rgNoneCats('arr')" title="Hide all arrival categories" tabindex="-1">None</button>
         <button class="dist-cat-btn active" data-rg-cat="1" data-rg-side="arr" style="--rg-cat-color:#FF4040" onclick="_rgToggleCat(this)" tabindex="-1">1</button>
@@ -20291,7 +20361,7 @@ function rgSendToFlightPlanner() {
         <button class="dist-cat-invert-btn" onclick="_rgInvertCat('arr')" title="Invert selection" tabindex="-1">Invert</button>
       </div>
       <div class="rg-owner-wrap" id="rgArrOwnerFilterWrap" style="margin-right:50px; margin-left:-20px">
-        <button id="rgArrOwnerBtn" class="rg-owner-btn" onclick="_rgToggleOwnerDropdown('arr')" title="Filter arrival airports by owner" tabindex="-1">Arr Owners<span id="rgArrOwnerBtnLabel"></span> ▾</button>
+        <button id="rgArrOwnerBtn" class="rg-owner-btn" style="color:#ff6a00" onclick="_rgToggleOwnerDropdown('arr')" title="Filter arrival airports by owner" tabindex="-1">Arr Owners<span id="rgArrOwnerBtnLabel"></span> ▾</button>
         <div id="rgArrOwnerPanel" class="rg-owner-panel">
           <div class="rg-owner-panel-hdr">
             <span class="rg-owner-panel-title">Filter arr owners</span>
