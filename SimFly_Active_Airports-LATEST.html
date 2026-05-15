@@ -3746,7 +3746,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.46.0';
+const APP_VERSION = '2.46.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6211,33 +6211,92 @@ function _closeNewPilotConfirm() {
   document.getElementById('npcModal').classList.remove('open');
 }
 
+// Always stamp the inbox queue locally regardless of the gist outcome. This is
+// the race-safe path: even if RT is open in another tab and autosaves over
+// our gist PATCH, RT's storage-event listener still drains the inbox queue
+// and adds the new pilots. The inbox is capped to the most recent 200 entries
+// so it can't grow unbounded.
+const _RECIP_INBOX_KEY = 'simfly_recip_inbox';
+function _stampRecipInbox(newPilots) {
+  try {
+    const raw = localStorage.getItem(_RECIP_INBOX_KEY) || '[]';
+    const arr = JSON.parse(raw);
+    const list = Array.isArray(arr) ? arr : [];
+    const ts = new Date().toISOString();
+    for (const { name, displayName, code } of newPilots) {
+      list.push({ username: displayName, name, code, source: 'AA', ts });
+    }
+    // Keep last 200 entries (FIFO trim from the front)
+    while (list.length > 200) list.shift();
+    localStorage.setItem(_RECIP_INBOX_KEY, JSON.stringify(list));
+  } catch(e) { /* localStorage may be full or disabled */ }
+}
+
+// Lightweight toast for the AA→RT save flow. Reuses no existing element —
+// creates a fixed-position pill at the bottom-right that auto-dismisses.
+let _aaRtToastTmr = null;
+function _aaRtToast(msg, kind) {
+  let el = document.getElementById('aaRtToast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'aaRtToast';
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;';
+    document.body.appendChild(el);
+  }
+  const bg = kind === 'err' ? 'rgba(180,40,60,0.95)' : kind === 'warn' ? 'rgba(180,120,20,0.95)' : 'rgba(20,120,80,0.95)';
+  el.style.background = bg;
+  el.textContent = msg;
+  requestAnimationFrame(() => { el.style.opacity = '1'; });
+  if (_aaRtToastTmr) clearTimeout(_aaRtToastTmr);
+  _aaRtToastTmr = setTimeout(() => { el.style.opacity = '0'; _aaRtToastTmr = null; }, 4000);
+}
+
 async function _addPilotsToRecipGist(newPilots, pat) {
+  // Inbox stamp first — survives every gist failure mode and reaches RT
+  // via the storage event listener even if RT is autosaving over the gist.
+  _stampRecipInbox(newPilots);
+
   const API      = `https://api.github.com/gists/2a6f1d36fdbdc51ac4bf3b4e3e2ee47d`;
   const FILENAME = 'SimFly_Pilot_Reciprocation.json';
+  const count    = newPilots.length;
+  const noun     = `${count} pilot${count !== 1 ? 's' : ''}`;
   try {
     const r = await fetch(API, { headers: { Authorization: `token ${pat}`, Accept: 'application/vnd.github+json' } });
-    if (!r.ok) return;
+    if (!r.ok) {
+      _aaRtToast(`Recip Tracker save failed (HTTP ${r.status}) — queued locally; ${noun} will sync next time RT runs.`, 'warn');
+      return;
+    }
     const gist = await r.json();
     let data = {};
     try { data = JSON.parse(gist.files?.[FILENAME]?.content || '{}'); } catch(e) {}
     if (!Array.isArray(data.pilots)) data.pilots = [];
     const existing = new Set(data.pilots.map(p => p.username.trim().toLowerCase()));
-    let added = false;
+    let added = 0;
     for (const { name, displayName, code } of newPilots) {
       if (existing.has(name)) continue;
       data.pilots.push({ id: 'p' + Date.now() + Math.random().toString(36).slice(2), username: displayName, code, total: 0, since: 0, addedAt: Date.now() });
       existing.add(name);
       window._gistPilotCodes.set(name, code);
-      added = true;
+      added++;
     }
-    if (!added) return;
+    if (!added) {
+      _aaRtToast(`${noun} already in Recip Tracker — no changes written.`, 'ok');
+      return;
+    }
     data.exported = new Date().toISOString();
-    await fetch(API, {
+    const patch = await fetch(API, {
       method: 'PATCH',
       headers: { Authorization: `token ${pat}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
       body: JSON.stringify({ files: { [FILENAME]: { content: JSON.stringify(data, null, 2) } } })
     });
-  } catch(e) { /* fail silently — SimBrief was already opened */ }
+    if (patch.ok) {
+      _aaRtToast(`✓ ${added} pilot${added !== 1 ? 's' : ''} added to Recip Tracker.`, 'ok');
+    } else {
+      _aaRtToast(`Gist write failed (HTTP ${patch.status}) — queued locally; ${noun} will sync next time RT runs.`, 'warn');
+    }
+  } catch(e) {
+    _aaRtToast(`Recip Tracker save error — ${e.message || 'network'}; queued locally for next RT run.`, 'warn');
+  }
 }
 
 // Reads ONLY from #importResultPreview (parsed KML output).
@@ -15380,10 +15439,23 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.46.1</span>
+          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>"Add to Recip Tracker" now reliably reaches RT</strong> &mdash; the SimBrief flow's <em>Add to Recip Tracker</em> action previously did a single gist PATCH and swallowed every failure silently, which meant: (a) you couldn't tell whether the save succeeded, and (b) if Recip Tracker was already open in another tab, RT's own autosave would race over the PATCH and overwrite the newly-added pilot back out of the gist. The flow now <strong>stamps each new pilot into <code>localStorage['simfly_recip_inbox']</code> first</strong> &mdash; that path survives every gist failure mode (network, 401, race) and is drained by Recip Tracker v2.36.0+ on startup, on cross-tab <code>storage</code> events, and on visibility changes. Result: new pilots actually appear in the RT Balance Queue right after you click <em>Add to Recip Tracker &amp; File</em>, no manual refresh required.</li>
+          <li><strong>Toast feedback on the Recip Tracker save attempt</strong> &mdash; a non-blocking pill appears at the bottom-right of the AA window confirming the outcome: <em>✓ N pilots added to Recip Tracker</em> on success, or <em>Recip Tracker save failed (HTTP 401) — queued locally; N pilot(s) will sync next time RT runs</em> on token/network failure. The toast auto-dismisses after 4 seconds. SimBrief still opens immediately either way; the toast doesn't block anything.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.46.0</span>
-          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-date">May 15, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
