@@ -2919,7 +2919,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #rgMapContainer.rg-grab   .leaflet-container, #rgMapContainer.rg-grab   { cursor:grabbing  !important; }
   #rgMapContainer.rg-ruler  .leaflet-container, #rgMapContainer.rg-ruler  { cursor:crosshair !important; }
   #rgMapContainer.rg-resize .leaflet-container, #rgMapContainer.rg-resize { cursor:ew-resize !important; }
+  #rgMapContainer.rg-pointer .leaflet-container, #rgMapContainer.rg-pointer { cursor:pointer !important; }
   .rg-resize-handle { width:20px; height:20px; border-radius:50%; border:2.5px solid; background:rgba(0,8,18,0.78); box-sizing:border-box; box-shadow:0 0 7px 2px rgba(0,0,0,0.55); }
+  /* Close-measurement handle — sits on the circumference opposite the resize handle. Click removes that specific measurement. */
+  .rg-close-handle { width:20px; height:20px; border-radius:50%; border:2.5px solid; background:rgba(0,8,18,0.92); box-sizing:border-box; box-shadow:0 0 7px 2px rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; font-family:'Rajdhani',sans-serif; font-size:14px; font-weight:700; line-height:1; cursor:pointer; user-select:none; }
   /* Route info label (cell-selection line midpoint) */
   .rg-route-info-lbl { background:rgba(0,8,18,0.88); color:var(--text); font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:600; padding:0.25rem 0.7rem; border-radius:5px; border:1px solid rgba(255,209,102,0.5); white-space:nowrap; pointer-events:none; box-shadow:0 0 8px 2px rgba(255,209,102,0.18); display:inline-block; }
   .rg-ri-dep  { color:#00c8ff; font-family:'Courier New',Courier,monospace; font-weight:700; }
@@ -2952,6 +2955,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-nm-label { position:absolute; top:0; left:0; pointer-events:none; z-index:1000; background:var(--panel); border:1px solid var(--accent); border-radius:4px; padding:0.15rem 0.45rem; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:600; color:var(--accent); white-space:nowrap; display:none; transform:translate(14px,12px); }
   .rg-nm-label.arr { border-color:var(--accent2); color:var(--accent2); }
   .rg-hero-lbl { background:rgba(0,8,18,0.88); color:#00c8ff; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:700; padding:0.22rem 0.65rem; border-radius:5px; border:1px solid rgba(0,200,255,0.45); white-space:nowrap; letter-spacing:0.04em; pointer-events:none; box-shadow:0 0 10px 2px rgba(0,200,255,0.25); display:inline-block; }
+  /* "Crosses antimeridian" 2nd-row chip — solid dark pill with amber border so it's legible against both street and satellite map backgrounds. Used by the live + saved measurement labels, the dot-click route info label, and the dep→arr hero label. */
+  .rg-am-note { background:rgba(0,8,18,0.92); color:#ffb347; font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:700; letter-spacing:0.04em; padding:0.14rem 0.55rem; border-radius:4px; border:1px solid rgba(255,179,71,0.7); margin-top:0.22rem; white-space:nowrap; pointer-events:none; box-shadow:0 1px 6px rgba(0,0,0,0.55), 0 0 6px rgba(255,179,71,0.25); display:inline-block; }
   /* Specificity override needed to beat Leaflet's default white background */
   .leaflet-tooltip.rg-dot-tip { background:rgba(0,8,18,0.96); border:1px solid rgba(0,200,255,0.65); border-radius:5px; padding:0.53rem 1.05rem; white-space:nowrap; box-shadow:0 2px 14px rgba(0,0,0,0.85), 0 0 6px rgba(0,200,255,0.15); pointer-events:none; color:#dff0ff; user-select:none; }
   .leaflet-tooltip.rg-dot-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.96); }
@@ -3035,6 +3040,38 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-results-summary b { color:var(--text); }
   .rg-cap-row { display:flex; align-items:center; gap:0.45rem; }
   .rg-cap-lbl { font-family:'Rajdhani',sans-serif; font-size:1.25rem; color:var(--muted); white-space:nowrap; }
+  /* ── Sub-2200px results bar adaptation ─────────────────────────────────
+     The Region Mode results bar is designed for 4K-class displays — three
+     groups (Sort + Dep Owners + Dep Cats | Summary | Arr Cats + Arr Owners +
+     Max-per-region) with comfortable hard-coded margins between them. The
+     minimum width at which the original layout fits on one row is ~2200px;
+     below that (including the common 1920×1080 case) it wraps awkwardly.
+     Threshold is set to 2200 so 1080p displays definitely match — using a
+     tighter 1920 cutoff fails on 1920 itself due to subpixel/scrollbar math
+     in browsers' viewport width calculation. QHD (2560) and 4K (3840) are
+     above the threshold and keep the original hi-res layout untouched.
+     ────────────────────────────────────────────────────────────────────── */
+  @media (max-width: 2200px) {
+    .rg-results-bar { gap:0.7rem; padding:0.55rem 0.7rem; }
+    /* Drop the wide-screen hard-coded margins that push content off the row */
+    #rgDepOwnerFilterWrap, #rgDepCatFilterRow { margin-left:0 !important; }
+    #rgArrCatFilterRow, #rgArrOwnerFilterWrap { margin-left:0 !important; margin-right:0 !important; }
+    /* Smaller category circles + tighter row gaps */
+    #rgResultsBar .dist-cat-btn { width:1.45rem; height:1.45rem; font-size:0.78rem; }
+    .rg-inline-filter { gap:0.28rem; }
+    /* Smaller fonts on the surrounding chrome */
+    .rg-results-summary { font-size:1.05rem; }
+    .rg-cap-lbl { font-size:1rem; }
+    .rg-owner-btn { font-size:0.95rem; padding:0.15rem 0.5rem; }
+    /* Hide redundant text labels — the select tooltips still explain them */
+    .rg-cap-row .rg-cap-lbl { display:none; }
+    .rg-rs-suffix { display:none; }
+    /* Narrower All/None/Invert buttons */
+    #rgResultsBar .dist-cat-invert-btn { font-size:0.72rem; padding:0.1rem 0.35rem; }
+    #rgResultsBar .rg-cat-acc-btn { font-size:0.72rem; padding:0.12rem 0.35rem; }
+    /* Tighter Sort + Max-per-region selects */
+    #rgSortSelect, #rgCapSelect { padding:0.15rem 0.35rem; font-size:0.95rem; }
+  }
   #rgCapSelect, #rgSortSelect { font-family:'Rajdhani',sans-serif; font-size:1.25rem; padding:0.18rem 0.53rem; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer; }
   .rg-perf-warn { font-family:'Rajdhani',sans-serif; font-size:1.17rem; color:var(--accent2); }
   .rg-matrix-wrap { border-top:1px solid var(--border); flex:1 1 0; min-height:150px; display:none; flex-direction:column; overflow:clip; }
@@ -3587,7 +3624,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.39.6';
+const APP_VERSION = '2.42.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10436,6 +10473,7 @@ function _rgUpdateMeasure(toLL) {
     mbPart = (_rgMeasureDecl.approx ? '≈' : '') + mbStr + '° M';
   }
   const origin  = [_rgMeasureOrigin.lat, _rgMeasureOrigin.lng];
+  const crossesAM = _rgCrossesAM(_rgMeasureOrigin.lng, toLL.lng);
 
   if (!_rgMeasureCircle) {
     _rgMeasureCircle = L.circle(origin, {
@@ -10446,20 +10484,34 @@ function _rgUpdateMeasure(toLL) {
     _rgMeasureCircle.setRadius(distM);
   }
 
+  // Measurement line is already dashed by default. When the segment crosses
+  // the antimeridian, switch to a more prominent dash so the cue is visible
+  // alongside the explanatory 2nd-row label.
+  const measDash = crossesAM ? '14 8' : '6 4';
   if (!_rgMeasureLine) {
     _rgMeasureLine = L.polyline([origin, [toLL.lat, toLL.lng]], {
-      color: '#cc44ff', weight: 3, opacity: 1, dashArray: '6 4', interactive: false,
+      color: '#cc44ff', weight: 3, opacity: 1, dashArray: measDash, interactive: false,
     }).addTo(_rgMap);
   } else {
     _rgMeasureLine.setLatLngs([origin, [toLL.lat, toLL.lng]]);
+    _rgMeasureLine.setStyle({ dashArray: measDash });
   }
 
   const distStr = _rgFmtMeasDist(nm);
+  const amNote  = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
 
-  const midLL = _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
-  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
+  // For non-AM segments, place the label at the geodesic 58% point so it sits
+  // along the rendered line, offset slightly from the origin pin. When the
+  // segment crosses the antimeridian Leaflet draws the polyline the long way
+  // around the map in straight canvas-space, so the geodesic 58% point is far
+  // from the rendered line. Use the simple lat/lng mean of the endpoints — that
+  // is the visual midpoint of Leaflet's long-way render.
+  const midLL = crossesAM
+    ? L.latLng((_rgMeasureOrigin.lat + toLL.lat) / 2, (_rgMeasureOrigin.lng + toLL.lng) / 2)
+    : _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
+  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
-    `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
+    `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
 
   if (!_rgMeasureLabel) {
     _rgMeasureLabel = L.marker([midLL.lat, midLL.lng], {
@@ -10516,9 +10568,10 @@ async function _rgInitMap() {
     .addTo(_rgMap);
 
   // Attach map event handlers
-  _rgMap.on('mousedown', _rgMapMouseDown);
-  _rgMap.on('mousemove', _rgMapMouseMove);
-  _rgMap.on('mouseup',   _rgMapMouseUp);
+  _rgMap.on('mousedown',   _rgMapMouseDown);
+  _rgMap.on('mousemove',   _rgMapMouseMove);
+  _rgMap.on('mouseup',     _rgMapMouseUp);
+  _rgMap.on('contextmenu', _rgMapContextMenu);
   _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); if (!_rgDblClickActive) { _rgZoomedToIcao = null; _rgPreZoomState = null; } });
   _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
 
@@ -10772,6 +10825,8 @@ function _rgRenderDots() {
     m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+          _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
       _rgShowRatePopover(m.getLatLng(), _dIcao);
     });
@@ -10810,6 +10865,8 @@ function _rgRenderDots() {
     m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+          _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
       _rgShowRatePopover(m.getLatLng(), _dIcao);
     });
@@ -10835,11 +10892,16 @@ function _rgDrawHeroLine() {
   const arr = _rgArrCenter;
   const coords = [[dep.lat, dep.lng], [arr.lat, arr.lng]];
   const nm = Math.round(_haversineNm(dep.lat, dep.lng, arr.lat, arr.lng));
+  const crossesAM = _rgCrossesAM(dep.lng, arr.lng);
 
-  // Three-layer glow stack — outer bloom, mid glow, bright core
-  const bloom = L.polyline(coords, { color: '#00c8ff', weight: 22, opacity: 0.08, interactive: false });
-  const glow  = L.polyline(coords, { color: '#00c8ff', weight: 8,  opacity: 0.32, interactive: false });
-  const core  = L.polyline(coords, { color: '#ffffff', weight: 2,  opacity: 0.92, interactive: false });
+  // Three-layer glow stack — outer bloom, mid glow, bright core. When the
+  // geodesic crosses the antimeridian, Leaflet draws the visual long-way path
+  // across the map even though the haversine distance is the short-way figure.
+  // Switching all three layers to dashed flags the mismatch.
+  const heroDash = crossesAM ? '14 10' : null;
+  const bloom = L.polyline(coords, { color: '#00c8ff', weight: 22, opacity: 0.08, interactive: false, dashArray: heroDash });
+  const glow  = L.polyline(coords, { color: '#00c8ff', weight: 8,  opacity: 0.32, interactive: false, dashArray: heroDash });
+  const core  = L.polyline(coords, { color: '#ffffff', weight: 2,  opacity: 0.92, interactive: false, dashArray: heroDash });
 
   bloom.addTo(_rgMap);
   glow.addTo(_rgMap);
@@ -10847,9 +10909,10 @@ function _rgDrawHeroLine() {
 
   // Midpoint distance badge
   const mid  = L.latLng((dep.lat + arr.lat) / 2, (dep.lng + arr.lng) / 2);
+  const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
   const icon = L.divIcon({
     className: '',
-    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap"><span class="rg-hero-lbl">${nm.toLocaleString()} nm</span></div>`,
+    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center"><div><span class="rg-hero-lbl">${nm.toLocaleString()} nm</span></div>${amNote}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
@@ -10891,10 +10954,12 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   const depLL  = [depEntry.rec.latitude,  depEntry.rec.longitude];
   const arrLL  = [arrEntry.rec.latitude,  arrEntry.rec.longitude];
   const coords = [depLL, arrLL];
+  const crossesAM = _rgCrossesAM(depEntry.rec.longitude, arrEntry.rec.longitude);
+  const routeDash = crossesAM ? '12 8' : null;
 
-  const glow = L.polyline(coords, { color: '#ffd166', weight: 12, opacity: 0.15, interactive: false, pane: 'routeLinePane' });
-  const line = L.polyline(coords, { color: '#ffd166', weight: 4,  opacity: 0.45, interactive: false, pane: 'routeLinePane' });
-  const core = L.polyline(coords, { color: '#ffffff', weight: 1.5, opacity: 0.9, interactive: false, pane: 'routeLinePane' });
+  const glow = L.polyline(coords, { color: '#ffd166', weight: 12, opacity: 0.15, interactive: false, pane: 'routeLinePane', dashArray: routeDash });
+  const line = L.polyline(coords, { color: '#ffd166', weight: 4,  opacity: 0.45, interactive: false, pane: 'routeLinePane', dashArray: routeDash });
+  const core = L.polyline(coords, { color: '#ffffff', weight: 1.5, opacity: 0.9, interactive: false, pane: 'routeLinePane', dashArray: routeDash });
 
   if (!_rgRouteLineRenderer) _rgRouteLineRenderer = L.canvas({ padding: 0.5, pane: 'routeLinePane' });
   const renderer = _rgRouteLineRenderer;
@@ -10911,15 +10976,22 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
     (depEntry.rec.latitude  + arrEntry.rec.latitude)  / 2,
     (depEntry.rec.longitude + arrEntry.rec.longitude) / 2
   );
+  const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
+  // .rg-route-info-lbl is display:inline-block, as is .rg-am-note; without a
+  // block-level wrapper they sit side-by-side inside the nowrap container.
+  // Wrap the info chip in a plain <div> so the amNote falls on a new row,
+  // matching the hero-line and measurement label layout.
   const infoIcon = L.divIcon({
     className: '',
-    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap">` +
+    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center">` +
+          `<div>` +
           `<div class="rg-route-info-lbl">` +
           `<span class="rg-ri-dep">${depIcao}</span>` +
           `<span class="rg-ri-arrow"> → </span>` +
           `<span class="rg-ri-arr">${arrIcao}</span>` +
           `<span class="rg-ri-nm">${nm != null ? ' · ' + nm + ' nm' : ''}</span>` +
-          `</div></div>`,
+          `</div>` +
+          `</div>${amNote}</div>`,
     iconSize: [0, 0], iconAnchor: [0, 0],
   });
   const infoLabel = L.marker(midLL, { icon: infoIcon, interactive: false, keyboard: false, pane: 'routeLabelPane' });
@@ -11004,6 +11076,8 @@ function _rgHighlightDots() {
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, depIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+          _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
       _rgShowRatePopover(m.getLatLng(), depIcao);
     });
@@ -11059,6 +11133,8 @@ function _rgHighlightDots() {
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, arrIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+          _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
       _rgShowRatePopover(m.getLatLng(), arrIcao);
     });
@@ -11331,6 +11407,14 @@ function _rgHandleIcon(color, title) {
   });
 }
 
+function _rgCloseHandleIcon(color, title) {
+  return L.divIcon({
+    className: '',
+    html: `<div class="rg-close-handle" style="border-color:${color};color:${color}" title="${title || 'Click to remove this measurement'}">✕</div>`,
+    iconSize: [20, 20], iconAnchor: [10, 10],
+  });
+}
+
 function _rgDrawHandles() {
   if (!_rgMap) return;
   if (_rgDepCenter && _rgDepRadiusNm > 0) {
@@ -11352,7 +11436,9 @@ function _rgRemoveHandles() {
 
 // ── Measurement circle drag support ─────────────────────────────────────
 
-// Hit-test saved measurement handles; returns 'meas_center_N' / 'meas_edge_N' or null.
+// Hit-test saved measurement handles; returns 'meas_center_N', 'meas_edge_N',
+// 'meas_close_N', or null. Close test must run before the edge test so a small
+// circle whose handles overlap still resolves the close correctly.
 function _rgMeasureHitTest(e) {
   if (!_rgMeasureSaved.length || !_rgMap) return null;
   const mp = e.containerPoint;
@@ -11365,20 +11451,26 @@ function _rgMeasureHitTest(e) {
     if (!m.origin) continue;
     if (px(m.origin) < _RG_CENTER_TOL) return `meas_center_${i}`;
     if (m.toLL) {
-      const nm     = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
-      const edgeLL = _rgDestLL(m.origin.lat, m.origin.lng, 90, nm);
+      const nm      = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+      const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 270, nm);
+      if (px(closeLL) < _RG_EDGE_TOL) return `meas_close_${i}`;
+      const edgeLL  = _rgDestLL(m.origin.lat, m.origin.lng, 90,  nm);
       if (px(edgeLL) < _RG_EDGE_TOL) return `meas_edge_${i}`;
     }
   }
   return null;
 }
 
-// Create or reposition the edge-resize handle for saved measurement i.
+// Create or reposition the edge-resize handle (east, 90°) and the close handle
+// (west, 270°) for saved measurement i. The close handle is a clickable ✕ that
+// removes this specific measurement out-of-sequence — the Undo button still
+// pops the newest remaining entry, so the two flows stay independent.
 function _rgDrawMeasureHandles(i) {
   const m = _rgMeasureSaved[i];
   if (!m || !_rgMap) return;
-  const nm     = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
-  const edgeLL = _rgDestLL(m.origin.lat, m.origin.lng, 90, nm);
+  const nm      = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+  const edgeLL  = _rgDestLL(m.origin.lat, m.origin.lng, 90,  nm);
+  const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 270, nm);
   if (!m.edgeHandle) {
     m.edgeHandle = L.marker([edgeLL.lat, edgeLL.lng], {
       icon: _rgHandleIcon('#cc44ff', 'Drag to resize measurement'),
@@ -11387,15 +11479,24 @@ function _rgDrawMeasureHandles(i) {
   } else {
     m.edgeHandle.setLatLng([edgeLL.lat, edgeLL.lng]);
   }
+  if (!m.closeHandle) {
+    m.closeHandle = L.marker([closeLL.lat, closeLL.lng], {
+      icon: _rgCloseHandleIcon('#cc44ff', 'Click to remove this measurement'),
+      interactive: false, keyboard: false, zIndexOffset: 500,
+    }).addTo(_rgMap);
+  } else {
+    m.closeHandle.setLatLng([closeLL.lat, closeLL.lng]);
+  }
 }
 
 // Remove all Leaflet objects for a saved measurement entry.
 function _rgRemoveMeasureEntry(m) {
-  if (m.line)       m.line.remove();
-  if (m.circle)     m.circle.remove();
-  if (m.label)      m.label.remove();
-  if (m.pin)        m.pin.remove();
-  if (m.edgeHandle) { m.edgeHandle.remove(); m.edgeHandle = null; }
+  if (m.line)        m.line.remove();
+  if (m.circle)      m.circle.remove();
+  if (m.label)       m.label.remove();
+  if (m.pin)         m.pin.remove();
+  if (m.edgeHandle)  { m.edgeHandle.remove();  m.edgeHandle  = null; }
+  if (m.closeHandle) { m.closeHandle.remove(); m.closeHandle = null; }
 }
 
 // Redraw circle / line / label / handle for saved measurement i after origin or toLL changed.
@@ -11418,11 +11519,18 @@ function _rgRedrawMeasureEntry(i) {
   m.circle.setRadius(nm * 1852);
   m.line.setLatLngs([[origin.lat, origin.lng], [toLL.lat, toLL.lng]]);
   m.pin.setLatLng([origin.lat, origin.lng]);
-  const midLL = _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.58);
-  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap">` +
+  const crossesAM = _rgCrossesAM(origin.lng, toLL.lng);
+  m.line.setStyle({ dashArray: crossesAM ? '14 8' : '6 4' });
+  const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
+  // See _rgUpdateMeasure for rationale: simple lat/lng mean lands at Leaflet's
+  // visual midpoint of the long-way render when the segment crosses ±180°.
+  const midLL = crossesAM
+    ? L.latLng((origin.lat + toLL.lat) / 2, (origin.lng + toLL.lng) / 2)
+    : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.58);
+  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;` +
     `background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
-    `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div></div>`;
+    `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
   m.label.setLatLng([midLL.lat, midLL.lng]);
   m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
   _rgDrawMeasureHandles(i);
@@ -11515,6 +11623,30 @@ function _rgApplyDrag(e) {
   }
 }
 
+// ── Antimeridian helper ────────────────────────────────────────────────
+// Returns true if the geodesic between (lng1, lng2) crosses ±180° longitude.
+// Leaflet's polyline renderer doesn't wrap the antimeridian — instead it draws
+// the visual long-way connection across the map, even though the haversine
+// distance is the short-way real-world figure. Used to add the "Crosses
+// antimeridian" 2nd-row note and switch the on-map line to dashed.
+function _rgCrossesAM(lng1, lng2) {
+  return Math.abs(lng1 - lng2) > 180;
+}
+
+// Right-click anywhere on the region map (or on any dot) during the in-progress
+// region selection sequence cancels the operation and returns to the explore
+// state (where the "⊙ Select Regions" button is visible again). Right-click in
+// explore/results is left to the marker-level handlers (Quick-Rate popover) and
+// to the browser's default context menu suppression.
+function _rgMapContextMenu(e) {
+  if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+      _rgPhase === 'ruler' || _rgPhase === 'arr_drag') {
+    if (e && e.originalEvent) e.originalEvent.preventDefault();
+    if (e) L.DomEvent.stopPropagation(e);
+    rgExploreReturn();
+  }
+}
+
 // ── Phase: mouse events ────────────────────────────────────────────────
 
 function _rgMapMouseDown(e) {
@@ -11524,6 +11656,21 @@ function _rgMapMouseDown(e) {
     if (mhit) {
       const idx = parseInt(mhit.split('_').pop());
       if (isNaN(idx) || !_rgMeasureSaved[idx]) return; // guard against malformed hit string
+      // Close handle is a click-to-remove, not a drag. Remove that specific
+      // measurement immediately and short-circuit before any drag state is set.
+      // The Undo button continues to pop the newest remaining entry — removing
+      // out-of-sequence here just shortens the stack at the chosen index.
+      if (mhit.startsWith('meas_close_')) {
+        _rgRemoveMeasureEntry(_rgMeasureSaved[idx]);
+        _rgMeasureSaved.splice(idx, 1);
+        _rgSyncClearBtn();
+        L.DomEvent.stopPropagation(e);
+        // Guard against the airport-dot click that would otherwise fire on the
+        // mouseup at this same coordinate.
+        _rgDragJustEnded = true;
+        setTimeout(() => { _rgDragJustEnded = false; }, 300);
+        return;
+      }
       const m   = _rgMeasureSaved[idx];
       _rgDragMeasSnap = {
         origin:   { lat: m.origin.lat, lng: m.origin.lng },
@@ -11638,7 +11785,9 @@ function _rgMapMouseMoveBody(e) {
     } else if (_rgMeasureSaved.length) {
       // Cursor hints for draggable handles when not mid-draw
       const mhit = _rgMeasureHitTest(e);
-      _rgSetCursor(mhit ? (mhit.includes('center') ? 'grab' : 'resize') : 'cross');
+      _rgSetCursor(mhit
+        ? (mhit.includes('center') ? 'grab' : mhit.includes('close') ? 'pointer' : 'resize')
+        : 'cross');
     }
     return; // always return early — prevent phase handlers from overriding the crosshair cursor
   }
@@ -11678,7 +11827,9 @@ function _rgMapMouseMoveBody(e) {
     } else {
       // Cursor hint while hovering over drag targets (region + measurement handles)
       const hit = _rgDragHitTest(e) || _rgMeasureHitTest(e);
-      _rgSetCursor(hit ? (hit.includes('center') ? 'grab' : 'resize') : '');
+      _rgSetCursor(hit
+        ? (hit.includes('center') ? 'grab' : hit.includes('close') ? 'pointer' : 'resize')
+        : '');
     }
   } else {
     _rgHideNmLabel();
@@ -11950,7 +12101,7 @@ function _rgHideNmLabel() {
 function _rgSetCursor(type) {
   const c = document.getElementById('rgMapContainer');
   if (!c) return;
-  c.classList.remove('rg-cross', 'rg-grab', 'rg-ruler', 'rg-resize');
+  c.classList.remove('rg-cross', 'rg-grab', 'rg-ruler', 'rg-resize', 'rg-pointer');
   if (type) c.classList.add('rg-' + type);
 }
 
@@ -12094,8 +12245,13 @@ function _rgUpdateSortLabel() {
 function _rgUpdateSummary(depCount, arrCount) {
   const dep = depCount ?? _rgDepAirports.length;
   const arr = arrCount ?? _rgArrAirports.length;
+  // The " dep airports" / " arr airports" suffixes are wrapped in spans so the
+  // sub-1920px media query can hide them — keeping the compact form
+  // "<dep> × <arr> = <total> routes" without changing the JS render at hi-res.
   document.getElementById('rgResultsSummary').innerHTML =
-    `<span style="color:#00c8ff"><b>${dep}</b> dep airports</span> &times; <span style="color:#ff6a00"><b>${arr}</b> arr airports</span> = <b>${dep * arr}</b> routes`;
+    `<span style="color:#00c8ff"><b>${dep}</b><span class="rg-rs-suffix"> dep airports</span></span> &times; ` +
+    `<span style="color:#ff6a00"><b>${arr}</b><span class="rg-rs-suffix"> arr airports</span></span> = ` +
+    `<b>${dep * arr}</b> routes`;
 }
 
 // ── Owner colour palette ─────────────────────────────────────────────────
@@ -12981,8 +13137,16 @@ function _rgMapDotClickExec(icao) {
     return;
   }
 
-  // Rolling advance: if both sides already filled, shift the chain
-  if (_rgDotSelArr) _rgDotSelDep = _rgDotSelArr;
+  // Click on the current departure airport cancels the entire route selection.
+  // Mirrors the ✕ Clear route button — clears dep/arr, route line, matrix
+  // highlights, and hides the route info bar.
+  if (icao === _rgDotSelDep) {
+    _rgClearDotSel();
+    return;
+  }
+
+  // Click on any other airport sets/replaces the arrival. The departure stays
+  // anchored — subsequent clicks just swap arrival to the newly clicked airport.
   _rgDotSelArr = icao;
 
   // If both airports exist in the current region matrix, use the cell
@@ -14243,8 +14407,10 @@ function rgSendToFlightPlanner() {
             Click <strong>⊙ Regions</strong> in the panel header to open the Region Mode map. All SimFly player-owned airports are shown as color-coded dots (matching each airport&rsquo;s SimFly category color). Hover any dot to see a tooltip with the ICAO, category, airport name, owner, and longest runway details after a brief delay.<br/><br/>
             <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
+            <strong>Cancelling mid-draw:</strong> <strong>right-click</strong> anywhere on the map during the region-drawing sequence (before or after the departure is locked, while drawing the arrival circle) to instantly cancel the operation and return to the explore state. Equivalent to clicking the Undo / Cancel button without having to move the cursor off the map.<br/><br/>
             Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners; press <strong>Enter</strong> to clear the search and return to the full list (selections are preserved). While search text is active, <strong>All</strong> and <strong>None</strong> apply only to the visible rows — hidden rows keep their current state. Use <strong>All</strong> or <strong>None</strong> with no search text to select or clear the complete list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
-            <strong>Map dot selection</strong> — click any airport dot on the map to build a route using a rolling chain: the <strong>first click</strong> sets the departure; the <strong>second click</strong> sets the arrival and draws the route. Each <strong>subsequent click</strong> advances the chain — the previous arrival becomes the new departure and the clicked airport becomes the new arrival. This works on both the colored in-region dots and the background dots outside the region circles. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not advance the routing chain.<br/><br/>
+            <strong>Map dot selection</strong> — click any airport dot on the map to build a route using a fixed-departure anchor model. The <strong>first click</strong> sets the departure. Clicking the <strong>same departure airport again</strong> clears the entire route (same as the <strong>✕ Clear route</strong> button). Clicking <strong>any other airport</strong> sets that airport as the arrival; subsequent clicks on different airports replace the arrival without changing the departure, so it&rsquo;s easy to compare multiple destinations from one origin. Works on both the colored in-region dots and the background dots outside the region circles. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not affect the route selection.<br/><br/>
+            <strong>Crosses antimeridian</strong> — when a route, measurement, or dep&rarr;arr region distance crosses ±180° longitude (e.g. New Zealand to Hawaii), Leaflet draws the visual line the long way across the map even though the displayed distance is the short-way figure. In that case the on-map distance label shows a second row reading <em>Crosses antimeridian</em>, and the line itself switches to a dashed style so the apparent mismatch is explained at a glance.<br/><br/>
             <strong>Map category filter</strong> — the <strong>Map</strong> filter buttons at the top of the region screen also control the main screen departure and arrival category filters: toggling a category on the map instantly applies the same selection to both the Dep and Arr filter rows on the main screen.<br/><br/>
             <strong>Airport owner filter</strong> — the <strong>Airport Owners ▾</strong> dropdown in the header bar filters which owners&rsquo; airports appear as dots on the map. It operates independently of the <em>Dep Owners</em> and <em>Arr Owners</em> controls (which affect only the matrix rows and columns) — use <em>Airport Owners</em> to declutter the map to just the pilots you care about while leaving the matrix unaffected. The panel behaves identically to the dep/arr owner menus: type to search, press <strong>Enter</strong> to clear the search, use <strong>All</strong> / <strong>None</strong> to bulk-select, arrow keys to navigate, and <strong>Space</strong> to toggle a highlighted row.<br/><br/>
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
@@ -14254,7 +14420,7 @@ function rgSendToFlightPlanner() {
             <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, continent, and pinned filters and replaces them with the new result.<br/><br/>
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Cursor changes to a grab hand over the center and a resize arrow over the edge. Use <strong>↩ Undo</strong> to remove the last measurement and <strong>✕ Clear All</strong> to remove all at once.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Each measurement also has a <strong>✕ close handle</strong> on the opposite side of the ring (270° west) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. Use <strong>↩ Undo</strong> to remove the most recent remaining measurement and <strong>✕ Clear All</strong> to remove all at once — both still work correctly after any out-of-sequence removals via the ✕ close handle.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -14341,8 +14507,60 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
+          <span class="release-version">v2.42.0</span>
+          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region results bar now adapts cleanly to 1920&times;1080 and smaller</strong> &mdash; the seven-group bar (<em>Sort</em>, <em>Dep Owners</em>, <em>Dep</em> cats, route-count summary, <em>Arr</em> cats, <em>Arr Owners</em>, <em>Max per region</em>) is designed for 4K-class widths and was wrapping awkwardly to two ragged rows on 1080p displays. Added a <code>@media (max-width: 2200px)</code> block that: shrinks the seven category circles from 1.8rem to 1.45rem; reduces the inter-group padding/gap; hides the <em>Sort:</em> and <em>Max per region:</em> labels (the dropdowns&rsquo; existing tooltips still explain them); collapses the summary from &ldquo;<em>10 dep airports &times; 100 arr airports = 1000 routes</em>&rdquo; to the compact &ldquo;<em>10 &times; 100 = 1000 routes</em>&rdquo;; and removes the hard-coded wide-screen inline margins between groups. Result: all seven elements fit on a single row at 1920&times;1080, and at 1366&times;768 only one element wraps (was three). QHD (2560) and 4K (3840) widths keep the original hi-res layout unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.41.0</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>One-click <em>✕</em> handle to remove a single measurement</strong> &mdash; each saved measurement now shows a second handle on the circumference opposite the resize handle (west, bearing 270&deg;) styled as a magenta ✕. Clicking it removes <em>that specific measurement</em> without affecting any others, so it&rsquo;s no longer necessary to undo every measurement back to a stale one to clear it. The <strong>↩ Undo</strong> button continues to pop the newest remaining measurement &mdash; the two flows are independent and the stack stays consistent regardless of which is used.</li>
+          <li><strong>Measurement label now centred on the rendered line for antimeridian-crossing measurements</strong> &mdash; previously the label was placed at the geodesic 58% point, which lands far off-screen when Leaflet renders the polyline the long way around the map. The label now uses the simple lat/lng midpoint (Leaflet&rsquo;s visual midpoint of the long-way render) whenever the measurement crosses &plusmn;180&deg;, so the chip sits directly on the rendered line. Applies to both live and saved measurement labels.</li>
+          <li><strong>Route-line antimeridian note now stacks beneath the distance chip</strong> &mdash; the dot-click route info label was rendering the <em>Crosses antimeridian</em> chip beside the distance chip because both elements are <code>display:inline-block</code> inside a <code>white-space:nowrap</code> container. Added a plain <code>&lt;div&gt;</code> wrapper around the route info chip so the antimeridian chip drops to a new line, matching the layout already used by the live/saved measurement labels and the dep&rarr;arr hero label.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.40.1</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Crosses antimeridian&rdquo; chip is now legible against every background</strong> &mdash; the v2.40.0 second-row note rendered as bare amber text with a text shadow, which got lost against the busy street-map tiles. It is now a proper solid pill (dark navy background, amber border, Rajdhani bold 0.78rem), matching the surrounding distance / route / hero chip styling so it&rsquo;s easy to read on both street and satellite map modes. New <code>.rg-am-note</code> CSS class shared by all four label sites (live measurement, saved measurement, dep&rarr;arr hero line, dot-click route line).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.40.0</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Right-click cancels an in-progress region selection</strong> &mdash; while drawing the departure or arrival region (or after the departure is locked and you&rsquo;re about to start the arrival), a right-click anywhere on the map now cancels the whole sequence and returns the map to the explore state where the <strong>⊙ Select Regions</strong> button is visible again. Mirrors the existing <em>Cancel</em> behaviour on the Undo button but without having to move the cursor off the map. Right-click in explore or results phase still opens the Quick-Rate popover on dot hover; it&rsquo;s only the in-progress drawing phases that intercept.</li>
+          <li><strong>Route selection by dot click is now anchor-based</strong> &mdash; the previous &ldquo;rolling chain&rdquo; behaviour (where each subsequent click shifted the arrival into the departure slot) has been replaced with a simpler anchor model: the <strong>first click</strong> sets the departure; <strong>clicking the departure a second time</strong> clears the entire route (same as the <strong>✕ Clear route</strong> button); and <strong>clicking any other airport</strong> sets or replaces the arrival without changing the departure. This makes it easy to compare multiple arrival options from a fixed departure without having to re-click the departure each time.</li>
+          <li><strong>&ldquo;Crosses antimeridian&rdquo; cue on measurements, routes, and region distances</strong> &mdash; when the geodesic between two points crosses ±180° longitude (e.g. New Zealand to Hawaii), Leaflet renders the line the visual long way around the map even though the haversine distance is the short-way real-world figure. The on-map distance label now shows <em>Crosses antimeridian</em> as a second row beneath the distance (and bearing) text, and the line itself is switched to a dashed style as an additional visual cue. Applies to live and saved measurements, dot-click route lines, and the dep&rarr;arr hero line drawn between the two region circles.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
           <span class="release-version">v2.39.6</span>
-          <span class="release-date">May 13, 2026 &middot; Current</span>
+          <span class="release-date">May 13, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
