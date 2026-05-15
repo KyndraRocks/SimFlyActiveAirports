@@ -3746,7 +3746,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.46.1';
+const APP_VERSION = '2.47.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -4079,6 +4079,35 @@ function loadAirportDB() {
           if (!airportDB.has(ident)) airportDB.set(ident, { icao: ident, ...record });
         }
       }
+
+      // ── Apply manual airport overrides (KML Generator's Edit Airport tab) ───
+      // fieldOverrides patch existing OurAirports records in place; overrides
+      // add full records for airports absent from OA. Merge is a one-shot pass
+      // here so every downstream consumer (region map, tooltips, search, owner
+      // dropdowns) reads the augmented data with zero per-lookup overhead.
+      try {
+        const overrideParsed  = JSON.parse(overrideJson || '{}');
+        const fieldOverrides  = overrideParsed.fieldOverrides || {};
+        const fullOverrides   = overrideParsed.overrides      || {};
+        let fieldCount = 0, fullCount = 0;
+        for (const [icao, patch] of Object.entries(fieldOverrides)) {
+          const code = (icao || '').toUpperCase();
+          const rec  = code && airportDB.get(code);
+          if (rec && patch && typeof patch === 'object') {
+            Object.assign(rec, patch);
+            fieldCount++;
+          }
+        }
+        for (const [icao, rec] of Object.entries(fullOverrides)) {
+          const code = (icao || '').toUpperCase();
+          if (code && rec && rec.name && !airportDB.has(code)) {
+            airportDB.set(code, { icao: code, ...rec });
+            fullCount++;
+          }
+        }
+        if (fieldCount > 0 || fullCount > 0)
+          console.log(`Airport overrides applied: ${fieldCount} field patches, ${fullCount} new records`);
+      } catch(e) { /* fail silently — overrides are optional */ }
 
       // ── Build aircraft map from Gist CSV ────────────────────────────────────
       if (aircraftCsv) {
@@ -15439,10 +15468,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.47.0</span>
+          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport data overrides now consumed at load time</strong> &mdash; AA previously fetched <code>SimFly_Airport_Overrides.json</code> but only read its <code>runwaySupplements</code> bucket; the <code>fieldOverrides</code> (per-field corrections like region/city/IATA/coordinates merged on top of an OurAirports record) and <code>overrides</code> (full records for airports absent from OurAirports) buckets were ignored. Both are now merged into <code>airportDB</code> in a single one-shot pass right after the OurAirports CSV is parsed &mdash; field patches via <code>Object.assign</code> onto the existing record, full overrides as new entries keyed by ICAO. Result: every existing consumer (region map, header tooltips, search panels, owner dropdowns, region/country/state lookups) automatically reflects any augmentation entered through the KML Generator's <em>Edit Airport</em> tab. <strong>Zero runtime cost</strong> &mdash; the merge happens once at boot inside the same async block that's already parsing the OurAirports CSV; the region map's hot render path is untouched. Load-time console emits <em>Airport overrides applied: N field patches, M new records</em> when any are present.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.46.1</span>
-          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-date">May 15, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
