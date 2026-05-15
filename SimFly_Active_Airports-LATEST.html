@@ -2969,6 +2969,17 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Scenery developer attribution — shown beneath the star rating when set. */
   .rg-dt-dev    { display:block; font-family:'Rajdhani',sans-serif; font-size:1.18rem; color:rgba(170,210,255,0.82); margin-top:0.16rem; }
   .rg-dt-dev-lbl { color:rgba(170,210,255,0.55); margin-right:0.18rem; }
+  /* Weather row — populated when a METAR has been fetched for the airport
+     (typically after assigning it as dep/arr in a route). Shows the flight
+     category pill plus compact wind + visibility. */
+  .rg-dt-wx { display:block; font-family:'Rajdhani',sans-serif; font-size:1.13rem; margin-top:0.18rem; line-height:1.35; }
+  .rg-dt-wx-cat { display:inline-block; padding:0.05rem 0.42rem; border-radius:3px; font-weight:700; font-size:0.95rem; letter-spacing:0.04em; color:#000; vertical-align:0.05em; }
+  .rg-dt-wx-cat.vfr  { background:#3bd55a; }
+  .rg-dt-wx-cat.mvfr { background:#3b9cff; color:#fff; }
+  .rg-dt-wx-cat.ifr  { background:#ff4040; color:#fff; }
+  .rg-dt-wx-cat.lifr { background:#cc44ff; color:#fff; }
+  .rg-dt-wx-detail { color:rgba(220,235,250,0.85); }
+  .rg-dt-wx-near   { color:rgba(255,180,100,0.85); font-size:0.92em; }
   /* Vertical split drag handle between map and results area */
   .rg-vsplit { flex-shrink:0; height:7px; cursor:row-resize; background:linear-gradient(to bottom, transparent 2px, var(--border) 2px, var(--border) 3px, transparent 3px); position:relative; z-index:5; }
   .rg-vsplit:hover, .rg-vsplit.rg-drag-active { background:linear-gradient(to bottom, transparent 2px, var(--accent) 2px, var(--accent) 3px, transparent 3px); }
@@ -3131,7 +3142,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-select:hover { border-color:var(--accent); }
   .sl-search { flex:1; font-family:'Rajdhani',sans-serif; font-size:1.07rem; background:var(--surface); border:1px solid var(--border); border-radius:4px; color:var(--text); padding:0.32rem 0.65rem; outline:none; }
   .sl-search:focus { border-color:var(--accent); }
-  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:240px; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  /* List grows to fill the Scenery Library modal body. The modal itself is
+     pegged to ~75vh (see the per-id rule below), and .modal-body is flex:1, so
+     this max-height of 100% lets the list span all the vertical room left after
+     the search/controls rows and the footer. */
+  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:100%; min-height:200px; flex:1; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  /* Both library + developers modals occupy ~75% of the viewport height so the
+     longer rows + the per-row inputs and the developer table aren't cramped. */
+  #sceneryModal .modal, #developersModal .modal { min-height:75vh; max-height:90vh; }
+  #sceneryModal .modal-body { display:flex; flex-direction:column; }
   .sl-list::-webkit-scrollbar { width:7px; } .sl-list::-webkit-scrollbar-track { background:transparent; } .sl-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; }
   /* Two-line list row: header (.sl-row-hdr) holds the existing ICAO + name + stars + delete
      button; .sl-row-meta below it carries the two free-text inputs for Store and Developer. */
@@ -3139,39 +3158,99 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .sl-row { border-bottom-color:var(--border); }
   .sl-row-hdr  { display:flex; align-items:center; gap:0.6rem; }
   .sl-row-meta { display:flex; align-items:center; gap:0.35rem; padding-left:1.5rem; flex-wrap:wrap; }
-  .sl-meta-lbl { font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:600; color:var(--muted); padding:0 0.2rem; white-space:nowrap; cursor:default; }
-  .sl-meta-input { flex:1; min-width:9rem; max-width:14rem; font-family:'Rajdhani',sans-serif; font-size:0.85rem; font-weight:500; padding:0.14rem 0.45rem; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text); outline:none; }
+  /* Store / Developer inline inputs + labels: sized +30% (font and box) so the
+     two metadata fields are easier to scan and click. The browser-rendered
+     <datalist> autocomplete popup inherits the input's font size in most
+     browsers, so the suggestion list reads larger too. */
+  .sl-meta-lbl { font-family:'Rajdhani',sans-serif; font-size:1.01rem; font-weight:600; color:var(--muted); padding:0 0.25rem; white-space:nowrap; cursor:default; }
+  .sl-meta-input { flex:1; min-width:11.7rem; max-width:18.2rem; font-family:'Rajdhani',sans-serif; font-size:1.11rem; font-weight:500; padding:0.18rem 0.58rem; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text); outline:none; }
   .sl-meta-input:hover  { border-color:rgba(0,200,255,0.45); }
   .sl-meta-input:focus  { border-color:var(--accent); }
   .sl-meta-input::placeholder { color:var(--muted); opacity:0.55; }
   /* ── Developers Modal ───────────────────────────────────────────────── */
   #developersModal { z-index:10600; }
-  #developersModal .modal-body { display:flex; flex-direction:column; max-height:80vh; }
-  .dev-intro { padding:0.85rem 1.5rem 0.7rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:0.95rem; line-height:1.45; border-bottom:1px solid var(--border); }
+  #developersModal .modal-body { display:flex; flex-direction:column; }
+  /* All font-sizes in this modal are +40% from their pre-2.45.3 values so the
+     developer summary reads at a comfortable size. The contextual rule on
+     .dev-c-rating .sl-star also scales the static stars in proportion. */
+  .dev-intro { padding:0.85rem 1.5rem 0.7rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.33rem; line-height:1.45; border-bottom:1px solid var(--border); }
   .dev-table { width:100%; border-collapse:collapse; flex:1; }
-  .dev-table thead th { position:sticky; top:0; background:var(--panel); border-bottom:1px solid var(--border); color:var(--accent); font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; padding:0.55rem 0.9rem; cursor:pointer; user-select:none; text-align:left; white-space:nowrap; }
+  .dev-table thead th { position:sticky; top:0; background:var(--panel); border-bottom:1px solid var(--border); color:var(--accent); font-family:'Rajdhani',sans-serif; font-size:1.29rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; padding:0.65rem 1rem; cursor:pointer; user-select:none; text-align:left; white-space:nowrap; }
   .dev-table thead th:hover { color:#fff; }
   .dev-table thead th.dev-c-num { text-align:right; }
   .dev-sort-arrow { color:var(--accent); margin-left:0.18rem; }
   .dev-table tbody tr.dev-row { cursor:pointer; transition:background 0.08s; }
   .dev-table tbody tr.dev-row:hover { background:rgba(0,200,255,0.07); }
   .dev-table tbody tr.dev-row-expanded { background:rgba(0,200,255,0.11); }
-  .dev-table tbody td { padding:0.5rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.05); font-family:'Rajdhani',sans-serif; font-size:0.98rem; color:var(--text); }
+  .dev-table tbody td { padding:0.6rem 1rem; border-bottom:1px solid rgba(255,255,255,0.05); font-family:'Rajdhani',sans-serif; font-size:1.37rem; color:var(--text); }
   body.light-mode .dev-table tbody td { border-bottom-color:var(--border); }
   .dev-c-name { font-weight:600; }
+  /* 🔍 filter trigger — explicit per-row button that applies the developer filter
+     to the Scenery Library and closes the modal. stopPropagation in the handler
+     keeps it from also toggling the parent row's expand state. */
+  .dev-filter-btn { background:none; border:1px solid transparent; border-radius:4px; padding:0.06rem 0.38rem; font-size:1.33rem; cursor:pointer; color:var(--muted); margin-right:0.45rem; vertical-align:0.05em; transition:border-color 0.1s, color 0.1s, background 0.1s; }
+  .dev-filter-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,200,255,0.1); }
+  .dev-name-text { vertical-align:middle; }
   .dev-c-num  { text-align:right; font-variant-numeric:tabular-nums; }
   .dev-c-rating { white-space:nowrap; }
-  .dev-c-rating .sl-stars { vertical-align:middle; margin-right:0.45rem; }
-  .dev-avg-num { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; font-size:0.95rem; }
-  .dev-drill .dev-drill-cell { padding:0.55rem 1.2rem 0.85rem; background:rgba(0,0,0,0.18); color:rgba(220,235,250,0.85); font-family:'Courier New',Courier,monospace; font-size:0.92rem; word-break:break-word; line-height:1.6; cursor:default; }
+  .dev-c-rating .sl-stars { vertical-align:middle; margin-right:0.55rem; }
+  /* Stars in the developer rating column scaled in proportion to the +40%
+     font bump so the visual balance matches the new text size. */
+  .dev-c-rating .sl-star { font-size:1.47rem; }
+  .dev-avg-num { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; font-size:1.33rem; }
+  /* Drill-down cell — ICAOs render as individual chips colored by SimFly
+     category. SimFly-owned airports become clickable links to the details
+     page. Slight letter-spacing nudge so monospace stays readable at +40%. */
+  .dev-drill .dev-drill-cell { padding:0.7rem 1.4rem 1rem; background:rgba(0,0,0,0.18); color:rgba(220,235,250,0.85); font-family:'Rajdhani',sans-serif; font-size:1.29rem; word-break:normal; line-height:1.7; cursor:default; }
   body.light-mode .dev-drill .dev-drill-cell { background:rgba(0,0,0,0.04); color:var(--fg); }
-  .dev-drill-lbl { color:var(--muted); margin-right:0.4rem; font-family:'Rajdhani',sans-serif; font-weight:700; }
-  .dev-empty { padding:1.4rem 1.5rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:0.96rem; display:none; }
+  .dev-drill-lbl { color:var(--muted); margin-right:0.55rem; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.29rem; text-transform:uppercase; letter-spacing:0.05em; }
+  .dev-drill-icao { display:inline-block; font-family:'Courier New',Courier,monospace; font-weight:700; font-size:1.29rem; padding:0.04rem 0.42rem; margin:0.12rem 0.3rem 0.12rem 0; border-radius:3px; border:1px solid currentColor; background:rgba(0,0,0,0.18); }
+  body.light-mode .dev-drill-icao { background:rgba(0,0,0,0.04); }
+  a.dev-drill-icao { text-decoration:none; cursor:pointer; transition:filter 0.08s, box-shadow 0.08s; }
+  a.dev-drill-icao:hover { filter:brightness(1.25); box-shadow:0 0 0 1px currentColor inset; }
+  .dev-empty { padding:1.4rem 1.5rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.34rem; display:none; }
+  /* ── Manage Values modal — bulk rename / delete for Store + Developer ─── */
+  #manageValuesModal { z-index:10700; }
+  #manageValuesModal .modal { min-height:75vh; max-height:90vh; }
+  #manageValuesModal .modal-body { display:flex; flex-direction:column; }
+  .mv-intro { padding:0.85rem 1.5rem 0.7rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.05rem; line-height:1.45; border-bottom:1px solid var(--border); }
+  .mv-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; flex:1; min-height:0; }
+  .mv-section { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+  .mv-section + .mv-section { border-left:1px solid var(--border); }
+  .mv-section-hdr { font-family:'Orbitron',monospace; font-size:0.9rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); padding:0.75rem 1.1rem 0.55rem; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .mv-table { width:100%; border-collapse:collapse; }
+  .mv-section { overflow-y:auto; }
+  .mv-table thead th { position:sticky; top:0; background:var(--panel); border-bottom:1px solid var(--border); color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; padding:0.45rem 0.9rem; text-align:left; }
+  .mv-table thead th.mv-c-count { text-align:right; }
+  .mv-table thead th.mv-c-actions { text-align:right; }
+  .mv-table tbody td { padding:0.42rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.05); font-family:'Rajdhani',sans-serif; font-size:1rem; color:var(--text); vertical-align:middle; }
+  body.light-mode .mv-table tbody td { border-bottom-color:var(--border); }
+  .mv-c-val      { width:55%; }
+  .mv-c-count    { text-align:right; font-variant-numeric:tabular-nums; color:var(--muted); width:18%; }
+  .mv-c-actions  { text-align:right; white-space:nowrap; width:27%; }
+  .mv-rename-input { width:100%; font-family:'Rajdhani',sans-serif; font-size:1rem; font-weight:500; padding:0.18rem 0.5rem; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text); outline:none; }
+  .mv-rename-input:focus { border-color:var(--accent); }
+  .mv-btn { font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:600; padding:0.18rem 0.55rem; margin-left:0.3rem; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:3px; cursor:pointer; transition:border-color 0.08s, color 0.08s, background 0.08s; }
+  .mv-btn-save:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,200,255,0.08); }
+  .mv-btn-del { color:var(--danger); border-color:rgba(255,61,90,0.3); }
+  .mv-btn-del:hover { background:rgba(255,61,90,0.1); border-color:var(--danger); }
+  .mv-empty-row td { color:var(--muted); font-style:italic; text-align:center; padding:1rem; }
   .dev-empty.visible { display:block; }
   .sl-row:last-child { border-bottom:none; }
-  .sl-icao { font-family:'Courier New',Courier,monospace; font-weight:700; color:var(--accent); min-width:4.2rem; font-size:0.98rem; }
+  /* ICAO is now coloured by SimFly category (inline style wins). Font-size +30%
+     (0.98 → 1.27rem) so the row text reads bigger; the category color carries
+     the same meaning the old left-of-row dot used to convey. */
+  .sl-icao { font-family:'Courier New',Courier,monospace; font-weight:700; min-width:4.7rem; font-size:1.27rem; }
+  /* SimFly-owned airports wrap ICAO + name in this anchor — colour inheritance
+     keeps the per-category ICAO colour and the muted name colour; a subtle
+     underline appears on hover so the link affordance is discoverable. */
+  .sl-icao-link { display:inline-flex; align-items:center; gap:0.6rem; flex:1; min-width:0; text-decoration:none; color:inherit; cursor:pointer; padding:0.06rem 0.18rem; border-radius:3px; transition:background 0.08s; }
+  .sl-icao-link:hover { background:rgba(0,200,255,0.07); }
+  .sl-icao-link:hover .sl-name { text-decoration:underline; }
   .sl-detail { flex:1; font-family:'Rajdhani',sans-serif; font-size:0.92rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .sl-del-btn { background:none; border:1px solid rgba(255,61,90,0.3); color:var(--danger); border-radius:3px; font-size:0.79rem; padding:0.08rem 0.36rem; cursor:pointer; flex-shrink:0; white-space:nowrap; }
+  /* Per-row delete (✕) button — scaled to match the rating cluster on the same
+     row (net +31% vs original baseline after the v2.45.5 / v2.45.6 adjustments). */
+  .sl-del-btn { background:none; border:1px solid rgba(255,61,90,0.3); color:var(--danger); border-radius:3px; font-size:1.04rem; padding:0.105rem 0.47rem; cursor:pointer; flex-shrink:0; white-space:nowrap; }
   .sl-del-btn:hover { background:rgba(255,61,90,0.1); border-color:var(--danger); }
   .sl-empty { padding:1.5rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1rem; text-align:center; display:none; }
   .sl-empty.visible { display:block; }
@@ -3192,7 +3271,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-count { font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--muted); margin-left:auto; }
   /* Enriched list row */
   .sl-cat-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.35); }
-  .sl-name { flex:1; font-family:'Rajdhani',sans-serif; font-size:0.93rem; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  /* Airport name font-size +30% (0.93 → 1.21rem) to match the larger ICAO. */
+  .sl-name { flex:1; font-family:'Rajdhani',sans-serif; font-size:1.21rem; color:var(--fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .sl-addon { font-family:'Rajdhani',sans-serif; font-size:0.87rem; color:var(--muted); white-space:nowrap; flex-shrink:0; }
   /* Overflow menu */
   .sl-overflow-wrap { position:relative; }
@@ -3240,10 +3320,16 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-star { font-size:1.05rem; line-height:1; padding:0 1px; background:linear-gradient(90deg, #ffc83a 0%, #ffc83a var(--fill,0%), rgba(170,170,170,0.42) var(--fill,0%), rgba(170,170,170,0.42) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
   .sl-star::before { content:'★'; }
   .sl-stars-interactive { cursor:pointer; padding:2px 0; }
-  .sl-stars-interactive .sl-star { font-size:1.7rem; padding:0 4px; transition:filter 0.1s; }
+  /* Interactive stars sized after the v2.45.5 (+75%) / v2.45.6 (−25%) tuning
+     pass — net +31% over the original 1.7rem baseline. The Quick-Rate popover
+     overrides this rule below and keeps its own size. */
+  .sl-stars-interactive .sl-star { font-size:2.24rem; padding:0 5px; transition:filter 0.1s; }
   .sl-stars-interactive .sl-star:hover { filter:drop-shadow(0 0 5px rgba(255,200,58,0.7)); }
   body.light-mode .sl-star { background:linear-gradient(90deg, #d99a00 0%, #d99a00 var(--fill,0%), rgba(140,140,140,0.45) var(--fill,0%), rgba(140,140,140,0.45) 100%); -webkit-background-clip:text; background-clip:text; }
-  .sl-rating-num { display:inline-block; font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:700; color:#ffc83a; min-width:2.4rem; text-align:right; margin-left:0.35rem; flex-shrink:0; }
+  /* Numeric rating badge next to the stars — tuned after v2.45.5/v2.45.6
+     (net +31% over the 0.92rem original) so the "5.0/5" digits sit in
+     proportion with the slightly-smaller stars. */
+  .sl-rating-num { display:inline-block; font-family:'Rajdhani',sans-serif; font-size:1.21rem; font-weight:700; color:#ffc83a; min-width:3.15rem; text-align:right; margin-left:0.4rem; flex-shrink:0; }
   .sl-rating-num.is-empty { color:var(--muted); font-weight:500; }
   body.light-mode .sl-rating-num { color:#a87800; }
   .rg-dot-tip .sl-stars { display:flex; margin-top:0.33rem; }
@@ -3660,7 +3746,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.44.1';
+const APP_VERSION = '2.46.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3959,6 +4045,15 @@ function loadAirportDB() {
           _rgCountryNameToIso.set(country.toLowerCase(), rawCntry);
         }
 
+        // Accumulate iso_region name maps for the region/state/province search.
+        // subCode is e.g. "US-CA"; subdivision is e.g. "California". Skip the
+        // "(unassigned)" buckets and any region whose display name is just the
+        // country name (some small countries collapse like that).
+        if (subCode && subdivision && subdivision !== '(unassigned)') {
+          if (!_rgRegionCodeToName.has(subCode)) _rgRegionCodeToName.set(subCode, subdivision);
+          _rgRegionNameToCode.set(subdivision.toLowerCase(), subCode);
+        }
+
         // Accumulate country → continent map from OurAirports data
         if (rawContinent && rawCntry) {
           if (!_rgIsoToContinent.has(rawCntry)) _rgIsoToContinent.set(rawCntry, rawContinent);
@@ -3972,6 +4067,7 @@ function loadAirportDB() {
           iata        : (cols[iIata]  || '').replace(/^"|"$/g, '').trim() || 'N/A',
           city        : [muni, subDisplay, country].filter(Boolean).join(', '),
           iso_country : rawCntry,
+          iso_region  : subCode,
           continent   : rawContinent,
         };
 
@@ -9220,6 +9316,63 @@ async function _wxFetch() {
   document.getElementById('wxMapLegend')?.classList.toggle('visible', _wxCache.size > 0);
 }
 
+// Single-airport METAR fetch used by the route-assignment hook. Returns a
+// Promise resolving to true on success, false otherwise. Skips the fetch when a
+// cached entry is still fresh (TTL same as _wxFetch); on cache miss tries the
+// decoded endpoint first, then falls back to the nearest-station endpoint with
+// the same WX_NEAREST_MAX_NM cap. Refreshes any dot tooltips and matrix badges
+// that depend on the freshly fetched data.
+async function _wxFetchOne(icao) {
+  if (!icao || !WX_API_KEY) return false;
+  const up  = icao.toUpperCase();
+  const now = Date.now();
+  const cached = _wxCache.get(up);
+  if (cached && (now - cached.fetchedAt) <= WX_TTL_MS) return true;
+  let updated = false;
+  try {
+    const res = await fetch(`${WX_BASE}/metar/${up}/decoded`, { headers: { 'X-API-Key': WX_API_KEY } });
+    if (res.ok) {
+      const json = await res.json();
+      const d = (json && json.data) ? json.data[0] : null;
+      if (d && d.icao) {
+        _wxCacheSet(up, { data: d, fetchedAt: Date.now(), isNearest: false });
+        updated = true;
+      }
+    }
+  } catch (_) {}
+  if (!updated) {
+    try {
+      const res = await fetch(`${WX_BASE}/metar/${up}/nearest/decoded`, { headers: { 'X-API-Key': WX_API_KEY } });
+      if (res.ok) {
+        const json = await res.json();
+        const d = (json && json.data) ? json.data[0] : null;
+        if (d && d.icao) {
+          const reqRec = lookupICAO(up);
+          let distNm = null;
+          if (reqRec && d.station && d.station.geometry && d.station.geometry.coordinates) {
+            const [lon, lat] = d.station.geometry.coordinates;
+            distNm = _haversineNm(reqRec.latitude, reqRec.longitude, lat, lon);
+            if (distNm > WX_NEAREST_MAX_NM) return false;
+          }
+          _wxCacheSet(up, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: distNm });
+          updated = true;
+        }
+      }
+    } catch (_) {}
+  }
+  if (updated) {
+    // Invalidate the per-ICAO tooltip cache for this airport and rebuild dots
+    // so the new METAR row appears the next time the user hovers it. The matrix
+    // wx-badge slots (if any) are refreshed via _wxApplyBadges.
+    if (typeof _rgTipHtmlCache !== 'undefined' && _rgTipHtmlCache) _rgTipHtmlCache.clear();
+    if (typeof _rgRenderDots === 'function' && _rgMap) {
+      try { _rgRenderDots(); _rgHighlightDots(); } catch (_) {}
+    }
+    if (typeof _wxApplyBadges === 'function') { try { _wxApplyBadges(); } catch (_) {} }
+  }
+  return updated;
+}
+
 // Check every 60 s and flip button to stale when TTL has expired
 setInterval(() => {
   if (_wxCache.size && !_wxFetching) _wxUpdateButton(_wxButtonState());
@@ -9733,28 +9886,40 @@ function _slRenderList(query) {
     }
   } else {
     empty?.classList.remove('visible');
+    // Precompute the SimFly-owned set once per render so the per-row owned
+    // check is O(1). When an airport is owned we wrap the ICAO + name in a
+    // link to the SimFly details page; unowned entries render as plain text.
+    const ownedSet = _slGetOwnedIcaos();
     items.forEach(e => {
       const li  = document.createElement('li');
       li.className = 'sl-row';
       const rec   = typeof lookupICAO === 'function' ? lookupICAO(e.icao) : null;
       const name  = rec ? (rec.name || '') : '';
-      const color = (typeof _rgCatOf === 'function') ? (_rgCatOf(e.icao) || '#555') : '#555';
-      // Addon/type metadata is preserved in the entry and exported to JSON, but
-      // intentionally not rendered in the row — it disrupted star alignment when
-      // some rows had it and others didn't. (Search still matches addon text.)
+      const color = (typeof _rgCatOf === 'function') ? (_rgCatOf(e.icao) || '#aaaaaa') : '#aaaaaa';
       const icaoSafe = e.icao.replace(/'/g, "\\'");
+      const isOwned  = ownedSet.has(e.icao.toUpperCase());
       const starsHtml = _slStarsHtml(e.rating || 0, { interactive: true, icao: e.icao });
       const storeVal = (e.store     || '').replace(/"/g, '&quot;');
       const devVal   = (e.developer || '').replace(/"/g, '&quot;');
+      // ICAO + name block. The colored circle that used to sit to the left of
+      // the ICAO was confusable with the weather flight-category dot — it's
+      // been removed and the category color is now applied directly to the
+      // ICAO text (Courier monospace, bold). For SimFly-owned airports the
+      // ICAO + name pair is wrapped in an <a> linking to the SimFly details
+      // page; unowned entries stay as a plain <span>.
+      const icaoNameInner =
+        `<span class="sl-icao" style="color:${color}">${e.icao}</span>` +
+        `<span class="sl-name">${name}</span>`;
+      const icaoNameBlock = isOwned
+        ? `<a class="sl-icao-link" href="https://simfly.io/assets/airport/${e.icao}/details" target="_blank" rel="noopener" title="Open SimFly airport details for ${e.icao}">${icaoNameInner}</a>`
+        : icaoNameInner;
       // Two-line layout: existing header row + new "meta" row with Store and
       // Developer inline inputs. Shared <datalist> elements (defined in the
       // modal HTML) provide autocomplete from the preset list + any custom
       // values already in the library.
       li.innerHTML =
         `<div class="sl-row-hdr">` +
-          `<span class="sl-cat-dot" style="background:${color}"></span>` +
-          `<span class="sl-icao">${e.icao}</span>` +
-          `<span class="sl-name">${name}</span>` +
+          icaoNameBlock +
           starsHtml +
           `<button class="sl-del-btn" onclick="_slConfirmDelete('${icaoSafe}')" title="Remove from library">✕</button>` +
         `</div>` +
@@ -10196,12 +10361,33 @@ function _devRender() {
     return;
   }
   if (empty) empty.classList.remove('visible');
+  // Precompute the SimFly-owned set once for the whole render so each
+  // drill-down ICAO chip can decide independently whether to link.
+  const ownedSet = (typeof _slGetOwnedIcaos === 'function') ? _slGetOwnedIcaos() : new Set();
   body.innerHTML = rows.map(r => {
     const nameSafe = r.name.replace(/"/g, '&quot;').replace(/'/g, "\\'");
     const starsHtml = _slStarsHtml(r.avg, { interactive: false, precise: true });
     const avgTxt    = r.avg.toFixed(2) + '/5';
-    return `<tr class="dev-row" onclick="_devDrillDown('${nameSafe}')" title="Click to filter the Scenery Library by this developer">` +
-             `<td class="dev-c-name">${r.name}</td>` +
+    // Drill-down ICAOs — each rendered as a colored chip using the SimFly
+    // category palette via _rgCatOf. SimFly-owned airports become clickable
+    // links to the SimFly details page; unowned entries stay as plain chips.
+    const icaoChips = r.icaos.map(icao => {
+      const cat   = (typeof _rgCatOf === 'function') ? (_rgCatOf(icao) || '#aaaaaa') : '#aaaaaa';
+      const up    = icao.toUpperCase();
+      const owned = ownedSet.has(up);
+      return owned
+        ? `<a class="dev-drill-icao" style="color:${cat}" href="https://simfly.io/assets/airport/${up}/details" target="_blank" rel="noopener" title="Open SimFly airport details for ${up}">${up}</a>`
+        : `<span class="dev-drill-icao" style="color:${cat}">${up}</span>`;
+    }).join('');
+    // Row click = toggle the inline ICAO drill-down only. The filter action is
+    // moved to a dedicated 🔍 button inside the name cell — clicking it stops
+    // propagation so it doesn't also toggle expansion. Keeps the two
+    // interactions independent: browse vs. filter.
+    return `<tr class="dev-row" onclick="_devToggleExpand('${nameSafe}')" title="Click to expand / collapse this developer's airport list">` +
+             `<td class="dev-c-name">` +
+               `<button class="dev-filter-btn" onclick="_devApplyFilter(event,'${nameSafe}')" title="Filter the Scenery Library to this developer">🔍</button>` +
+               `<span class="dev-name-text">${r.name}</span>` +
+             `</td>` +
              `<td class="dev-c-num">${r.count}</td>` +
              `<td class="dev-c-num">${r.rated}</td>` +
              `<td class="dev-c-rating">${starsHtml}<span class="dev-avg-num">${avgTxt}</span></td>` +
@@ -10209,31 +10395,35 @@ function _devRender() {
            // Drill-down row, hidden by default — toggled by clicking the parent row
            `<tr class="dev-drill" data-dev-name="${nameSafe}" style="display:none">` +
              `<td colspan="4" class="dev-drill-cell">` +
-               `<span class="dev-drill-lbl">Airports:</span> ${r.icaos.join(', ')}` +
+               `<span class="dev-drill-lbl">Airports</span>${icaoChips}` +
              `</td>` +
            `</tr>`;
   }).join('');
 }
 
-// Two-stage interaction: first click on a developer row expands an inline list
-// of that developer's ICAOs; second click on the same row sets the Scenery
-// Library filter to that developer and closes the modal. This makes the modal
-// browseable without forcing a context switch every time you click.
+// Row interaction is now a pure expand/collapse toggle — clicking a developer
+// row reveals or hides their ICAO list with no side effects. Apply-the-filter
+// is a separate explicit action via the 🔍 button in the name cell, so the
+// modal can be browsed without inadvertently switching context.
 let _devExpanded = null;
-function _devDrillDown(name) {
-  // Toggle expansion or, if already expanded, apply the filter and close.
-  if (_devExpanded === name) {
-    _slSetDeveloperFilter(name);
-    _devCloseModal();
-    return;
-  }
-  _devExpanded = name;
+function _devToggleExpand(name) {
+  const wasExpanded = (_devExpanded === name);
+  _devExpanded = wasExpanded ? null : name;
   document.querySelectorAll('#developersModal .dev-drill').forEach(tr => {
-    tr.style.display = tr.dataset.devName === name ? '' : 'none';
+    tr.style.display = (!wasExpanded && tr.dataset.devName === name) ? '' : 'none';
   });
   document.querySelectorAll('#developersModal .dev-row').forEach(tr => {
-    tr.classList.toggle('dev-row-expanded', tr.querySelector('.dev-c-name')?.textContent === name);
+    const rowName = tr.querySelector('.dev-name-text')?.textContent;
+    tr.classList.toggle('dev-row-expanded', !wasExpanded && rowName === name);
   });
+}
+
+// Apply the developer filter and close the modal. Called from the 🔍 button;
+// stopPropagation prevents the parent row's expand-toggle from also firing.
+function _devApplyFilter(event, name) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  _slSetDeveloperFilter(name);
+  _devCloseModal();
 }
 
 function openDevelopersModal() {
@@ -10249,6 +10439,132 @@ function closeDevelopersModal(e) {
 }
 function _devCloseModal() {
   document.getElementById('developersModal')?.classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  MANAGE VALUES MODAL — bulk edit / delete for Store + Developer
+// ═══════════════════════════════════════════════════════════════════════
+// Lists every distinct Store and Developer value in the library with its
+// airport count, lets the user rename (cascades to every airport using that
+// value — covers typo fixes + dedup via "rename to existing value" merge) or
+// delete (clears the field on every airport that used it). Rename is reversible
+// by renaming again; delete is destructive, so only delete prompts to confirm.
+
+// Build aggregated rows for one field. Returns sorted array of { value, count }.
+function _mvAggregate(field) {
+  const counts = new Map();
+  for (const e of _slLoad()) {
+    const v = (e[field] || '').trim();
+    if (!v) continue;
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => a.value.localeCompare(b.value, undefined, { sensitivity: 'base' }));
+}
+
+// Apply a rename or delete to every entry in the library. Calls _slSave once
+// at the end; bumps _slDirty per modified entry so the backup banner reflects
+// the volume of change. Returns the number of airports affected.
+function _mvApplyRename(field, oldValue, newValue) {
+  const arr = _slLoad();
+  let touched = 0;
+  for (const e of arr) {
+    if ((e[field] || '').trim() === oldValue) {
+      e[field] = newValue;
+      touched += 1;
+    }
+  }
+  if (touched) {
+    _slSave(arr);
+    _slDirty += touched;
+    _slSetBannerVisible(_slDirty);
+  }
+  return touched;
+}
+
+function _mvHandleRename(event, field, oldValue) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  // Find the input next to the button. Hosting in the same <td> as the rename
+  // button keeps the DOM walk trivial.
+  const row = event.currentTarget.closest('tr');
+  const inp = row && row.querySelector('.mv-rename-input');
+  if (!inp) return;
+  const newValue = (inp.value || '').trim();
+  if (!newValue || newValue === oldValue) {
+    inp.value = oldValue; // restore on no-op
+    return;
+  }
+  const n = _mvApplyRename(field, oldValue, newValue);
+  // Propagate changes to all the surfaces that show these values
+  _slRefreshDatalists();
+  _slRefreshDevFilterUI();
+  if (document.getElementById('sceneryModal')?.classList.contains('open'))
+    _slRenderList(document.getElementById('slSearch')?.value || '');
+  if (_rgMap) { try { _rgRenderDots(); _rgHighlightDots(); } catch(_) {} }
+  if (typeof _slShowToast === 'function')
+    _slShowToast(`Renamed "${oldValue}" → "${newValue}" on ${n} airport${n === 1 ? '' : 's'}`);
+  _mvRender();
+}
+
+function _mvHandleDelete(event, field, value) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  const fieldLabel = field === 'store' ? 'Store' : 'Developer';
+  // Count first so the confirm prompt is honest about scope
+  const arr = _slLoad();
+  const n = arr.reduce((acc, e) => acc + (((e[field] || '').trim() === value) ? 1 : 0), 0);
+  if (!n) { _mvRender(); return; }
+  const msg = `Clear ${fieldLabel} "${value}" from ${n} airport${n === 1 ? '' : 's'}? This cannot be undone.`;
+  if (!confirm(msg)) return;
+  _mvApplyRename(field, value, '');
+  _slRefreshDatalists();
+  _slRefreshDevFilterUI();
+  if (document.getElementById('sceneryModal')?.classList.contains('open'))
+    _slRenderList(document.getElementById('slSearch')?.value || '');
+  if (_rgMap) { try { _rgRenderDots(); _rgHighlightDots(); } catch(_) {} }
+  if (typeof _slShowToast === 'function')
+    _slShowToast(`Cleared "${value}" from ${n} airport${n === 1 ? '' : 's'}`);
+  _mvRender();
+}
+
+function _mvRenderSection(field, tbodyId) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const rows = _mvAggregate(field);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="3" class="mv-empty-row">No ${field === 'store' ? 'stores' : 'developers'} attributed yet.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const valSafe = r.value.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+    return `<tr class="mv-row">` +
+             `<td class="mv-c-val"><input class="mv-rename-input" type="text" value="${r.value.replace(/"/g, '&quot;')}" data-orig="${valSafe}" spellcheck="false" autocomplete="off"></td>` +
+             `<td class="mv-c-count">${r.count}</td>` +
+             `<td class="mv-c-actions">` +
+               `<button class="mv-btn mv-btn-save" onclick="_mvHandleRename(event,'${field}','${valSafe}')" title="Save rename to all airports using this value">Save</button>` +
+               `<button class="mv-btn mv-btn-del"  onclick="_mvHandleDelete(event,'${field}','${valSafe}')" title="Clear this value from all airports that use it">✕</button>` +
+             `</td>` +
+           `</tr>`;
+  }).join('');
+}
+
+function _mvRender() {
+  _mvRenderSection('store',     'mvStoreTbody');
+  _mvRenderSection('developer', 'mvDevTbody');
+}
+
+function openManageValuesModal() {
+  const el = document.getElementById('manageValuesModal');
+  if (!el) return;
+  el.classList.add('open');
+  _mvRender();
+}
+function closeManageValuesModal(e) {
+  if (e && e.target !== document.getElementById('manageValuesModal')) return;
+  _mvCloseModal();
+}
+function _mvCloseModal() {
+  document.getElementById('manageValuesModal')?.classList.remove('open');
 }
 
 // ── Folder scan (File System Access API — Chrome/Edge only) ───────────
@@ -10623,6 +10939,9 @@ let _rgPinnedIcaos      = new Set(); // ICAOs explicitly pinned via search; alwa
 // Country name lookup tables — populated during airportDB parse
 let _rgCountryIsoToName = new Map(); // 'DE' → 'Germany'
 let _rgCountryNameToIso = new Map(); // 'germany' → 'DE'
+let _rgMapRegionFilter  = null;      // map-wide region/state/province filter — Set of iso_region codes (e.g. 'US-CA'), null = show all
+let _rgRegionCodeToName = new Map(); // 'US-CA' → 'California'
+let _rgRegionNameToCode = new Map(); // 'california' → 'US-CA'
 let _rgMapSrAdditive    = false;     // true when last search was prefixed with '+'
 let _rgMapSrNegative    = false;     // true when last search was prefixed with '-'
 
@@ -10642,6 +10961,7 @@ let _rgIsoToContinent      = new Map(); // built from OurAirports data during pa
 let _rgMapContinentFilter  = null;      // Set of continent codes, null=show all
 let _rgExcludedOwners      = new Set();
 let _rgExcludedCountries   = new Set();
+let _rgExcludedRegions     = new Set();  // iso_region codes excluded via `-` search
 let _rgExcludedContinents  = new Set();
 let _rgExcludedIcaos       = new Set();
 
@@ -11088,10 +11408,18 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
   const slEntry    = _slGet(icaoUpper);
   const slRating   = slEntry ? (+slEntry.rating || 0) : 0;
   const slDev      = slEntry ? (slEntry.developer || '') : '';
+  // Weather state — when a METAR is cached for the airport (e.g. after the user
+  // adds it to a route, which triggers _wxFetchOne), the tooltip shows a compact
+  // "flight category + wind/vis" row. fetchedAt is included in the cache key so
+  // a refresh forces a fresh tooltip render.
+  const wxEntry    = (typeof _wxCache !== 'undefined' && _wxCache) ? _wxCache.get(icaoUpper) : null;
+  const wxStamp    = wxEntry ? wxEntry.fetchedAt : 0;
   // Cache key must include any field that surfaces in the rendered HTML so an
-  // edit to that field (rating, developer attribution) invalidates the cached
-  // string rather than serving stale markup.
-  const cacheKey   = slEntry ? icaoUpper + '●' + slRating + '●' + slDev : icaoUpper;
+  // edit to that field (rating, developer attribution, weather) invalidates the
+  // cached string rather than serving stale markup.
+  const cacheKey   = (slEntry || wxEntry)
+    ? icaoUpper + '●' + slRating + '●' + slDev + '●' + wxStamp
+    : icaoUpper;
   let html = _rgTipHtmlCache.get(cacheKey);
   if (!html) {
     const catNum = +(categoryDB && categoryDB.get(icaoUpper)) || null;
@@ -11119,6 +11447,36 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
     const devHtml = slDev
       ? `<span class="rg-dt-dev"><span class="rg-dt-dev-lbl">Developer:</span> ${slDev}</span>`
       : '';
+    // Weather row — populated after a METAR is fetched (typically when this
+    // airport is assigned as dep/arr in the route). Shows the flight category
+    // pill plus a compact wind / visibility line, or "Nearest station: <icao>"
+    // if the fallback was used.
+    let wxHtml = '';
+    if (wxEntry && wxEntry.data) {
+      const d   = wxEntry.data;
+      const cat = (d.flight_category || '').toLowerCase();
+      const nearestNote = (wxEntry.isNearest && wxEntry.nearestIcao)
+        ? ` <span class="rg-dt-wx-near">(nearest: ${wxEntry.nearestIcao}${wxEntry.nearestDistNm != null ? ' · ' + Math.round(wxEntry.nearestDistNm) + ' nm' : ''})</span>`
+        : '';
+      // Wind summary — calm or "DDD°/KK kts"
+      let wind = '';
+      if (d.wind) {
+        if (d.wind.calm) wind = 'Calm';
+        else {
+          const dir = d.wind.degrees != null ? String(d.wind.degrees).padStart(3, '0') + '°' : 'VRB';
+          const spd = d.wind.speed && d.wind.speed.kts != null ? '/' + d.wind.speed.kts + 'kt' : '';
+          const gst = d.wind.gust  && d.wind.gust.kts        ? 'G' + d.wind.gust.kts : '';
+          wind = dir + spd + gst;
+        }
+      }
+      const vis = (d.visibility && d.visibility.text) ? d.visibility.text : '';
+      const detail = [wind, vis].filter(Boolean).join(' · ');
+      wxHtml = `<span class="rg-dt-wx">` +
+                 (d.flight_category ? `<span class="rg-dt-wx-cat ${cat}">${d.flight_category}</span>` : '') +
+                 (detail ? ` <span class="rg-dt-wx-detail">${detail}</span>` : '') +
+                 nearestNote +
+               `</span>`;
+    }
     const payoutHtml = (() => {
       if (!payoutDB) return '';
       const pct = payoutDB.get(icaoUpper) ?? 0;
@@ -11130,7 +11488,7 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
       (rec.name ? `<span class="rg-dt-name">${rec.name}</span>` : '') +
       (ownerName ? `<span class="rg-dt-owner">${ownerName}</span>` : '') +
-      payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml +
+      payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml +
       `</div>`;
     _rgTipHtmlCache.set(cacheKey, html);
   }
@@ -11186,18 +11544,20 @@ function _rgRenderDots() {
       if (!rec || !rec.latitude || !rec.longitude) continue;
       const catNum = +(categoryDB && categoryDB.get(ap.icao.toUpperCase())) || 0;
       if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) continue;
-      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
         const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(owner.name);
         const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
+        const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(rec.iso_region  || '');
         const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
         const isPinned    = _rgPinnedIcaos.has(ap.icao.toUpperCase());
-        if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+        if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
       }
-      if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+      if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
         const icaoUp2 = ap.icao.toUpperCase();
         if (_rgExcludedIcaos.has(icaoUp2)) continue;
         if (_rgExcludedOwners.size && _rgExcludedOwners.has(owner.name)) continue;
         if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
+        if (_rgExcludedRegions.size && _rgExcludedRegions.has(rec.iso_region || '')) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
       }
       if (_rgOnlyScenery && !_slHas(ap.icao)) continue;
@@ -11253,6 +11613,7 @@ function _rgRenderDots() {
     if (!rec || !rec.latitude || !rec.longitude) continue;
     if (_rgExcludedIcaos.has(icaoUp)) continue;
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
+    if (_rgExcludedRegions.size && _rgExcludedRegions.has(rec.iso_region || '')) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
     const m = L.circleMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
@@ -11442,20 +11803,22 @@ function _rgHighlightDots() {
   // Active dep airports — sorted by catNum so stacking order matches background layer
   const depSorted = [..._rgDepAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of depSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
         if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
     }
@@ -11503,20 +11866,22 @@ function _rgHighlightDots() {
   // Active arr airports — sorted by catNum so stacking order matches background layer
   const arrSorted = [..._rgArrAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of arrSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inContinent && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
         if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
     }
@@ -13460,6 +13825,26 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(countryChip);
   }
 
+  // 7b. Region / state / province Filtering — only when filter is active.
+  // Mirrors the country chip: single-region shows the region name, multi-region
+  // shows "<n> Regions" with a hover tooltip listing each region name.
+  if (_rgMapRegionFilter !== null) {
+    const n = _rgMapRegionFilter.size;
+    const label = n === 1
+      ? (_rgRegionCodeToName.get([..._rgMapRegionFilter][0]) || [..._rgMapRegionFilter][0])
+      : `${n} Regions`;
+    const regionChip = mkChip(
+      label,
+      null,
+      () => { _rgMapRegionFilter = null; _rgRenderDots(); _rgHighlightDots(); }
+    );
+    const names = [..._rgMapRegionFilter]
+      .map(code => _rgRegionCodeToName.get(code) || code)
+      .sort();
+    regionChip.title = names.join('\n');
+    container.appendChild(regionChip);
+  }
+
   // 8. Pinned airports — only when any are pinned
   if (_rgPinnedIcaos.size > 0) {
     const n = _rgPinnedIcaos.size;
@@ -13494,6 +13879,10 @@ function _rgUpdateBreadcrumbs() {
   for (const iso of _rgExcludedCountries) {
     const name = _rgCountryIsoToName.get(iso) || iso;
     container.appendChild(mkExcludeChip(name, () => { _rgExcludedCountries.delete(iso); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+  }
+  for (const code of _rgExcludedRegions) {
+    const name = _rgRegionCodeToName.get(code) || code;
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedRegions.delete(code); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
   }
   for (const code of _rgExcludedContinents) {
     const name = _RG_CONTINENT_NAMES[code] || code;
@@ -13558,6 +13947,10 @@ function _rgMapDotClickExec(icao) {
     if (selNm)  selNm.textContent  = '';
     if (selRoute) selRoute.classList.add('visible');
     _rgHighlightDots();
+    // Kick off a METAR fetch for the new departure airport. Fire-and-forget;
+    // _wxFetchOne handles cache hits, nearest-station fallback, and re-renders
+    // the dot tooltips when fresh data arrives.
+    if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
     return;
   }
 
@@ -13572,6 +13965,9 @@ function _rgMapDotClickExec(icao) {
   // Click on any other airport sets/replaces the arrival. The departure stays
   // anchored — subsequent clicks just swap arrival to the newly clicked airport.
   _rgDotSelArr = icao;
+  // METAR fetch for the new arrival (fire-and-forget). The departure entry was
+  // already requested when it was set, so no need to refetch it.
+  if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
 
   // If both airports exist in the current region matrix, use the cell
   if (_rgPhase === 'results') {
@@ -14216,6 +14612,35 @@ function _rgMapSrCountryQuery(q) {
   return results.slice(0, 3);
 }
 
+// Region / state / province search — matches against iso_region display names
+// (e.g. "California" → "US-CA"). Mirrors the country query: only returns regions
+// that contain at least one SimFly-owned airport, ranks startsWith first, then
+// alpha. Returns at most 3 results to keep the dropdown compact.
+function _rgMapSrRegionQuery(q) {
+  if (!_rgRegionNameToCode.size || q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const ownerData = _getOwnerData();
+  // Count SimFly-owned airports per iso_region code
+  const ownedByRegion = new Map();
+  if (ownerData && airportDB) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        const rec = airportDB.get(ap.icao.toUpperCase());
+        if (rec && rec.iso_region) ownedByRegion.set(rec.iso_region, (ownedByRegion.get(rec.iso_region) || 0) + 1);
+      }
+    }
+  }
+  const results = [];
+  for (const [nameLower, code] of _rgRegionNameToCode) {
+    if (!nameLower.includes(ql)) continue;
+    const count = ownedByRegion.get(code) || 0;
+    if (count === 0) continue;
+    results.push({ name: _rgRegionCodeToName.get(code) || code, code, count, startsWith: nameLower.startsWith(ql) });
+  }
+  results.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return results.slice(0, 3);
+}
+
 function _rgMapSrContinentQuery(q) {
   if (q.length < 2) return [];
   const ql = q.toLowerCase();
@@ -14246,9 +14671,10 @@ function _rgMapSrRender(q) {
   if (!res) return;
   const owners     = _rgMapSrOwnerQuery(q);
   const countries  = _rgMapSrCountryQuery(q);
+  const regions    = _rgMapSrRegionQuery(q);
   const continents = _rgMapSrContinentQuery(q);
   const airports   = _rgMapSrQuery(q);
-  if (!owners.length && !countries.length && !continents.length && !airports.length) {
+  if (!owners.length && !countries.length && !regions.length && !continents.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
@@ -14278,6 +14704,13 @@ function _rgMapSrRender(q) {
     `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
+  const regionRows = regions.map(r =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="region" data-code="${escAttr(r.code)}" data-name="${escAttr(r.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">📍</span>` +
+    `<span class="rg-map-sr-info">${esc(r.name)} <span class="rg-map-sr-city">· ${r.count} SimFly airport${r.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+    `</div>`
+  );
   const apRows = airports.map(r => {
     const meta = [r.city, r.owner].filter(Boolean).map(esc).join(' · ');
     return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
@@ -14285,7 +14718,7 @@ function _rgMapSrRender(q) {
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...apRows].join('');
+  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -14320,19 +14753,43 @@ function _rgMapSrQuery(q) {
 }
 
 function _rgMapSrActivateEl(el) {
-  if (el.dataset.type === 'owner')        _rgMapSrFilterToOwner(el.dataset.owner);
+  if (el.dataset.type === 'owner')          _rgMapSrFilterToOwner(el.dataset.owner);
   else if (el.dataset.type === 'continent') _rgMapSrFilterToContinent(el.dataset.code, el.dataset.name);
-  else if (el.dataset.type === 'country') _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
+  else if (el.dataset.type === 'country')   _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
+  else if (el.dataset.type === 'region')    _rgMapSrFilterToRegion(el.dataset.code, el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
+}
+
+// Fit the map to all currently-visible airport dots after a search action.
+// Reads the visible-ICAO sets that _rgRenderDots + _rgHighlightDots populate
+// during their loops, so any combination of pin / country / region / owner /
+// continent filters lands at a viewport that frames every visible airport.
+// Should be called AFTER the dot rebuild has run.
+function _rgFitAllVisibleAirports() {
+  if (!_rgMap || !airportDB) return;
+  const icaos = new Set();
+  if (_rgVisibleIcaosFromDots) _rgVisibleIcaosFromDots.forEach(i => icaos.add(i));
+  if (_rgVisibleIcaosFromHi)   _rgVisibleIcaosFromHi.forEach(i => icaos.add(i));
+  if (!icaos.size) return;
+  const coords = [];
+  for (const icao of icaos) {
+    const rec = airportDB.get(icao);
+    if (rec && rec.latitude && rec.longitude) coords.push([rec.latitude, rec.longitude]);
+  }
+  if (!coords.length) return;
+  if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
+  else _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
 }
 
 function _rgClearAllSearchFilters() {
   _rgMapOwnerFilter     = null;
   _rgMapCountryFilter   = null;
+  _rgMapRegionFilter    = null;
   _rgMapContinentFilter = null;
   _rgPinnedIcaos.clear();
   _rgExcludedOwners.clear();
   _rgExcludedCountries.clear();
+  _rgExcludedRegions.clear();
   _rgExcludedContinents.clear();
   _rgExcludedIcaos.clear();
   _rgBuildMapOwnerList();
@@ -14360,19 +14817,9 @@ function _rgMapSrFilterToOwner(ownerName) {
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
   _rgApplyMapOwnerFilter();
-  if (_rgMap && !_rgMapSrAdditive) {
-    // Zoom to this owner's airports only when doing a fresh (non-additive) filter
-    const ownerData = _getOwnerData();
-    const owner = ownerData && ownerData.find(o => o.name === ownerName);
-    if (owner && owner.airports) {
-      const coords = owner.airports
-        .map(ap => lookupICAO(ap.icao))
-        .filter(r => r && r.latitude && r.longitude)
-        .map(r => [r.latitude, r.longitude]);
-      if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
-      else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
-    }
-  }
+  // Fit the map to ALL currently-visible airports after the dot rebuild —
+  // matches the additive-search use case (e.g. KSEA then +KPDX fits both).
+  _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
 
@@ -14395,21 +14842,32 @@ function _rgMapSrFilterToCountry(iso, displayName) {
   }
   _rgRenderDots();
   _rgHighlightDots();
-  // Zoom to fit the owned airports in this country
-  if (_rgMap && airportDB && !_rgMapSrAdditive) {
-    const ownerData = _getOwnerData();
-    const coords = [];
-    if (ownerData) {
-      for (const owner of ownerData)
-        for (const ap of (owner.airports || [])) {
-          const rec = airportDB.get(ap.icao.toUpperCase());
-          if (rec && rec.iso_country === iso && rec.latitude && rec.longitude)
-            coords.push([rec.latitude, rec.longitude]);
-        }
+  _rgFitAllVisibleAirports();
+  _rgMapSrClear();
+}
+
+// Region / state / province filter activation — same +/- semantics as country.
+// `code` is the iso_region value (e.g. 'US-CA'); `name` is the display name.
+function _rgMapSrFilterToRegion(code, name) {
+  if (_rgMapSrNegative) {
+    if (_rgMapRegionFilter && _rgMapRegionFilter.has(code)) {
+      _rgMapRegionFilter.delete(code);
+      if (_rgMapRegionFilter.size === 0) _rgMapRegionFilter = null;
+    } else {
+      _rgExcludedRegions.add(code);
     }
-    if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
-    else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
+    _rgRenderDots(); _rgHighlightDots(); _rgFitAllVisibleAirports(); _rgMapSrClear(); return;
   }
+  if (_rgMapSrAdditive) {
+    if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set();
+    _rgMapRegionFilter.add(code);
+  } else {
+    _rgClearAllSearchFilters();
+    _rgMapRegionFilter = new Set([code]);
+  }
+  _rgRenderDots();
+  _rgHighlightDots();
+  _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
 
@@ -14432,21 +14890,7 @@ function _rgMapSrFilterToContinent(code, name) {
   }
   _rgRenderDots();
   _rgHighlightDots();
-  // Zoom to fit owned airports on this continent
-  if (_rgMap && airportDB && !_rgMapSrAdditive) {
-    const ownerData = _getOwnerData();
-    const coords = [];
-    if (ownerData) {
-      for (const owner of ownerData)
-        for (const ap of (owner.airports || [])) {
-          const rec = airportDB.get(ap.icao.toUpperCase());
-          if (rec && _rgRecContinent(rec) === code && rec.latitude && rec.longitude)
-            coords.push([rec.latitude, rec.longitude]);
-        }
-    }
-    if (coords.length === 1) _rgMap.flyTo(coords[0], 9, { duration: 0.6 });
-    else if (coords.length > 1) _rgMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 12 });
-  }
+  _rgFitAllVisibleAirports();
   if (!_rgMapSrAdditive) { _rgBuildMapOwnerList(); _rgUpdateMapOwnerBtn(); }
   _rgMapSrClear();
 }
@@ -14472,7 +14916,9 @@ function _rgMapSrSelect(icao) {
   }
   _rgRenderDots();
   _rgHighlightDots();
-  _rgMap.flyTo([rec.latitude, rec.longitude], 9, { duration: 0.6 });
+  // Fit the map to all currently-visible airports — covers KSEA, then +KPDX
+  // landing on a viewport that shows both pinned airports together.
+  _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
 
@@ -14840,9 +15286,10 @@ function rgSendToFlightPlanner() {
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
-            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), and country rows (<strong>🌍</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports, zooming to fit. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it.<br/><br/>
-            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, continent, and pinned filters and replaces them with the new result.<br/><br/>
-            <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
+            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, region / state / province name (<em>California</em>, <em>Bavaria</em>, <em>Ontario</em>, …), or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), country rows (<strong>🌍</strong>), and region rows (<strong>📍</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it. <strong>After every search action the map zooms to fit every currently-visible airport</strong> — typing <em>KSEA</em> then <em>+KPDX</em> frames both pinned airports together; adding more pins or filters expands the view as needed.<br/><br/>
+            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+California</em> to also include California airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, region, continent, and pinned filters and replaces them with the new result.<br/><br/>
+            <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
+            <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Each measurement also has a <strong>✕ close handle</strong> on the opposite side of the ring (270° west) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. Use <strong>↩ Undo</strong> to remove the most recent remaining measurement and <strong>✕ Clear All</strong> to remove all at once — both still work correctly after any out-of-sequence removals via the ✕ close handle.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
@@ -14865,7 +15312,8 @@ function rgSendToFlightPlanner() {
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
             <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
-            <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button next to the Developer filter to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort; click a developer row to expand its airport list; click the same row again to set the Scenery Library filter to that developer.<br/><br/>
+            <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
+            <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button in the Scenery Library footer to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort. Click a developer row to expand or collapse their airport list; click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer.<br/><br/>
             The library is stored in your browser&rsquo;s <code>localStorage</code>. Closing the panel after making changes prompts you to <strong>💾 Download &amp; Close</strong> to save a backup. Use <strong>Export JSON</strong> (⋯ menu) to back up or transfer to another machine at any time.
           </div>
         </div>
@@ -14932,10 +15380,110 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.46.0</span>
+          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New 🛠 Manage Values modal</strong> &mdash; bulk-edit the <em>Store</em> and <em>Developer</em> values used across your Scenery Library. Lists every distinct value in two side-by-side tables (one per field) with an airport count next to each. <strong>Edit a value</strong> and click <em>Save</em> to rename it on every airport that uses it &mdash; the workhorse for fixing typos (e.g. <em>iniBilds → iniBuilds</em>) and merging duplicates (rename one variant to the exact spelling of another and they fold together). The <strong>✕</strong> button clears the value from every airport that uses it; a confirm prompt with an explicit airport count fires before any destructive change. Launched from the Scenery Library footer (new <strong>🛠 Manage Values</strong> button next to <strong>⚙ Developers</strong>). All edits propagate live to the library list, the region-map dot tooltips, the Developer filter dropdown, the Developers modal, and the JSON export/import.</li>
+          <li><strong>Scenery Library and Developers modals now use 75% of the viewport height</strong> &mdash; both modals were a bit cramped at their old fixed heights, especially with the larger row fonts. The modal container now has <code>min-height:75vh; max-height:90vh</code> so they always feel roomy. Inside the Library modal, the airport list itself grows to fill the available space (was capped at a fixed 240&thinsp;px); the Developers table similarly takes the full body height now that the old <code>80vh</code> cap is gone.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.6</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library — rating cluster trimmed 25%</strong> &mdash; the v2.45.5 +75% bump on stars / rating score / ✕ delete was a touch too large; this release dials all four back by 25% (net +31% vs the original baseline). Stars 2.98 → 2.24 rem with padding 7px → 5px, rating number 1.61 → 1.21 rem with min-width 4.2 → 3.15 rem, ✕ button 1.38 → 1.04 rem with proportional padding. Click targets remain comfortably larger than the original but no longer dominate the row.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.5</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library — rating stars, score, and ✕ button +75%</strong> &mdash; per-row interactive stars (1.7 → 2.98 rem), the numeric rating badge next to them (0.92 → 1.61 rem with a wider min-width so <em>5.0/5</em> reads cleanly), and the ✕ delete button (0.79 → 1.38 rem with proportional padding) are all 75% larger. Click targets are correspondingly bigger so half-star rating and row removal are easier to hit. The Quick-Rate popover keeps its own existing star size via the existing override.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.4</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library — Store and Developer inputs +30%</strong> &mdash; the inline <em>Store</em> and <em>Dev</em> text fields on each row are now noticeably larger (font 0.85 → 1.11 rem, label font 0.78 → 1.01 rem, min-width 9 → 11.7 rem, max-width 14 → 18.2 rem, with proportional padding). Easier to scan and click, and the browser-rendered autocomplete popup inherits the bigger input font in most browsers, so the suggestion list reads larger too.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.3</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Developers modal — bigger fonts, category-coloured drill-down ICAOs, SimFly links</strong> &mdash; every text size in the modal is +40% (intro, table headers and body cells, sort indicators, average-rating number, drill-down list, empty-state text), and the static star widget in the rating column scales in proportion (1.05 → 1.47 rem) so the visual balance matches the larger surrounding text. Drill-down ICAOs no longer render as a comma-separated string — each ICAO is its own coloured chip painted in the same SimFly category palette used elsewhere in the app, with a thin bordered pill background. SimFly-owned airports become clickable links to the SimFly details page (<code>simfly.io/assets/airport/&lt;ICAO&gt;/details</code>); unowned ICAOs render as static chips.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.2</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library row — colored ICAO, SimFly link, larger fonts</strong> &mdash; the small filled circle to the left of each ICAO indicated the SimFly category but was easy to confuse with the flight-category (METAR) dot in airport tooltips. The dot has been removed and the SimFly category color is now applied directly to the ICAO text itself. SimFly-owned airports also wrap their ICAO + name in a clickable link to the SimFly details page (<code>simfly.io/assets/airport/&lt;ICAO&gt;/details</code>); unowned entries render as plain text. ICAO and airport-name fonts are 30% larger (ICAO 0.98 → 1.27 rem, name 0.93 → 1.21 rem) so the row scans more cleanly.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.45.1</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Developers modal — row click and filter action are now separate</strong> &mdash; previously a developer row was a two-stage control: first click expanded the inline ICAO list, second click applied the Scenery Library filter and closed the modal. Filtering was easy to trigger by accident while browsing. Each row now has a dedicated <strong>🔍</strong> button next to the developer's name that explicitly applies the filter (and closes the modal); clicking anywhere else on the row is a pure <em>expand / collapse toggle</em>, so the modal can be browsed without ever changing the Scenery Library's filter state.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.45.0</span>
+          <span class="release-date">May 15, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region / state / province search</strong> &mdash; the region map search box now matches against region names (<em>California</em>, <em>Bavaria</em>, <em>Ontario</em>, &hellip;) in addition to ICAO / name / city / owner / country / continent. Matching regions appear as a new dropdown row with a 📍 pin icon and a SimFly-airport count. Same <em>+</em> (additive) and <em>−</em> (negation) prefix semantics as the existing country filter: <em>+California</em> adds California to the active filter; <em>−Bavaria</em> excludes it from the current view.</li>
+          <li><strong>Region filter chip on the region map</strong> &mdash; when one or more regions are filtered, a chip appears in the filter strip showing the region name (or "<em>N Regions</em>" when multiple are active). Hovering the chip reveals a tooltip listing every region name; clicking the ✕ clears the region filter just like the existing country, continent, and owner chips. Excluded regions render as red-tinted "−Region name" chips.</li>
+          <li><strong>Search execution now fits the map to <em>all</em> currently-visible airports</strong> &mdash; the existing zoom-to-fit was tied to the just-selected item (the country / continent / owner whose pin was clicked). Replaced with a unified <em>fit-visible</em> behaviour that reads the actual rendered dot set after every <em>+</em>, <em>−</em>, or fresh search. Typing <em>KSEA</em> then <em>+KPDX</em> now zooms to frame both airports together; adding <em>+California</em> on top zooms out to include every dot in the new visible set. Works across all four filter dimensions (owner, country, region, continent) and pinned ICAOs.</li>
+          <li><strong>METAR fetched automatically when an airport is added to a route</strong> &mdash; clicking a dot to set the route's departure or arrival now kicks off a single-airport METAR fetch via the CheckWX API (with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row: a coloured <em>VFR / MVFR / IFR / LIFR</em> pill, wind in <em>DDD°/KKkt</em> form, and visibility &mdash; rendered beneath the existing scenery / developer rows. Fetches are skipped when a fresh cache entry already exists (30-minute TTL), so re-selecting the same airport doesn't waste API calls.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.44.1</span>
-          <span class="release-date">May 15, 2026 &middot; Current</span>
+          <span class="release-date">May 15, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -20854,6 +21402,8 @@ function rgSendToFlightPlanner() {
           <button class="sl-action-btn" onclick="_slImportPaste()" title="Import the ICAO codes you pasted above">Import pasted ICAOs</button>
           <button class="sl-action-btn" onclick="_slScanFolder()" title="Scan MSFS Community or X-Plane Custom Scenery folder for airports">📂 Scan folder</button>
           <button class="sl-action-btn" id="slAddFromMapBtn" onclick="_slEnterMapMode()" title="Click airport dots on the map to add or remove them. Tip: Shift+click any dot works the same way without entering this mode.">📍 Add from map</button>
+          <button class="sl-action-btn sl-dev-modal-btn" onclick="openManageValuesModal()"
+                  title="Bulk rename / delete Store and Developer values across the library">🛠 Manage Values</button>
           <button class="sl-action-btn sl-dev-modal-btn" onclick="openDevelopersModal()"
                   title="Open the Scenery Developers summary — per-developer airport counts and average ratings">⚙ Developers</button>
           <div class="sl-overflow-wrap">
@@ -20890,7 +21440,7 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" style="padding:0;">
       <div class="dev-intro">
-        Per-developer summary of your Scenery Library. Average rating is computed across <em>rated</em> airports only — unrated entries do not pull the average down. Click a developer to expand their airport list; click again to filter the Scenery Library to that developer.
+        Per-developer summary of your Scenery Library. Average rating is computed across <em>rated</em> airports only — unrated entries do not pull the average down. Click a developer row to expand or collapse their airport list. Click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer (closes this modal).
       </div>
       <table class="dev-table">
         <thead>
@@ -20904,6 +21454,41 @@ function rgSendToFlightPlanner() {
         <tbody id="devTbody"></tbody>
       </table>
       <div class="dev-empty" id="devEmpty">No developers with rated scenery yet. Rate an airport in the Scenery Library to see it appear here.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Values Modal — bulk rename / delete for Store + Developer values across the library -->
+<div class="modal-overlay" id="manageValuesModal" onclick="closeManageValuesModal(event)">
+  <div class="modal" style="max-width:1140px;">
+    <div class="modal-header">
+      <span class="modal-title">🛠 &nbsp;Manage Store &amp; Developer Values</span>
+      <button class="modal-close" onclick="_mvCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:0;">
+      <div class="mv-intro">
+        Bulk-edit the Store and Developer values used across your Scenery Library. <strong>Edit the value</strong> and click <em>Save</em> to rename it on every airport that uses it (handy for fixing typos or merging duplicates — rename to the exact spelling of an existing value to merge). <strong>✕</strong> clears the value from every airport that uses it. All changes are applied immediately to the library, the region map, and the Developers modal.
+      </div>
+      <div class="mv-grid">
+        <div class="mv-section">
+          <div class="mv-section-hdr">Stores</div>
+          <table class="mv-table">
+            <thead>
+              <tr><th class="mv-c-val">Value</th><th class="mv-c-count">Airports</th><th class="mv-c-actions">Actions</th></tr>
+            </thead>
+            <tbody id="mvStoreTbody"></tbody>
+          </table>
+        </div>
+        <div class="mv-section">
+          <div class="mv-section-hdr">Developers</div>
+          <table class="mv-table">
+            <thead>
+              <tr><th class="mv-c-val">Value</th><th class="mv-c-count">Airports</th><th class="mv-c-actions">Actions</th></tr>
+            </thead>
+            <tbody id="mvDevTbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
