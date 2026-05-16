@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.47.6**
+**Current version: v2.48.0**
 
 ---
 
@@ -148,6 +148,8 @@ Once departure and arrival ICAOs are set, the **File on SimBrief →** button li
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
 
 Aircraft chips, category tabs, top accent bars, and ICAO code labels all share the same per-category palette as the airport dots and matrix headers (red / orange / yellow / green / cyan / blue / magenta for SimFly categories 1–7), so the aircraft category and its corresponding airport tier read in the same hue throughout the app.
+
+Each chip in the grid shows the type's ICAO code, full aircraft name, and max range — kept compact so the whole category fits on screen at a glance. Hovering a chip highlights all three text lines in yellow for clear feedback. The detailed spec strip — takeoff and landing distances, both at full MTOW and adjusted for your current fuel and payload settings — appears below the grid once an aircraft is selected.
 
 Your selection is **remembered between sessions** — the aircraft, fuel%, and payload% are saved to your browser's localStorage the moment you change them, so the app reopens with your last setup intact. Launches from the Reciprocation Tracker (Plan Flight or Send N to AA) still override the saved state for that session, and themselves become the new saved default until you change it.
 
