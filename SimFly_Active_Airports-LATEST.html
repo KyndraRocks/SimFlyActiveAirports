@@ -3750,7 +3750,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.48.0';
+const APP_VERSION = '2.49.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6014,6 +6014,10 @@ function _clearDistNmTip() {
 }
 
 function _calcDistance() {
+  // Auto-fetch weather for the route endpoints if either is missing or
+  // older than WX_TTL_MS. Debounced so rapid typing doesn't fire per keystroke.
+  if (typeof _wxAutoFetchRouteDebounced === 'function') _wxAutoFetchRouteDebounced();
+
   const depEl  = document.getElementById('distDep');
   const arrEl  = document.getElementById('distArr');
   const depIcao = depEl.value.trim();
@@ -9464,6 +9468,63 @@ async function _wxFetchOne(icao) {
   }
   return updated;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Main-UI auto-fetch — pulls weather for the departure and arrival ICAOs
+// whenever the route changes (typing, swap, URL params, Region-Mode handoff)
+// or when the tab regains focus. _wxFetchOne short-circuits on a fresh cache
+// entry, so we only hit the network when an endpoint is missing or older
+// than WX_TTL_MS (30 minutes). On any actual refresh, re-renders the matrix
+// so column/row tooltips and range-suitability dimming pick up the new
+// METAR data, and refreshes the distance map info cards if currently open.
+// ─────────────────────────────────────────────────────────────────────────
+let _wxAutoFetchTimer    = null;
+let _wxAutoFetchInFlight = false;
+
+async function _wxAutoFetchRoute() {
+  if (_wxAutoFetchInFlight) return;
+  _wxAutoFetchInFlight = true;
+  try {
+    const dep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
+    const arr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
+    const ic  = [];
+    if (dep && lookupICAO(dep)) ic.push(dep);
+    if (arr && lookupICAO(arr)) ic.push(arr);
+    if (!ic.length) return;
+
+    // Snapshot fetchedAt before so we can detect whether anything actually
+    // refreshed (vs. all entries already being fresh).
+    const before = ic.map(i => (_wxCache.get(i)?.fetchedAt) || 0);
+    await Promise.all(ic.map(i => _wxFetchOne(i).catch(() => false)));
+    const after  = ic.map(i => (_wxCache.get(i)?.fetchedAt) || 0);
+    const refreshed = before.some((t, idx) => after[idx] > t);
+
+    if (refreshed) {
+      try { if (typeof renderDistMatrix === 'function') renderDistMatrix(); } catch (_) {}
+      try { if (typeof _distApplyFilter === 'function') _distApplyFilter(); } catch (_) {}
+      try { if (_dmMap && _dmMapOpen && typeof _dmRenderMap === 'function') _dmRenderMap(); } catch (_) {}
+    }
+  } finally {
+    _wxAutoFetchInFlight = false;
+  }
+}
+
+// Debounce typing — _calcDistance() fires on every keystroke, but we only
+// want to fetch once the user pauses on a valid ICAO.
+function _wxAutoFetchRouteDebounced(delayMs = 600) {
+  if (_wxAutoFetchTimer) clearTimeout(_wxAutoFetchTimer);
+  _wxAutoFetchTimer = setTimeout(() => {
+    _wxAutoFetchTimer = null;
+    _wxAutoFetchRoute();
+  }, delayMs);
+}
+
+// Re-check when the user returns to the tab — covers the case where a
+// route has been visible past TTL and the user comes back to it.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _wxAutoFetchRoute();
+});
+window.addEventListener('focus', () => _wxAutoFetchRoute());
 
 // Check every 60 s and flip button to stale when TTL has expired
 setInterval(() => {
@@ -15313,7 +15374,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Weather &amp; Flight Conditions</div>
           <div class="help-feature-desc">
-            Click the <strong>⛅</strong> button in the top-left corner of the distance matrix to fetch live METAR data for every airport currently in view. Each ICAO label gets a colored dot showing its flight category: <strong>VFR</strong> (green), <strong>MVFR</strong> (blue), <strong>IFR</strong> (red), or <strong>LIFR</strong> (magenta). <strong>Hover any dot</strong> to see the full decoded report — conditions, wind, visibility, ceiling, observation time, and raw METAR text.<br/><br/>
+            The <strong>departure and arrival airports auto-fetch a METAR</strong> the moment you set or change either ICAO, and again whenever you return to the tab if their cached data is older than 30 minutes — so the route endpoints are always current without you doing anything. Click the <strong>⛅</strong> button in the top-left corner of the distance matrix to fetch live METAR data for every other airport currently in view in one batch. Each ICAO label gets a colored dot showing its flight category: <strong>VFR</strong> (green), <strong>MVFR</strong> (blue), <strong>IFR</strong> (red), or <strong>LIFR</strong> (magenta). <strong>Hover any dot</strong> to see the full decoded report — conditions, wind, visibility, ceiling, observation time, and raw METAR text.<br/><br/>
             If an airport has no reporting station of its own, the nearest one within 100 nm is used as a fallback, shown with a <strong>dashed ring</strong> around the dot. Weather data is cached for 30 minutes; switching owner dropdowns clears the cache and prompts a fresh fetch. If the Distance Map panel is open when you fetch, map marker rings update to show flight categories too. <strong>Distance Map info cards</strong> below the map also include a Weather section with the same decoded report whenever METAR data is cached for the highlighted route's airports.
           </div>
         </div>
@@ -15492,8 +15553,22 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.48.0</span>
+          <span class="release-version">v2.49.0</span>
           <span class="release-date">May 16, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Auto-fetch weather for the route endpoints</strong> &mdash; the main UI now pulls a fresh METAR for the departure and arrival airports automatically whenever either ICAO is set, swapped, or older than 30 minutes. New helpers <code>_wxAutoFetchRoute()</code> + <code>_wxAutoFetchRouteDebounced()</code> wired into <code>_calcDistance()</code> so every route-change path triggers it (typing, ⇄ swap, URL params, Region-Mode handoff, owner-dropdown→ICAO fills). A 600 ms debounce keeps rapid keystrokes from firing per-character API calls. <code>_wxFetchOne()</code> short-circuits on a fresh cache entry, so this only hits the network when an endpoint is genuinely stale.</li>
+          <li><strong>Auto-refresh on tab focus</strong> &mdash; <code>visibilitychange</code> and <code>focus</code> listeners re-run the auto-fetch the moment you switch back to the tab, so a route that's been on screen past the 30 min TTL gets fresh data the instant you look at it.</li>
+          <li><strong>Tooltips, matrix dimming, and distance map refresh on new METAR</strong> &mdash; when an auto-fetch actually pulls new data, the matrix is re-rendered so every column/row tooltip reflects the new METAR, <code>_distApplyFilter()</code> re-evaluates the suitability dimming (DA changes can flip airports across the runway-length line), and <code>_dmRenderMap()</code> refreshes the open distance map info cards. The button-driven <code>⛅ Get Weather</code> still works for fetching the full matrix in one batch.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.48.0</span>
+          <span class="release-date">May 16, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
