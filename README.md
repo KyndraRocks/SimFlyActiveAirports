@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.47.0**
+**Current version: v2.47.1**
 
 ---
 
@@ -51,7 +51,7 @@ Track which airports you have add-on scenery installed for, and rate the quality
 
 The text search box also matches the full airport name in addition to ICAO and addon. The footer shows `X of Y airports` whenever a filter is active, and the empty-state message tailors itself to the chosen filter. Sort and filter selections are persisted to localStorage so your preference survives reloads and new sessions.
 
-**Store and Developer attribution** — each library row has two inline text fields beneath the ICAO line: **Store** (the marketplace where the scenery was purchased) and **Dev** (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers (Orbx Direct, MSFS Marketplace, SimMarket, FlightSim.to, Just Flight, Aerosoft Shop, …; Orbx, FlyTampa, MK-Studios, FlightBeam, FSDreamTeam, iniBuilds, PMDG, …) **plus** any custom value you've already typed on another row, so your own conventions become suggestions over time. Both fields are persisted to localStorage and round-trip through Export / Import JSON. The developer is also shown as a labeled row beneath the star rating in the airport's region-map tooltip.
+**Store and Developer attribution** — each library row has two inline text fields beneath the ICAO line: **Store** (the marketplace where the scenery was purchased) and **Dev** (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers (Orbx Direct, MSFS Marketplace, SimMarket, FlightSim.to, Just Flight, Aerosoft Shop, …; Orbx, FlyTampa, MK-Studios, FlightBeam, FSDreamTeam, iniBuilds, PMDG, …) **plus** any custom value you've already typed on another row, so your own conventions become suggestions over time. Pressing **Tab** fills the topmost matching value from the suggestion list (e.g. type *simm* then Tab to fill *SimMarket*). Both fields are persisted to localStorage and round-trip through Export / Import JSON. The developer is also shown as a labeled row beneath the star rating in the airport's region-map tooltip.
 
 **Developer filter** — choosing a developer in the **Developer** dropdown narrows the modal list **and** the region map: library airports whose developer doesn't match are hidden from the map dots, airports not in the library are unaffected. An active filter renders as a *Developer: \<name\>* chip in the region-map filter strip with a ✕ to clear it.
 
