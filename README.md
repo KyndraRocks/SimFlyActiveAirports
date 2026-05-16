@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.47.1**
+**Current version: v2.47.6**
 
 ---
 
@@ -57,9 +57,11 @@ The text search box also matches the full airport name in addition to ICAO and a
 
 **Row layout** — each library row uses the SimFly category color directly on the ICAO text (the old colored dot left of the ICAO was removed because it could be confused with the weather flight-category dot). For SimFly-owned airports the ICAO + name pair is a clickable link to the SimFly details page; unowned entries render as plain text. ICAO + name, the rating stars, and the ✕ delete button are all sized for comfortable scanning and clicking.
 
-**⚙ Developers modal** — click the **⚙ Developers** button in the footer to open a per-developer summary of your library. Lists every developer for whom you have at least one rated airport, with their total airport count, rated count, and **average star rating** displayed at two-decimal precision (e.g. *3.75/5*) using a proportionally-filled star widget. Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort by that column (numeric columns default to descending). Click a developer row to expand or collapse their inline airport list (ICAOs render as category-colored chips, with SimFly-detail links when owned); click the **🔍** button next to a developer's name to filter the Scenery Library to that developer.
+**⚙ View Developer Stats modal** — click the **⚙ View Developer Stats** button in the footer to open a per-developer summary of your library. Lists every developer for whom you have at least one rated airport, with their total airport count, rated count, and **average star rating** displayed at two-decimal precision (e.g. *3.75/5*) using a proportionally-filled star widget. Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort by that column (numeric columns default to descending). Click a developer row to expand or collapse their inline airport list (ICAOs render as category-colored chips, with SimFly-detail links when owned); click the **🔍** button next to a developer's name to filter the Scenery Library to that developer.
 
-**🛠 Manage Values modal** — click the **🛠 Manage Values** button in the footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. **Edit a value and click Save** to rename it on every affected airport — rename to the exact spelling of an existing value to merge duplicates (e.g. *Fly Tampa* → *FlyTampa* folds the two into one). The **✕** button clears the value from every airport that uses it, after a confirm prompt reporting exactly how many airports will be affected.
+**🛠 Manage Stores and Developers modal** — click the **🛠 Manage Stores and Developers** button in the footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. **Edit a value and click Save** to rename it on every affected airport — rename to the exact spelling of an existing value to merge duplicates (e.g. *Fly Tampa* → *FlyTampa* folds the two into one). The **✕** button clears the value from every airport that uses it, after a confirm prompt reporting exactly how many airports will be affected.
+
+**Unsaved-changes backup banner** — when the library has pending changes, a yellow banner appears showing **"N unsaved change(s)"** alongside two buttons. **💾 Save** downloads a JSON backup of the library and dismisses the banner without closing the modal so you can keep editing. **Close** dismisses the modal while preserving the unsaved-changes state — the banner reappears next time you open the modal until you actually export.
 
 **Display modes** — the **⬤ Scenery** split button in the toolbar cycles through three states:
 - **Off** — no scenery indicators shown
