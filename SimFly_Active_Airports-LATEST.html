@@ -3975,7 +3975,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.54.0';
+const APP_VERSION = '2.59.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -3996,6 +3996,48 @@ function _wxCacheSet(icao, value) {
     if (oldest != null) _wxCache.delete(oldest);
   }
   _wxCache.set(icao, value);
+  // If this ICAO is currently shown as the route's dep or arr in the
+  // main-screen big-text display, rebuild its registered tooltip HTML so
+  // the weather section appears the next time the user hovers. _tipAPI
+  // patches the visible tooltip in place if the user is hovering it right
+  // now. Short-circuits cheaply when the icao isn't part of the active route.
+  if (typeof _refreshNameTooltipForIcao === 'function') {
+    try { _refreshNameTooltipForIcao(icao); } catch (_) {}
+  }
+}
+
+// Find the dep/arr big-text element in #distNames that matches `icao` and
+// re-register its tooltip HTML with the current state of _wxCache. Called
+// from _wxCacheSet whenever a METAR arrives. No-op when the icao isn't part
+// of the currently-displayed route (the most common case during bulk fetches).
+function _refreshNameTooltipForIcao(icao) {
+  const container = document.getElementById('distNames');
+  if (!container || typeof _buildTooltipHtml !== 'function') return;
+  const up = (icao || '').toUpperCase();
+  if (!up) return;
+  const slot = container.querySelector(`.wx-badge-slot[data-wx-icao="${up}"]`);
+  if (!slot) return;
+  const el = slot.closest('[data-tip-id][data-inline-tip]');
+  if (!el) return;
+  const id = parseInt(el.dataset.tipId, 10);
+  if (!Number.isFinite(id)) return;
+  const rec = lookupICAO(up);
+  if (!rec) return;
+  const depIcao = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
+  const owned   = (typeof _icaoOwner !== 'undefined') && _icaoOwner && _icaoOwner.has(up);
+  const ownerNm = (typeof _icaoOwner !== 'undefined' && _icaoOwner) ? (_icaoOwner.get(up) || null) : null;
+  const isArr   = up !== depIcao;
+  const depRec  = isArr ? (lookupICAO(depIcao) || null) : null;
+  const html = _buildTooltipHtml(
+    up, rec,
+    owned ? true : `Airport ${up} is not owned by a SimFly player`,
+    null,
+    ownerNm,
+    isArr ? 'arr' : 'dep',
+    depRec, depIcao
+  );
+  if (typeof _tipStore !== 'undefined') _tipStore.set(id, html);
+  if (window._tipAPI && window._tipAPI.refreshIfCurrent) window._tipAPI.refreshIfCurrent(id);
 }
 // ── Theme toggle ─────────────────────────────────────────────────────────────────────────
 function toggleTheme() {
@@ -7165,6 +7207,17 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
     const label = typeof showSimFlyLink === 'string' ? showSimFlyLink : `Click to view SimFly details for ${icao}`;
     html += `<span class="tip-simfly-link">${esc(label)}</span>`;
   }
+  // Weather section — appended when CheckWX has populated _wxCache for this
+  // ICAO (e.g. via the route-assignment auto-fetch). Uses the same rich
+  // METAR formatter as the on-map dot tooltip so the layout is consistent.
+  // Wrap each line in a tip-section divider so the weather rows visually
+  // separate from the runway/payout section above.
+  if (typeof _wxTooltipHtml === 'function') {
+    const wxHtml = _wxTooltipHtml(icao.toUpperCase());
+    if (wxHtml) {
+      html += `<span class="tip-section">${wxHtml}</span>`;
+    }
+  }
   // Aircraft suitability section — shown when ac URL params are present
   // acRole is 'dep', 'arr', or undefined (null = show both roles)
   html += _buildAcSuitabilityHtml(icao, rec, acRole || null,
@@ -9687,7 +9740,7 @@ async function _wxFetchOne(icao) {
     // wx-badge slots (if any) are refreshed via _wxApplyBadges.
     if (typeof _rgTipHtmlCache !== 'undefined' && _rgTipHtmlCache) _rgTipHtmlCache.clear();
     if (typeof _rgRenderDots === 'function' && _rgMap) {
-      try { _rgRenderDots(); _rgHighlightDots(); } catch (_) {}
+      try { _rgApplyMapFilter(); } catch (_) {}
     }
     if (typeof _wxApplyBadges === 'function') { try { _wxApplyBadges(); } catch (_) {} }
   }
@@ -10138,7 +10191,7 @@ function _slSetDeveloperFilter(val) {
   // Push the change to the region map: rebuild the dot layers so library
   // airports with a non-matching developer are hidden, and update the
   // breadcrumb chip strip.
-  if (_rgMap) { _rgRenderDots(); _rgHighlightDots(); }
+  if (_rgMap) { _rgApplyMapFilter(); }
 }
 // Re-seed the Developer filter <select> options after the underlying library
 // changes (add/edit/import). Preserves the current selection if it's still a
@@ -10156,7 +10209,7 @@ function _slRefreshDevFilterUI() {
     // Selection no longer exists — reset to "all"
     _slDeveloperFilter = '';
     _slSavePrefs();
-    if (_rgMap) { _rgRenderDots(); _rgHighlightDots(); }
+    if (_rgMap) { _rgApplyMapFilter(); }
   }
 }
 _slLoadPrefs();
@@ -10906,7 +10959,7 @@ function _mvHandleRename(event, field, oldValue) {
   _slRefreshDevFilterUI();
   if (document.getElementById('sceneryModal')?.classList.contains('open'))
     _slRenderList(document.getElementById('slSearch')?.value || '');
-  if (_rgMap) { try { _rgRenderDots(); _rgHighlightDots(); } catch(_) {} }
+  if (_rgMap) { try { _rgApplyMapFilter(); } catch(_) {} }
   if (typeof _slShowToast === 'function')
     _slShowToast(`Renamed "${oldValue}" → "${newValue}" on ${n} airport${n === 1 ? '' : 's'}`);
   _mvRender();
@@ -10926,7 +10979,7 @@ function _mvHandleDelete(event, field, value) {
   _slRefreshDevFilterUI();
   if (document.getElementById('sceneryModal')?.classList.contains('open'))
     _slRenderList(document.getElementById('slSearch')?.value || '');
-  if (_rgMap) { try { _rgRenderDots(); _rgHighlightDots(); } catch(_) {} }
+  if (_rgMap) { try { _rgApplyMapFilter(); } catch(_) {} }
   if (typeof _slShowToast === 'function')
     _slShowToast(`Cleared "${value}" from ${n} airport${n === 1 ? '' : 's'}`);
   _mvRender();
@@ -11273,6 +11326,30 @@ let _rgVisibleIcaosFromHi   = new Set();
 // ── Memory-reduction caches ────────────────────────────────────────────
 let _rgCanvasRenderer  = null;   // shared L.canvas() — created once, reused by both layers
 let _rgRouteLineRenderer = null; // shared L.canvas() for route-line rings — created once on first route draw
+// Drawn-geometry canvas (measurement circles/lines/pins, region dep/arr rings,
+// aircraft range ring). Default SVG renderer's layer bounding box grows with
+// the largest projected path inside it; at high zoom a saved 5+ nm ring
+// becomes a multi-thousand-px-circumference dashed SVG path, blows past the
+// browser compositor's max-texture threshold, and forces CPU rasterization on
+// every pan/zoom. Canvas keeps the drawing surface viewport-sized regardless
+// of underlying geometry size — off-screen geometry is clipped before
+// rasterization, so saved measurements no longer drag down general map
+// performance. Kept separate from _rgCanvasRenderer (the airport-dot canvas)
+// so measurement updates don't trigger dot-layer redraws and vice versa.
+let _rgGeomRenderer    = null;
+function _rgGetGeomRenderer() {
+  if (!_rgGeomRenderer) {
+    // Dedicated pane (created lazily in _rgInitMap) with `pointer-events:none`
+    // so the geom canvas — which stacks in the overlay area above the dot
+    // canvas — does NOT intercept mousemove. Otherwise its DOM canvas
+    // element sits on top of the dot canvas (both default to overlay pane)
+    // and silently steals pointer events: dot mouseover never fires, so
+    // tooltips don't appear on hover after region rings are drawn. Paths
+    // on this canvas are all `interactive:false`, so it never needs events.
+    _rgGeomRenderer = L.canvas({ padding: 0.5, pane: 'rgGeomPane' });
+  }
+  return _rgGeomRenderer;
+}
 let _rgTipHtmlCache    = null;   // Map<ICAO→html> — tooltip HTML built once per dot render pass
 let _ownerDataCache    = null;   // parsed result of _getOwnerData()
 let _ownerDataCacheKey = null;   // textarea value that produced the cache
@@ -11400,6 +11477,15 @@ let _rgMeasureDraw   = false;
 let _rgMeasureSaved  = [];     // [{line,circle,label}] frozen measurements
 let _rgMeasureDecl   = null;   // null=loading | {decl,approx} once resolved
 let _rgMeasureLastLL = null;   // last toLL — used to refresh label after async fetch
+// Cached reference to the live label's outer wrap div (the `<div
+// style="position:absolute;transform:translate(...)">` that is the divIcon's
+// firstElementChild). Patched in place by _rgUpdateMeasure on every rAF tick
+// instead of calling setIcon, which would tear down and rebuild the DOM each
+// frame. The wrap's own inline `transform` is preserved across innerHTML
+// patches; only its children (.rg-ring-lbl chip + optional AM note) are
+// replaced. Cleared in _rgClearMeasureLive and the two save paths (mouseup)
+// so the next live draw starts fresh.
+let _rgMeasureLabelWrapEl = null;
 const _rgDeclCache   = new Map(); // keyed by "lat1_lon1" (1 dp) → {decl,approx}
 
 // Per-column sort pivot
@@ -11411,6 +11497,23 @@ let _rgSplitDrag    = null;
 // Drag / resize (results phase)
 let _rgDragMode      = null;
 let _rgDragMeasSnap  = null;  // saved {origin,toLL,mouseLat,mouseLng} at meas-drag mousedown
+// Right-mouse pan state. Active in any region-map phase / mode — left-click
+// is owned by phase-specific workflows (region draw, measurement draw, dot
+// click), so right-click drag is the universal pan affordance.
+// _rgRightPanLast  = { x, y } from the previous mousemove (per-frame delta).
+// _rgRightPanStart = { x, y } captured on mousedown (used to distinguish a
+//                    pan-drag from a pure click — see _rgRightPanMoved).
+// _rgRightPanMoved = true once the cursor moves more than a few pixels from
+//                    start; a pure right-click without movement is still
+//                    available for the dot rate-popover and the region-draw
+//                    cancel-on-right-click gestures via the contextmenu path.
+// _rgRightPanJustEnded = brief flag (300 ms) set on mouseup-after-pan so
+//                    contextmenu handlers can suppress the popover/cancel
+//                    when right-mouse was used as a drag, not a click.
+let _rgRightPanLast      = null;
+let _rgRightPanStart     = null;
+let _rgRightPanMoved     = false;
+let _rgRightPanJustEnded = false;
 let _rgResizeDrag    = null;  // active col/row resize drag state   // null | 'dep_center' | 'arr_center' | 'dep_edge' | 'arr_edge'
 let _rgDepHandle     = null;  // L.marker — visual edge resize handle (dep)
 let _rgArrHandle     = null;  // L.marker — visual edge resize handle (arr)
@@ -11461,12 +11564,28 @@ function openRegionModal(forceOwnerFilter) {
 }
 
 function closeRegionModal() {
+  // Leave the workflow in a clean state for the next reopen. Transient
+  // drawing phases (idle / dep_drag / ruler / arr_drag) have no completed
+  // regions to preserve, but persist on `_rgPhase` across modal close.
+  // _rgInitMap short-circuits on reopen when the map already exists, so a
+  // stale drawing phase would silently disable dot tooltips (the dot
+  // mouseover handler gates on phase being 'explore' or 'results'). 'results'
+  // is left alone so drawn regions + matrix survive a close/reopen cycle.
+  if (_rgMap && _rgPhase !== 'explore' && _rgPhase !== 'results') {
+    rgExploreReturn();
+  }
   document.getElementById('regionModal').classList.remove('open');
   document.body.style.overflow = '';
   document.removeEventListener('mouseup', _rgDocMouseUp);
 }
 
 function _rgBeginSelection() {
+  // Entering region-draw mode and measurement-draw mode at the same time
+  // conflicts on left-click — both would compete for mousedown. Auto-flip
+  // measurement off so the region-draw workflow has unambiguous control of
+  // the map. Saved measurements stay on the map; only the active draw mode
+  // is toggled off.
+  if (_rgMeasureActive) _rgToggleMeasure();
   rgReset(true); // clears previous region circles; rgReset sets phase=idle, cursor=cross, calls _rgUpdatePhaseText
 }
 
@@ -11488,6 +11607,7 @@ function _rgToggleMeasure() {
 function _rgClearMeasureLive() {
   [_rgMeasureLine, _rgMeasureCircle, _rgMeasureLabel].forEach(l => { if (l) l.remove(); });
   _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+  _rgMeasureLabelWrapEl = null;
   _rgMeasureOrigin = null;
   // Re-enable dragging if we interrupted a live draw (e.g. toggle-off button click mid-drag)
   if (_rgMeasureDraw && _rgMap) _rgMap.dragging.enable();
@@ -11504,17 +11624,12 @@ function _rgClearMeasure() {
 }
 
 function _rgSyncClearBtn() {
-  const undoBtn     = document.getElementById('rgRulerClearBtn');
+  // Each saved measurement carries its own on-map ✕ close handle for removing
+  // that specific entry; this button is the bulk-clear escape hatch and now
+  // appears whenever at least one measurement is on the map (consistent
+  // single-click "wipe everything" entry point regardless of count).
   const clearAllBtn = document.getElementById('rgRulerClearAllBtn');
-  if (undoBtn)     undoBtn.style.display     = (_rgMeasureActive || _rgMeasureSaved.length > 0) ? '' : 'none';
-  if (clearAllBtn) clearAllBtn.style.display = (_rgMeasureSaved.length > 1) ? '' : 'none';
-}
-
-function rgClearMeasurements() {
-  if (!_rgMeasureSaved.length) return;
-  const m = _rgMeasureSaved.pop();
-  _rgRemoveMeasureEntry(m);
-  _rgSyncClearBtn();
+  if (clearAllBtn) clearAllBtn.style.display = (_rgMeasureSaved.length > 0) ? '' : 'none';
 }
 
 function _rgTrueBearing(lat1, lon1, lat2, lon2) {
@@ -11603,6 +11718,7 @@ function _rgUpdateMeasure(toLL) {
 
   if (!_rgMeasureCircle) {
     _rgMeasureCircle = L.circle(origin, {
+      renderer: _rgGetGeomRenderer(),
       radius: distM, color: _rgMeasColor(), weight: 2,
       opacity: 0.65, fillOpacity: 0.04, dashArray: '8 5', interactive: false,
     }).addTo(_rgMap);
@@ -11616,6 +11732,7 @@ function _rgUpdateMeasure(toLL) {
   const measDash = crossesAM ? '14 8' : '6 4';
   if (!_rgMeasureLine) {
     _rgMeasureLine = L.polyline([origin, [toLL.lat, toLL.lng]], {
+      renderer: _rgGetGeomRenderer(),
       color: _rgMeasColor(), weight: 3, opacity: 1, dashArray: measDash, interactive: false,
     }).addTo(_rgMap);
   } else {
@@ -11642,9 +11759,25 @@ function _rgUpdateMeasure(toLL) {
       icon: L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }),
       interactive: false, keyboard: false,
     }).addTo(_rgMap);
+    // Cache the inner wrapper now that it's in the DOM so subsequent frames
+    // can patch innerHTML in place instead of re-running setIcon (which would
+    // destroy and rebuild the wrapper every rAF tick).
+    const labelEl = _rgMeasureLabel.getElement();
+    _rgMeasureLabelWrapEl = labelEl ? labelEl.firstElementChild : null;
   } else {
     _rgMeasureLabel.setLatLng([midLL.lat, midLL.lng]);
-    _rgMeasureLabel.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
+    if (_rgMeasureLabelWrapEl) {
+      // Strip the outer <div> wrapper from `html` — the cached element IS that
+      // wrapper. Patch only the children (the .rg-ring-lbl chip + optional
+      // AM note) so we don't recreate the wrapper node itself.
+      _rgMeasureLabelWrapEl.innerHTML =
+        `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
+        `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}`;
+    } else {
+      _rgMeasureLabel.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
+      const labelEl = _rgMeasureLabel.getElement();
+      _rgMeasureLabelWrapEl = labelEl ? labelEl.firstElementChild : null;
+    }
   }
 }
 
@@ -11684,6 +11817,20 @@ async function _rgInitMap() {
 
   _rgMap = L.map('rgMapContainer', { zoomControl: false, center: [30, 0], zoom: 3, doubleClickZoom: false });
   L.control.zoom({ position: 'bottomleft' }).addTo(_rgMap);
+
+  // Drawn-geometry pane (region rings, range ring, measurement circles +
+  // line + pin). Sits just above the default overlay pane (which hosts the
+  // dot canvas) and has `pointer-events:none` so its DOM canvas element
+  // does NOT steal mousemove from the dot canvas below it. Without this,
+  // adding the dep / arr region rings causes a 2nd canvas to appear in
+  // the overlay pane and silently captures hover events — dot tooltips
+  // stop firing the moment the rings are drawn. Z-index 420 puts it
+  // above dots (400) and below the route-line pane (450).
+  if (!_rgMap.getPane('rgGeomPane')) {
+    const gp = _rgMap.createPane('rgGeomPane');
+    gp.style.zIndex = 420;
+    gp.style.pointerEvents = 'none';
+  }
 
   // Start on street/chart tiles (better for regional planning than satellite)
   _rgMapSat   = false;
@@ -11789,11 +11936,13 @@ function _rgUpdateRangeRing() {
   const center = [_rgDepCenter.lat, _rgDepCenter.lng];
   // Glow halo underneath (stored so it can be removed on next call)
   _rgRangeGlow = L.circle(center, {
+    renderer: _rgGetGeomRenderer(),
     radius: nm * 1852, color: '#ffd166', weight: 10,
     opacity: 0.18, fillOpacity: 0, interactive: false,
   }).addTo(_rgMap);
   // Main ring — thicker, more opaque; fully non-interactive (view-only)
   _rgRangeRing = L.circle(center, {
+    renderer: _rgGetGeomRenderer(),
     radius: nm * 1852, color: '#ffd166', weight: 3,
     opacity: 0.9, fillOpacity: 0, dashArray: '12 6',
     interactive: false,
@@ -11985,36 +12134,19 @@ function _rgRenderDots() {
       if (_rgRegionIcaos && _rgRegionIcaos.has(ap.icao.toUpperCase())) continue;
       const rec = lookupICAO(ap.icao);
       if (!rec || !rec.latitude || !rec.longitude) continue;
+      // All map-wide visibility gates live in _rgDotPassesMapFilters now —
+      // the same helper is called from _rgRefreshFilteredAirports so the
+      // matrix can't drift out of sync with what's shown on the map.
+      // Includes payout + star filters that used to be applied later, after
+      // the category sort; moving them here is purely a refactor — an airport
+      // either passes both or fails both, regardless of where it's checked.
+      if (!_rgDotPassesMapFilters(ap.icao, rec, owner.name)) continue;
       const catNum = +(categoryDB && categoryDB.get(ap.icao.toUpperCase())) || 0;
-      if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) continue;
-      if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
-        const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(owner.name);
-        const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
-        const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(rec.iso_region  || '');
-        const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
-        const isPinned    = _rgPinnedIcaos.has(ap.icao.toUpperCase());
-        if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
-      }
-      if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
-        const icaoUp2 = ap.icao.toUpperCase();
-        if (_rgExcludedIcaos.has(icaoUp2)) continue;
-        if (_rgExcludedOwners.size && _rgExcludedOwners.has(owner.name)) continue;
-        if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
-        if (_rgExcludedRegions.size && _rgExcludedRegions.has(rec.iso_region || '')) continue;
-        if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
-      }
-      if (_rgOnlyScenery && !_slHas(ap.icao)) continue;
-      if (_slDeveloperFilter) {
-        const slE = _slGet(ap.icao);
-        if (slE && (slE.developer || '') !== _slDeveloperFilter) continue;
-      }
       pending.push({ ap, rec, catNum, ownerName: owner.name });
     }
   }
   pending.sort((a, b) => a.catNum - b.catNum);
   for (const { ap, rec, catNum, ownerName } of pending) {
-    if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(ap.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
-    if (!_rgStarFiltCheck(ap.icao)) continue;
     const fillColor   = _rgGetDotFill(ap.icao, _rgMapSat ? '#a8d8f0' : '#3a7090');
     const fillOpacity = (_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75);
     const m = L.circleMarker([rec.latitude, rec.longitude], {
@@ -12033,6 +12165,10 @@ function _rgRenderDots() {
     m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      // Right-mouse drag is the universal pan affordance in region mode;
+      // when it just ended, suppress the rate popover that would otherwise
+      // trigger on the same right-mouse interaction.
+      if (_rgRightPanJustEnded) return;
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
@@ -12074,6 +12210,10 @@ function _rgRenderDots() {
     m.on('dblclick', () => _rgDblClickAirport(_dLat, _dLng, _dIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      // Right-mouse drag is the universal pan affordance in region mode;
+      // when it just ended, suppress the rate popover that would otherwise
+      // trigger on the same right-mouse interaction.
+      if (_rgRightPanJustEnded) return;
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
@@ -12291,6 +12431,10 @@ function _rgHighlightDots() {
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, depIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      // Right-mouse drag is the universal pan affordance in region mode;
+      // when it just ended, suppress the rate popover that would otherwise
+      // trigger on the same right-mouse interaction.
+      if (_rgRightPanJustEnded) return;
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
@@ -12354,6 +12498,10 @@ function _rgHighlightDots() {
     m.on('dblclick', () => _rgDblClickAirport(a.rec.latitude, a.rec.longitude, arrIcao));
     m.on('contextmenu', (e) => {
       if (e.originalEvent) e.originalEvent.preventDefault();
+      // Right-mouse drag is the universal pan affordance in region mode;
+      // when it just ended, suppress the rate popover that would otherwise
+      // trigger on the same right-mouse interaction.
+      if (_rgRightPanJustEnded) return;
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
@@ -12376,10 +12524,11 @@ function _rgHighlightDots() {
 function _rgApplySceneryState() {
   if (!_rgMap) return;
   _rgTipHtmlCache = null;
-  _rgRenderDots();
-  _rgHighlightDots();
-  if (_rgPhase === 'results') _rgRenderMatrix();
-  else if (typeof renderDistMatrix === 'function') renderDistMatrix();
+  // _rgOnlyScenery and _slDeveloperFilter are part of the visibility chokepoint —
+  // route through _rgApplyMapFilter so the matrix re-filters too (was just
+  // calling _rgRenderMatrix on stale _rgDepAirports/_rgArrAirports).
+  _rgApplyMapFilter();
+  if (_rgPhase !== 'results' && typeof renderDistMatrix === 'function') renderDistMatrix();
 }
 
 // ── Rate popover (right-click on an airport dot) ───────────────────────
@@ -12722,8 +12871,9 @@ function _rgMeasureHitTest(e) {
 
 // Create or reposition the edge-resize handle (east, 90°) and the close handle
 // (west, 270°) for saved measurement i. The close handle is a clickable ✕ that
-// removes this specific measurement out-of-sequence — the Undo button still
-// pops the newest remaining entry, so the two flows stay independent.
+// removes this specific measurement — it is the only per-measurement removal
+// path; the global Clear All button is the bulk wipe-everything counterpart
+// and shows up whenever at least one measurement exists.
 function _rgDrawMeasureHandles(i) {
   const m = _rgMeasureSaved[i];
   if (!m || !_rgMap) return;
@@ -12735,23 +12885,35 @@ function _rgDrawMeasureHandles(i) {
   const edgeLL  = m.toLL;
   const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 0, nm);
   const measCol = _rgMeasColor();
+  // Track the last-applied color per entry so we only call setIcon (which
+  // rebuilds the handle's DOM element) when the tile-mode actually flipped
+  // purple↔yellow. Per-frame drags only need setLatLng — the divIcon HTML
+  // itself doesn't change while the color is stable.
   if (!m.edgeHandle) {
     m.edgeHandle = L.marker([edgeLL.lat, edgeLL.lng], {
       icon: _rgHandleIcon(measCol, 'Drag to resize and rotate the measurement'),
       interactive: false, keyboard: false, zIndexOffset: 500,
     }).addTo(_rgMap);
+    m.edgeHandleColor = measCol;
   } else {
     m.edgeHandle.setLatLng([edgeLL.lat, edgeLL.lng]);
-    m.edgeHandle.setIcon(_rgHandleIcon(measCol, 'Drag to resize and rotate the measurement'));
+    if (m.edgeHandleColor !== measCol) {
+      m.edgeHandle.setIcon(_rgHandleIcon(measCol, 'Drag to resize and rotate the measurement'));
+      m.edgeHandleColor = measCol;
+    }
   }
   if (!m.closeHandle) {
     m.closeHandle = L.marker([closeLL.lat, closeLL.lng], {
       icon: _rgCloseHandleIcon(measCol, 'Click to remove this measurement'),
       interactive: false, keyboard: false, zIndexOffset: 500,
     }).addTo(_rgMap);
+    m.closeHandleColor = measCol;
   } else {
     m.closeHandle.setLatLng([closeLL.lat, closeLL.lng]);
-    m.closeHandle.setIcon(_rgCloseHandleIcon(measCol, 'Click to remove this measurement'));
+    if (m.closeHandleColor !== measCol) {
+      m.closeHandle.setIcon(_rgCloseHandleIcon(measCol, 'Click to remove this measurement'));
+      m.closeHandleColor = measCol;
+    }
   }
 }
 
@@ -12805,7 +12967,53 @@ function _rgRedrawMeasureEntry(i) {
     `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
   m.label.setLatLng([midLL.lat, midLL.lng]);
   m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
+  // Once positioned at the midpoint, a wide label on a short line would
+  // extend past one or both endpoints and obscure the begin/end markers
+  // (pin and edge handle). Push the label vertically away from the midpoint
+  // until the endpoints are visible again. Skip during edge drag (label is
+  // already anchored at the endpoint with a below-the-cursor offset) AND
+  // during center drag (line shape is unchanged — only position changes —
+  // so whatever fit state held pre-drag still holds; running fit every
+  // frame would force a synchronous layout per saved measurement).
+  const centerDragging = _rgDragMode && _rgDragMode === `meas_center_${i}`;
+  if (!dragging && !centerDragging) _rgFitMeasureLabel(m.label, origin, toLL);
   _rgDrawMeasureHandles(i);
+}
+
+// Detect and correct label occlusion of the line endpoints. Called after the
+// midpoint-centered label is positioned; if the label's bounding box would
+// extend past either endpoint along the line axis, shift it down (positive Y)
+// by enough that the line and both endpoint markers remain visible. The
+// perpendicular shift is always vertical so the label still reads naturally
+// regardless of line orientation.
+function _rgFitMeasureLabel(marker, origin, toLL) {
+  const el = marker && marker.getElement && marker.getElement();
+  if (!el || !_rgMap) return;
+  const wrap  = el.firstElementChild;
+  const inner = wrap && wrap.firstElementChild; // .rg-ring-lbl
+  if (!wrap || !inner) return;
+  const lblW = inner.offsetWidth  || 0;
+  const lblH = inner.offsetHeight || 0;
+  if (!lblW || !lblH) return;
+  const op = _rgMap.latLngToContainerPoint(L.latLng(origin.lat, origin.lng));
+  const tp = _rgMap.latLngToContainerPoint(L.latLng(toLL.lat,   toLL.lng));
+  const dx = tp.x - op.x, dy = tp.y - op.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  // Axis-aligned label projected onto the line direction:
+  // half-extent = (|cosθ|·W + |sinθ|·H) / 2. Compare to half the line length
+  // with a small clearance so the endpoint markers (pin, edge handle) stay
+  // visibly outside the label box rather than just touching its edge.
+  const cos = Math.abs(dx) / len;
+  const sin = Math.abs(dy) / len;
+  const projHalf  = (lblW * cos + lblH * sin) / 2;
+  const halfLine  = len / 2;
+  const clearance = 14;
+  if (projHalf <= halfLine - clearance) return;
+  // Push the label below the midpoint: top edge sits a few px below the line,
+  // so the line itself and both endpoint markers are clearly visible above it.
+  const offsetY = Math.round(lblH / 2 + 8);
+  wrap.style.transform = `translate(-50%, ${offsetY}px)`;
 }
 
 // px tolerance for hit-testing drag targets
@@ -12918,10 +13126,18 @@ function _rgCrossesAM(lng1, lng2) {
 // explore/results is left to the marker-level handlers (Quick-Rate popover) and
 // to the browser's default context menu suppression.
 function _rgMapContextMenu(e) {
+  // Right-mouse is universally reserved for map panning in region mode —
+  // always suppress the browser context menu. The cancel-on-right-click
+  // gesture for region drawing is preserved for the no-drag case only:
+  // _rgRightPanJustEnded is set on mouseup-after-drag (300 ms window) so
+  // contextmenu fires that follow a drag are treated as drag-ends, not
+  // clicks. A pure right-click in a region-draw phase leaves the flag
+  // false and still triggers the cancel.
+  if (e && e.originalEvent) e.originalEvent.preventDefault();
+  if (e) L.DomEvent.stopPropagation(e);
+  if (_rgRightPanJustEnded) return;
   if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
       _rgPhase === 'ruler' || _rgPhase === 'arr_drag') {
-    if (e && e.originalEvent) e.originalEvent.preventDefault();
-    if (e) L.DomEvent.stopPropagation(e);
     rgExploreReturn();
   }
 }
@@ -12929,6 +13145,22 @@ function _rgMapContextMenu(e) {
 // ── Phase: mouse events ────────────────────────────────────────────────
 
 function _rgMapMouseDown(e) {
+  // Right-mouse drag is the universal map-pan affordance throughout the
+  // region map (every phase, every mode). Left-click is owned by phase-
+  // specific workflows (region draw / measurement draw / dot click /
+  // handle drag), so right-click is the consistent way to navigate the map
+  // without exiting whatever workflow is active. Captures start coords +
+  // resets the moved flag; the per-frame panBy and movement detection live
+  // in _rgMapMouseMoveBody, cleanup in both mouseup paths.
+  if (e.originalEvent && e.originalEvent.button === 2) {
+    _rgRightPanStart = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+    _rgRightPanLast  = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+    _rgRightPanMoved = false;
+    _rgSetCursor('grabbing');
+    if (e.originalEvent.preventDefault) e.originalEvent.preventDefault();
+    L.DomEvent.stopPropagation(e);
+    return;
+  }
   // Measurement handle drag takes priority in all phases (handles are persistent)
   if (_rgMeasureSaved.length) {
     const mhit = _rgMeasureHitTest(e);
@@ -12937,13 +13169,21 @@ function _rgMapMouseDown(e) {
       if (isNaN(idx) || !_rgMeasureSaved[idx]) return; // guard against malformed hit string
       // Close handle is a click-to-remove, not a drag. Remove that specific
       // measurement immediately and short-circuit before any drag state is set.
-      // The Undo button continues to pop the newest remaining entry — removing
-      // out-of-sequence here just shortens the stack at the chosen index.
+      // This is the only per-measurement removal path; the Clear All button
+      // (visible whenever 1+ entries exist) is the bulk-remove counterpart.
       if (mhit.startsWith('meas_close_')) {
         _rgRemoveMeasureEntry(_rgMeasureSaved[idx]);
         _rgMeasureSaved.splice(idx, 1);
         _rgSyncClearBtn();
         L.DomEvent.stopPropagation(e);
+        if (e.originalEvent && e.originalEvent.preventDefault) e.originalEvent.preventDefault();
+        // Block Leaflet's map-drag handler from kicking in if the user moves
+        // the cursor a few px between mousedown and mouseup on the ✕. We
+        // disable map dragging now and use a sentinel _rgDragMode so the
+        // existing _rgEndDrag (called on mouseup) re-enables dragging and
+        // clears the sentinel in one shared cleanup path.
+        _rgDragMode = 'meas_close_dismiss';
+        _rgMap.dragging.disable();
         // Guard against the airport-dot click that would otherwise fire on the
         // mouseup at this same coordinate.
         _rgDragJustEnded = true;
@@ -12971,6 +13211,10 @@ function _rgMapMouseDown(e) {
     }
   }
   if (_rgMeasureActive) {
+    // Only left-click initiates a new measurement draw. Right-click is the
+    // pan affordance (handled at the top of this function); middle-click is
+    // ignored to avoid weird interactions with auto-scroll.
+    if (e.originalEvent && e.originalEvent.button !== 0) return;
     _rgClearMeasureLive(); // discard any partially-started drag; saved measurements stay
     _rgMeasureOrigin = e.latlng;
     _rgMeasureDraw   = true;
@@ -12999,15 +13243,19 @@ function _rgMapMouseDown(e) {
     _rgSetCursor('grab');
 
     _rgDepPin = L.circleMarker(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 5, weight: 2, color: '#00c8ff', fillColor: '#00c8ff', fillOpacity: 1, interactive: false,
     }).addTo(_rgMap);
     _rgDepFill = L.circle(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 1, color: 'transparent', fillColor: '#00c8ff', fillOpacity: 0.07, interactive: false,
     }).addTo(_rgMap);
     _rgDepRing = L.circle(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 1, color: '#00c8ff', weight: 2, fillOpacity: 0, dashArray: '6 4', interactive: false,
     }).addTo(_rgMap);
     _rgRadLine = L.polyline([e.latlng, e.latlng], {
+      renderer: _rgGetGeomRenderer(),
       color: '#00c8ff', weight: 1.5, opacity: 0.65, dashArray: '4 5', interactive: false,
     }).addTo(_rgMap);
     _rgUpdateRangeRing();
@@ -13024,15 +13272,19 @@ function _rgMapMouseDown(e) {
     if (_rgRulerLine) { _rgRulerLine.remove(); _rgRulerLine = null; }
 
     _rgArrPin = L.circleMarker(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 5, weight: 2, color: '#ff6a00', fillColor: '#ff6a00', fillOpacity: 1, interactive: false,
     }).addTo(_rgMap);
     _rgArrFill = L.circle(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 1, color: 'transparent', fillColor: '#ff6a00', fillOpacity: 0.07, interactive: false,
     }).addTo(_rgMap);
     _rgArrRing = L.circle(e.latlng, {
+      renderer: _rgGetGeomRenderer(),
       radius: 1, color: '#ff6a00', weight: 2, fillOpacity: 0, dashArray: '6 4', interactive: false,
     }).addTo(_rgMap);
     _rgRadLine = L.polyline([e.latlng, e.latlng], {
+      renderer: _rgGetGeomRenderer(),
       color: '#ff6a00', weight: 1.5, opacity: 0.65, dashArray: '4 5', interactive: false,
     }).addTo(_rgMap);
     _rgUpdatePhaseText();
@@ -13057,6 +13309,25 @@ function _rgMapMouseMove(e) {
 
 function _rgMapMouseMoveBody(e) {
   const cp  = e.originalEvent;
+
+  // Right-mouse pan (universal in region map). Compute delta from the previous
+  // client coords and panBy the inverse so the content tracks the cursor.
+  // Also flag _rgRightPanMoved once the cursor moves past a small threshold
+  // from the mousedown origin — used by contextmenu handlers to distinguish
+  // a right-drag (suppress popover/cancel) from a pure right-click (allow).
+  if (_rgRightPanLast && cp) {
+    const dx = cp.clientX - _rgRightPanLast.x;
+    const dy = cp.clientY - _rgRightPanLast.y;
+    _rgRightPanLast.x = cp.clientX;
+    _rgRightPanLast.y = cp.clientY;
+    if (_rgRightPanStart) {
+      const tx = cp.clientX - _rgRightPanStart.x;
+      const ty = cp.clientY - _rgRightPanStart.y;
+      if (Math.abs(tx) > 3 || Math.abs(ty) > 3) _rgRightPanMoved = true;
+    }
+    if (_rgMap) _rgMap.panBy([-dx, -dy], { animate: false });
+    return;
+  }
 
   // Measurement handle drag is active in any phase
   if (_rgDragMode && _rgDragMode.startsWith('meas_')) {
@@ -13089,6 +13360,7 @@ function _rgMapMouseMoveBody(e) {
   } else if (_rgPhase === 'ruler') {
     if (!_rgRulerLine) {
       _rgRulerLine = L.polyline([_rgDepCenter, e.latlng], {
+        renderer: _rgGetGeomRenderer(),
         color: '#00c8ff', weight: 1.5, opacity: 0.45, dashArray: '9 6', interactive: false,
       }).addTo(_rgMap);
     } else {
@@ -13123,9 +13395,11 @@ function _rgMapMouseMoveBody(e) {
 
 function _rgEndDrag() {
   if (!_rgDragMode) return false;
-  const wasMeas    = _rgDragMode.startsWith('meas_');
-  const wasMeasEdge = _rgDragMode.startsWith('meas_edge_');
-  const meIdx      = wasMeasEdge ? parseInt(_rgDragMode.slice(10), 10) : -1;
+  const wasMeas       = _rgDragMode.startsWith('meas_');
+  const wasMeasEdge   = _rgDragMode.startsWith('meas_edge_');
+  const wasMeasCenter = _rgDragMode.startsWith('meas_center_');
+  const meIdx         = wasMeasEdge   ? parseInt(_rgDragMode.slice(10), 10) : -1;
+  const mcIdx         = wasMeasCenter ? parseInt(_rgDragMode.slice(12), 10) : -1;
   _rgDragMode = null;
   _rgDragMeasSnap = null;
   clearTimeout(_rgMatRefreshTm);
@@ -13140,12 +13414,49 @@ function _rgEndDrag() {
     if (eh.setOpacity) eh.setOpacity(1);
     _rgRedrawMeasureEntry(meIdx);
   }
+  // Center-handle drag: the per-frame redraw kept _rgFitMeasureLabel skipped
+  // (line shape doesn't change during translation, so re-fitting every frame
+  // would force a synchronous layout per drag step for no benefit). But each
+  // frame's setIcon also resets the wrapper transform to the centered default,
+  // wiping any fit offset that was on the label pre-drag. Re-run the redraw
+  // once with _rgDragMode now cleared so the fit logic restores the offset.
+  if (wasMeasCenter && mcIdx >= 0 && _rgMeasureSaved[mcIdx]) {
+    _rgRedrawMeasureEntry(mcIdx);
+  }
   _rgDragJustEnded = true;
   setTimeout(() => { _rgDragJustEnded = false; }, 300);
   return true;
 }
 
+// Restore the cursor to the phase- and mode-appropriate state after a
+// right-pan or other transient gesture ends.
+function _rgRestoreCursor() {
+  if (_rgMeasureActive)     { _rgSetCursor('cross'); return; }
+  if (_rgPhase === 'idle')  { _rgSetCursor('cross'); return; }
+  if (_rgPhase === 'ruler') { _rgSetCursor('ruler'); return; }
+  _rgSetCursor('');
+}
+
 function _rgMapMouseUp() {
+  // End right-mouse pan first — it can be active in any phase and does not
+  // touch any other state (no drag mode, no measurement-in-progress).
+  if (_rgRightPanLast) {
+    const moved = _rgRightPanMoved;
+    _rgRightPanLast = null;
+    _rgRightPanStart = null;
+    _rgRightPanMoved = false;
+    _rgRestoreCursor();
+    // If the user actually dragged, flag the just-ended state so the
+    // contextmenu handler (which fires after mouseup in most browsers)
+    // can suppress the rate popover / region-draw cancel that would
+    // otherwise trigger on a right-mouse interaction. Pure right-clicks
+    // with no movement leave the flag false, preserving those gestures.
+    if (moved) {
+      _rgRightPanJustEnded = true;
+      setTimeout(() => { _rgRightPanJustEnded = false; }, 300);
+    }
+    return;
+  }
   if (_rgMeasureDraw) {
     _rgMeasureDraw = false;
     _rgMap.dragging.enable();
@@ -13153,6 +13464,7 @@ function _rgMapMouseUp() {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
+        renderer: _rgGetGeomRenderer(),
         radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
       }).addTo(_rgMap);
       const savedIdx = _rgMeasureSaved.length;
@@ -13171,6 +13483,7 @@ function _rgMapMouseUp() {
       // label on the line midpoint.
       _rgRedrawMeasureEntry(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgMeasureLabelWrapEl = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
     }
@@ -13184,6 +13497,21 @@ function _rgMapMouseUp() {
 }
 
 function _rgDocMouseUp() {
+  // Mirror _rgMapMouseUp's right-pan cleanup — covers the case where the user
+  // releases the right button off the map (e.g. cursor exited the map area
+  // during a fast pan).
+  if (_rgRightPanLast) {
+    const moved = _rgRightPanMoved;
+    _rgRightPanLast = null;
+    _rgRightPanStart = null;
+    _rgRightPanMoved = false;
+    _rgRestoreCursor();
+    if (moved) {
+      _rgRightPanJustEnded = true;
+      setTimeout(() => { _rgRightPanJustEnded = false; }, 300);
+    }
+    return;
+  }
   if (_rgMeasureDraw) {
     _rgMeasureDraw = false;
     if (_rgMap) _rgMap.dragging.enable();
@@ -13191,6 +13519,7 @@ function _rgDocMouseUp() {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
+        renderer: _rgGetGeomRenderer(),
         radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
       }).addTo(_rgMap);
       const savedIdx = _rgMeasureSaved.length;
@@ -13209,6 +13538,7 @@ function _rgDocMouseUp() {
       // label on the line midpoint.
       _rgRedrawMeasureEntry(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+      _rgMeasureLabelWrapEl = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
     }
@@ -13449,6 +13779,67 @@ function _rgUpdatePhaseText() {
 
 // ── Airport filtering ───────────────────────────────────────────────────
 
+// Single source of truth for "is this airport visible on the region map?".
+// Mirrors every map-wide gate that controls dot rendering so the region-mode
+// matrix automatically honors the same filters: global category, search-
+// based inclusion sets (owner / country / region / continent / pinned),
+// search-based exclusion sets (owners / countries / regions / continents /
+// icaos), scenery-only toggle, scenery-developer filter, payout filter
+// (when payout-mode is on), and the per-airport star filter.
+//
+// Used both by _rgRenderDots (to decide whether to draw each dot) and by
+// _rgRefreshFilteredAirports (to decide whether each airport in the dep/arr
+// region circles should appear in the matrix). Per-region cat/owner filters
+// — which are part of the matrix sidebar UI — stay in _rgRefreshFilteredAirports
+// since they don't affect dot visibility.
+function _rgDotPassesMapFilters(icao, rec, ownerName) {
+  if (!rec) return false;
+  const icaoUp = icao.toUpperCase();
+  const isPinned = _rgPinnedIcaos && _rgPinnedIcaos.has(icaoUp);
+  // Global category filter (1–7). Airports without a known category number
+  // (catNum === 0) bypass this gate — matches _rgRenderDots' behavior so
+  // un-categorized airports still render.
+  const catNum = +(categoryDB && categoryDB.get(icaoUp)) || 0;
+  if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
+  // Inclusion gate: if any include-set is active, the airport must match at
+  // least one (or be pinned). When no include-set is active, every airport
+  // passes this gate.
+  if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
+      _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
+      (_rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
+    const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
+    const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
+    const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(rec.iso_region || '');
+    const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
+    if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) return false;
+  }
+  // Exclusion gate: any matching exclude-set kills the airport.
+  if ((_rgExcludedOwners    && _rgExcludedOwners.size)    ||
+      (_rgExcludedCountries && _rgExcludedCountries.size) ||
+      (_rgExcludedRegions   && _rgExcludedRegions.size)   ||
+      (_rgExcludedContinents && _rgExcludedContinents.size) ||
+      (_rgExcludedIcaos     && _rgExcludedIcaos.size)) {
+    if (_rgExcludedIcaos.has(icaoUp)) return false;
+    if (_rgExcludedOwners.size    && _rgExcludedOwners.has(ownerName || '')) return false;
+    if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) return false;
+    if (_rgExcludedRegions.size   && _rgExcludedRegions.has(rec.iso_region || '')) return false;
+    if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) return false;
+  }
+  // Scenery-only mode
+  if (_rgOnlyScenery && !_slHas(icao)) return false;
+  // Scenery developer filter
+  if (_slDeveloperFilter) {
+    const slE = _slGet(icao);
+    if (slE && (slE.developer || '') !== _slDeveloperFilter) return false;
+  }
+  // Payout-mode minimum (only applies when payout-mode is active)
+  if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB &&
+      (payoutDB.get(icaoUp) ?? 0) < _rgPayoutFilter) return false;
+  // Star rating filter
+  if (typeof _rgStarFiltCheck === 'function' && !_rgStarFiltCheck(icao)) return false;
+  return true;
+}
+
 function _rgAirportsInCircle(cLat, cLng, radiusNm) {
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) return [];
@@ -13461,7 +13852,10 @@ function _rgAirportsInCircle(cLat, cLng, radiusNm) {
       const rec = lookupICAO(ap.icao);
       if (!rec || !rec.latitude || !rec.longitude) continue;
       const d = _haversineNm(cLat, cLng, rec.latitude, rec.longitude);
-      if (d <= radiusNm) out.push({ icao: ap.icao, rec, distNm: d });
+      // Capture owner.name alongside the record so the matrix-side filter
+      // (_rgRefreshFilteredAirports → _rgDotPassesMapFilters) has every
+      // input the dot-side filter needs, without re-walking ownerData.
+      if (d <= radiusNm) out.push({ icao: ap.icao, rec, distNm: d, ownerName: owner.name });
     }
   }
   out.sort((a, b) => a.distNm - b.distNm);
@@ -13472,11 +13866,19 @@ function _rgRefreshFilteredAirports() {
   const _filter = (full, catFilter, ownerFilter) => {
     const out = [];
     for (const a of full) {
+      // Map-wide filter chokepoint — same gate that decides dot visibility,
+      // so the matrix can never show an airport that the map has hidden
+      // (country / region / continent / pinned / exclusions / scenery /
+      // developer / payout / star / global cat).
+      const _owner = a.ownerName || _rgOwnerMap.get(a.icao.toUpperCase()) || '';
+      if (!_rgDotPassesMapFilters(a.icao, a.rec, _owner)) continue;
+      // Per-region category filter (matrix sidebar UI). Uses 999 as the
+      // bucket for un-categorized airports so they're only included when
+      // the per-region filter explicitly contains 999.
       const cat = +(categoryDB && categoryDB.get(a.icao.toUpperCase())) || 999;
       if (!catFilter.has(cat)) continue;
-      const _owner = _rgOwnerMap.get(a.icao.toUpperCase()) || '';
+      // Per-region owner filter (matrix sidebar UI).
       if (ownerFilter !== null && !ownerFilter.has(_owner)) continue;
-      if (_rgMapOwnerFilter !== null && !_rgMapOwnerFilter.has(_owner)) continue;
       out.push(a);
       if (out.length >= _rgCapVal) break; // full array is distance-sorted — take first N that match
     }
@@ -13719,9 +14121,7 @@ function _rgTogglePayoutMode() {
     if (lb) lb.style.display = 'none';
   }
   _rgRepositionFilterPanels();
-  _rgRenderDots();
-  _rgHighlightDots();
-  if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
 }
 
@@ -13859,9 +14259,7 @@ function _rgPayoutSliderInput(val) {
   if (vl) vl.textContent = _rgPayoutFilter;
   _rgUpdatePayoutZeroDot();
   _rgRepositionFilterPanels();
-  _rgRenderDots();
-  _rgHighlightDots();
-  if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
 }
 
@@ -13915,9 +14313,7 @@ function _rgToggleStarFilter() {
     _rgUpdateStarFilterLabel();
   }
   _rgRepositionFilterPanels();
-  _rgRenderDots();
-  _rgHighlightDots();
-  if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
 }
 
@@ -13964,9 +14360,7 @@ function _rgStarFltClick(e) {
   _rgStarFltSetStars(_rgStarFilter);
   _rgUpdateStarFilterLabel();
   _rgRepositionFilterPanels();  // label show/hide changes panel height
-  _rgRenderDots();
-  _rgHighlightDots();
-  if (_rgPhase === 'results') _rgRenderMatrix();
+  _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
 }
 
@@ -14355,7 +14749,7 @@ function _rgToggleGlobalCat(btn) {
   if (_globalCatFilter.has(cat)) _globalCatFilter.delete(cat);
   else _globalCatFilter.add(cat);
   btn.classList.toggle('active');
-  _rgRenderDots();
+  _rgApplyMapFilter();
   _rgSyncGlobalCatToMain();
   _rgUpdateBreadcrumbs();
 }
@@ -14363,7 +14757,7 @@ function _rgToggleGlobalCat(btn) {
 function _rgAllGlobalCats() {
   for (let i = 1; i <= 7; i++) _globalCatFilter.add(i);
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.add('active'));
-  _rgRenderDots();
+  _rgApplyMapFilter();
   _rgSyncGlobalCatToMain();
   _rgUpdateBreadcrumbs();
 }
@@ -14371,7 +14765,7 @@ function _rgAllGlobalCats() {
 function _rgNoneGlobalCats() {
   _globalCatFilter.clear();
   document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => b.classList.remove('active'));
-  _rgRenderDots();
+  _rgApplyMapFilter();
   _rgSyncGlobalCatToMain();
   _rgUpdateBreadcrumbs();
 }
@@ -14382,7 +14776,7 @@ function _rgInvertGlobalCats() {
     if (_globalCatFilter.has(cat)) { _globalCatFilter.delete(cat); b.classList.remove('active'); }
     else                           { _globalCatFilter.add(cat);    b.classList.add('active');    }
   });
-  _rgRenderDots();
+  _rgApplyMapFilter();
   _rgSyncGlobalCatToMain();
   _rgUpdateBreadcrumbs();
 }
@@ -14526,7 +14920,7 @@ function _rgUpdateBreadcrumbs() {
     const countryChip = mkChip(
       label,
       null,
-      () => { _rgMapCountryFilter = null; _rgRenderDots(); _rgHighlightDots(); }
+      () => { _rgMapCountryFilter = null; _rgApplyMapFilter(); }
     );
     if (n > 1) {
       const names = [..._rgMapCountryFilter]
@@ -14548,7 +14942,7 @@ function _rgUpdateBreadcrumbs() {
     const regionChip = mkChip(
       label,
       null,
-      () => { _rgMapRegionFilter = null; _rgRenderDots(); _rgHighlightDots(); }
+      () => { _rgMapRegionFilter = null; _rgApplyMapFilter(); }
     );
     const names = [..._rgMapRegionFilter]
       .map(code => _rgRegionCodeToName.get(code) || code)
@@ -14564,7 +14958,7 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkChip(
       label,
       null,
-      () => { _rgPinnedIcaos.clear(); _rgRenderDots(); _rgHighlightDots(); }
+      () => { _rgPinnedIcaos.clear(); _rgApplyMapFilter(); }
     ));
   }
 
@@ -14572,7 +14966,7 @@ function _rgUpdateBreadcrumbs() {
   if (_rgMapContinentFilter !== null) {
     const codes = [..._rgMapContinentFilter];
     const label = codes.length === 1 ? (_RG_CONTINENT_NAMES[codes[0]] || codes[0]) : `${codes.length} Continents`;
-    const continentChip = mkChip(label, null, () => { _rgMapContinentFilter = null; _rgRenderDots(); _rgHighlightDots(); });
+    const continentChip = mkChip(label, null, () => { _rgMapContinentFilter = null; _rgApplyMapFilter(); });
     if (codes.length > 1) {
       continentChip.title = codes.map(c => _RG_CONTINENT_NAMES[c] || c).sort().join('\n');
     }
@@ -14590,18 +14984,18 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkExcludeChip(o, () => { _rgExcludedOwners.delete(o); _rgApplyMapOwnerFilter(); _rgUpdateBreadcrumbs(); }));
   for (const iso of _rgExcludedCountries) {
     const name = _rgCountryIsoToName.get(iso) || iso;
-    container.appendChild(mkExcludeChip(name, () => { _rgExcludedCountries.delete(iso); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedCountries.delete(iso); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
   }
   for (const code of _rgExcludedRegions) {
     const name = _rgRegionCodeToName.get(code) || code;
-    container.appendChild(mkExcludeChip(name, () => { _rgExcludedRegions.delete(code); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedRegions.delete(code); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
   }
   for (const code of _rgExcludedContinents) {
     const name = _RG_CONTINENT_NAMES[code] || code;
-    container.appendChild(mkExcludeChip(name, () => { _rgExcludedContinents.delete(code); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+    container.appendChild(mkExcludeChip(name, () => { _rgExcludedContinents.delete(code); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
   }
   for (const icao of _rgExcludedIcaos)
-    container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgRenderDots(); _rgHighlightDots(); _rgUpdateBreadcrumbs(); }));
+    container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -15246,19 +15640,30 @@ function _rgUpdateMapOwnerBtn() {
   _rgUpdateBreadcrumbs();
 }
 
-function _rgApplyMapOwnerFilter() {
+// Universal "a map-wide filter just changed — sync everything" helper. Used
+// by every filter-mutation callsite (search filters, exclude chips, global
+// category buttons, etc.) so the matrix automatically stays consistent with
+// the visible dot set. In phases before regions are drawn the matrix refresh
+// is a no-op; in 'results' phase it re-filters the dep/arr region airports
+// through the same _rgDotPassesMapFilters chokepoint that decides dot
+// visibility, rebuilds the dep/arr owner dropdowns (so they only offer
+// currently-visible owners), and re-renders the matrix.
+function _rgApplyMapFilter() {
   if (_rgPhase === 'results') {
     _rgRefreshFilteredAirports();
-    // Rebuild the dep / arr owner dropdowns so they only offer owners that are
-    // currently visible on the map (i.e. included in _rgMapOwnerFilter when
-    // it's non-null). Without this the dep/arr menus would list owners the
-    // user can't actually see, which is confusing and lets them "filter" by
-    // pilots that are already hidden.
     _rgBuildOwnerDropdown();
     _rgRenderMatrix();
   }
   _rgRenderDots();
   _rgHighlightDots();
+}
+
+// Back-compat name kept because callers (and at least one chip handler at
+// line 14903) still use the owner-specific entry point. Now an alias of
+// _rgApplyMapFilter — the owner-specific behavior (dropdown rebuild) was
+// already correct for every filter, not just owner.
+function _rgApplyMapOwnerFilter() {
+  _rgApplyMapFilter();
 }
 
 function _rgClickOwnerStripe(ownerName, side) {
@@ -15562,7 +15967,7 @@ function _rgMapSrFilterToCountry(iso, displayName) {
     } else {
       _rgExcludedCountries.add(iso);
     }
-    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
   }
   if (_rgMapSrAdditive) {
     if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
@@ -15571,8 +15976,7 @@ function _rgMapSrFilterToCountry(iso, displayName) {
     _rgClearAllSearchFilters();
     _rgMapCountryFilter = new Set([iso]);
   }
-  _rgRenderDots();
-  _rgHighlightDots();
+  _rgApplyMapFilter();
   _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
@@ -15587,7 +15991,7 @@ function _rgMapSrFilterToRegion(code, name) {
     } else {
       _rgExcludedRegions.add(code);
     }
-    _rgRenderDots(); _rgHighlightDots(); _rgFitAllVisibleAirports(); _rgMapSrClear(); return;
+    _rgApplyMapFilter(); _rgFitAllVisibleAirports(); _rgMapSrClear(); return;
   }
   if (_rgMapSrAdditive) {
     if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set();
@@ -15596,8 +16000,7 @@ function _rgMapSrFilterToRegion(code, name) {
     _rgClearAllSearchFilters();
     _rgMapRegionFilter = new Set([code]);
   }
-  _rgRenderDots();
-  _rgHighlightDots();
+  _rgApplyMapFilter();
   _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
@@ -15610,7 +16013,7 @@ function _rgMapSrFilterToContinent(code, name) {
     } else {
       _rgExcludedContinents.add(code);
     }
-    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
   }
   if (_rgMapSrAdditive) {
     if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
@@ -15619,8 +16022,7 @@ function _rgMapSrFilterToContinent(code, name) {
     _rgClearAllSearchFilters();
     _rgMapContinentFilter = new Set([code]);
   }
-  _rgRenderDots();
-  _rgHighlightDots();
+  _rgApplyMapFilter();
   _rgFitAllVisibleAirports();
   if (!_rgMapSrAdditive) { _rgBuildMapOwnerList(); _rgUpdateMapOwnerBtn(); }
   _rgMapSrClear();
@@ -15637,7 +16039,7 @@ function _rgMapSrSelect(icao) {
     } else {
       _rgExcludedIcaos.add(icaoUp);
     }
-    _rgRenderDots(); _rgHighlightDots(); _rgMapSrClear(); return;
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
   }
   if (_rgMapSrAdditive) {
     _rgPinnedIcaos.add(icaoUp);
@@ -15645,8 +16047,7 @@ function _rgMapSrSelect(icao) {
     _rgClearAllSearchFilters();
     _rgPinnedIcaos.add(icaoUp);
   }
-  _rgRenderDots();
-  _rgHighlightDots();
+  _rgApplyMapFilter();
   // Fit the map to all currently-visible airports — covers KSEA, then +KPDX
   // landing on a viewport that shows both pinned airports together.
   _rgFitAllVisibleAirports();
@@ -16025,7 +16426,8 @@ function rgSendToFlightPlanner() {
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the line's endpoint) to <em>both resize and rotate</em> the measurement — distance and bearing follow the cursor together. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. Use <strong>↩ Undo</strong> to remove the most recent remaining measurement and <strong>✕ Clear All</strong> to remove all at once — both still work correctly after any out-of-sequence removals via the ✕ close handle.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the line's endpoint) to <em>both resize and rotate</em> the measurement — distance and bearing follow the cursor together. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. The on-map ✕ close handle is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map.<br/><br/>
+            <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, and <em>cancels the in-progress region selection</em> during region drawing.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -16114,15 +16516,109 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.2</span>
+          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map dot tooltips work again after drawing region circles</strong> &mdash; the v2.56.0 canvas-renderer overhaul added a second canvas element to the map's overlay pane for measurement / region / range geometry. Because both that canvas and the airport-dot canvas defaulted to the same pane with <code>pointer-events: auto</code>, the geometry canvas sat on top of the dot canvas and silently captured every <code>mousemove</code> as soon as the dep / arr region rings rendered &mdash; so dot mouseover never fired and tooltips stopped appearing on hover. The geometry canvas now lives in its own dedicated pane (z-index 420, between the dot pane and the route-line pane) with <code>pointer-events: none</code>, so mouse events fall through to the dot canvas below it as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.1</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map dot tooltips no longer stay disabled after closing mid-draw</strong> &mdash; clicking <em>&#x229A; Select Regions</em> puts the map in a drawing phase that intentionally suppresses dot tooltips so the cursor stays focused on placing the region. If the modal was then closed (via the &times; close button) without completing the draw or pressing Cancel, the drawing phase persisted across the close, and reopening the modal silently kept tooltips disabled because the map-init path short-circuits when the map already exists. The close handler now resets transient drawing phases back to explore on the way out; completed-region state (results phase) still survives a close / reopen cycle as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.0</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix now honors every map-wide filter</strong> &mdash; previously the matrix only respected the map-wide <em>owner</em> filter. Filtering the map to a country, region, continent, pinned set, exclusion list, scenery / developer toggle, global category, payout, or star rating &mdash; then drawing region circles &mdash; would still populate the matrix with airports that had been hidden on the map. The matrix and dot rendering now share a single chokepoint that gates visibility against all those filters, so the matrix can never show an airport the map has hidden. Concretely: filter to Australia, draw region circles in the USA &rarr; the matrix is empty (was: matrix showed USA airports despite no USA dots on the map).</li>
+          <li><strong>Live re-filtering as you change map filters with regions drawn</strong> &mdash; every filter mutation site (search filters, exclude chips, global category buttons, payout slider, star filter, scenery toggle) now routes through the same shared "filter changed" applier. Adjusting any map-wide filter while in results phase immediately re-filters the matrix in addition to re-rendering dots; previously only the owner filter triggered a matrix refresh.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.54.0</span>
-          <span class="release-date">May 16, 2026 &middot; Current</span>
+          <span class="release-version">v2.58.0</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
         <ul class="release-notes">
-          <li><strong>Measurement ring color follows the map tile mode</strong> &mdash; the purple measurement rings (<code>#cc44ff</code>) read clearly on the street tiles but tend to disappear against satellite imagery. The ring, line, label border, origin pin, and both handles now switch to a bright yellow (<code>#ffd000</code>) when the map is in satellite mode and revert to purple when switched back to street. <strong>The change is retroactive</strong>: toggling the tile mode repaints every existing saved measurement (and any in-progress draw) in lockstep, so you don't have to clear and redraw to match the new background.</li>
+          <li><strong>Right-mouse drag pans the map throughout region mode</strong> &mdash; v2.57.0 introduced right-mouse pan only while measurement mode was active. It now applies <strong>universally in region mode</strong>: every phase (explore, region drawing, results) and every mode honors right-drag for panning. Left-click stays owned by phase-specific workflows (region draw, measurement draw, dot click, handle drag), so right-click is the consistent way to navigate the map without exiting whatever workflow is active. The browser context menu is suppressed across the entire region map.</li>
+          <li><strong>Pre-existing right-click gestures preserved for the no-drag case</strong> &mdash; right-clicking an airport dot in explore / results phases still opens the Quick-Rate popover; right-clicking the map background during region drawing still cancels the in-progress selection. Both gestures fire only on a pure right-click with no cursor movement; the moment you drag, the gesture is treated as a pan and the popover / cancel is suppressed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.57.0</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Main-screen airport tooltip now includes weather</strong> &mdash; hovering the big departure or arrival ICAO/name text in the main app screen now appends a METAR section to the tooltip (flight category pill, raw text, wind, visibility, sky, temp/dew, altimeter, observed time) &mdash; same rich format already used by the region-map dot tooltips. Weather is pulled from the existing CheckWX auto-fetch that runs on every route change, so no new network traffic. If you hover before the METAR arrives, the tooltip refreshes itself in place the moment the data lands.</li>
+          <li><strong>Right-mouse-drag pans the map in measurement mode</strong> &mdash; left-click is reserved for drawing and dragging measurements, so right-click is now the explicit pan affordance while measurement mode is on. The browser context menu is suppressed while measurement mode is active so it doesn't pop up mid-pan. The cursor flips to <em>grabbing</em> while right-dragging, then returns to the crosshair on release.</li>
+          <li><strong>Entering region-draw mode auto-deactivates measurement mode</strong> &mdash; clicking <em>&#x229A; Select Regions</em> with measurement mode active used to leave both modes competing for left-click. The region-draw button now toggles measurement off before starting the region workflow. Saved measurements stay on the map &mdash; only the drawing mode is flipped off.</li>
+          <li><strong>Close <strong>&times;</strong> click no longer pans the map</strong> &mdash; if your cursor moved a few pixels between mousedown and mouseup on a measurement's &times; close handle, the map could start panning behind the dismissal. The click now disables map dragging for the duration of the gesture so the measurement just vanishes cleanly.</li>
+          <li><strong>Fix: center-dragging a short measurement no longer permanently centers its label</strong> &mdash; when a saved measurement was short enough that its distance/bearing label had been auto-shifted below the line (so the endpoints stayed visible), grabbing the origin pin and translating the measurement would snap the label back onto the line, hiding the endpoints. The label now correctly re-applies its below-the-line offset on release.</li>
+          <li><strong>Measurement-handle DOM rebuild reduced</strong> &mdash; each frame of a drag was calling <code>setIcon</code> on the edge and close handles, rebuilding their inner DOM elements unnecessarily. Handles now cache their last-applied color and only run <code>setIcon</code> when the tile mode actually flips (purple &harr; yellow); routine drags use just <code>setLatLng</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.56.1</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&times;&nbsp;Clear All visible with just one measurement</strong> &mdash; previously the bulk-clear button only appeared once two or more measurements were on the map (the on-map &times; close handle was assumed sufficient for the single-measurement case). It now appears as soon as a single measurement exists, so the "wipe everything" entry point is always available regardless of count.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.56.0</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map performance fix &mdash; canvas renderer for drawn geometry</strong> &mdash; previously the measurement rings, region dep / arr circles, and aircraft range ring all used Leaflet's default SVG renderer. At high zoom, a saved measurement drawn at a wider view ballooned into a multi-thousand-pixel-circumference dashed SVG path, pushing the renderer's bounding box past the browser compositor's max-texture limit and forcing CPU rasterization on every pan, zoom, or even mouse move &mdash; the more saved measurements you had, the worse it got. All of this drawn geometry now uses a dedicated canvas renderer (separate from the airport-dot canvas, so the two don't trigger each other). Canvas keeps the drawing surface viewport-sized regardless of underlying geometry, so general map performance no longer degrades as saved measurements pile up.</li>
+          <li><strong>Measurement label DOM no longer rebuilt every frame during draw</strong> &mdash; the live-drawing path used to construct a fresh <code>L.divIcon</code> and call <code>setIcon</code> on the label marker on every animation frame, which tore down and rebuilt the inner DOM element each time even though only the distance / bearing text actually changed. The label's inner wrapper is now cached on first creation and patched in place via <code>innerHTML</code>, so the per-frame work is a single text update instead of a full DOM swap.</li>
+          <li><strong>Saved-measurement center-drag stops forcing layouts</strong> &mdash; translating a whole saved measurement (grab the origin pin) was calling the label-occlusion fit routine on every frame for the dragged entry. Since translation doesn't change the line's shape, the fit result was identical each time; the only effect was an unnecessary synchronous layout per frame. The fit routine is now skipped during center drag, and runs exactly once on mouse release.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.55.0</span>
+          <span class="release-date">May 17, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement Undo button removed</strong> &mdash; the standalone <em>&#x21A9; Undo</em> button next to the Measurement control has been retired. Each saved measurement already carries its own on-map <strong>&times;</strong> close handle (at the 12&nbsp;o'clock position) for removing that specific entry, which is more precise than a "pop the newest" undo. <em>&times;&nbsp;Clear All</em> remains available when two or more measurements are on the map.</li>
+          <li><strong>Range / bearing label auto-shifts to avoid covering the endpoints</strong> &mdash; on short measurements the midpoint-anchored chip could extend past one or both endpoints and obscure the begin / end markers (origin pin and edge handle). The label now detects when its bounding box would overrun an endpoint and slides itself below the line by just enough to clear it &mdash; the line, pin, and edge handle stay fully visible. Longer lines keep the centered look unchanged.</li>
         </ul>
       </div>
 
@@ -22548,7 +23044,6 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
-        <button class="rg-btn" id="rgRulerClearBtn" onclick="rgClearMeasurements()" style="display:none" title="Undo last measurement">↩ Undo</button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
