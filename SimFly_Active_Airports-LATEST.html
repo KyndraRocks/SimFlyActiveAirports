@@ -3975,7 +3975,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.51.3';
+const APP_VERSION = '2.54.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11302,6 +11302,16 @@ let _rgRulerLine  = null;   // measuring line during ruler phase
 let _rgHeroLayers = [];     // center-to-center hero line + midpoint label
 let _rgTileLayer  = null;   // current base tile layer
 let _rgMapSat     = false;  // false = street (default), true = satellite
+
+// Measurement ring color is tile-mode aware: purple reads well on street tiles
+// but disappears against satellite imagery, so satellite gets a bright yellow.
+// _rgRecolorAllMeasurements (called from _rgToggleLayer) walks the live entry
+// and every saved measurement to retroactively repaint when the tile mode
+// flips, so existing rings change color along with the map.
+function _rgMeasColor()              { return _rgMapSat ? '#ffd000' : '#cc44ff'; }
+function _rgMeasColorRgba(alpha)     {
+  return _rgMapSat ? `rgba(255,208,0,${alpha})` : `rgba(204,68,255,${alpha})`;
+}
 let _rgPayoutMode     = false;  // true = color dots by pilot payout % (red→orange→green gradient)
 let _rgPayoutFilter   = 0;     // minimum payout % to show; airports below this are hidden in payout mode
 let _rgStarFilterMode = false;  // star rating filter panel active
@@ -11593,7 +11603,7 @@ function _rgUpdateMeasure(toLL) {
 
   if (!_rgMeasureCircle) {
     _rgMeasureCircle = L.circle(origin, {
-      radius: distM, color: '#cc44ff', weight: 2,
+      radius: distM, color: _rgMeasColor(), weight: 2,
       opacity: 0.65, fillOpacity: 0.04, dashArray: '8 5', interactive: false,
     }).addTo(_rgMap);
   } else {
@@ -11606,7 +11616,7 @@ function _rgUpdateMeasure(toLL) {
   const measDash = crossesAM ? '14 8' : '6 4';
   if (!_rgMeasureLine) {
     _rgMeasureLine = L.polyline([origin, [toLL.lat, toLL.lng]], {
-      color: '#cc44ff', weight: 3, opacity: 1, dashArray: measDash, interactive: false,
+      color: _rgMeasColor(), weight: 3, opacity: 1, dashArray: measDash, interactive: false,
     }).addTo(_rgMap);
   } else {
     _rgMeasureLine.setLatLngs([origin, [toLL.lat, toLL.lng]]);
@@ -11616,17 +11626,15 @@ function _rgUpdateMeasure(toLL) {
   const distStr = _rgFmtMeasDist(nm);
   const amNote  = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
 
-  // For non-AM segments, place the label at the geodesic 58% point so it sits
-  // along the rendered line, offset slightly from the origin pin. When the
-  // segment crosses the antimeridian Leaflet draws the polyline the long way
-  // around the map in straight canvas-space, so the geodesic 58% point is far
-  // from the rendered line. Use the simple lat/lng mean of the endpoints — that
-  // is the visual midpoint of Leaflet's long-way render.
-  const midLL = crossesAM
-    ? L.latLng((_rgMeasureOrigin.lat + toLL.lat) / 2, (_rgMeasureOrigin.lng + toLL.lng) / 2)
-    : _rgDestLL(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, trueBrg, nm * 0.58);
-  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap;text-align:center">` +
-    `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
+  // While the user is actively dragging the measurement, anchor the label at
+  // the endpoint and translate it BELOW the line endpoint so the chip doesn't
+  // obscure the precise spot the user is aiming at (especially on near-
+  // horizontal lines, where a centered label sits directly on top of the
+  // line). On mouseup, _rgMapMouseUp / _rgDocMouseUp call _rgRedrawMeasureEntry
+  // to relocate the label to the line's midpoint.
+  const midLL = toLL;
+  const html  = `<div style="position:absolute;transform:translate(-50%,18px);white-space:nowrap;text-align:center">` +
+    `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
     `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
 
   if (!_rgMeasureLabel) {
@@ -11735,6 +11743,36 @@ function _rgToggleLayer() {
   // Re-render base dots with sat-aware colors
   _rgRenderDots();
   _rgHighlightDots();
+  // Retroactively repaint every measurement ring + label + handles so the
+  // tile mode change shows up on existing measurements (purple ↔ yellow).
+  _rgRecolorAllMeasurements();
+}
+
+// Walk every measurement (live in-progress + all saved) and apply the current
+// tile-aware color. Called from _rgToggleLayer after the tile swap.
+function _rgRecolorAllMeasurements() {
+  const c = _rgMeasColor();
+  // Live in-progress drawing (if any)
+  if (_rgMeasureCircle) _rgMeasureCircle.setStyle({ color: c });
+  if (_rgMeasureLine)   _rgMeasureLine.setStyle({ color: c });
+  // The live label includes the color in its inline border style — re-render
+  // by replaying _rgUpdateMeasure with the last cursor position. Falls back
+  // to a no-op if state is incomplete (e.g. the user is between drags).
+  if (_rgMeasureLabel && _rgMeasureOrigin && _rgMeasureLastLL) {
+    _rgUpdateMeasure(_rgMeasureLastLL);
+  }
+  // Saved measurements: update the polyline + circle stroke + pin fill, then
+  // re-render the entry so the label border and the handle icons pick up the
+  // new color. _rgDrawMeasureHandles now refreshes handle icons on existing
+  // markers, so this single redraw covers every visual.
+  for (let i = 0; i < _rgMeasureSaved.length; i++) {
+    const m = _rgMeasureSaved[i];
+    if (!m) continue;
+    if (m.line)   m.line.setStyle({ color: c });
+    if (m.circle) m.circle.setStyle({ color: c });
+    if (m.pin)    m.pin.setStyle({ color: c, fillColor: c });
+    _rgRedrawMeasureEntry(i);
+  }
 }
 
 // ── Aircraft range ring ───────────────────────────────────────────────
@@ -12669,11 +12707,14 @@ function _rgMeasureHitTest(e) {
     if (!m.origin) continue;
     if (px(m.origin) < _RG_CENTER_TOL) return `meas_center_${i}`;
     if (m.toLL) {
-      const nm      = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
-      const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 270, nm);
+      const nm = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+      // Close handle is always at 12 o'clock (bearing 0°) regardless of line
+      // direction, so the user has a stable spot to dismiss the measurement.
+      const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 0, nm);
       if (px(closeLL) < _RG_EDGE_TOL) return `meas_close_${i}`;
-      const edgeLL  = _rgDestLL(m.origin.lat, m.origin.lng, 90,  nm);
-      if (px(edgeLL) < _RG_EDGE_TOL) return `meas_edge_${i}`;
+      // Edge handle now follows the line's actual bearing — same as m.toLL.
+      // Dragging it rotates the line AND resizes it.
+      if (px(m.toLL) < _RG_EDGE_TOL) return `meas_edge_${i}`;
     }
   }
   return null;
@@ -12687,23 +12728,30 @@ function _rgDrawMeasureHandles(i) {
   const m = _rgMeasureSaved[i];
   if (!m || !_rgMap) return;
   const nm      = _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
-  const edgeLL  = _rgDestLL(m.origin.lat, m.origin.lng, 90,  nm);
-  const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 270, nm);
+  // Edge handle now sits at the actual line endpoint (m.toLL) so dragging it
+  // rotates the line as well as changing its length. Close handle stays pinned
+  // at 12 o'clock (bearing 0°) regardless of line direction so it's always in
+  // a predictable spot.
+  const edgeLL  = m.toLL;
+  const closeLL = _rgDestLL(m.origin.lat, m.origin.lng, 0, nm);
+  const measCol = _rgMeasColor();
   if (!m.edgeHandle) {
     m.edgeHandle = L.marker([edgeLL.lat, edgeLL.lng], {
-      icon: _rgHandleIcon('#cc44ff', 'Drag to resize measurement'),
+      icon: _rgHandleIcon(measCol, 'Drag to resize and rotate the measurement'),
       interactive: false, keyboard: false, zIndexOffset: 500,
     }).addTo(_rgMap);
   } else {
     m.edgeHandle.setLatLng([edgeLL.lat, edgeLL.lng]);
+    m.edgeHandle.setIcon(_rgHandleIcon(measCol, 'Drag to resize and rotate the measurement'));
   }
   if (!m.closeHandle) {
     m.closeHandle = L.marker([closeLL.lat, closeLL.lng], {
-      icon: _rgCloseHandleIcon('#cc44ff', 'Click to remove this measurement'),
+      icon: _rgCloseHandleIcon(measCol, 'Click to remove this measurement'),
       interactive: false, keyboard: false, zIndexOffset: 500,
     }).addTo(_rgMap);
   } else {
     m.closeHandle.setLatLng([closeLL.lat, closeLL.lng]);
+    m.closeHandle.setIcon(_rgCloseHandleIcon(measCol, 'Click to remove this measurement'));
   }
 }
 
@@ -12740,14 +12788,20 @@ function _rgRedrawMeasureEntry(i) {
   const crossesAM = _rgCrossesAM(origin.lng, toLL.lng);
   m.line.setStyle({ dashArray: crossesAM ? '14 8' : '6 4' });
   const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
-  // See _rgUpdateMeasure for rationale: simple lat/lng mean lands at Leaflet's
-  // visual midpoint of the long-way render when the segment crosses ±180°.
-  const midLL = crossesAM
-    ? L.latLng((origin.lat + toLL.lat) / 2, (origin.lng + toLL.lng) / 2)
-    : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.58);
-  const html  = `<div style="position:absolute;transform:translate(8px,-50%);white-space:nowrap;text-align:center">` +
+  // During an active edge-drag the label rides at the line endpoint with a
+  // below-the-line offset so the user can see where the cursor is landing.
+  // Once the drag ends, _rgEndDrag re-calls _rgRedrawMeasureEntry and the
+  // label snaps back to the line midpoint.
+  const dragging = _rgDragMode === `meas_edge_${i}`;
+  const midLL = dragging
+    ? toLL
+    : (crossesAM
+        ? L.latLng((origin.lat + toLL.lat) / 2, (origin.lng + toLL.lng) / 2)
+        : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.5));
+  const wrapTransform = dragging ? 'translate(-50%,18px)' : 'translate(-50%,-50%)';
+  const html  = `<div style="position:absolute;transform:${wrapTransform};white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;` +
-    `background:rgba(5,0,12,0.93);border:1px solid rgba(204,68,255,0.7);color:#fff">` +
+    `background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
     `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
   m.label.setLatLng([midLL.lat, midLL.lng]);
   m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
@@ -12829,14 +12883,21 @@ function _rgApplyDrag(e) {
     const idx = parseInt(_rgDragMode.slice(10));
     const m   = _rgMeasureSaved[idx];
     if (!m || !_rgDragMeasSnap) return;
-    const brg = _rgTrueBearing(
-      _rgDragMeasSnap.origin.lat, _rgDragMeasSnap.origin.lng,
-      _rgDragMeasSnap.toLL.lat,   _rgDragMeasSnap.toLL.lng);
-    // 0.001 nm (~6 ft) floor avoids zero-length bearing math while letting the
-    // user resize down to runway-scale measurements. Region-circle resize keeps
-    // its 1 nm floor — those are airport-selection radii, not distance readouts.
-    const nm  = Math.max(0.001, _haversineNm(m.origin.lat, m.origin.lng, e.latlng.lat, e.latlng.lng));
-    m.toLL = _rgDestLL(m.origin.lat, m.origin.lng, brg, nm);
+    // Edge handle is now a combined rotate + resize control: bearing and
+    // length both track the cursor position. Setting m.toLL to the cursor
+    // latlng directly is the same as recomputing bearing+distance from origin
+    // and rebuilding via _rgDestLL — and avoids floating-point drift on the
+    // recomputed endpoint. A 0.001 nm floor still protects against zero-length
+    // bearing math at very short distances.
+    const nm = _haversineNm(m.origin.lat, m.origin.lng, e.latlng.lat, e.latlng.lng);
+    if (nm < 0.001) {
+      const brg = _rgTrueBearing(
+        _rgDragMeasSnap.origin.lat, _rgDragMeasSnap.origin.lng,
+        _rgDragMeasSnap.toLL.lat,   _rgDragMeasSnap.toLL.lng);
+      m.toLL = _rgDestLL(m.origin.lat, m.origin.lng, brg, 0.001);
+    } else {
+      m.toLL = { lat: e.latlng.lat, lng: e.latlng.lng };
+    }
     _rgRedrawMeasureEntry(idx);
   }
 }
@@ -12897,6 +12958,12 @@ function _rgMapMouseDown(e) {
         mouseLng: e.latlng.lng,
       };
       _rgDragMode = mhit;
+      // Hide the edge handle for the duration of an edge-drag so the chevron
+      // doesn't block the user's view of the new line bearing while they adjust.
+      // _rgEndDrag restores opacity on mouse release.
+      if (mhit.startsWith('meas_edge_') && m.edgeHandle && m.edgeHandle.setOpacity) {
+        m.edgeHandle.setOpacity(0);
+      }
       _rgMap.dragging.disable();
       _rgSetCursor(mhit.includes('center') ? 'grab' : 'resize');
       L.DomEvent.stopPropagation(e);
@@ -13056,13 +13123,23 @@ function _rgMapMouseMoveBody(e) {
 
 function _rgEndDrag() {
   if (!_rgDragMode) return false;
-  const wasMeas = _rgDragMode.startsWith('meas_');
+  const wasMeas    = _rgDragMode.startsWith('meas_');
+  const wasMeasEdge = _rgDragMode.startsWith('meas_edge_');
+  const meIdx      = wasMeasEdge ? parseInt(_rgDragMode.slice(10), 10) : -1;
   _rgDragMode = null;
   _rgDragMeasSnap = null;
   clearTimeout(_rgMatRefreshTm);
   _rgMap.dragging.enable();
   _rgSetCursor('');
   if (!wasMeas) _rgComputeAndRender();
+  // Edge-handle drag: restore handle visibility AND re-render the entry so the
+  // label snaps back to the line midpoint (it was riding the endpoint during
+  // the drag for better cursor visibility).
+  if (wasMeasEdge && meIdx >= 0 && _rgMeasureSaved[meIdx] && _rgMeasureSaved[meIdx].edgeHandle) {
+    const eh = _rgMeasureSaved[meIdx].edgeHandle;
+    if (eh.setOpacity) eh.setOpacity(1);
+    _rgRedrawMeasureEntry(meIdx);
+  }
   _rgDragJustEnded = true;
   setTimeout(() => { _rgDragJustEnded = false; }, 300);
   return true;
@@ -13076,7 +13153,7 @@ function _rgMapMouseUp() {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
-        radius: 5, weight: 2, color: '#cc44ff', fillColor: '#cc44ff', fillOpacity: 1, interactive: false,
+        radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
       }).addTo(_rgMap);
       const savedIdx = _rgMeasureSaved.length;
       _rgMeasureSaved.push({
@@ -13089,6 +13166,10 @@ function _rgMapMouseUp() {
         pin,
       });
       _rgDrawMeasureHandles(savedIdx);
+      // Live-draw rendered the label at the endpoint for cursor visibility —
+      // now that the drag is over, re-render the saved entry to recenter the
+      // label on the line midpoint.
+      _rgRedrawMeasureEntry(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
@@ -13110,7 +13191,7 @@ function _rgDocMouseUp() {
       const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
       const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
       const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
-        radius: 5, weight: 2, color: '#cc44ff', fillColor: '#cc44ff', fillOpacity: 1, interactive: false,
+        radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
       }).addTo(_rgMap);
       const savedIdx = _rgMeasureSaved.length;
       _rgMeasureSaved.push({
@@ -13123,6 +13204,10 @@ function _rgDocMouseUp() {
         pin,
       });
       _rgDrawMeasureHandles(savedIdx);
+      // Live-draw rendered the label at the endpoint for cursor visibility —
+      // now that the drag is over, re-render the saved entry to recenter the
+      // label on the line midpoint.
+      _rgRedrawMeasureEntry(savedIdx);
       _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
       _rgDragJustEnded = true;
       setTimeout(() => { _rgDragJustEnded = false; }, 300);
@@ -14640,19 +14725,26 @@ function _rgMapDotClickExec(icao) {
 
 function _rgBuildOwnerDropdown() {
   // Build dep and arr owner lists independently — each shows only owners with
-  // airports in that specific region.
+  // airports in that specific region. When the map-wide Airport Owners filter
+  // is active, restrict the dropdown to owners visible on the map (i.e. those
+  // included in _rgMapOwnerFilter) so the dep/arr menus stay coherent with
+  // what the user is actually seeing — hidden owners would just be confusing
+  // checkboxes that change nothing on the map.
   // If a filter is active (at least one owner unchecked), preserve the exact
   // selection: only owners already in the filter remain checked; new owners
   // entering the region are deselected. The filter variable itself is not
   // changed — it persists as-is so owners that temporarily leave the region
   // (then return) are still correctly gated. If no filter is active, reset to
   // all-visible (auto-refresh mode).
+  const mapFilter = (_rgMapOwnerFilter && _rgMapOwnerFilter.size > 0) ? _rgMapOwnerFilter : null;
   ['dep', 'arr'].forEach(side => {
     const airports = side === 'dep' ? _rgDepAirportsFull : _rgArrAirportsFull;
     const seen = new Map();
     for (const a of airports) {
       const oi = _rgOwnerLookupCache ? _rgOwnerLookupCache.get(a.icao.toUpperCase()) : null;
       if (oi && oi.name) {
+        // Skip owners that are hidden by the map-wide Airport Owners filter.
+        if (mapFilter && !mapFilter.has(oi.name)) continue;
         if (!seen.has(oi.name)) seen.set(oi.name, { color: oi.color || null, count: 0 });
         seen.get(oi.name).count++;
       }
@@ -15157,6 +15249,12 @@ function _rgUpdateMapOwnerBtn() {
 function _rgApplyMapOwnerFilter() {
   if (_rgPhase === 'results') {
     _rgRefreshFilteredAirports();
+    // Rebuild the dep / arr owner dropdowns so they only offer owners that are
+    // currently visible on the map (i.e. included in _rgMapOwnerFilter when
+    // it's non-null). Without this the dep/arr menus would list owners the
+    // user can't actually see, which is confusing and lets them "filter" by
+    // pilots that are already hidden.
+    _rgBuildOwnerDropdown();
     _rgRenderMatrix();
   }
   _rgRenderDots();
@@ -15927,7 +16025,7 @@ function rgSendToFlightPlanner() {
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the 90° east point of the ring) to resize the radius while keeping the bearing locked. Each measurement also has a <strong>✕ close handle</strong> on the opposite side of the ring (270° west) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. Use <strong>↩ Undo</strong> to remove the most recent remaining measurement and <strong>✕ Clear All</strong> to remove all at once — both still work correctly after any out-of-sequence removals via the ✕ close handle.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the line's endpoint) to <em>both resize and rotate</em> the measurement — distance and bearing follow the cursor together. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. Use <strong>↩ Undo</strong> to remove the most recent remaining measurement and <strong>✕ Clear All</strong> to remove all at once — both still work correctly after any out-of-sequence removals via the ✕ close handle.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -16016,10 +16114,94 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.54.0</span>
+          <span class="release-date">May 16, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement ring color follows the map tile mode</strong> &mdash; the purple measurement rings (<code>#cc44ff</code>) read clearly on the street tiles but tend to disappear against satellite imagery. The ring, line, label border, origin pin, and both handles now switch to a bright yellow (<code>#ffd000</code>) when the map is in satellite mode and revert to purple when switched back to street. <strong>The change is retroactive</strong>: toggling the tile mode repaints every existing saved measurement (and any in-progress draw) in lockstep, so you don't have to clear and redraw to match the new background.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.53.3</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement label rides the endpoint during drag, snaps to center on release</strong> &mdash; centering the distance/bearing chip on the line made it hard to see the cursor target when drawing or adjusting an east/west line. The label now anchors at the line's endpoint with an 18&thinsp;px below-line offset while the mouse is held down, so the chip never sits on top of the spot you're aiming at. The moment you release the mouse, the label re-anchors to the midpoint of the line (centered as in v2.53.1). Behavior applies to both the initial draw and the saved-measurement edge-handle drag.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.53.2</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement edge handle hides during drag</strong> &mdash; while you're adjusting a saved measurement's range / bearing, the magenta resize handle now disappears so it doesn't obscure the line endpoint you're aiming at. The handle reappears the moment you release the mouse, snapped to the new endpoint.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.53.1</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement distance / bearing label now centered on the line</strong> &mdash; previously the chip sat at the geodesic 58% point with an extra 8&thinsp;px nudge to the right of its anchor, which clearly biased the label toward the endpoint. Both the live-drawing and saved-redraw paths now anchor the label at the geometric midpoint of the line (50%) and use a <code>translate(-50%, -50%)</code> wrapper so the chip is centered on its anchor coordinate. The chip now sits visually centered along the line at any bearing.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.53.0</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement edge handle is now a rotate + resize control</strong> &mdash; previously the resize handle sat at a fixed 90° east point on the ring and dragging it kept the bearing locked. The edge handle now lives at the line's actual endpoint and dragging it rotates AND resizes the measurement at once: the line follows the cursor in both distance and direction. The <strong>✕ close handle</strong> stays pinned at 12 o'clock (bearing 0° from origin) regardless of where you rotate the line to, so it's always in a predictable spot.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.52.1</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement ✕ close handle moved to 12 o'clock</strong> &mdash; previously sat at 270° (9 o'clock / west) opposite the 90° east resize handle. Bearing changed to 0° so the close button now sits at the top of the ring, putting it well clear of dot clusters that tend to live east and west of populated regions. Hit-test bearing also updated to match.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.52.0</span>
+          <span class="release-date">May 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dep / Arr Owner dropdowns now honor the map-wide Airport Owners filter</strong> &mdash; if the <em>Airport Owners</em> header filter is restricting the world map to a subset of pilots, the <em>Dep Owners</em> and <em>Arr Owners</em> dropdowns inside the results bar now only offer those same pilots, even if the dep / arr region circles contain airports owned by additional pilots that the map is hiding. Picking from a list of owners you can&rsquo;t see was confusing &mdash; the dropdown lists are now coherent with the dots on the map. The dropdowns refresh automatically when the map-wide filter changes; existing dep / arr selections are preserved through the rebuild.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.51.3</span>
-          <span class="release-date">May 16, 2026 &middot; Current</span>
+          <span class="release-date">May 16, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
