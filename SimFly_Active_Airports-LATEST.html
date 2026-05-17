@@ -3975,7 +3975,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.59.3';
+const APP_VERSION = '2.59.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11450,15 +11450,60 @@ const _RG_COUNTRY_CONTINENT_FALLBACK = {
   'AU':'OC','NZ':'OC','PG':'OC','FJ':'OC','SB':'OC','VU':'OC','WS':'OC','TO':'OC','FM':'OC','PW':'OC','MH':'OC','KI':'OC','TV':'OC','NR':'OC'
 };
 
-// ICAO 2-letter prefix → continent fallback. Used as a last-resort lookup
-// for SimFly airports whose rec lacks BOTH `continent` AND `iso_country`
+// ICAO 2-letter prefix → ISO 3166-1 alpha-2 country code. Used as a
+// last-resort lookup for SimFly airports whose rec lacks `iso_country`
 // (e.g. LPBE, LIBZ, EGON, LEDT — minimal SimFly-added entries with only
-// icao / name / lat / lng). Without this fallback the airport's continent
-// resolves to '' and it slips through `-Europe` / continent filters.
-// First letter conventions: E and L (mostly EU), K/C/M/T (NA), S (SA),
-// F/D/G/H (AF), O/V/W/R/Z (AS), Y (OC), N (mostly OC), A split. U is
-// split EU/AS — Russia uses UE-UI/UN/UO/US/UT for Asian regions and
-// UK/UL/UM/UR/UU/UW for European regions.
+// icao / name / lat / lng, no country or continent metadata). Sourced from
+// the standard ICAO Annex 10 letter allocations. _rgRecCountry(rec) consults
+// this table when rec.iso_country is missing; _rgRecContinent(rec) chains
+// through _rgRecCountry, so this single table powers BOTH country and
+// continent filtering for orphan airports.
+const _RG_ICAO_PREFIX_COUNTRY = {
+  // Europe — Northern (E*) block
+  'EB':'BE','ED':'DE','EE':'EE','EF':'FI','EG':'GB','EH':'NL','EI':'IE','EK':'DK','EL':'LU','EN':'NO','EP':'PL','ES':'SE','ET':'DE','EV':'LV','EY':'LT',
+  // Europe — Southern (L*) block
+  'LA':'AL','LB':'BG','LC':'CY','LD':'HR','LE':'ES','LF':'FR','LG':'GR','LH':'HU','LI':'IT','LJ':'SI','LK':'CZ','LM':'MT','LN':'MC','LO':'AT','LP':'PT','LQ':'BA','LR':'RO','LS':'CH','LT':'TR','LU':'MD','LW':'MK','LX':'GI','LY':'RS','LZ':'SK',
+  // Europe — Iceland, Kosovo
+  'BI':'IS','BK':'XK',
+  // Russia / former Soviet (U*) — split between EU and AS
+  'UA':'KZ','UB':'AZ','UC':'KG','UD':'AM','UE':'RU','UG':'GE','UH':'RU','UI':'RU','UK':'UA','UL':'RU','UM':'BY','UN':'RU','UO':'RU','UR':'RU','US':'RU','UT':'UZ','UU':'RU','UW':'RU',
+  // North America — USA (K*), Canada (CY*, CZ*), Mexico + Central Am (M*), Caribbean (T*), Greenland (BG)
+  'KA':'US','KB':'US','KC':'US','KD':'US','KE':'US','KF':'US','KG':'US','KH':'US','KI':'US','KJ':'US','KK':'US','KL':'US','KM':'US','KN':'US','KO':'US','KP':'US','KQ':'US','KR':'US','KS':'US','KT':'US','KU':'US','KV':'US','KW':'US','KX':'US','KY':'US','KZ':'US',
+  'CY':'CA','CZ':'CA',
+  'MD':'DO','MG':'GT','MH':'HN','MK':'JM','MM':'MX','MN':'NI','MP':'PA','MR':'CR','MS':'SV','MT':'HT','MU':'CU','MW':'KY','MY':'BS','MZ':'BZ',
+  'TA':'AG','TB':'BB','TD':'DM','TF':'PF','TG':'GD','TI':'VI','TJ':'PR','TK':'KN','TL':'LC','TN':'AW','TQ':'AI','TR':'MS','TT':'TT','TU':'VG','TV':'VC','TX':'TC',
+  'BG':'GL',
+  // South America (S*)
+  'SA':'AR','SB':'BR','SC':'CL','SD':'BR','SE':'EC','SF':'FK','SG':'PY','SK':'CO','SL':'BO','SM':'SR','SN':'BR','SO':'GF','SP':'PE','SU':'UY','SV':'VE','SY':'GY',
+  // Africa — D*, F*, G*, H*
+  'DA':'DZ','DB':'BJ','DF':'BF','DG':'GH','DI':'CI','DN':'NG','DR':'NE','DT':'TN','DX':'TG',
+  'FA':'ZA','FB':'BW','FC':'CG','FD':'SZ','FE':'CF','FG':'GQ','FH':'SH','FI':'MU','FJ':'IO','FK':'CM','FL':'ZM','FM':'MG','FN':'AO','FO':'GA','FP':'ST','FQ':'MZ','FS':'SC','FT':'TD','FV':'ZW','FW':'MW','FX':'LS','FY':'NA','FZ':'CD',
+  'GA':'ML','GB':'GM','GC':'ES','GE':'ES','GF':'SL','GG':'GW','GL':'LR','GM':'MA','GO':'SN','GQ':'MR','GS':'EH','GU':'GN','GV':'CV',
+  'HA':'ET','HB':'BI','HC':'SO','HD':'DJ','HE':'EG','HH':'ER','HK':'KE','HL':'LY','HR':'RW','HS':'SD','HT':'TZ','HU':'UG',
+  // Middle East — O*
+  'OA':'AF','OB':'BH','OE':'SA','OI':'IR','OJ':'JO','OK':'KW','OL':'LB','OM':'AE','OO':'OM','OP':'PK','OR':'IQ','OS':'SY','OT':'QA','OY':'YE',
+  // South / SE Asia — V*, W*
+  'VA':'IN','VC':'LK','VD':'KH','VE':'IN','VG':'BD','VH':'HK','VI':'IN','VL':'LA','VM':'MO','VN':'NP','VO':'IN','VQ':'BT','VR':'MV','VT':'TH','VV':'VN','VY':'MM',
+  'WA':'ID','WB':'MY','WI':'ID','WM':'MY','WP':'TL','WR':'ID','WS':'SG',
+  // East Asia — R*, Z*
+  'RC':'TW','RJ':'JP','RK':'KR','RO':'JP','RP':'PH',
+  'ZB':'CN','ZG':'CN','ZH':'CN','ZK':'KP','ZL':'CN','ZM':'MN','ZP':'CN','ZS':'CN','ZU':'CN','ZW':'CN','ZY':'CN',
+  // Oceania — Australia (Y*), Pacific (N*), Solomons (AG), PNG (AY)
+  'YA':'AU','YB':'AU','YC':'AU','YD':'AU','YE':'AU','YF':'AU','YG':'AU','YH':'AU','YI':'AU','YJ':'AU','YK':'AU','YL':'AU','YM':'AU','YN':'AU','YO':'AU','YP':'AU','YQ':'AU','YR':'AU','YS':'AU','YT':'AU','YU':'AU','YV':'AU','YW':'AU','YX':'AU','YY':'AU','YZ':'AU',
+  'NC':'CK','NF':'FJ','NG':'KI','NI':'NU','NL':'WF','NS':'WS','NT':'PF','NV':'VU','NW':'NC','NZ':'NZ',
+  'AG':'SB','AY':'PG',
+  // Antarctica
+  'AN':'AQ',
+};
+
+// ICAO 2-letter prefix → continent fallback. Kept as a separate hardcoded
+// table (not just derived from _RG_ICAO_PREFIX_COUNTRY → fallback) so an
+// orphan airport's continent resolves cleanly in one lookup, even if the
+// country→continent fallback is missing an entry. First letter conventions:
+// E and L (mostly EU), K/C/M/T (NA), S (SA), F/D/G/H (AF), O/V/W/R/Z (AS),
+// Y (OC), N (mostly OC), A split. U is split EU/AS — Russia uses UE-UI /
+// UN / UO / US / UT for Asian regions and UK / UL / UM / UR / UU / UW
+// for European regions.
 const _RG_ICAO_PREFIX_CONTINENT = {
   // Europe — Northern (E*) and Southern (L*) blocks
   'EB':'EU','ED':'EU','EE':'EU','EF':'EU','EG':'EU','EH':'EU','EI':'EU','EK':'EU','EL':'EU','EN':'EU','EP':'EU','ES':'EU','ET':'EU','EV':'EU','EY':'EU',
@@ -12234,7 +12279,7 @@ function _rgRenderDots() {
     const rec = lookupICAO(icaoUp);
     if (!rec || !rec.latitude || !rec.longitude) continue;
     if (_rgExcludedIcaos.has(icaoUp)) continue;
-    if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) continue;
+    if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) continue;
     if (_rgExcludedRegions.size && _rgExcludedRegions.has(rec.iso_region || '')) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
     const m = L.circleMarker([rec.latitude, rec.longitude], {
@@ -12431,7 +12476,7 @@ function _rgHighlightDots() {
   for (const a of depSorted) {
     if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
-      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
@@ -12443,7 +12488,7 @@ function _rgHighlightDots() {
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
-        if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(a.rec))) continue;
         if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
@@ -12498,7 +12543,7 @@ function _rgHighlightDots() {
   for (const a of arrSorted) {
     if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
-      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(a.rec.iso_country || '');
+      const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
@@ -12510,7 +12555,7 @@ function _rgHighlightDots() {
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
-        if (_rgExcludedCountries.size && _rgExcludedCountries.has(a.rec.iso_country || '')) continue;
+        if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(a.rec))) continue;
         if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
@@ -13850,8 +13895,9 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
   if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
       (_rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
+    const country     = _rgRecCountry(rec);
     const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
-    const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(rec.iso_country || '');
+    const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(country);
     const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(rec.iso_region || '');
     const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
     if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) return false;
@@ -13864,7 +13910,7 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
       (_rgExcludedIcaos     && _rgExcludedIcaos.size)) {
     if (_rgExcludedIcaos.has(icaoUp)) return false;
     if (_rgExcludedOwners.size    && _rgExcludedOwners.has(ownerName || '')) return false;
-    if (_rgExcludedCountries.size && _rgExcludedCountries.has(rec.iso_country || '')) return false;
+    if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) return false;
     if (_rgExcludedRegions.size   && _rgExcludedRegions.has(rec.iso_region || '')) return false;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) return false;
   }
@@ -15735,14 +15781,31 @@ function _rgClickOwnerStripe(ownerName, side) {
 
 let _rgMapSrIdx = -1;
 
+// Country resolution: rec.iso_country first, ICAO 2-letter prefix fallback
+// otherwise. Used everywhere a filter or display needs the country code —
+// _rgDotPassesMapFilters, the pinned-airports block in _rgRenderDots, the
+// dep/arr highlight loops, and the search query counters. Ensures the
+// ~21 SimFly-added orphan airports (no iso_country in their rec) are
+// classifiable by `-Italy` / `-United States` / etc.
+function _rgRecCountry(rec) {
+  if (!rec) return '';
+  if (rec.iso_country) return rec.iso_country;
+  const icao = (rec.icao || '').toUpperCase();
+  if (icao.length >= 2) {
+    const prefix = icao.slice(0, 2);
+    if (_RG_ICAO_PREFIX_COUNTRY[prefix]) return _RG_ICAO_PREFIX_COUNTRY[prefix];
+  }
+  return '';
+}
+
 function _rgRecContinent(rec) {
   // Resolution order: explicit `continent` field on the rec → parsed map
-  // (built from OurAirports during DB load) → hardcoded country→continent
-  // fallback → ICAO 2-letter prefix fallback (handles SimFly-added entries
-  // that have only icao/name/lat/lng, no country or continent metadata —
-  // these used to slip through `-Europe` and similar continent filters).
+  // (built from OurAirports during DB load, keyed on iso_country) →
+  // hardcoded country → continent fallback → ICAO 2-letter prefix → continent
+  // table. _rgRecCountry's prefix fallback may have already filled in an
+  // iso_country we can use, so consult it for both lookups.
   if (rec.continent) return rec.continent;
-  const iso = rec.iso_country || '';
+  const iso = _rgRecCountry(rec);
   const fromIso = iso ? (_rgIsoToContinent.get(iso) || _RG_COUNTRY_CONTINENT_FALLBACK[iso]) : null;
   if (fromIso) return fromIso;
   const icao = (rec.icao || '').toUpperCase();
@@ -15784,13 +15847,20 @@ function _rgMapSrCountryQuery(q) {
   if (!_rgCountryNameToIso.size || q.length < 2) return [];
   const ql = q.toLowerCase();
   const ownerData = _getOwnerData();
-  // Count SimFly-owned airports per ISO country code
+  // Count SimFly-owned airports per ISO country code. Uses lookupICAO (which
+  // applies the DB_LOOKUP fallback for SimFly codes whose gps_code is blank
+  // in OurAirports) and _rgRecCountry (which falls back to the ICAO 2-letter
+  // prefix table when iso_country is missing from the rec). Both fallbacks
+  // are necessary for the count to match what `_rgDotPassesMapFilters` will
+  // actually exclude when the user clicks the result.
   const ownedByIso = new Map();
   if (ownerData && airportDB) {
     for (const owner of ownerData) {
       for (const ap of (owner.airports || [])) {
-        const rec = airportDB.get(ap.icao.toUpperCase());
-        if (rec && rec.iso_country) ownedByIso.set(rec.iso_country, (ownedByIso.get(rec.iso_country) || 0) + 1);
+        const rec = lookupICAO(ap.icao);
+        if (!rec) continue;
+        const iso = _rgRecCountry(rec);
+        if (iso) ownedByIso.set(iso, (ownedByIso.get(iso) || 0) + 1);
       }
     }
   }
@@ -15842,7 +15912,10 @@ function _rgMapSrContinentQuery(q) {
   if (ownerData && airportDB) {
     for (const owner of ownerData)
       for (const ap of (owner.airports || [])) {
-        const rec = airportDB.get(ap.icao.toUpperCase());
+        // lookupICAO so SimFly codes that map via DB_LOOKUP fallback resolve;
+        // _rgRecContinent's prefix fallback then handles orphan recs. Keeps
+        // this count in lockstep with what `_rgDotPassesMapFilters` excludes.
+        const rec = lookupICAO(ap.icao);
         if (!rec) continue;
         const cont = _rgRecContinent(rec);
         if (cont) ownedByCont.set(cont, (ownedByCont.get(cont) || 0) + 1);
@@ -16575,8 +16648,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.59.3</span>
+          <span class="release-version">v2.59.4</span>
           <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Country filters now catch ICAO-prefix-only airports too</strong> &mdash; v2.59.3 added an ICAO 2-letter prefix fallback for the <em>continent</em> resolver, fixing <em>&minus;Europe</em>. The same orphan airports (no <code>iso_country</code> in their record) were still slipping through <em>country</em> filters like <em>&minus;Italy</em> or <em>&minus;United States</em>. This release adds the complementary ICAO prefix &rarr; ISO country fallback and routes every country-filter check through it &mdash; the chokepoint helper, the in-region highlight loops, the pinned-airports block, and both the country and continent search-result counters. 19 of 21 previously-orphan airports now classify correctly (LP** &rarr; PT, LI** &rarr; IT, LE** &rarr; ES, EG** &rarr; GB, etc.); the remaining 2 (<code>WX53</code> Indonesia, <code>LL48</code> US) use non-standard prefixes outside ICAO Annex 10. Verified in browser: <em>&minus;Italy</em> filter now removes all 85 Italian airports (including the 7 that lacked iso_country); <em>&minus;United States</em> removes all 206. Search-result counts in the dropdown now equal the exact set that will actually be filtered.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.3</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
