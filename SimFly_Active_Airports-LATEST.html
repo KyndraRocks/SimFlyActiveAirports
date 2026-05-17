@@ -3018,6 +3018,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-legend.visible { display:block; }
   .rg-owner-legend-row { display:flex; align-items:center; gap:0.5rem; padding:0.12rem 0; color:var(--text); white-space:nowrap; }
   .rg-owner-legend-swatch { width:0.95em; height:0.95em; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.35); }
+  /* Owner name expands to fill the row; long names truncate with an ellipsis
+     so the trailing count stays visibly right-justified at the row's edge.   */
+  .rg-owner-legend-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  /* Currently-visible airport count for that owner (rebuilt on every popover
+     show — see _rgShowOwnerLegend). Tabular numerals so a column of counts
+     aligns to the digits regardless of value. min-width covers up to ~99k. */
+  .rg-owner-legend-count { flex:0 0 auto; margin-left:auto; padding-left:0.5rem; color:var(--muted); font-variant-numeric:tabular-nums; min-width:2.5ch; text-align:right; }
   .rg-owner-legend-hdr { font-size:0.85rem; color:var(--muted); padding:0 0 0.25rem; border-bottom:1px solid var(--border); margin-bottom:0.3rem; text-transform:uppercase; letter-spacing:0.06em; }
   .rg-owner-panel { display:none; position:fixed; width:max-content; min-width:300px; max-width:min(560px,90vw); background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 24px rgba(0,0,0,0.55); z-index:9500; overflow:hidden; }
   .rg-owner-panel.open { display:block; }
@@ -3975,7 +3982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.59.6';
+const APP_VERSION = '2.59.7';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14301,11 +14308,36 @@ function _rgShowOwnerLegend(anchor) {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const note = _rgOwnerColorsActive ? '' :
     `<div class="rg-owner-legend-hdr">Filtered owners (toggle 🎨 to color map)</div>`;
+  // Count currently-visible airports per owner. "Visible" = passes the same
+  // chokepoint that decides dot rendering (_rgDotPassesMapFilters), so the
+  // count tracks every other map-wide filter exactly — category, country,
+  // continent, payout, star, scenery, developer, exclusion sets. Computed
+  // fresh on every popover show so the user always sees current state.
+  const visCount = new Map();
+  const ownerSet = new Set(owners);
+  const ownerData = _getOwnerData();
+  const counted = new Set();
+  if (ownerData) {
+    for (const owner of ownerData) {
+      if (!ownerSet.has(owner.name)) continue;
+      let n = 0;
+      for (const ap of (owner.airports || [])) {
+        if (counted.has(ap.icao)) continue;
+        counted.add(ap.icao);
+        const rec = lookupICAO(ap.icao);
+        if (!rec) continue;
+        if (_rgDotPassesMapFilters(ap.icao, rec, owner.name)) n++;
+      }
+      visCount.set(owner.name, n);
+    }
+  }
   const rows = owners.map(name => {
     const col = (_rgOwnerColorAssignment && _rgOwnerColorAssignment.get(name)) || _rgOwnerColor(name);
+    const count = visCount.get(name) || 0;
     return `<div class="rg-owner-legend-row">` +
              `<span class="rg-owner-legend-swatch" style="background:${col}"></span>` +
-             `<span>${esc(name)}</span>` +
+             `<span class="rg-owner-legend-name">${esc(name)}</span>` +
+             `<span class="rg-owner-legend-count">${count}</span>` +
            `</div>`;
   }).join('');
   el.innerHTML = (note || '<div class="rg-owner-legend-hdr">Owner colors</div>') + rows;
@@ -16685,10 +16717,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.59.7</span>
+          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner color legend shows live per-owner airport counts</strong> &mdash; hovering the <strong>Airport Owners</strong> dropdown or the <strong>N&nbsp;Owners Displayed</strong> breadcrumb chip now shows a right-justified count of currently-visible airports next to each owner name in the popover. The count is recomputed from scratch on every hover using the same visibility chokepoint that decides dot rendering, so it tracks every other map-wide filter exactly &mdash; toggling off a category, applying a country / region / continent filter, or raising the payout / star threshold all immediately reflect in the legend the next time you hover.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.59.6</span>
-          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
