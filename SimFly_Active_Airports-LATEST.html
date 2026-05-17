@@ -3975,7 +3975,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.59.2';
+const APP_VERSION = '2.59.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11449,6 +11449,49 @@ const _RG_COUNTRY_CONTINENT_FALLBACK = {
   'NG':'AF','EG':'AF','ZA':'AF','KE':'AF','ET':'AF','GH':'AF','TZ':'AF','DZ':'AF','MA':'AF','MZ':'AF','UG':'AF','AO':'AF','MG':'AF','SN':'AF','ZM':'AF','ZW':'AF','SD':'AF','SS':'AF','TN':'AF','LY':'AF','SO':'AF','CD':'AF','CG':'AF','GA':'AF','CF':'AF','TD':'AF','NE':'AF','ML':'AF','BF':'AF','MR':'AF','GN':'AF','SL':'AF','LR':'AF','GM':'AF','CV':'AF','GQ':'AF','ER':'AF','DJ':'AF','SC':'AF','MU':'AF','MW':'AF','LS':'AF','SZ':'AF','BW':'AF','NA':'AF','BJ':'AF','TG':'AF','RW':'AF','BI':'AF','CI':'AF','CM':'AF',
   'AU':'OC','NZ':'OC','PG':'OC','FJ':'OC','SB':'OC','VU':'OC','WS':'OC','TO':'OC','FM':'OC','PW':'OC','MH':'OC','KI':'OC','TV':'OC','NR':'OC'
 };
+
+// ICAO 2-letter prefix → continent fallback. Used as a last-resort lookup
+// for SimFly airports whose rec lacks BOTH `continent` AND `iso_country`
+// (e.g. LPBE, LIBZ, EGON, LEDT — minimal SimFly-added entries with only
+// icao / name / lat / lng). Without this fallback the airport's continent
+// resolves to '' and it slips through `-Europe` / continent filters.
+// First letter conventions: E and L (mostly EU), K/C/M/T (NA), S (SA),
+// F/D/G/H (AF), O/V/W/R/Z (AS), Y (OC), N (mostly OC), A split. U is
+// split EU/AS — Russia uses UE-UI/UN/UO/US/UT for Asian regions and
+// UK/UL/UM/UR/UU/UW for European regions.
+const _RG_ICAO_PREFIX_CONTINENT = {
+  // Europe — Northern (E*) and Southern (L*) blocks
+  'EB':'EU','ED':'EU','EE':'EU','EF':'EU','EG':'EU','EH':'EU','EI':'EU','EK':'EU','EL':'EU','EN':'EU','EP':'EU','ES':'EU','ET':'EU','EV':'EU','EY':'EU',
+  'LA':'EU','LB':'EU','LC':'EU','LD':'EU','LE':'EU','LF':'EU','LG':'EU','LH':'EU','LI':'EU','LJ':'EU','LK':'EU','LM':'EU','LN':'EU','LO':'EU','LP':'EU','LQ':'EU','LR':'EU','LS':'EU','LT':'EU','LW':'EU','LX':'EU','LY':'EU','LZ':'EU',
+  'BI':'EU','BK':'EU',
+  // North America
+  'KA':'NA','KB':'NA','KC':'NA','KD':'NA','KE':'NA','KF':'NA','KG':'NA','KH':'NA','KI':'NA','KJ':'NA','KK':'NA','KL':'NA','KM':'NA','KN':'NA','KO':'NA','KP':'NA','KQ':'NA','KR':'NA','KS':'NA','KT':'NA','KU':'NA','KV':'NA','KW':'NA','KX':'NA','KY':'NA','KZ':'NA',
+  'CY':'NA','CZ':'NA',  // Canada uses CY* / CZ* gps_codes; non-Y/Z 'C' prefixes are SimFly-added
+  'MM':'NA','MD':'NA','MG':'NA','MH':'NA','MK':'NA','MN':'NA','MP':'NA','MR':'NA','MS':'NA','MT':'NA','MU':'NA','MW':'NA','MY':'NA','MZ':'NA',
+  'TA':'NA','TB':'NA','TD':'NA','TF':'NA','TG':'NA','TI':'NA','TJ':'NA','TK':'NA','TL':'NA','TN':'NA','TQ':'NA','TR':'NA','TT':'NA','TU':'NA','TV':'NA','TX':'NA',
+  'BG':'NA',  // Greenland
+  // South America
+  'SA':'SA','SB':'SA','SC':'SA','SD':'SA','SE':'SA','SF':'SA','SG':'SA','SK':'SA','SL':'SA','SM':'SA','SN':'SA','SO':'SA','SP':'SA','SU':'SA','SV':'SA','SY':'SA',
+  // Africa
+  'DA':'AF','DB':'AF','DF':'AF','DG':'AF','DI':'AF','DN':'AF','DR':'AF','DT':'AF','DX':'AF',
+  'FA':'AF','FB':'AF','FC':'AF','FD':'AF','FE':'AF','FG':'AF','FH':'AF','FI':'AF','FJ':'AF','FK':'AF','FL':'AF','FM':'AF','FN':'AF','FO':'AF','FP':'AF','FQ':'AF','FS':'AF','FT':'AF','FV':'AF','FW':'AF','FX':'AF','FY':'AF','FZ':'AF',
+  'GA':'AF','GB':'AF','GC':'AF','GE':'AF','GF':'AF','GG':'AF','GL':'AF','GM':'AF','GO':'AF','GQ':'AF','GS':'AF','GU':'AF','GV':'AF',
+  'HA':'AF','HB':'AF','HC':'AF','HD':'AF','HE':'AF','HF':'AF','HH':'AF','HK':'AF','HL':'AF','HM':'AF','HR':'AF','HS':'AF','HT':'AF','HU':'AF',
+  // Middle East / Asia
+  'OA':'AS','OB':'AS','OE':'AS','OI':'AS','OJ':'AS','OK':'AS','OL':'AS','OM':'AS','OO':'AS','OP':'AS','OR':'AS','OS':'AS','OT':'AS','OY':'AS',
+  'VA':'AS','VC':'AS','VD':'AS','VE':'AS','VG':'AS','VH':'AS','VI':'AS','VL':'AS','VM':'AS','VN':'AS','VO':'AS','VQ':'AS','VR':'AS','VT':'AS','VV':'AS','VY':'AS',
+  'WA':'AS','WB':'AS','WI':'AS','WM':'AS','WP':'AS','WR':'AS','WS':'AS','WX':'AS',
+  'RC':'AS','RJ':'AS','RK':'AS','RO':'AS','RP':'AS',
+  'UA':'AS','UB':'AS','UC':'AS','UD':'AS','UE':'AS','UG':'AS','UH':'AS','UI':'AS','UN':'AS','UO':'AS','US':'AS','UT':'AS',
+  'UK':'EU','UL':'EU','UM':'EU','UR':'EU','UU':'EU','UW':'EU',
+  'ZB':'AS','ZG':'AS','ZH':'AS','ZK':'AS','ZL':'AS','ZM':'AS','ZP':'AS','ZS':'AS','ZU':'AS','ZW':'AS','ZY':'AS',
+  // Oceania
+  'YA':'OC','YB':'OC','YC':'OC','YD':'OC','YE':'OC','YF':'OC','YG':'OC','YH':'OC','YI':'OC','YJ':'OC','YK':'OC','YL':'OC','YM':'OC','YN':'OC','YO':'OC','YP':'OC','YQ':'OC','YR':'OC','YS':'OC','YT':'OC','YU':'OC','YV':'OC','YW':'OC','YX':'OC','YY':'OC','YZ':'OC',
+  'NC':'OC','NF':'OC','NG':'OC','NI':'OC','NL':'OC','NS':'OC','NT':'OC','NV':'OC','NW':'OC','NZ':'OC',
+  'AG':'OC','AY':'OC',
+  // Antarctica
+  'AN':'AN',
+};
 let _rgIsoToContinent      = new Map(); // built from OurAirports data during parse
 let _rgMapContinentFilter  = null;      // Set of continent codes, null=show all
 let _rgExcludedOwners      = new Set();
@@ -15693,7 +15736,21 @@ function _rgClickOwnerStripe(ownerName, side) {
 let _rgMapSrIdx = -1;
 
 function _rgRecContinent(rec) {
-  return rec.continent || _rgIsoToContinent.get(rec.iso_country || '') || _RG_COUNTRY_CONTINENT_FALLBACK[rec.iso_country || ''] || '';
+  // Resolution order: explicit `continent` field on the rec → parsed map
+  // (built from OurAirports during DB load) → hardcoded country→continent
+  // fallback → ICAO 2-letter prefix fallback (handles SimFly-added entries
+  // that have only icao/name/lat/lng, no country or continent metadata —
+  // these used to slip through `-Europe` and similar continent filters).
+  if (rec.continent) return rec.continent;
+  const iso = rec.iso_country || '';
+  const fromIso = iso ? (_rgIsoToContinent.get(iso) || _RG_COUNTRY_CONTINENT_FALLBACK[iso]) : null;
+  if (fromIso) return fromIso;
+  const icao = (rec.icao || '').toUpperCase();
+  if (icao.length >= 2) {
+    const prefix = icao.slice(0, 2);
+    if (_RG_ICAO_PREFIX_CONTINENT[prefix]) return _RG_ICAO_PREFIX_CONTINENT[prefix];
+  }
+  return '';
 }
 
 function _rgMapSrInput(q) {
@@ -16518,8 +16575,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.59.2</span>
+          <span class="release-version">v2.59.3</span>
           <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Continent filter now catches airports missing country metadata</strong> &mdash; a small number of SimFly airports (e.g. LPBE, LIBZ, LEDT, EGON &mdash; ~13 European, ~21 total across all continents) are added directly by SimFly without country or continent metadata; their record carries only ICAO, name, and lat / lng. Continent filters like <em>&minus;Europe</em> couldn't classify them, so they slipped through and stayed visible on the map. The continent resolver now falls back to a comprehensive ICAO 2-letter prefix table when both <code>continent</code> and <code>iso_country</code> are missing &mdash; <em>LP**, LI**, LE**, EG**</em>, etc. all map to <strong>EU</strong>, plus full coverage of NA / SA / AF / AS / OC / AN prefixes &mdash; so these orphan airports are now properly classifiable.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.2</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
