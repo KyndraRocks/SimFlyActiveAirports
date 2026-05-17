@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a companion to the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.49.1**
+**Current version: v2.51.1**
 
 ---
 
@@ -79,7 +79,9 @@ A full-screen map-based region selector for cross-region matrix planning. Draw c
 
 A **Map category filter** in the header bar hides entire airport categories from the background dot layer across the whole map — toggling it also live-syncs both dep and arr category filters on the main screen. Independent **Dep / Arr category filters** in the results bar narrow each side of the matrix by tier and take precedence over the map filter within their region rings. Category filter selections are preserved when re-entering region mode.
 
-**Airport Owners filter** — the **Airport Owners ▾** dropdown in the header filters which owners' airports appear as dots on the map, independently of the Dep/Arr owner controls in the results bar. Use it to declutter the map to specific pilots without affecting the matrix. The panel supports the same interaction model as the dep/arr menus: type-ahead search, All/None buttons, arrow-key navigation, Space to toggle, and a count badge on the button when a filter is active. When you open Region Mode with owners already selected on the main screen, the Airport Owners filter automatically pre-syncs to those owners so the map opens focused on the relevant airports.
+**Airport Owners filter** — the **Airport Owners ▾** dropdown in the header filters which owners' airports appear as dots on the map, independently of the Dep/Arr owner controls in the results bar. Use it to declutter the map to specific pilots without affecting the matrix. The panel supports the same interaction model as the dep/arr menus: type-ahead search, All/None buttons, arrow-key navigation, Space to toggle, and a count badge on the button when a filter is active. **Hovering** the dropdown shows a color legend listing every owner currently in the filter with their assigned dot color. When you open Region Mode with owners already selected on the main screen, the Airport Owners filter automatically pre-syncs to those owners so the map opens focused on the relevant airports.
+
+**Owner-colored map dots** — the **🎨 button** immediately to the right of the *Airport Owners* dropdown switches the map dots from category / payout colors to a unique per-owner color. The button is greyed out until at least one owner is selected; once enabled, click it to engage or disengage owner coloring. The mode chip in the filter strip (*Category Colors (N)* / *Payout Colors (N)*) extends to a three-way cycle when owner filtering is active: *category → payout → owner → category*. Up to 16 selected owners each get a maximally-distinct curated color; above 16 owners the assignment falls back to the hash-based palette used by the region-matrix owner stripes.
 
 **Cross-app pilot group launch** — passing a `pilots=` URL parameter (comma-separated pilot names, e.g. `?pilots=Alice,Bob`) opens the app directly into Region Mode with the Airport Owners filter pre-set to exactly those pilots. The SimFly Reciprocation Tracker uses this to send a selected group from the Balance Queue straight to the region map with one click.
 
