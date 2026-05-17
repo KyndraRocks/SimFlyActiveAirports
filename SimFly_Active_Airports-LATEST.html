@@ -3982,7 +3982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.59.7';
+const APP_VERSION = '2.60.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11565,11 +11565,18 @@ const _RG_ICAO_PREFIX_CONTINENT = {
 };
 let _rgIsoToContinent      = new Map(); // built from OurAirports data during parse
 let _rgMapContinentFilter  = null;      // Set of continent codes, null=show all
+// Scenery-developer filter (separate from _slDeveloperFilter which is the
+// single-value Scenery Library modal dropdown). Set semantics so the map
+// search supports `+Orbx` / `+FlyTampa` style additive filtering. An
+// airport "matches" the developer filter when its Scenery Library entry's
+// developer field is in the set.
+let _rgMapDeveloperFilter  = null;      // Set of developer names, null=show all
 let _rgExcludedOwners      = new Set();
 let _rgExcludedCountries   = new Set();
 let _rgExcludedRegions     = new Set();  // iso_region codes excluded via `-` search
 let _rgExcludedContinents  = new Set();
 let _rgExcludedIcaos       = new Set();
+let _rgExcludedDevelopers  = new Set();  // developer names excluded via `-` search
 
 // Stripe quick-filter — click owner stripe to isolate; click again to restore
 let _rgStripeOwnerDep  = null;   // currently locked owner name (dep), or null
@@ -12308,6 +12315,7 @@ function _rgRenderDots() {
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) continue;
     if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(rec))) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
+    if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icaoUp))) continue;
     const m = L.circleMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor: '#7a7a90', fillOpacity: 0.75, interactive: true,
@@ -12500,15 +12508,16 @@ function _rgHighlightDots() {
   // Active dep airports — sorted by catNum so stacking order matches background layer
   const depSorted = [..._rgDepAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of depSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
+      const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
@@ -12518,6 +12527,7 @@ function _rgHighlightDots() {
         if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(a.rec))) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
+      if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_slDeveloperFilter) {
@@ -12567,15 +12577,16 @@ function _rgHighlightDots() {
   // Active arr airports — sorted by catNum so stacking order matches background layer
   const arrSorted = [..._rgArrAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of arrSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
+      const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
@@ -12585,6 +12596,7 @@ function _rgHighlightDots() {
         if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(a.rec))) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
+      if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_slDeveloperFilter) {
@@ -13917,32 +13929,38 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
   if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
   // Inclusion gate: if any include-set is active, the airport must match at
   // least one (or be pinned). When no include-set is active, every airport
-  // passes this gate.
+  // passes this gate. Developer is part of the same OR chain — a `+Orbx`
+  // search adds Orbx airports alongside whatever else is included.
   if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
+      _rgMapDeveloperFilter !== null ||
       (_rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
     const country     = _rgRecCountry(rec);
     const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
     const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(country);
     const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(_rgRecRegion(rec));
     const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
-    if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) return false;
+    const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(icao));
+    if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) return false;
   }
   // Exclusion gate: any matching exclude-set kills the airport.
   if ((_rgExcludedOwners    && _rgExcludedOwners.size)    ||
       (_rgExcludedCountries && _rgExcludedCountries.size) ||
       (_rgExcludedRegions   && _rgExcludedRegions.size)   ||
       (_rgExcludedContinents && _rgExcludedContinents.size) ||
-      (_rgExcludedIcaos     && _rgExcludedIcaos.size)) {
+      (_rgExcludedIcaos     && _rgExcludedIcaos.size)     ||
+      (_rgExcludedDevelopers && _rgExcludedDevelopers.size)) {
     if (_rgExcludedIcaos.has(icaoUp)) return false;
     if (_rgExcludedOwners.size    && _rgExcludedOwners.has(ownerName || '')) return false;
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) return false;
     if (_rgExcludedRegions.size   && _rgExcludedRegions.has(_rgRecRegion(rec))) return false;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) return false;
+    if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icao))) return false;
   }
   // Scenery-only mode
   if (_rgOnlyScenery && !_slHas(icao)) return false;
-  // Scenery developer filter
+  // Scenery developer filter (Scenery Library modal's single-value dropdown
+  // — separate from _rgMapDeveloperFilter which is the search-driven Set).
   if (_slDeveloperFilter) {
     const slE = _slGet(icao);
     if (slE && (slE.developer || '') !== _slDeveloperFilter) return false;
@@ -14360,6 +14378,71 @@ function _rgShowOwnerLegend(anchor) {
 }
 function _rgHideOwnerLegend() {
   const el = document.getElementById('rgOwnerLegend');
+  if (!el) return;
+  el.classList.remove('visible');
+  el.style.display = 'none';
+}
+
+// Hover-only popover listing every developer in `_rgMapDeveloperFilter` with
+// a right-justified count of currently-visible airports for that developer.
+// "Currently visible" honors every other map-wide filter — same chokepoint
+// (_rgDotPassesMapFilters) used by the owner-color legend's per-owner counts.
+// Triggered from the breadcrumb "N Developers Displayed" chip.
+function _rgShowDeveloperLegend(anchor) {
+  const el = document.getElementById('rgDeveloperLegend');
+  if (!el) return;
+  if (!_rgMapDeveloperFilter || _rgMapDeveloperFilter.size === 0) {
+    el.classList.remove('visible');
+    el.style.display = 'none';
+    return;
+  }
+  const devs = [..._rgMapDeveloperFilter].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // Count visible airports per developer — same _rgDotPassesMapFilters
+  // chokepoint that decides dot rendering, so the count reflects every
+  // other active filter (category, country, payout, star, scenery, etc.).
+  const devSet = new Set(devs);
+  const visCount = new Map();
+  const ownerData = _getOwnerData();
+  const counted = new Set();
+  if (ownerData) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        if (counted.has(ap.icao)) continue;
+        counted.add(ap.icao);
+        const dev = _rgDevOf(ap.icao);
+        if (!dev || !devSet.has(dev)) continue;
+        const rec = lookupICAO(ap.icao);
+        if (!rec) continue;
+        if (_rgDotPassesMapFilters(ap.icao, rec, owner.name)) {
+          visCount.set(dev, (visCount.get(dev) || 0) + 1);
+        }
+      }
+    }
+  }
+  const rows = devs.map(name => {
+    const count = visCount.get(name) || 0;
+    return `<div class="rg-owner-legend-row">` +
+             `<span class="rg-owner-legend-name">${esc(name)}</span>` +
+             `<span class="rg-owner-legend-count">${count}</span>` +
+           `</div>`;
+  }).join('');
+  el.innerHTML = `<div class="rg-owner-legend-hdr">Scenery developers</div>` + rows;
+  // Anchor the popover beneath whatever triggered it (defaults to the chip
+  // anchor element since the developer legend has no toolbar button).
+  el.style.display = '';
+  el.classList.add('visible');
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  const r   = anchor.getBoundingClientRect();
+  const vw  = window.innerWidth || document.documentElement.clientWidth;
+  const popW = el.offsetWidth || 200;
+  let left = r.left;
+  if (left + popW + 8 > vw) left = Math.max(8, vw - popW - 8);
+  el.style.left = left + 'px';
+  el.style.top  = (r.bottom + 6) + 'px';
+}
+function _rgHideDeveloperLegend() {
+  const el = document.getElementById('rgDeveloperLegend');
   if (!el) return;
   el.classList.remove('visible');
   el.style.display = 'none';
@@ -15113,6 +15196,22 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(continentChip);
   }
 
+  // 9b. Developer include filter — hovering the chip pops the developer
+  // legend (per-developer airport counts honoring all other active filters).
+  // Click ✕ to clear the entire developer filter.
+  if (_rgMapDeveloperFilter !== null) {
+    const names = [..._rgMapDeveloperFilter];
+    const label = names.length === 1 ? names[0] : `${names.length} Developers`;
+    const developerChip = mkChip(label, null, () => {
+      _rgHideDeveloperLegend();
+      _rgMapDeveloperFilter = null;
+      _rgApplyMapFilter();
+    });
+    developerChip.addEventListener('mouseenter', () => _rgShowDeveloperLegend(developerChip));
+    developerChip.addEventListener('mouseleave', () => _rgHideDeveloperLegend());
+    container.appendChild(developerChip);
+  }
+
   // 10-13. Exclude chips — styled with red/danger border+text
   function mkExcludeChip(label, onX) {
     const c = mkChip(`−${label}`, null, onX);
@@ -15136,6 +15235,8 @@ function _rgUpdateBreadcrumbs() {
   }
   for (const icao of _rgExcludedIcaos)
     container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
+  for (const dev of _rgExcludedDevelopers)
+    container.appendChild(mkExcludeChip(dev, () => { _rgExcludedDevelopers.delete(dev); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -15850,6 +15951,17 @@ function _rgRecCountry(rec) {
   return '';
 }
 
+// Scenery-library developer lookup for an ICAO. Returns the developer
+// string set on the airport's Scenery Library entry, or '' if not in
+// the library or no developer set. Used by the developer search filter
+// (_rgMapDeveloperFilter / _rgExcludedDevelopers) so airports without
+// library entries never match a developer include/exclude.
+function _rgDevOf(icao) {
+  if (typeof _slGet !== 'function') return '';
+  const e = _slGet(icao);
+  return (e && e.developer) ? e.developer : '';
+}
+
 // Region (state / province) resolution: rec.iso_region first, manual
 // override second. No prefix-based fallback — iso_region values are
 // fine-grained (e.g. 'US-IL', 'CA-ON') and can't be derived from a
@@ -15975,6 +16087,39 @@ function _rgMapSrRegionQuery(q) {
   return results.slice(0, 3);
 }
 
+// Scenery developer search — matches developer names from the user's Scenery
+// Library. Only returns developers that have at least one SimFly-owned airport
+// in the library, so the dropdown can't suggest a filter that would hide every
+// dot. Counts honor the same _rgDotPassesMapFilters chokepoint as the
+// breadcrumb chip's hover legend — *almost*: we count "potential matches" here
+// (SimFly-owned + has this developer) rather than "currently passing the
+// chokepoint" because the dropdown shouldn't disappear when a category filter
+// happens to be hiding the only Orbx airports — the user should still be able
+// to add Orbx as a filter. The breadcrumb legend uses live counts.
+function _rgMapSrDeveloperQuery(q) {
+  if (q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const ownerData = _getOwnerData();
+  const ownedByDev = new Map();
+  if (ownerData) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        const dev = _rgDevOf(ap.icao);
+        if (!dev) continue;
+        ownedByDev.set(dev, (ownedByDev.get(dev) || 0) + 1);
+      }
+    }
+  }
+  const results = [];
+  for (const [name, count] of ownedByDev) {
+    const nl = name.toLowerCase();
+    if (!nl.includes(ql)) continue;
+    results.push({ name, count, startsWith: nl.startsWith(ql) });
+  }
+  results.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return results.slice(0, 3);
+}
+
 function _rgMapSrContinentQuery(q) {
   if (q.length < 2) return [];
   const ql = q.toLowerCase();
@@ -16010,8 +16155,9 @@ function _rgMapSrRender(q) {
   const countries  = _rgMapSrCountryQuery(q);
   const regions    = _rgMapSrRegionQuery(q);
   const continents = _rgMapSrContinentQuery(q);
+  const developers = _rgMapSrDeveloperQuery(q);
   const airports   = _rgMapSrQuery(q);
-  if (!owners.length && !countries.length && !regions.length && !continents.length && !airports.length) {
+  if (!owners.length && !countries.length && !regions.length && !continents.length && !developers.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
@@ -16048,6 +16194,13 @@ function _rgMapSrRender(q) {
     `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
+  const developerRows = developers.map(d =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="developer" data-name="${escAttr(d.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">📦</span>` +
+    `<span class="rg-map-sr-info">${esc(d.name)} <span class="rg-map-sr-city">· ${d.count} SimFly airport${d.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+    `</div>`
+  );
   const apRows = airports.map(r => {
     const meta = [r.city, r.owner].filter(Boolean).map(esc).join(' · ');
     return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
@@ -16055,7 +16208,7 @@ function _rgMapSrRender(q) {
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...apRows].join('');
+  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...developerRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -16094,6 +16247,7 @@ function _rgMapSrActivateEl(el) {
   else if (el.dataset.type === 'continent') _rgMapSrFilterToContinent(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'country')   _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else if (el.dataset.type === 'region')    _rgMapSrFilterToRegion(el.dataset.code, el.dataset.name);
+  else if (el.dataset.type === 'developer') _rgMapSrFilterToDeveloper(el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
 }
 
@@ -16123,12 +16277,14 @@ function _rgClearAllSearchFilters() {
   _rgMapCountryFilter   = null;
   _rgMapRegionFilter    = null;
   _rgMapContinentFilter = null;
+  _rgMapDeveloperFilter = null;
   _rgPinnedIcaos.clear();
   _rgExcludedOwners.clear();
   _rgExcludedCountries.clear();
   _rgExcludedRegions.clear();
   _rgExcludedContinents.clear();
   _rgExcludedIcaos.clear();
+  _rgExcludedDevelopers.clear();
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
 }
@@ -16226,6 +16382,32 @@ function _rgMapSrFilterToContinent(code, name) {
   _rgApplyMapFilter();
   _rgFitAllVisibleAirports();
   if (!_rgMapSrAdditive) { _rgBuildMapOwnerList(); _rgUpdateMapOwnerBtn(); }
+  _rgMapSrClear();
+}
+
+// Scenery developer filter activation — same +/- semantics as country / region
+// / continent. `name` is the developer string as stored in Scenery Library
+// entries (e.g. "Orbx", "FlyTampa"). Airports without a library entry, or with
+// a different developer, are excluded from the active filter set.
+function _rgMapSrFilterToDeveloper(name) {
+  if (_rgMapSrNegative) {
+    if (_rgMapDeveloperFilter && _rgMapDeveloperFilter.has(name)) {
+      _rgMapDeveloperFilter.delete(name);
+      if (_rgMapDeveloperFilter.size === 0) _rgMapDeveloperFilter = null;
+    } else {
+      _rgExcludedDevelopers.add(name);
+    }
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
+  }
+  if (_rgMapSrAdditive) {
+    if (!_rgMapDeveloperFilter) _rgMapDeveloperFilter = new Set();
+    _rgMapDeveloperFilter.add(name);
+  } else {
+    _rgClearAllSearchFilters();
+    _rgMapDeveloperFilter = new Set([name]);
+  }
+  _rgApplyMapFilter();
+  _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
 
@@ -16717,10 +16899,23 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.60.0</span>
+          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Search by scenery developer in the region-map search box</strong> &mdash; type a developer name (e.g. <em>Orbx</em>, <em>FlyTampa</em>, <em>iniBuilds</em>) to see matching developers in the dropdown alongside owner / country / region / continent / airport results. Click <em>Filter map &rarr;</em> to filter the map dots to airports with that developer set in your Scenery Library. The same prefix semantics as every other filter type apply: <em>+Orbx</em> adds Orbx alongside whatever's already filtered, <em>&minus;Orbx</em> excludes Orbx airports specifically. A 📦 icon distinguishes developer results from country / region / continent results in the dropdown.</li>
+          <li><strong>&ldquo;N Developers&rdquo; breadcrumb chip with rich hover legend</strong> &mdash; an active developer filter adds a chip to the filter status strip showing either the single developer name or <em>N Developers</em> for multi-developer filters. Hovering the chip opens a popover listing every active developer with a right-justified count of currently-visible airports for each one. The count honors every other active map filter (category, country, region, continent, payout, star, scenery, owner, exclusion sets) so it reflects exactly what's rendered on the map &mdash; toggle off a category and the count drops live the next time you hover. Excluded developers render as red <em>&minus;Developer</em> chips alongside the other exclusion chips.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.59.7</span>
-          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -23333,6 +23528,7 @@ function rgSendToFlightPlanner() {
                   onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegend()"
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
           <div id="rgOwnerLegend" class="rg-owner-legend"></div>
+          <div id="rgDeveloperLegend" class="rg-owner-legend"></div>
           <div id="rgMapOwnerPanel" class="rg-owner-panel">
             <div class="rg-owner-panel-hdr">
               <span class="rg-owner-panel-title">Filter airport owners</span>
