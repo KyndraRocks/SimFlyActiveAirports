@@ -3975,7 +3975,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.59.4';
+const APP_VERSION = '2.59.5';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11450,6 +11450,24 @@ const _RG_COUNTRY_CONTINENT_FALLBACK = {
   'AU':'OC','NZ':'OC','PG':'OC','FJ':'OC','SB':'OC','VU':'OC','WS':'OC','TO':'OC','FM':'OC','PW':'OC','MH':'OC','KI':'OC','TV':'OC','NR':'OC'
 };
 
+// Per-ICAO manual geo overrides. Final fallback for SimFly airports whose
+// record lacks geo metadata AND whose 2-letter ICAO prefix is ambiguous
+// or non-standard. Consulted BEFORE the prefix tables so a specific entry
+// wins over a generic prefix rule.
+//
+// Examples:
+//   LL48 — Wilcoxon Airport, Illinois USA. The 'LL' prefix is officially
+//          Israel per ICAO Annex 10, so the prefix table can't safely
+//          claim it. Override pins it to US / US-IL / NA.
+//
+// To add an override: { country: 'XX', region: 'XX-YY' } where region
+// follows the iso_region format (e.g. 'US-IL', 'CA-ON'). Continent
+// derives automatically from country via the existing country→continent
+// fallback chain.
+const _RG_ICAO_MANUAL_OVERRIDES = {
+  'LL48': { country: 'US', region: 'US-IL' },
+};
+
 // ICAO 2-letter prefix → ISO 3166-1 alpha-2 country code. Used as a
 // last-resort lookup for SimFly airports whose rec lacks `iso_country`
 // (e.g. LPBE, LIBZ, EGON, LEDT — minimal SimFly-added entries with only
@@ -12280,7 +12298,7 @@ function _rgRenderDots() {
     if (!rec || !rec.latitude || !rec.longitude) continue;
     if (_rgExcludedIcaos.has(icaoUp)) continue;
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) continue;
-    if (_rgExcludedRegions.size && _rgExcludedRegions.has(rec.iso_region || '')) continue;
+    if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(rec))) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
     const m = L.circleMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
@@ -12477,7 +12495,7 @@ function _rgHighlightDots() {
     if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
-      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
+      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
       if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
@@ -12489,7 +12507,7 @@ function _rgHighlightDots() {
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
         if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(a.rec))) continue;
-        if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
+        if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(a.rec))) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
     }
@@ -12544,7 +12562,7 @@ function _rgHighlightDots() {
     if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
-      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(a.rec.iso_region  || '');
+      const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
       if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) continue;
@@ -12556,7 +12574,7 @@ function _rgHighlightDots() {
       if (_rgExcludedOwners.size && _rgExcludedOwners.has(ownerName2)) continue;
       if (a.rec) {
         if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(a.rec))) continue;
-        if (_rgExcludedRegions.size && _rgExcludedRegions.has(a.rec.iso_region || '')) continue;
+        if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(a.rec))) continue;
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
     }
@@ -13898,7 +13916,7 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
     const country     = _rgRecCountry(rec);
     const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
     const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(country);
-    const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(rec.iso_region || '');
+    const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(_rgRecRegion(rec));
     const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
     if (!inOwner && !inCountry && !inRegion && !inContinent && !isPinned) return false;
   }
@@ -13911,7 +13929,7 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
     if (_rgExcludedIcaos.has(icaoUp)) return false;
     if (_rgExcludedOwners.size    && _rgExcludedOwners.has(ownerName || '')) return false;
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) return false;
-    if (_rgExcludedRegions.size   && _rgExcludedRegions.has(rec.iso_region || '')) return false;
+    if (_rgExcludedRegions.size   && _rgExcludedRegions.has(_rgRecRegion(rec))) return false;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) return false;
   }
   // Scenery-only mode
@@ -15781,20 +15799,35 @@ function _rgClickOwnerStripe(ownerName, side) {
 
 let _rgMapSrIdx = -1;
 
-// Country resolution: rec.iso_country first, ICAO 2-letter prefix fallback
-// otherwise. Used everywhere a filter or display needs the country code —
-// _rgDotPassesMapFilters, the pinned-airports block in _rgRenderDots, the
-// dep/arr highlight loops, and the search query counters. Ensures the
-// ~21 SimFly-added orphan airports (no iso_country in their rec) are
-// classifiable by `-Italy` / `-United States` / etc.
+// Country resolution: rec.iso_country first, _RG_ICAO_MANUAL_OVERRIDES
+// second (specific ICAOs that need a manual pin), ICAO 2-letter prefix
+// fallback last. Used everywhere a filter or display needs the country
+// code — _rgDotPassesMapFilters, the pinned-airports block in
+// _rgRenderDots, the dep/arr highlight loops, and the search counters.
 function _rgRecCountry(rec) {
   if (!rec) return '';
   if (rec.iso_country) return rec.iso_country;
   const icao = (rec.icao || '').toUpperCase();
+  const override = _RG_ICAO_MANUAL_OVERRIDES[icao];
+  if (override && override.country) return override.country;
   if (icao.length >= 2) {
     const prefix = icao.slice(0, 2);
     if (_RG_ICAO_PREFIX_COUNTRY[prefix]) return _RG_ICAO_PREFIX_COUNTRY[prefix];
   }
+  return '';
+}
+
+// Region (state / province) resolution: rec.iso_region first, manual
+// override second. No prefix-based fallback — iso_region values are
+// fine-grained (e.g. 'US-IL', 'CA-ON') and can't be derived from a
+// 2-letter ICAO prefix alone. Used by the region inclusion / exclusion
+// filters and the region search counter.
+function _rgRecRegion(rec) {
+  if (!rec) return '';
+  if (rec.iso_region) return rec.iso_region;
+  const icao = (rec.icao || '').toUpperCase();
+  const override = _RG_ICAO_MANUAL_OVERRIDES[icao];
+  if (override && override.region) return override.region;
   return '';
 }
 
@@ -15884,12 +15917,17 @@ function _rgMapSrRegionQuery(q) {
   const ql = q.toLowerCase();
   const ownerData = _getOwnerData();
   // Count SimFly-owned airports per iso_region code
+  // Uses lookupICAO + _rgRecRegion so the count matches what the filter
+  // will actually exclude — same pattern as the country / continent search
+  // counters. Manual overrides (e.g. LL48 → US-IL) contribute to the count.
   const ownedByRegion = new Map();
   if (ownerData && airportDB) {
     for (const owner of ownerData) {
       for (const ap of (owner.airports || [])) {
-        const rec = airportDB.get(ap.icao.toUpperCase());
-        if (rec && rec.iso_region) ownedByRegion.set(rec.iso_region, (ownedByRegion.get(rec.iso_region) || 0) + 1);
+        const rec = lookupICAO(ap.icao);
+        if (!rec) continue;
+        const region = _rgRecRegion(rec);
+        if (region) ownedByRegion.set(region, (ownedByRegion.get(region) || 0) + 1);
       }
     }
   }
@@ -16648,8 +16686,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.59.4</span>
+          <span class="release-version">v2.59.5</span>
           <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Manual ICAO overrides for airports the prefix table can't resolve</strong> &mdash; the v2.59.4 sweep classified 19 of 21 orphan airports via ICAO 2-letter prefix. The two stragglers (<code>WX53</code> and <code>LL48</code>) use prefixes that are either non-standard or ambiguous &mdash; <em>LL</em> is officially Israel per ICAO Annex 10, so the prefix table can't safely claim it for a US airport. New per-ICAO override table (<code>_RG_ICAO_MANUAL_OVERRIDES</code>) handles these one-offs: <code>LL48</code> (Wilcoxon Airport) is now pinned to <strong>US / US-IL / North America</strong> for all three geo filters. Region (state / province) filtering also gains a dedicated resolver (<code>_rgRecRegion</code>) that consults the override table; previously the region filter could only fall through to <code>rec.iso_region</code> with no fallback.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.59.4</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
