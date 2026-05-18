@@ -3982,7 +3982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.60.4';
+const APP_VERSION = '2.60.5';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9742,12 +9742,15 @@ async function _wxFetchOne(icao) {
     } catch (_) {}
   }
   if (updated) {
-    // Invalidate the per-ICAO tooltip cache for this airport and rebuild dots
-    // so the new METAR row appears the next time the user hovers it. The matrix
-    // wx-badge slots (if any) are refreshed via _wxApplyBadges.
+    // Invalidate the per-ICAO tooltip cache and refresh the dot layer so the
+    // new METAR row appears on next hover. Use _rgRenderDots + _rgHighlightDots
+    // rather than _rgApplyMapFilter: weather data never changes which airports
+    // belong in the matrix, and _rgApplyMapFilter calls _rgRenderMatrix() in the
+    // results phase which wipes the active row/col selection.
     if (typeof _rgTipHtmlCache !== 'undefined' && _rgTipHtmlCache) _rgTipHtmlCache.clear();
     if (typeof _rgRenderDots === 'function' && _rgMap) {
-      try { _rgApplyMapFilter(); } catch (_) {}
+      try { _rgRenderDots(); } catch (_) {}
+      try { _rgHighlightDots(); } catch (_) {}
     }
     if (typeof _wxApplyBadges === 'function') { try { _wxApplyBadges(); } catch (_) {} }
   }
@@ -16898,10 +16901,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.60.5</span>
+          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix row/column selection no longer clears after weather fetch</strong> &mdash; clicking a matrix cell and then having the weather auto-fetch complete for that route was causing the row/column highlight to disappear (alternating pattern: works → clears → works → clears). Root cause: <code>_wxFetchOne</code> called <code>_rgApplyMapFilter()</code> on completion, which re-renders the full matrix in the results phase and wipes the active selection. Fixed by replacing that call with <code>_rgRenderDots()</code> + <code>_rgHighlightDots()</code> directly — weather data only needs the dot tooltip cache and dot layer refreshed, not a full matrix rebuild.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.60.4</span>
-          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
