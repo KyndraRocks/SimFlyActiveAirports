@@ -3126,6 +3126,31 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     #rgSortSelect, #rgCapSelect { padding:0.15rem 0.35rem; font-size:0.95rem; }
   }
   #rgCapSelect, #rgSortSelect { font-family:'Rajdhani',sans-serif; font-size:1.25rem; padding:0.18rem 0.53rem; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer; }
+  /* Unique Arrivals toggle — hides arr columns that also appear as dep rows.
+     Cycles through three states: off → far (default ON, arr cap from farthest)
+     → near (arr cap from nearest) → off. Active states use the arrival orange
+     (#ff6a00) and append a direction badge (↗ Far / ↘ Near) so both the
+     activation and the cap-direction choice live on the button itself.       */
+  .rg-uniq-arr-btn { display:inline-flex; align-items:center; gap:0.4rem; font-family:'Rajdhani',sans-serif; font-size:1.2rem; padding:0.18rem 0.55rem; background:var(--surface); border:1px solid var(--border); color:var(--muted); border-radius:4px; cursor:pointer; transition:background 0.12s, color 0.12s, border-color 0.12s; }
+  .rg-uniq-arr-btn:hover { color:var(--text); border-color:rgba(255,106,0,0.45); }
+  .rg-uniq-arr-btn.active { background:rgba(255,106,0,0.16); border-color:#ff6a00; color:#ff6a00; }
+  .rg-uniq-arr-btn.active:hover { background:rgba(255,106,0,0.24); }
+  .rg-uniq-arr-icon { width:1.55rem; height:0.95rem; flex-shrink:0; }
+  .rg-uniq-arr-text { white-space:nowrap; }
+  .rg-uniq-arr-dir { display:none; font-weight:600; letter-spacing:0.04em; padding:0 0.32rem; border-left:1px solid currentColor; opacity:0.9; white-space:nowrap; }
+  .rg-uniq-arr-btn.active .rg-uniq-arr-dir { display:inline; }
+  @media (max-width: 2200px) {
+    .rg-uniq-arr-btn { font-size:0.95rem; padding:0.12rem 0.4rem; }
+    .rg-uniq-arr-icon { width:1.35rem; height:0.82rem; }
+    .rg-uniq-arr-dir { padding:0 0.24rem; }
+  }
+  @media (max-width: 1500px) {
+    /* On tighter widths, drop the "Unique Arrivals" text — the Venn icon and
+       (when active) the direction badge carry the meaning; tooltip stays. */
+    .rg-uniq-arr-text { display:none; }
+    .rg-uniq-arr-btn { padding:0.18rem 0.45rem; }
+    .rg-uniq-arr-dir { border-left:none; padding:0 0 0 0.1rem; }
+  }
   .rg-perf-warn { font-family:'Rajdhani',sans-serif; font-size:1.17rem; color:var(--accent2); }
   .rg-matrix-wrap { border-top:1px solid var(--border); flex:1 1 0; min-height:150px; display:none; flex-direction:column; overflow:clip; }
   .rg-matrix-wrap.visible { display:flex; }
@@ -3982,7 +4007,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.60.5';
+const APP_VERSION = '2.61.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11425,6 +11450,7 @@ let _rgDragJustEnded    = false;  // guard: ignore dot clicks fired by region-dr
 let _rgSelOverlayLayer  = null;   // lightweight ring overlay for selected background dots
 let _rgShowScenery      = true;   // "Highlight scenery airports" toggle
 let _rgOnlyScenery      = false;  // "Show only scenery airports" toggle
+let _rgUniqArrMode      = 'off';  // "Unique Arrivals" — 'off' | 'far' | 'near'. Hides arr-column airports that also appear in the dep region (asymmetric: dep rows untouched, map dots untouched). 'far'/'near' picks which end of the arr-region distance order the Max-per-region cap is applied from.
 
 // Category filter (dep and arr are independent)
 let _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
@@ -13998,9 +14024,15 @@ function _rgAirportsInCircle(cLat, cLng, radiusNm) {
 }
 
 function _rgRefreshFilteredAirports() {
-  const _filter = (full, catFilter, ownerFilter) => {
+  const _filter = (full, catFilter, ownerFilter, fromFarthest) => {
     const out = [];
-    for (const a of full) {
+    // Full arrays come pre-sorted nearest-first by distance from each region
+    // center. Iterating in reverse means we apply the cap from the farthest
+    // end inward — used for arr in Unique Arrivals mode so the matrix prefers
+    // airports near the arr-region edge (which are least likely to overlap
+    // the dep region after the unique-filter step in _rgRenderMatrix).
+    const it = fromFarthest ? full.slice().reverse() : full;
+    for (const a of it) {
       // Map-wide filter chokepoint — same gate that decides dot visibility,
       // so the matrix can never show an airport that the map has hidden
       // (country / region / continent / pinned / exclusions / scenery /
@@ -14015,12 +14047,15 @@ function _rgRefreshFilteredAirports() {
       // Per-region owner filter (matrix sidebar UI).
       if (ownerFilter !== null && !ownerFilter.has(_owner)) continue;
       out.push(a);
-      if (out.length >= _rgCapVal) break; // full array is distance-sorted — take first N that match
+      if (out.length >= _rgCapVal) break;
     }
     return out;
   };
-  _rgDepAirports = _filter(_rgDepAirportsFull, _rgDepCatFilter, _rgDepOwnerFilter);
-  _rgArrAirports = _filter(_rgArrAirportsFull, _rgArrCatFilter, _rgArrOwnerFilter);
+  _rgDepAirports = _filter(_rgDepAirportsFull, _rgDepCatFilter, _rgDepOwnerFilter, false);
+  // Unique Arrivals cap direction: 'far' iterates the distance-sorted arr list
+  // in reverse (keep N farthest from arr center); 'near' and 'off' keep the
+  // default nearest-first behavior.
+  _rgArrAirports = _filter(_rgArrAirportsFull, _rgArrCatFilter, _rgArrOwnerFilter, _rgUniqArrMode === 'far');
 }
 
 // ── Matrix computation ──────────────────────────────────────────────────
@@ -14053,8 +14088,10 @@ function _rgComputeAndRender() {
 function rgSetCap(val) {
   _rgCapVal = val;
   document.getElementById('rgPerfWarn').style.display = val > 200 ? 'inline' : 'none';
-  const capSel = document.getElementById('rgCapSelect');
-  if (capSel) capSel.title = `Display the ${val} airports closest to the region center`;
+  // Tooltip text depends on whether Unique Arrivals is active and which
+  // direction it's currently set to — _rgUpdateUniqArrBtn owns that string,
+  // so route through it rather than duplicating the conditional here.
+  _rgUpdateUniqArrBtn();
   if (_rgPhase === 'results') _rgComputeAndRender();
 }
 
@@ -14064,6 +14101,58 @@ function rgSetSort(val) {
   _rgSortMode = val;
   if (_rgPhase === 'results') _rgRenderMatrix();
   else _rgUpdateSortLabel();
+}
+
+// 3-state cycle: off → far → near → off. Always enters the active state at
+// 'far' (matches the Unique-Arrivals intent — pick the arr airports least
+// likely to overlap dep), then a second click switches the arr cap to
+// 'near' for the rare case where the user wants the opposite. A third click
+// turns the mode off.
+function _rgToggleUniqArr() {
+  if (_rgUniqArrMode === 'off')      _rgUniqArrMode = 'far';
+  else if (_rgUniqArrMode === 'far') _rgUniqArrMode = 'near';
+  else                                _rgUniqArrMode = 'off';
+  _rgUpdateUniqArrBtn();
+  if (_rgPhase === 'results') {
+    _rgRefreshFilteredAirports();
+    _rgHighlightDots();
+    _rgRenderMatrix();
+  }
+}
+
+function _rgUpdateUniqArrBtn() {
+  const btn = document.getElementById('rgUniqArrBtn');
+  if (btn) {
+    const active = _rgUniqArrMode !== 'off';
+    btn.classList.toggle('active', active);
+    btn.classList.toggle('dir-far', _rgUniqArrMode === 'far');
+    btn.classList.toggle('dir-near', _rgUniqArrMode === 'near');
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const dirEl = btn.querySelector('.rg-uniq-arr-dir');
+    if (dirEl) {
+      if (_rgUniqArrMode === 'far')      dirEl.textContent = '↗ Far';
+      else if (_rgUniqArrMode === 'near') dirEl.textContent = '↘ Near';
+      else                                 dirEl.textContent = '';
+    }
+    if (_rgUniqArrMode === 'off') {
+      btn.title = 'Unique Arrivals: OFF — click to enable (defaults to farthest from arr center). Hides arrival columns whose airport also appears in the departure region; map dots stay visible.';
+    } else if (_rgUniqArrMode === 'far') {
+      btn.title = 'Unique Arrivals: ON · ↗ Far — the Max-per-region cap keeps the N airports FARTHEST from the arr center (least likely to overlap dep). Click to switch to nearest-to-center.';
+    } else {
+      btn.title = 'Unique Arrivals: ON · ↘ Near — the Max-per-region cap keeps the N airports NEAREST to the arr center. Click to disable.';
+    }
+  }
+  // Keep the cap-selector tooltip in sync so hovering it reflects the mode.
+  const capSel = document.getElementById('rgCapSelect');
+  if (capSel) {
+    if (_rgUniqArrMode === 'far') {
+      capSel.title = `Display the ${_rgCapVal} departures closest to the dep center and the ${_rgCapVal} arrivals farthest from the arr center (Unique Arrivals · Far)`;
+    } else if (_rgUniqArrMode === 'near') {
+      capSel.title = `Display the ${_rgCapVal} departures closest to the dep center and the ${_rgCapVal} arrivals nearest to the arr center (Unique Arrivals · Near)`;
+    } else {
+      capSel.title = `Display the ${_rgCapVal} airports closest to the region center`;
+    }
+  }
 }
 
 function _rgUpdateSortLabel() {
@@ -14680,6 +14769,11 @@ function _rgRenderMatrix() {
   let dep = _rgDepAirports;
   let arr = _rgArrAirports;
 
+  if (_rgUniqArrMode !== 'off') {
+    const depSet = new Set(dep.map(a => a.icao));
+    arr = arr.filter(a => !depSet.has(a.icao));
+  }
+
   if (_rgOnlyScenery) {
     dep = dep.filter(a => _slHas(a.icao));
     arr = arr.filter(a => _slHas(a.icao));
@@ -15287,8 +15381,37 @@ function _rgMapDotClickExec(icao) {
   const selArr   = document.getElementById('rgSelArr');
   const selNm    = document.getElementById('rgSelNm');
 
+  // Region-aware routing: when the matrix is visible (both regions drawn), a
+  // click inside the dep region always sets/changes the departure, and a click
+  // inside the arr region always sets/changes the arrival. Overlap airports
+  // (in both regions) toggle to whichever slot they aren't currently in, or
+  // fill the empty slot. Clicks outside both regions fall through to the
+  // rolling-chain logic below.
+  let regionSlot = null;
+  if (_rgPhase === 'results') {
+    const inDep = _rgDepAirports && _rgDepAirports.some(a => a.icao === icao);
+    const inArr = _rgArrAirports && _rgArrAirports.some(a => a.icao === icao);
+    if (inDep && !inArr) regionSlot = 'dep';
+    else if (inArr && !inDep) regionSlot = 'arr';
+    else if (inDep && inArr) {
+      // Overlap airport: toggle to the slot it isn't currently in, or fill the
+      // empty slot. Defaults to dep when both slots are empty.
+      if (icao === _rgDotSelDep) regionSlot = 'arr';
+      else if (icao === _rgDotSelArr) regionSlot = 'dep';
+      else regionSlot = _rgDotSelDep ? 'arr' : 'dep';
+    }
+  }
+
+  if (regionSlot) {
+    if (regionSlot === 'dep') _rgDotSelDep = icao;
+    else                       _rgDotSelArr = icao;
+    if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
+    _rgFinishRouteClick(selRoute, selDep, selArr, selNm);
+    return;
+  }
+
+  // Background / explore-phase rolling chain (unchanged from prior behavior)
   if (!_rgDotSelDep) {
-    // First click — stage as departure, show pending in route bar
     _rgDotSelDep = icao;
     const rec = lookupICAO(icao);
     if (selDep) selDep.textContent = icao + (rec && rec.name ? '  ' + rec.name : '');
@@ -15296,29 +15419,41 @@ function _rgMapDotClickExec(icao) {
     if (selNm)  selNm.textContent  = '';
     if (selRoute) selRoute.classList.add('visible');
     _rgHighlightDots();
-    // Kick off a METAR fetch for the new departure airport. Fire-and-forget;
-    // _wxFetchOne handles cache hits, nearest-station fallback, and re-renders
-    // the dot tooltips when fresh data arrives.
     if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
     return;
   }
 
-  // Click on the current departure airport cancels the entire route selection.
-  // Mirrors the ✕ Clear route button — clears dep/arr, route line, matrix
-  // highlights, and hides the route info bar.
   if (icao === _rgDotSelDep) {
     _rgClearDotSel();
     return;
   }
 
-  // Click on any other airport sets/replaces the arrival. The departure stays
-  // anchored — subsequent clicks just swap arrival to the newly clicked airport.
   _rgDotSelArr = icao;
-  // METAR fetch for the new arrival (fire-and-forget). The departure entry was
-  // already requested when it was set, so no need to refetch it.
   if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
+  _rgFinishRouteClick(selRoute, selDep, selArr, selNm);
+}
 
-  // If both airports exist in the current region matrix, use the cell
+// Shared finisher for dot-click route selection — used by both the
+// region-aware path and the rolling-chain fallback. Handles the "only one
+// side set" pending state, attempts a matrix-cell selection when both sides
+// are set, and falls back to a direct coordinate route otherwise.
+function _rgFinishRouteClick(selRoute, selDep, selArr, selNm) {
+  if (!_rgDotSelDep || !_rgDotSelArr) {
+    if (_rgDotSelDep && !_rgDotSelArr) {
+      const rec = lookupICAO(_rgDotSelDep);
+      if (selDep) selDep.textContent = _rgDotSelDep + (rec && rec.name ? '  ' + rec.name : '');
+      if (selArr) selArr.textContent = '—';
+    } else if (_rgDotSelArr && !_rgDotSelDep) {
+      const rec = lookupICAO(_rgDotSelArr);
+      if (selDep) selDep.textContent = '—';
+      if (selArr) selArr.textContent = _rgDotSelArr + (rec && rec.name ? '  ' + rec.name : '');
+    }
+    if (selNm) selNm.textContent = '';
+    if (selRoute) selRoute.classList.add('visible');
+    _rgHighlightDots();
+    return;
+  }
+
   if (_rgPhase === 'results') {
     const matEl = document.getElementById('rgMatrix');
     if (matEl) {
@@ -15334,7 +15469,6 @@ function _rgMapDotClickExec(icao) {
     }
   }
 
-  // Fallback: direct coordinate route (outside region or in explore phase)
   const depR = lookupICAO(_rgDotSelDep);
   const arrR = lookupICAO(_rgDotSelArr);
   if (!depR || !arrR || !depR.latitude) { _rgHighlightDots(); return; }
@@ -16798,7 +16932,8 @@ function rgSendToFlightPlanner() {
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
             <strong>Cancelling mid-draw:</strong> <strong>right-click</strong> anywhere on the map during the region-drawing sequence (before or after the departure is locked, while drawing the arrival circle) to instantly cancel the operation and return to the explore state. Equivalent to clicking the Undo / Cancel button without having to move the cursor off the map.<br/><br/>
             Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners; press <strong>Enter</strong> to clear the search and return to the full list (selections are preserved). While search text is active, <strong>All</strong> and <strong>None</strong> apply only to the visible rows — hidden rows keep their current state. Use <strong>All</strong> or <strong>None</strong> with no search text to select or clear the complete list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
-            <strong>Map dot selection</strong> — click any airport dot on the map to build a route using a fixed-departure anchor model. The <strong>first click</strong> sets the departure. Clicking the <strong>same departure airport again</strong> clears the entire route (same as the <strong>✕ Clear route</strong> button). Clicking <strong>any other airport</strong> sets that airport as the arrival; subsequent clicks on different airports replace the arrival without changing the departure, so it&rsquo;s easy to compare multiple destinations from one origin. Works on both the colored in-region dots and the background dots outside the region circles. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not affect the route selection.<br/><br/>
+            <strong>Map dot selection</strong> — click any airport dot on the map to build a route. Behavior depends on whether the matrix is visible: <em>before</em> both regions are drawn (or for clicks outside both region circles), it follows a fixed-departure anchor model — the <strong>first click</strong> sets the departure, the next click sets the arrival, subsequent clicks replace the arrival, and re-clicking the current departure clears the entire route. <em>Once both regions are drawn and the matrix is visible</em>, clicking inside the <strong>dep region</strong> always sets / changes the departure, and clicking inside the <strong>arr region</strong> always sets / changes the arrival — order doesn&rsquo;t matter, so you can adjust either endpoint by clicking another in-region airport at any time. Use the <strong>✕ Clear route</strong> button to reset. Overlap airports (inside both circles) toggle to whichever slot they aren&rsquo;t already in. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not affect the route selection.<br/><br/>
+            <strong>Unique Arrivals mode</strong> — the small Venn-icon button in the results bar (next to <em>Max per region</em>) is a <em>three-state cycle</em>: <em>Off</em> → <em>↗ Far</em> → <em>↘ Near</em> → <em>Off</em>. When active, the matrix keeps every departure row but hides any arrival column whose airport also appears in the departure region, so the grid shows only routes that <em>land</em> at airports unique to the arr region. Map dots are not affected — every airport in either region stays visible, so you can still route via dot clicks. While the mode is active, <em>Max per region</em> applies asymmetrically: the dep cap always keeps the N airports closest to the dep center, but the arr cap follows whichever direction is selected — <em>↗ Far</em> (default on activation) keeps the N airports farthest from the arr center (favours the edge of the arr region where overlap with dep is least likely, so more truly-unique arrivals survive the column filter); <em>↘ Near</em> keeps the N airports closest to the arr center instead. The current direction shows directly on the button as a coloured badge, and the tooltip explains what the next click will do. The icon shows an asymmetric Venn: dep circle outlined on the left, arr-minus-dep crescent filled in the arrival orange on the right when active. Below ~1500 px the &ldquo;Unique Arrivals&rdquo; label is hidden and only the Venn icon + direction badge show; the tooltip still explains the effect.<br/><br/>
             <strong>Crosses antimeridian</strong> — when a route, measurement, or dep&rarr;arr region distance crosses ±180° longitude (e.g. New Zealand to Hawaii), Leaflet draws the visual line the long way across the map even though the displayed distance is the short-way figure. In that case the on-map distance label shows a second row reading <em>Crosses antimeridian</em>, and the line itself switches to a dashed style so the apparent mismatch is explained at a glance.<br/><br/>
             <strong>Map category filter</strong> — the <strong>Map</strong> filter buttons at the top of the region screen also control the main screen departure and arrival category filters: toggling a category on the map instantly applies the same selection to both the Dep and Arr filter rows on the main screen.<br/><br/>
             <strong>Airport owner filter</strong> — the <strong>Airport Owners ▾</strong> dropdown in the header bar filters which owners&rsquo; airports appear as dots on the map. It operates independently of the <em>Dep Owners</em> and <em>Arr Owners</em> controls (which affect only the matrix rows and columns) — use <em>Airport Owners</em> to declutter the map to just the pilots you care about while leaving the matrix unaffected. The panel behaves identically to the dep/arr owner menus: type to search, press <strong>Enter</strong> to clear the search, use <strong>All</strong> / <strong>None</strong> to bulk-select, arrow keys to navigate, and <strong>Space</strong> to toggle a highlighted row. <strong>Hovering</strong> the dropdown shows a color legend listing every owner currently in the filter with their assigned dot color.<br/><br/>
@@ -16901,10 +17036,24 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.61.3</span>
+          <span class="release-date">May 18, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region-aware route selection while the matrix is visible</strong> &mdash; once both dep and arr regions are drawn, clicking any airport <em>inside the dep region</em> now sets or changes the departure, and clicking inside the arr region sets or changes the arrival, regardless of click order. Background-dot clicks (outside both regions) and explore-phase clicks still follow the existing &ldquo;first click sets dep, next click sets arr&rdquo; rolling chain. Overlap airports (inside both circles) toggle to whichever slot they aren&rsquo;t already in. Region-mode clicks no longer cancel the route just because you clicked on the current departure &mdash; use the <strong>✕ Clear</strong> route button for that.</li>
+          <li><strong>Unique Arrivals region matrix mode</strong> &mdash; new toggle in the results bar next to <em>Max per region</em>. When active, the matrix keeps every departure row but hides any arrival column whose airport also appears in the departure region &mdash; trimming duplicate arrivals so the matrix shows only routes from any dep airport to an airport unique to the arr region. <em>Map dots are untouched</em>: every airport in either region stays visible (still useful for routing via dot clicks). The Venn-icon button uses an asymmetric design &mdash; dep circle outlined, arr-minus-dep crescent filled in arrival orange when active &mdash; so the &ldquo;subtract dep from arr&rdquo; effect reads at a glance. Below 1500 px the &ldquo;Unique Arrivals&rdquo; text label collapses to icon-only with the tooltip preserved.</li>
+          <li><strong>Unique Arrivals cycles arr-cap direction (Off → Far → Near → Off)</strong> &mdash; the toggle is now a three-state cycle. While the mode is active, <em>Max per region</em> applies asymmetrically: the dep cap always keeps the N airports closest to the dep center, but the arr cap can be set to keep the N airports <em>farthest from arr center</em> (default on activation &mdash; least likely to overlap dep) or <em>nearest to arr center</em> (second click). The active direction is shown directly on the button as <em>↗ Far</em> or <em>↘ Near</em>, and the button tooltip explains both the current state and what the next click will do. The cap-selector hover tooltip updates in sync so hovering it also reveals the active direction.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.60.5</span>
-          <span class="release-date">May 17, 2026 &middot; Current</span>
+          <span class="release-date">May 17, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -23752,6 +23901,22 @@ function rgSendToFlightPlanner() {
         </div>
       </div>
       <div class="rg-cap-row">
+        <button id="rgUniqArrBtn" class="rg-uniq-arr-btn" onclick="_rgToggleUniqArr()" aria-pressed="false" title="Unique Arrivals: OFF — click to enable (defaults to farthest from arr center). Hides arrival columns whose airport also appears in the departure region; map dots stay visible." tabindex="-1">
+          <svg class="rg-uniq-arr-icon" viewBox="0 0 24 14" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <mask id="rgUniqArrMask">
+                <rect width="24" height="14" fill="white"/>
+                <circle cx="9" cy="7" r="5" fill="black"/>
+              </mask>
+            </defs>
+            <!-- Dep circle (left) — outline only -->
+            <circle cx="9" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.1"/>
+            <!-- Arr circle (right) — filled, with dep overlap masked out -->
+            <circle cx="15" cy="7" r="5" fill="currentColor" mask="url(#rgUniqArrMask)"/>
+          </svg>
+          <span class="rg-uniq-arr-text">Unique Arrivals</span>
+          <span class="rg-uniq-arr-dir" aria-hidden="true"></span>
+        </button>
         <span class="rg-cap-lbl" title="Display the most N airports nearest to each region center">Max per region:</span>
         <select id="rgCapSelect" onchange="rgSetCap(+this.value)" title="Display the 100 airports closest to the region center">
           <option value="5">5</option>
