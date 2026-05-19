@@ -4007,7 +4007,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.61.6';
+const APP_VERSION = '2.61.7';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14108,6 +14108,7 @@ function _rgComputeAndRender() {
   const matEl = document.getElementById('rgMatrix');
   const wrap  = document.getElementById('rgMatrixWrap');
   const bar   = document.getElementById('rgResultsBar');
+  const wasVisible = wrap.classList.contains('visible');
   wrap.classList.add('visible');
   bar.classList.add('visible');
   matEl.innerHTML = '<tr><td class="rg-matrix-msg">Computing airports…</td></tr>';
@@ -14126,6 +14127,16 @@ function _rgComputeAndRender() {
     _rgRefreshFilteredAirports();
     _rgHighlightDots();
     _rgRenderMatrix();
+    if (!wasVisible) {
+      setTimeout(() => {
+        _rgMap.invalidateSize();
+        const b = _rgDepFill.getBounds().extend(_rgArrFill.getBounds());
+        const c = _rgMap.getContainer();
+        const padX = Math.round(c.clientWidth  * 0.10);
+        const padY = Math.round(c.clientHeight * 0.10);
+        _rgMap.fitBounds(b, { padding: [padX, padY], maxZoom: 8 });
+      }, 50);
+    }
   }, 30);
 }
 
@@ -17095,8 +17106,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
+          <span class="release-version">v2.61.7</span>
+          <span class="release-date">May 19, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region matrix auto-pans map to show both circles</strong> &mdash; when the matrix panel first opens, the map now fits its view to encompass both the departure and arrival circles, with each pair filling roughly 80% of the visible map area. Uses Leaflet&rsquo;s native circle bounds rather than a manual NM approximation, so the zoom level is always exact regardless of circle size or latitude.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
           <span class="release-version">v2.61.6</span>
-          <span class="release-date">May 18, 2026 &middot; Current</span>
+          <span class="release-date">May 18, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
