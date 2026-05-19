@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.61.3**
+**Current version: v2.61.6**
 
 ---
 
@@ -111,7 +111,7 @@ A row of chips overlaid on the region map to the right of the search bar shows e
 | Chip | When shown | Click action |
 |---|---|---|
 | **Category Colors (N)** / **Payout Colors (N)** | Always | Toggle between color modes |
-| **Pilot Payout ≥ N%** | Payout mode on + threshold > 0 | ✕ clears the threshold |
+| **Pilot Payout ≥ N%** | Threshold > 0 (any color mode) | ✕ clears the threshold |
 | **No Scenery Indicator** | Always (scenery off) | Turn on Highlight overlay |
 | **Black Dot = Has Scenery** | Highlight overlay active | Advance to Airports w Scenery Only mode |
 | **Airports w Scenery Only** | Only-scenery mode active | Turn scenery mode off |
@@ -130,7 +130,9 @@ The strip clips automatically when it nears the right edge of the map and never 
 ### Pilot Payout Map
 Click **💰 Payout** in the toolbar to overlay pilot payout percentages on every airport dot. Dots use a piecewise color scale designed around the SimFly membership tiers: 0% = mid-grey; 1–20% = red through orange-red (the non-premium cap); 20–50% = orange through amber; 50% = pure yellow; 60%+ = pure green. The 50%–60% range gets the most hue separation — a full yellow-to-green shift — making it easy to spot airports where premium pilots have set higher-than-minimum payouts. Tooltip payout labels match the dot color. The payout percentage is shown in every airport tooltip on both the dot hover tooltip and the matrix/distance map tooltips.
 
-A **legend** appears in the top-right corner of the map showing the gradient bar and the 0% / 60%+ endpoints. The legend also serves as a **filter slider** — drag anywhere on the gradient bar to set a minimum payout threshold. Airports below the threshold disappear from both the map dots and the distance matrix instantly, and a **"Hide < N%"** label shows the active cutoff. Drag back to 0 to clear the filter. Toggling Payout mode off resets the filter automatically.
+A **legend** appears in the top-right corner of the map showing the gradient bar and the 0% / 60%+ endpoints. The legend also serves as a **filter slider** — drag anywhere on the gradient bar to set a minimum payout threshold. Airports below the threshold disappear from both the map dots and the distance matrix instantly, and a **"Hide < N%"** label shows the active cutoff. Drag back to 0 to clear the filter.
+
+The filter is **independent of the color mode**. Setting a threshold continues to hide airports below it whether dots are coloured by category, payout, or owner — so cycling the *Category Colors* / *Payout Colors* / *Owner Colors* breadcrumb chip preserves the filter across the switch. The *Pilot Payout ≥ N%* breadcrumb chip stays visible in every mode so you can clear the filter via its ✕ from any color view. Clicking the **💰 Payout** button to turn payout color mode off explicitly still resets the filter — that path is the explicit "reset payout" gesture.
 
 The gray **0% dot** on the legend is also a one-click toggle — click it to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue.
 

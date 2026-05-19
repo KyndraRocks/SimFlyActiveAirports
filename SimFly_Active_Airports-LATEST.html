@@ -4007,7 +4007,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.61.3';
+const APP_VERSION = '2.61.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -4174,7 +4174,10 @@ const CATEGORY_CACHE_KEY = 'simfly_category_csv';
 async function fetchCategoryCsvWithRetry() {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const r = await fetch(CATEGORY_URL);
+      // ?t= cache-buster: see comment in loadAirportDB() for OVERRIDE_URL —
+      // GitHub raw URLs are CDN-cached, so freshly-pushed category edits
+      // from KML Generator wouldn't surface here until the cache expires.
+      const r = await fetch(CATEGORY_URL + '?t=' + Date.now());
       if (r.ok) {
         const txt = await r.text();
         if (txt && /^\s*ICAO\b/i.test(txt)) {
@@ -4205,7 +4208,10 @@ function loadAirportDB() {
     fetch(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch runway database'); return r.text(); }),
     fetchCategoryCsvWithRetry(),
     fetch(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => ''),
-    fetch(OVERRIDE_URL).then(r => r.ok ? r.text() : '{}').catch(() => '{}'),
+    // ?t= cache-buster: GitHub raw URLs are CDN-cached for several minutes,
+    // so without it a fresh corrections push from KML Generator won't surface
+    // here until the cache expires, even on a hard refresh.
+    fetch(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}'),
     fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
   ])
     .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson]) => {
@@ -12419,6 +12425,34 @@ function _rgDrawHeroLine() {
   label.addTo(_rgMap);
 
   _rgHeroLayers = [bloom, glow, core, label];
+  // Apply the dim state in case a route is already active when the hero gets
+  // (re)drawn — keeps the hero half-opacity and label-hidden whenever an
+  // active route line is on the map.
+  _rgApplyHeroDim();
+}
+
+// Hero line opacities (bloom / glow / core), captured here so _rgApplyHeroDim
+// can restore them precisely when the route is cleared. Must stay in sync
+// with the polyline opacities set in _rgDrawHeroLine.
+const _RG_HERO_OPACITIES = [0.08, 0.32, 0.92];
+
+// When a route line is active and visible, dim the dep→arr hero line to 50%
+// opacity and hide its midpoint distance label so the bright route info
+// (yellow line + bearing/nm chip) reads cleanly. When the route is cleared,
+// restore the hero to its drawn opacity and re-show the distance label.
+function _rgApplyHeroDim() {
+  if (!_rgHeroLayers || _rgHeroLayers.length === 0) return;
+  const dimmed = !!_rgRouteLayer;
+  const factor = dimmed ? 0.5 : 1;
+  for (let i = 0; i < 3 && i < _rgHeroLayers.length; i++) {
+    const ly = _rgHeroLayers[i];
+    if (ly && ly.setStyle) ly.setStyle({ opacity: _RG_HERO_OPACITIES[i] * factor });
+  }
+  const lbl = _rgHeroLayers[3];
+  if (lbl && lbl.getElement) {
+    const el = lbl.getElement();
+    if (el) el.style.display = dimmed ? 'none' : '';
+  }
 }
 
 // ── Selected-route line ──────────────────────────────────────────────────
@@ -12428,6 +12462,11 @@ function _rgClearRouteHL() {
     _rgRouteLayer.forEach(l => { if (l) l.remove(); });
     _rgRouteLayer = null;
   }
+  // Re-apply hero opacity / label visibility against the now-null route state.
+  // Safe to call when _rgDrawRouteHL is about to recreate the route — the
+  // intermediate state is overwritten by the dim call at the end of that
+  // function before the browser paints.
+  _rgApplyHeroDim();
 }
 
 function _rgDrawRouteHL(depIcao, arrIcao, nm) {
@@ -12497,6 +12536,8 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
 
   [glow, line, core, depRing, arrRing, infoLabel].forEach(l => l.addTo(_rgMap));
   _rgRouteLayer = [glow, line, core, depRing, arrRing, infoLabel];
+  // Dim the hero line + hide its distance label now that a route is active.
+  _rgApplyHeroDim();
 }
 
 function _rgDblClickAirport(lat, lng, icao) {
@@ -12562,7 +12603,7 @@ function _rgHighlightDots() {
       const slE = _slGet(a.icao);
       if (slE && (slE.developer || '') !== _slDeveloperFilter) continue;
     }
-    if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
+    if (_rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
     if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgGetDotFill(a.icao, '#00c8ff');
     const sel  = a.icao === _rgDotSelDep;
@@ -12631,7 +12672,7 @@ function _rgHighlightDots() {
       const slE = _slGet(a.icao);
       if (slE && (slE.developer || '') !== _slDeveloperFilter) continue;
     }
-    if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
+    if (_rgPayoutFilter > 0 && payoutDB && (payoutDB.get(a.icao.toUpperCase()) ?? 0) < _rgPayoutFilter) continue;
     if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgGetDotFill(a.icao, '#ff6a00');
     const sel  = a.icao === _rgDotSelArr;
@@ -13993,8 +14034,11 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
     const slE = _slGet(icao);
     if (slE && (slE.developer || '') !== _slDeveloperFilter) return false;
   }
-  // Payout-mode minimum (only applies when payout-mode is active)
-  if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB &&
+  // Pilot-payout minimum — independent of color mode. The threshold lives
+  // outside _rgPayoutMode so the filter survives breadcrumb / 🎨 color
+  // switches and continues hiding airports below the cutoff even after the
+  // dots have been recolored by category or owner.
+  if (_rgPayoutFilter > 0 && payoutDB &&
       (payoutDB.get(icaoUp) ?? 0) < _rgPayoutFilter) return false;
   // Star rating filter
   if (typeof _rgStarFiltCheck === 'function' && !_rgStarFiltCheck(icao)) return false;
@@ -14327,13 +14371,19 @@ function _rgPayoutColor(icao) {
   return `hsl(${Math.round(hue)},100%,${Math.round(lit)}%)`;
 }
 
-function _rgTogglePayoutMode() {
+// Toggle payout color mode. `preserveFilter` lets soft mode-switches (the
+// breadcrumb cycle and the 🎨 owner-color button) keep the user's payout
+// filter threshold active across the change — the threshold survives the
+// switch and continues hiding airports below it regardless of color mode.
+// The explicit 💰 Payout button passes the default (false) so clicking it
+// to turn the mode off still resets the filter, matching the prior UX.
+function _rgTogglePayoutMode(preserveFilter) {
   _rgPayoutMode = !_rgPayoutMode;
   const btn = document.getElementById('rgPayoutBtn');
   if (btn) btn.classList.toggle('active', _rgPayoutMode);
   const legend = document.getElementById('rgPayoutLegend');
   if (legend) legend.style.display = _rgPayoutMode ? '' : 'none';
-  if (!_rgPayoutMode && _rgPayoutFilter > 0) {
+  if (!_rgPayoutMode && !preserveFilter && _rgPayoutFilter > 0) {
     _rgPayoutFilter = 0;
     const sl = document.getElementById('rgPayoutSlider');
     const th = document.getElementById('rgPayoutThumb');
@@ -14355,7 +14405,7 @@ function _rgTogglePayoutMode() {
 function _rgToggleOwnerColorMode() {
   if (!_rgMapOwnerFilter || _rgMapOwnerFilter.size === 0) return; // disabled state
   if (_rgPayoutMode && !_rgOwnerColorsActive) {
-    _rgTogglePayoutMode(); // turns payout off + re-renders
+    _rgTogglePayoutMode(true); // soft switch — preserve any active payout filter threshold
   }
   _rgOwnerColorsActive = !_rgOwnerColorsActive;
   _rgRebuildOwnerColorAssignment();
@@ -14367,16 +14417,20 @@ function _rgToggleOwnerColorMode() {
 }
 
 // Mode chip cycle: category → payout → owner (if owner filter active) → back.
+// All cycle transitions are "soft" — any active pilot-payout filter threshold
+// survives the switch and stays applied to map dots + matrix regardless of
+// which color mode is active. Only the explicit 💰 Payout button still resets
+// the filter when it turns the mode off.
 function _rgCycleColorMode() {
   const ownerOK = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.size > 0;
   if (!_rgPayoutMode && !_rgOwnerColorsActive) {
     // category → payout
-    _rgTogglePayoutMode();
+    _rgTogglePayoutMode(true);
     return;
   }
   if (_rgPayoutMode) {
     // payout → owner (or back to category if owner filter is inactive)
-    _rgTogglePayoutMode(); // turns payout off
+    _rgTogglePayoutMode(true); // turns payout off, preserves filter
     if (ownerOK) {
       _rgOwnerColorsActive = true;
       _rgRebuildOwnerColorAssignment();
@@ -14779,7 +14833,7 @@ function _rgRenderMatrix() {
     arr = arr.filter(a => _slHas(a.icao));
   }
 
-  if (_rgPayoutMode && _rgPayoutFilter > 0 && payoutDB) {
+  if (_rgPayoutFilter > 0 && payoutDB) {
     dep = dep.filter(a => (payoutDB.get(a.icao.toUpperCase()) ?? 0) >= _rgPayoutFilter);
     arr = arr.filter(a => (payoutDB.get(a.icao.toUpperCase()) ?? 0) >= _rgPayoutFilter);
   }
@@ -15161,8 +15215,11 @@ function _rgUpdateBreadcrumbs() {
   }
   container.appendChild(mkChip(modeLbl, _rgCycleColorMode, null));
 
-  // 2. Pilot Payout filter — grouped right after "Payout Colors"
-  if (_rgPayoutMode && _rgPayoutFilter > 0) {
+  // 2. Pilot Payout filter — grouped right after "Payout Colors". Shown
+  // whenever the threshold is set, regardless of current color mode, so the
+  // user always has a visible control to clear the filter even after
+  // breadcrumb-cycling away from payout mode.
+  if (_rgPayoutFilter > 0) {
     container.appendChild(mkChip(
       `Pilot Payout >= ${_rgPayoutFilter}%`,
       null,
@@ -17036,10 +17093,46 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.6</span>
+          <span class="release-date">May 18, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pilot Payout filter survives color-mode breadcrumb switches</strong> &mdash; the <em>Pilot Payout &ge; N%</em> filter previously reset to 0 the moment payout color mode turned off, including when the user cycled the breadcrumb chip <em>Payout Colors</em> &rarr; <em>Owner Colors</em> or <em>&rarr; Category Colors</em>. The filter is now decoupled from the color mode: setting a threshold continues to hide airports below it on the map, in the matrix, and in the dep / arr highlight layer regardless of whether dots are coloured by category, payout, or owner. The <em>Pilot Payout &ge; N%</em> breadcrumb chip also stays visible across the switch so the filter can be cleared from any mode via the chip's ✕. The explicit 💰 Payout button still resets the filter when it turns the mode off &mdash; that path remains an explicit &ldquo;reset payout&rdquo; gesture.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.5</span>
+          <span class="release-date">May 18, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Hero line dims and hides its distance label while a route is active</strong> &mdash; the dep&rarr;arr centre-to-centre hero line (with its <em>N nm</em> midpoint chip) was visually competing with the selected route line and its <em>ICAO &rarr; ICAO &middot; N nm</em> info chip whenever both were on the map at once. The hero line now drops to 50% opacity and its midpoint distance label is hidden as soon as a route is drawn between any dep / arr pair, then returns to full opacity with its label restored the moment the route is cleared (via the &times; Clear button, clicking the current departure, or any other clear path). Applies in every phase that shows the hero line.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.61.4</span>
+          <span class="release-date">May 18, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Freshly-pushed gist edits from KML Generator now surface on the next AA load</strong> &mdash; the <code>SimFly_Airport_Overrides.json</code> and <code>SimFly_Airport_Categories.csv</code> Gist fetches were missing the <code>?t=Date.now()</code> cache-buster that the aircraft and payout Gist fetches already had, so GitHub's <code>raw.githubusercontent.com</code> CDN (which caches for several minutes) would keep serving stale content even after a hard refresh. Result: a continent / category / coordinate correction pushed from KML Generator could take 5&ndash;10 minutes to appear in Active Airports' region map filters, tooltips, and search. Both fetches now cache-bust like their siblings, matching how KML Generator already cache-busts every Gist read on its own side.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.61.3</span>
-          <span class="release-date">May 18, 2026 &middot; Current</span>
+          <span class="release-date">May 18, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
