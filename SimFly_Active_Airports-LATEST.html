@@ -4007,7 +4007,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.61.7';
+const APP_VERSION = '2.61.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -7975,21 +7975,14 @@ function _dmRenderMap() {
       if (activeDepRec && activeArrRec) {
         const od = _getOwnerData();
         const _findOwner = icao => { for (const o of od) { if (o.airports.some(a => a.icao === icao)) return o.name; } return null; };
-        // Append a Weather section when METAR data is cached for the airport.
-        // Returns the existing rich-tooltip weather HTML (raw + decoded) so the
-        // info card matches the badge-hover tooltip exactly. Omitted when no
-        // weather is cached for that ICAO — _wxTooltipHtml returns null.
-        const _appendWxSection = (icao) => {
-          const wx = (typeof _wxTooltipHtml === 'function') ? _wxTooltipHtml(icao) : null;
-          if (!wx) return '';
-          return '<span class="tip-ac-section"><span class="tip-ac-label">Weather</span>' + wx + '</span>';
-        };
+        // _buildTooltipHtml already appends a Weather section from _wxTooltipHtml
+        // when a METAR is cached, so the info cards reuse it as-is — appending
+        // a second weather block here duplicated the section whenever weather
+        // was cached.
         document.getElementById('distMapInfoDepContent').innerHTML =
-          _buildTooltipHtml(activeDepIcao, activeDepRec, false, null, _findOwner(activeDepIcao), 'dep')
-          + _appendWxSection(activeDepIcao);
+          _buildTooltipHtml(activeDepIcao, activeDepRec, false, null, _findOwner(activeDepIcao), 'dep');
         document.getElementById('distMapInfoArrContent').innerHTML =
-          _buildTooltipHtml(activeArrIcao, activeArrRec, false, null, _findOwner(activeArrIcao), 'arr')
-          + _appendWxSection(activeArrIcao);
+          _buildTooltipHtml(activeArrIcao, activeArrRec, false, null, _findOwner(activeArrIcao), 'arr');
         infoPanel.style.display = '';
       } else {
         infoPanel.style.display = 'none';
@@ -8070,6 +8063,24 @@ function _distUpdateSortIndicator() {
 
 function _distPivotClick(e, icao, axis) {
   e.stopPropagation();
+  // Capture the clicked header's viewport position so we can restore it
+  // after renderDistMatrix re-renders. The matrix already preserves the
+  // wrap's scrollTop / scrollLeft across the innerHTML replacement — but
+  // that keeps the same viewport OFFSET, not the same airport, and the
+  // row or column the user clicked may have moved within the table:
+  // switching pivot axis sorts the new axis by distance while reverting
+  // the previous axis to alpha, so both axes reorder. Restoring the
+  // clicked header's screen position keeps it under the cursor.
+  // Selectors target the main matrix's row/col header elements:
+  //   dep row header → <td class="clickable-row" data-icao>
+  //   arr col header → <th class="clickable"     data-icao>
+  const wrap = document.getElementById('distMatrixWrap');
+  const sel  = axis === 'dep'
+    ? `td.clickable-row[data-icao="${icao}"]`
+    : `th.clickable[data-icao="${icao}"]`;
+  const prevHdr  = wrap ? wrap.querySelector(sel) : null;
+  const prevRect = prevHdr ? prevHdr.getBoundingClientRect() : null;
+
   const p = _distSort.pivot;
   if (p && p.icao === icao && p.axis === axis) {
     _distSort.pivot = p.mode === 'nearest' ? { icao, axis, mode: 'farthest' } : null;
@@ -8077,6 +8088,22 @@ function _distPivotClick(e, icao, axis) {
     _distSort.pivot = { icao, axis, mode: 'nearest' };
   }
   renderDistMatrix();
+
+  // Restore: find the new position of the same header and offset scroll
+  // by the delta so it lands where it was when clicked.
+  if (wrap && prevRect) {
+    const newHdr = wrap.querySelector(sel);
+    if (newHdr) {
+      const newRect = newHdr.getBoundingClientRect();
+      if (axis === 'dep') {
+        const dy = newRect.top - prevRect.top;
+        if (dy !== 0) wrap.scrollTop += dy;
+      } else {
+        const dx = newRect.left - prevRect.left;
+        if (dx !== 0) wrap.scrollLeft += dx;
+      }
+    }
+  }
 }
 
 // Swap hint: when set, renderDistMatrix uses these ICAOs instead of reading
@@ -11939,6 +11966,24 @@ function _rgUpdateMeasure(toLL) {
 function _rgPivotClick(event, icao, axis) {
   event.stopPropagation();
   event.preventDefault();
+  // Capture the just-clicked header's viewport position so we can put it back
+  // under the mouse after the matrix re-renders. Switching pivot axis
+  // (e.g. arr-pivot → dep-pivot) reorders BOTH axes — the new pivot axis
+  // sorts by distance, and the previously-sorted axis reverts to alpha —
+  // which can move the row or column the user just clicked far enough away
+  // that they have to scroll to find it. We restore position along the
+  // clicked axis only:
+  //   axis='dep' → vertical scrollTop (the row the user clicked)
+  //   axis='arr' → horizontal scrollLeft (the column the user clicked)
+  // NOTE: the scrollable element is `#rgMatrixScroll` — its parent
+  // `#rgMatrixWrap` has overflow:clip and never scrolls.
+  const scroller = document.getElementById('rgMatrixScroll');
+  const sel  = axis === 'dep'
+    ? `.rg-row-hdr[data-rg-tip="${icao}"]`
+    : `.rg-col-hdr[data-rg-tip="${icao}"]`;
+  const prevHdr  = scroller ? scroller.querySelector(sel) : null;
+  const prevRect = prevHdr ? prevHdr.getBoundingClientRect() : null;
+
   const modes = ['nearest', 'farthest', 'alpha'];
   if (_rgSortPivot && _rgSortPivot.icao === icao && _rgSortPivot.axis === axis) {
     const next = modes[(modes.indexOf(_rgSortPivot.mode) + 1) % modes.length];
@@ -11952,6 +11997,23 @@ function _rgPivotClick(event, icao, axis) {
     _rgSortPivot = { icao, axis, mode: 'nearest' };
   }
   _rgRenderMatrix();
+
+  // Restore scroll so the clicked header lands at the same screen position
+  // it occupied before the click. Delta on the new-vs-old getBoundingClientRect
+  // tells us exactly how far the post-render layout shifted that header.
+  if (scroller && prevRect) {
+    const newHdr = scroller.querySelector(sel);
+    if (newHdr) {
+      const newRect = newHdr.getBoundingClientRect();
+      if (axis === 'dep') {
+        const dy = newRect.top - prevRect.top;
+        if (dy !== 0) scroller.scrollTop += dy;
+      } else {
+        const dx = newRect.left - prevRect.left;
+        if (dx !== 0) scroller.scrollLeft += dx;
+      }
+    }
+  }
 }
 
 // ── Map initialisation ──────────────────────────────────────────────────
@@ -14218,7 +14280,7 @@ function _rgUpdateSortLabel() {
   if (_rgSortPivot) {
     const opt = document.createElement('option');
     opt.value = 'pivot';
-    opt.textContent = (_rgSortPivot.mode === 'nearest' ? 'Closest ' : 'Furthest ') + _rgSortPivot.icao;
+    opt.textContent = (_rgSortPivot.mode === 'nearest' ? 'Closest ' : 'Farthest ') + _rgSortPivot.icao;
     sel.appendChild(opt);
     sel.value = 'pivot';
   } else {
@@ -16947,11 +17009,10 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Row &amp; Column Sorting</div>
           <div class="help-feature-desc">
-            The <strong>Dep</strong> and <strong>Arr</strong> sort pills below the matrix control the ordering of departure rows and arrival columns independently. Click either pill to cycle through: <strong>A–Z &rarr; Nearest &rarr; Farthest &rarr; A–Z</strong>. A brighter pill indicates an active (non-alphabetical) sort.<br/><br/>
-            <strong>Click a row label</strong> (departure ICAO) to highlight that row. A <strong>second click on the same label</strong> sorts arrival columns using whichever mode the <strong>Arr</strong> pill currently shows — then the pill advances to preview the next step. A third click applies the new mode, and so on. Clicking a different row label moves the highlight without changing the sort.<br/><br/>
-            <strong>Click a column header</strong> (arrival ICAO) to highlight that column. A <strong>second click on the same header</strong> sorts departure rows using whichever mode the <strong>Dep</strong> pill currently shows — then the pill advances. Clicking a different column header moves the highlight without changing the sort.<br/><br/>
-            <strong>Sticky sort</strong> — click the <strong>padlock icon</strong> on the right side of either pill to lock it. When locked, the pill turns orange and the <em>first</em> click on any row or column label sorts immediately without needing a second click. Click the padlock again to unlock.<br/><br/>
-            <em>Tip — hovering any row label or column header shows a tooltip indicating what the next click will do.</em>
+            Every row and column header in the matrix has a small <strong>⊙ pivot dot</strong> on its right side. Click the dot to sort the <em>opposite</em> axis by distance to that airport — clicking ⊙ on a departure row sorts the arrival columns by distance from that dep airport; clicking ⊙ on an arrival column sorts the departure rows by distance to that arr airport.<br/><br/>
+            Each click on the same pivot dot advances the mode: <strong>⊙ (alphabetical)</strong> &rarr; <strong>▲ Nearest first</strong> &rarr; <strong>▼ Farthest first</strong> &rarr; <strong>⊙ (cleared)</strong>. The active pivot dot is highlighted so you can always see which airport the sort is anchored to. Clicking the dot on a different airport switches the pivot to that one.<br/><br/>
+            <strong>Row and column highlighting is independent of sorting.</strong> Click a row label or column header to highlight it and populate the Departure / Arrival ICAO fields above — this does <em>not</em> change the sort. To restore alphabetical order, click the active pivot dot until it cycles back to <strong>⊙</strong>.<br/><br/>
+            <em>Tip — hovering a pivot dot shows a tooltip describing what the next click will do (e.g. "Sort dep airports by distance to KSEA").</em>
           </div>
         </div>
       </div>
@@ -16993,7 +17054,7 @@ function rgSendToFlightPlanner() {
       <div class="help-feature">
         <div class="help-feature-icon">⊙</div>
         <div class="help-feature-body">
-          <div class="help-feature-title">Region Mode</div>
+          <div class="help-feature-title">Map</div>
           <div class="help-feature-desc">
             Click <strong>⊙ Map</strong> in the panel header to open the interactive map. All SimFly player-owned airports are shown as color-coded dots (matching each airport&rsquo;s SimFly category color). Hover any dot to see a tooltip with the ICAO, category, airport name, owner, and longest runway details after a brief delay. Once the map is open, click <strong>⊙ Select Regions</strong> in its toolbar to start the cross-region distance matrix workflow (everything below describes that workflow).<br/><br/>
             <strong>Step 1 — Departure region:</strong> click and hold anywhere on the map to place the departure center, then drag outward to draw a circle. The radius line and live nm distance guide your selection. Release to lock the region. If an aircraft is selected in the main UI, a dashed gold ring shows its effective range from that center.<br/><br/>
@@ -17026,7 +17087,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Library</div>
           <div class="help-feature-desc">
-            The <strong>⬤ Scenery</strong> split button in the Region Mode header controls your personal scenery library — a list of airports you have high-detail scenery for. Click the left area to cycle display modes: <strong>Highlight</strong> (black dot on each scenery airport), <strong>Only</strong> (filter the map to scenery airports only), and off. Click the <strong>✏</strong> icon on the right to open the library panel.<br/><br/>
+            The <strong>⬤ Scenery</strong> split button in the map header controls your personal scenery library — a list of airports you have high-detail scenery for. Click the left area to cycle display modes: <strong>Highlight</strong> (black dot on each scenery airport), <strong>Only</strong> (filter the map to scenery airports only), and off. Click the <strong>✏</strong> icon on the right to open the library panel.<br/><br/>
             <strong>Adding airports from the map (fastest):</strong> <strong>Shift+click</strong> any airport dot at any time to instantly toggle it in or out of your library — no panel needed. Or click <strong>📍 Add from map</strong> in the library footer to enter paint mode, where every dot click toggles scenery. A blue banner confirms the mode; click <strong>✕ Done</strong> or press Escape to exit.<br/><br/>
             <strong>Folder scan</strong> (Chrome/Edge only): click <strong>📂 Scan folder</strong>, point at your MSFS Community or X-Plane Custom Scenery folder, and the app detects airport codes from add-on subfolder names. A checkbox preview lets you confirm before importing.<br/><br/>
             <strong>Scenery config import</strong> (⋯ menu): import an X-Plane <code>scenery_packs.ini</code> or MSFS/P3D <code>scenery.cfg</code> directly — same checkbox preview as the folder scan. You can also <strong>drag and drop</strong> any of these files (or a <code>.json</code> backup) straight onto the modal.<br/><br/>
@@ -17048,7 +17109,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Star Rating Filter</div>
           <div class="help-feature-desc">
-            The <strong>⭐ Rating</strong> button in the Region Mode header opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter.<br/><br/>
+            The <strong>⭐ Rating</strong> button in the map header opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter.<br/><br/>
             The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.
           </div>
         </div>
@@ -17106,8 +17167,70 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.61.7</span>
+          <span class="release-version">v2.61.12</span>
           <span class="release-date">May 19, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Main distance matrix pivot ⊙ now keeps the clicked airport under your mouse</strong> &mdash; same fix as v2.61.10 / v2.61.11 for the region matrix, applied to the owner distance matrix. Alternating between a departure pivot and an arrival pivot reorders both axes (new pivot axis sorts by distance; previous axis reverts to alpha), so the row or column you just clicked could jump out of view. <code>_distPivotClick</code> now captures the clicked header&rsquo;s viewport rect before <code>renderDistMatrix</code>, then offsets <code>distMatrixWrap.scrollTop</code> or <code>scrollLeft</code> by the post-render delta so the same airport lands back under the cursor. Layered on top of the existing scroll-offset preservation that already prevented the blank-flash at the top of the table during re-sort.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.61.11</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pivot ⊙ scroll preservation now actually works</strong> &mdash; v2.61.10 targeted the wrong DOM element: it read/wrote <code>scrollTop</code> / <code>scrollLeft</code> on <code>#rgMatrixWrap</code>, but that container has <code>overflow:clip</code> and never scrolls. The real scroll viewport is its child <code>#rgMatrixScroll</code> (<code>overflow:auto</code>). The fix now writes to the correct element, so the clicked row or column header reliably stays under the cursor when alternating between dep and arr pivots.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.10</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pivot ⊙ click keeps the clicked airport under your mouse</strong> &mdash; on the region matrix, alternating between sorting by a departure airport and sorting by an arrival airport reorders <em>both</em> axes (the new pivot axis sorts by distance; the previously-sorted axis returns to alpha). That meant the row or column you just clicked could jump several screens away, forcing you to scroll to find it. The matrix now captures the clicked header&rsquo;s viewport position before re-rendering and adjusts <code>scrollTop</code> (for a dep pivot) or <code>scrollLeft</code> (for an arr pivot) so the same header lands back under the cursor. Lets you chain pivot clicks rapidly without losing your place.</li>
+          <li><strong>Help panel — &ldquo;Region Mode&rdquo; section renamed to &ldquo;Map&rdquo;</strong> &mdash; the section title and the two in-body references to &ldquo;the Region Mode header&rdquo; (in the Scenery Library and Scenery Star Rating Filter sections) now read &ldquo;the map header&rdquo;, matching the <strong>⊙ Map</strong> button that opens the panel. Two modal button tooltips (<em>✕ Close</em> and <em>Send to Flight Planner →</em>) updated to match — they previously read &ldquo;Exit / Close Region Mode and …&rdquo;.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.61.9</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Spelling — &ldquo;Furthest&rdquo; &rarr; &ldquo;Farthest&rdquo; in the region matrix Sort dropdown</strong> &mdash; when a ⊙ pivot was active on an arrival column, the Sort dropdown showed e.g. <em>Furthest KSEA</em> while the parallel header tooltip already read <em>Farthest dep first</em>. <em>Farther / farthest</em> is the correct form for physical distance; the dropdown now matches the tooltip wording.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.61.8</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Weather section no longer duplicated in route map info cards</strong> &mdash; when a route was highlighted and a METAR was cached for either endpoint, the Departure / Arrival info cards beneath the route map rendered the full decoded weather block <em>twice</em>: once via the shared airport tooltip builder (which already appends a Weather section when cache data is present) and again via a separate weather-append helper local to the info-card render. The redundant helper has been removed; cards now show exactly one Weather section per airport, matching the badge-hover tooltip layout.</li>
+          <li><strong>Help panel — Row &amp; Column Sorting rewritten for the ⊙ pivot system</strong> &mdash; the help section still described the legacy two-click sort pills + padlock UI that was replaced in v2.46.x by the one-click ⊙ pivot dots on each row and column header. The section now correctly explains: click the ⊙ dot on any header to sort the opposite axis by distance to that airport; clicks cycle ⊙ &rarr; ▲ Nearest &rarr; ▼ Farthest &rarr; ⊙; row / column highlighting is independent of sorting. Hover tooltip example updated to match the live pivot-dot tooltips.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.7</span>
+          <span class="release-date">May 19, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -23879,7 +24002,7 @@ function rgSendToFlightPlanner() {
           <span class="rg-sl-edit" onclick="openSceneryModal()" title="Manage scenery library">✏</span>
         </div>
         <div class="rg-hdr-sep"></div>
-        <button class="rg-btn rg-btn-close" onclick="closeRegionModal()" title="Exit Region Mode and return to the main screen">✕ <span class="rg-btn-label">Close</span></button>
+        <button class="rg-btn rg-btn-close" onclick="closeRegionModal()" title="Close the map and return to the main screen">✕ <span class="rg-btn-label">Close</span></button>
       </div>
     </div>
     <div id="rgMapContainer">
@@ -24054,7 +24177,7 @@ function rgSendToFlightPlanner() {
         <span class="rg-sel-arrow">→</span>
         <span class="rg-sel-arr" id="rgSelArr"></span>
         <span class="rg-sel-nm"  id="rgSelNm"></span>
-        <button class="rg-sel-send" onclick="rgSendToFlightPlanner()" title="Close Region Mode and populate the main screen with this departure, arrival, and category filter state">Send to Flight Planner →</button>
+        <button class="rg-sel-send" onclick="rgSendToFlightPlanner()" title="Close the map and populate the main screen with this departure, arrival, and category filter state">Send to Flight Planner →</button>
       </div>
       <div id="rgMatrixScroll">
         <table class="rg-matrix" id="rgMatrix"></table>

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.61.7**
+**Current version: v2.61.12**
 
 ---
 
@@ -22,7 +22,7 @@ Enter departure and arrival ICAOs to instantly calculate the great-circle distan
 ### Owner Distance Matrix
 Choose departure and arrival fleet owners from searchable dropdown panels to generate a full distance matrix — every combination of their airports, at a glance. The owner panels support live text filtering, keyboard navigation (arrows, Space to toggle, Enter to clear the filter), and show each pilot's airport count in the current view.
 
-ICAO labels carry per-category colors (1–7) so airport tier is immediately visible. Each row and column header shows a colored owner stripe bar — click it to lock the matrix to just that owner's airports on that axis. The sticky headers stay pinned as you scroll, and the **⊙ pivot sort bullseye** on each header lets you sort the opposite axis by distance to that airport with a single click — cycle through ⊙ → ▲ nearest → ▼ farthest → ⊙ clear.
+ICAO labels carry per-category colors (1–7) so airport tier is immediately visible. Each row and column header shows a colored owner stripe bar — click it to lock the matrix to just that owner's airports on that axis. The sticky headers stay pinned as you scroll, and the **⊙ pivot sort bullseye** on each header lets you sort the opposite axis by distance to that airport with a single click — cycle through ⊙ → ▲ nearest → ▼ farthest → ⊙ clear. When you switch which airport you're sorting by, the matrix keeps the header you just clicked under your cursor — so rapid pivot changes between departure and arrival airports never make you lose your place. The same behavior applies to the cross-region matrix.
 
 ### Independent Dep / Arr Category Filters
 The category filter shows two side-by-side groups — one for departure airports, one for arrivals — so you can cross-filter by tier on each axis independently. "Inv" inverts the selection within its group only. Hovering any numbered circle (1–7) shows a tooltip describing the airport type for that tier — from small unpaved airstrips and grass fields (1) through mega-hubs and world-famous mega-airports (7).
