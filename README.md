@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.61.12**
+**Current version: v2.61.19**
 
 ---
 
@@ -188,3 +188,4 @@ Toggle dark / light mode with the button in the top-right corner. Light mode use
 - Works entirely in the browser — no data leaves your machine except for the OurAirports fetch and live weather requests.
 - Tested in Chrome and Edge. Safari and Firefox are generally compatible.
 - The file can be saved locally and used offline (weather and airport database lookups require an internet connection).
+- The interface scales with your display — the main screen and the Help / Release Notes panels widen to use roughly half the viewport on large (1440p / 4K) monitors, while staying at a comfortable fixed width on 1080p and smaller screens.

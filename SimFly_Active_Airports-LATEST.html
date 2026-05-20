@@ -217,7 +217,12 @@
   .app {
     position: relative;
     z-index: 1;
-    max-width: 960px;
+    /* Track ~50% of the viewport on large monitors so the layout doesn't
+       look stranded on 1440p / 4K screens. The 960px floor keeps the
+       1920px-and-below experience exactly as before: at a 1920px viewport
+       50vw == 960px, so the two branches meet seamlessly and narrower
+       screens stay pinned at 960px. */
+    max-width: max(960px, 50vw);
     margin: 0 auto;
     padding: 2rem 1.5rem 4rem;
   }
@@ -1181,13 +1186,15 @@
   }
   .dist-filter-row.visible { display: flex; }
 
-  /* Inner row: min-nm | slider | max-nm — centred, full width up to a max */
+  /* Inner row: min-nm | slider | max-nm — centred, full width up to a max.
+     Shares the 1280px block width with the category-filter and button rows
+     so the whole Distance section scales together on wide monitors. */
   .dist-slider-row {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    max-width: 750px;
+    max-width: 1280px;
   }
 
   .dist-filter-label {
@@ -1483,26 +1490,32 @@
     flex-wrap: wrap;
     justify-content: center;
   }
-  /* Side-by-side Dep / Arr category groups */
+  /* Side-by-side Dep / Arr category groups. Geometry deliberately mirrors the
+     filter-button sub-row below (same gap, same per-group max-width) so each
+     cluster centres directly above its button. */
   .dist-cat-dual-row {
     display: flex;
     align-items: center;
-    gap: 1.1rem;
+    gap: 0.6rem;
     flex-wrap: wrap;
     justify-content: center;
+    width: 100%;
+    max-width: 1280px;
   }
-  .dist-cat-dual-row .dist-cat-pills-row { gap: 0.38rem; }
-  .dist-cat-side-sep { width:1px; height:1.7rem; background:var(--border); flex-shrink:0; }
+  .dist-cat-dual-row .dist-cat-pills-row { gap: 0.38rem; flex: 1 1 0; max-width: 34rem; }
   /* Buttons inside dual-row match Region Mode sizing */
   #distCatFilterRow .dist-cat-btn { width:1.7rem; height:1.7rem; font-size:0.86rem; }
   #distCatFilterRow .dist-cat-invert-btn { font-size:0.8rem; padding:0.12rem 0.45rem; }
 
-  /* Bottom sub-row: Hide filtered (centred) */
+  /* Bottom sub-row: the two filter buttons — equal width (each flex:1, capped
+     per button) and centred together as a pair. */
   .dist-cat-sub-row {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.6rem;
+    width: 100%;
+    max-width: 1280px;
   }
 
   .dist-cat-filter-label {
@@ -1585,6 +1598,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 1 1 0;
+    max-width: 34rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 1.33rem;
     font-weight: 600;
@@ -2125,8 +2140,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 1 1 0;
     min-width: max-content;
-    width: max-content;
+    max-width: 34rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 1.33rem;
     font-weight: 600;
@@ -3929,7 +3945,6 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             <button class="dist-cat-btn active" data-cat="7" data-side="dep" style="--rg-cat-color:#FF44FF" onclick="_distToggleCat(this)" title="Category 7: Mega-hubs and world-famous mega-airports" tabindex="-1">7</button>
             <button class="dist-cat-invert-btn" onclick="_distInvertCat('dep')" title="Invert departure category selection" tabindex="-1">Inv</button>
           </div>
-          <div class="dist-cat-side-sep"></div>
           <div class="dist-cat-pills-row" id="distCatArrRow">
             <span class="dist-cat-filter-label">Arr</span>
             <button class="dist-cat-btn active" data-cat="1" data-side="arr" style="--rg-cat-color:#FF4040" onclick="_distToggleCat(this)" title="Category 1: Small unpaved airstrips and local grass fields" tabindex="-1">1</button>
@@ -4007,7 +4022,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.61.12';
+const APP_VERSION = '2.61.19';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -16928,7 +16943,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <div class="modal-overlay" id="helpModal" onclick="closeHelp(event)">
-  <div class="modal" style="max-width:680px;">
+  <div class="modal" style="max-width:clamp(680px,35vw,1400px);">
     <div class="modal-header">
       <span class="modal-title">? &nbsp;How to Use This Tool</span>
       <button class="modal-close" onclick="closeHelp(event)">&times;</button>
@@ -17032,9 +17047,9 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Category Filter</div>
           <div class="help-feature-desc">
-            The numbered circle buttons (1–7) below the sort pills filter the matrix by SimFly airport category. All categories are shown by default. <strong>Click a circle</strong> to toggle that category off or on — airports in hidden categories are dimmed in both their ICAO labels and their distance cells. All categories can be toggled off simultaneously.<br/><br/>
-            <strong>Invert</strong> flips the current selection — active categories become inactive and vice versa, including toggling all off when all are on.<br/><br/>
-            Enable <strong>Hide filtered</strong> (below the circles) to remove airports from the matrix entirely rather than dimming them. This applies to airports in hidden categories, and also to any row or column where every route falls outside the active distance filter range. Row and column highlights on hidden airports are cleared automatically.
+            The numbered circle buttons (1–7) below the distance slider filter the matrix by SimFly airport category. They form two independent groups — <strong>Dep</strong> filters departure airports (matrix rows) and <strong>Arr</strong> filters arrival airports (matrix columns). All categories are shown by default. <strong>Click a circle</strong> to toggle that category off or on for its side — airports in hidden categories are dimmed in both their ICAO labels and their distance cells. All categories can be toggled off simultaneously.<br/><br/>
+            The <strong>Inv</strong> button at the end of each group inverts that group's selection — active categories become inactive and vice versa, including toggling all off when all are on.<br/><br/>
+            Enable <strong>Hide filtered airports</strong> (below the circles) to remove airports from the matrix entirely rather than dimming them. This applies to airports in hidden categories, and also to any row or column where every route falls outside the active distance filter range. Row and column highlights on hidden airports are cleared automatically.
           </div>
         </div>
       </div>
@@ -17150,7 +17165,7 @@ function rgSendToFlightPlanner() {
 
 <!-- Release Notes Modal -->
 <div class="modal-overlay" id="releaseModal" onclick="closeReleaseNotes(event)">
-  <div class="modal">
+  <div class="modal" style="max-width:clamp(640px,33vw,1400px);">
     <div class="modal-header">
       <span class="modal-title">📋 &nbsp;Release Notes</span>
       <button class="modal-close" onclick="closeReleaseNotes(event)">&times;</button>
@@ -17167,8 +17182,93 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.61.12</span>
+          <span class="release-version">v2.61.19</span>
           <span class="release-date">May 19, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Category clusters now sit directly above their filter buttons</strong> &mdash; the Dep / Arr category circle groups were centered on the full left/right halves of the block, but the filter buttons (capped narrower) sat slightly inboard of those half-centers, so the two rows didn't line up. The category row now uses the same geometry as the button row — matching gap and per-group max-width — so each cluster centers directly above its button. The thin vertical divider between the two groups was removed; it was redundant now that the groups are clearly separated and individually labeled.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.18</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter buttons centered as an equal-width pair</strong> &mdash; reverted the v2.61.17 per-half positioning. The <em>Filter airports unsuitable…</em> and <em>Hide filtered airports</em> buttons are once again centered together as a pair, and both now render at the same width — previously <em>Hide filtered airports</em> sized to its shorter label and looked noticeably narrower than its neighbour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.17</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter buttons centered beneath their category clusters</strong> &mdash; the <em>Filter airports unsuitable…</em> and <em>Hide filtered airports</em> buttons were centered together as a pair in the middle of the row. Each button now sits in its own half of the filter block, centered within that half — so they line up neatly beneath the Dep and Arr category clusters above them. (When no aircraft is selected, only <em>Hide filtered airports</em> shows, centered in the right half beneath the Arr cluster.)</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.61.16</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dep / Arr category clusters centered on their half of the screen</strong> &mdash; v2.61.15 spread the two category groups with <code>space-between</code>, which pushed them hard against the left and right margins on wide displays. Each group now takes an equal half of the filter block and centers its own contents, so the Dep cluster sits centered in the left half and the Arr cluster centered in the right half.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.15</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance filter block scales with the wider layout</strong> &mdash; after the v2.61.13 main-screen widening, the Distance slider, the Dep / Arr category filters, and the two filter buttons stayed at their old narrow widths, leaving them clustered in the middle of the screen. All three rows now share a common <code>1280px</code> block width (filling 100% on narrower screens, capping on 4K): the distance slider widened from its fixed 750&nbsp;px cap, the Dep and Arr category groups now spread to the block edges instead of huddling around the center separator, and the two filter buttons flex-grow to share the row width.</li>
+          <li><strong>Help — Category Filter section corrected</strong> &mdash; the section still said the category circles sit &ldquo;below the sort pills&rdquo; (a control removed long ago) and described a single filter group. It now correctly says the circles sit below the distance slider, documents the independent <strong>Dep</strong> and <strong>Arr</strong> groups, and uses the real button labels (<strong>Inv</strong>, <strong>Hide filtered airports</strong>).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.14</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Help and Release Notes modals scale with the monitor</strong> &mdash; following the main-screen change in v2.61.13, the Help (fixed 680&nbsp;px) and Release Notes (fixed 640&nbsp;px) modals were also stranded narrow on 1440p and 4K displays. Their widths are now <code>clamp(680px, 35vw, 1400px)</code> and <code>clamp(640px, 33vw, 1400px)</code> respectively: pinned at the original width for any viewport ≈1920&nbsp;px or narrower, scaling up to roughly a third of the viewport on bigger screens (≈1344&nbsp;px / ≈1267&nbsp;px at 4K), and capped at 1400&nbsp;px so long help text never stretches into unreadably wide lines. The 1080p appearance is unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.13</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Main screen scales with the monitor on large displays</strong> &mdash; the main content column was hard-capped at 960&nbsp;px, so it filled only half of a 1080p screen and looked stranded — barely a quarter — on 1440p and 4K monitors. The cap is now <code>max(960px, 50vw)</code>: it tracks roughly 50% of the viewport width on big screens (≈1280&nbsp;px at 1440p, ≈1920&nbsp;px at 4K) while staying pinned at the original 960&nbsp;px for any viewport 1920&nbsp;px or narrower. At exactly 1920&nbsp;px the two values are equal, so the 1080p layout is completely unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.12</span>
+          <span class="release-date">May 19, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
