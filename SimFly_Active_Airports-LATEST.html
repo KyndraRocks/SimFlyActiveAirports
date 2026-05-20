@@ -2886,10 +2886,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-center .dist-cat-invert-btn { font-size:0.78rem; padding:0.1rem 0.4rem; }
   .rg-hdr-center .dist-cat-filter-label { font-size:0.85rem; }
   /* Breadcrumb filter status strip — map overlay to the right of the search bar */
-  .rg-map-breadcrumbs { position:absolute; top:11px; left:256px; right:8px; z-index:1000; display:flex; align-items:center; gap:0.3rem; overflow:hidden; pointer-events:none; }
-  .rg-bc { display:inline-flex; align-items:center; gap:0.22rem; padding:0.12rem 0.55rem; background:rgba(10,18,36,0.88); border:1px solid rgba(255,255,255,0.22); border-radius:999px; font-size:0.77rem; font-family:'Rajdhani',sans-serif; font-weight:600; white-space:nowrap; cursor:pointer; user-select:none; flex-shrink:0; color:rgba(255,255,255,0.78); letter-spacing:0.03em; transition:background 0.12s,border-color 0.12s; pointer-events:all; }
+  .rg-map-breadcrumbs { position:absolute; top:8px; left:256px; right:8px; z-index:1000; display:flex; align-items:center; gap:0.3rem; overflow:hidden; pointer-events:none; }
+  .rg-bc { display:inline-flex; align-items:center; gap:0.275rem; padding:0.15rem 0.69rem; background:rgba(10,18,36,0.88); border:1px solid rgba(255,255,255,0.22); border-radius:999px; font-size:0.96rem; font-family:'Rajdhani',sans-serif; font-weight:600; white-space:nowrap; cursor:pointer; user-select:none; flex-shrink:0; color:rgba(255,255,255,0.78); letter-spacing:0.03em; transition:background 0.12s,border-color 0.12s; pointer-events:all; }
   .rg-bc:hover { background:rgba(30,45,80,0.95); border-color:rgba(255,255,255,0.38); color:#fff; }
-  .rg-bc-x { opacity:0.5; font-size:0.65rem; line-height:1; padding:0 0.1rem; margin-left:0.08rem; }
+  .rg-bc-x { opacity:0.5; font-size:0.81rem; line-height:1; padding:0 0.1rem; margin-left:0.08rem; }
   .rg-bc-x:hover { opacity:1; }
   /* Category-data unavailable warning — shown only when both Gist fetch and localStorage cache fail */
   .rg-cat-warning { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.5rem; padding:0.45rem 0.9rem; background:rgba(80,30,0,0.94); border:1px solid rgba(255,160,60,0.6); border-radius:6px; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:#ffd9a0; pointer-events:all; max-width:80%; box-shadow:0 2px 10px rgba(0,0,0,0.45); }
@@ -3060,7 +3060,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-map-search-input-row { position:relative; }
   .rg-map-search { display:block; width:100%; box-sizing:border-box; padding:0.3rem 2rem 0.3rem 0.65rem; background:rgba(10,18,36,0.9); border:1px solid rgba(255,255,255,0.22); border-radius:4px; color:#fff; font-family:'Rajdhani',sans-serif; font-size:0.9rem; outline:none; }
   .rg-map-search:focus { border-color:var(--accent); }
-  .rg-map-search::placeholder { color:rgba(255,255,255,0.42); }
+  .rg-map-search::placeholder { color:rgba(255,255,255,0.62); }
   .rg-map-search-xclear { position:absolute; right:0.35rem; top:50%; transform:translateY(-50%); background:none; border:none; color:rgba(255,255,255,0.5); font-size:0.9rem; cursor:pointer; line-height:1; padding:0 0.1rem; display:none; }
   .rg-map-search-xclear.visible { display:block; }
   .rg-map-search-xclear:hover { color:#fff; }
@@ -3142,6 +3142,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     #rgSortSelect, #rgCapSelect { padding:0.15rem 0.35rem; font-size:0.95rem; }
   }
   #rgCapSelect, #rgSortSelect { font-family:'Rajdhani',sans-serif; font-size:1.25rem; padding:0.18rem 0.53rem; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:4px; cursor:pointer; }
+  /* Wider so the dual-pivot label ("KSEA ▲  |  KPDX ▼") fits without clipping */
+  #rgSortSelect { min-width:16rem; }
   /* Unique Arrivals toggle — hides arr columns that also appear as dep rows.
      Cycles through three states: off → far (default ON, arr cap from farthest)
      → near (arr cap from nearest) → off. Active states use the arrival orange
@@ -4022,7 +4024,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.61.19';
+const APP_VERSION = '2.62.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -7288,9 +7290,12 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
 // rowSort: how rows (DEP airports) are ordered — driven by clicking col labels
 // Values: 'alpha' | 'asc' | 'desc'
 const _distSort = {
-  // Pivot sort: { icao, axis:'dep'|'arr', mode:'nearest'|'farthest' } or null
-  // Clicking ⊙ on a dep row header sorts arr cols by distance to that dep; vice versa for arr.
-  pivot: null,
+  // Independent per-axis pivot sorts — each { icao, mode:'nearest'|'farthest' } or null.
+  //   pivotDep — set by clicking ⊙ on a DEP row header; sorts the ARR columns
+  //   pivotArr — set by clicking ⊙ on an ARR column header; sorts the DEP rows
+  // The two are independent: clicking a ⊙ only ever reorders the opposite
+  // axis, so the header you click never moves.
+  pivotDep: null, pivotArr: null,
   // Legacy fields kept to avoid ReferenceErrors in functions that haven't been removed
   col: 'alpha', row: 'alpha',
   stickyRow: false, stickyCol: false,
@@ -7419,25 +7424,23 @@ function renderDistMatrix() {
     arrAirports = arrAirports.filter(a => _rgStarFiltCheck(a.icao));
   }
 
-  // Validate pivot ICAO against current owner sets — clear if no longer present
-  if (_distSort.pivot) {
-    const pv = _distSort.pivot;
-    const still = pv.axis === 'dep'
-      ? depAirports.some(d => d.icao === pv.icao)
-      : arrAirports.some(a => a.icao === pv.icao);
-    if (!still) _distSort.pivot = null;
-  }
+  // Validate pivot ICAOs against the current owner sets — clear any that
+  // are no longer present (owner dropdown changed, filters hid them, etc.)
+  if (_distSort.pivotDep && !depAirports.some(d => d.icao === _distSort.pivotDep.icao)) _distSort.pivotDep = null;
+  if (_distSort.pivotArr && !arrAirports.some(a => a.icao === _distSort.pivotArr.icao)) _distSort.pivotArr = null;
 
-  const p = _distSort.pivot;
+  const pDep = _distSort.pivotDep;   // a DEP airport — sorts the ARR columns
+  const pArr = _distSort.pivotArr;   // an ARR airport — sorts the DEP rows
 
-  // Sort ARR columns: by distance from the pivot dep airport (if pivot.axis === 'dep')
-  if (p && p.axis === 'dep') {
-    const pr = lookupICAO(p.icao);
+  // Sort ARR columns by distance from the pivotDep airport (independent of
+  // however the DEP rows are ordered).
+  if (pDep) {
+    const pr = lookupICAO(pDep.icao);
     if (pr) {
       arrAirports.sort((a, b) => {
         const da = _haversineNm(pr.latitude, pr.longitude, a.rec.latitude, a.rec.longitude);
         const db = _haversineNm(pr.latitude, pr.longitude, b.rec.latitude, b.rec.longitude);
-        return p.mode === 'nearest' ? da - db : db - da;
+        return pDep.mode === 'nearest' ? da - db : db - da;
       });
     } else {
       arrAirports.sort((a, b) => a.icao.localeCompare(b.icao));
@@ -7446,14 +7449,15 @@ function renderDistMatrix() {
     arrAirports.sort((a, b) => a.icao.localeCompare(b.icao));
   }
 
-  // Sort DEP rows: by distance to the pivot arr airport (if pivot.axis === 'arr')
-  if (p && p.axis === 'arr') {
-    const pr = lookupICAO(p.icao);
+  // Sort DEP rows by distance to the pivotArr airport (independent of
+  // however the ARR columns are ordered).
+  if (pArr) {
+    const pr = lookupICAO(pArr.icao);
     if (pr) {
       depAirports.sort((a, b) => {
         const da = _haversineNm(a.rec.latitude, a.rec.longitude, pr.latitude, pr.longitude);
         const db = _haversineNm(b.rec.latitude, b.rec.longitude, pr.latitude, pr.longitude);
-        return p.mode === 'nearest' ? da - db : db - da;
+        return pArr.mode === 'nearest' ? da - db : db - da;
       });
     } else {
       depAirports.sort((a, b) => a.icao.localeCompare(b.icao));
@@ -7486,9 +7490,9 @@ function renderDistMatrix() {
     const icaoSpanA = catColA
       ? `<span class="dist-th-icao" data-cat="${catNumA}" style="color:${catColA}">${a.icao}</span>`
       : `<span class="dist-th-icao">${a.icao}</span>`;
-    const aIsPivot = p && p.icao === a.icao && p.axis === 'arr';
-    const aDotLbl  = aIsPivot ? (p.mode === 'nearest' ? '▲' : '▼') : '⊙';
-    const aDotTip  = aIsPivot ? (p.mode === 'nearest' ? 'Nearest dep first — click for farthest' : 'Farthest dep first — click to clear') : `Sort dep rows by distance to ${a.icao}`;
+    const aIsPivot = pArr && pArr.icao === a.icao;
+    const aDotLbl  = aIsPivot ? (pArr.mode === 'nearest' ? '▲' : '▼') : '⊙';
+    const aDotTip  = aIsPivot ? (pArr.mode === 'nearest' ? 'Nearest dep rows first — click for farthest' : 'Farthest dep rows first — click to clear') : `Sort dep rows by distance to ${a.icao}`;
     html += `<th class="clickable" data-col="${c}" data-icao="${a.icao}" data-cat="${_catOf(a.icao)}" onclick="_distToggleCol(this)">` +
             `<span class="dist-tooltip-wrap" data-tip-id="${tipId_c}">${icaoSpanA}</span>` +
             `<span class="wx-badge-slot" data-wx-icao="${a.icao}"></span>` +
@@ -7507,9 +7511,9 @@ function renderDistMatrix() {
     const icaoSpanD  = catColD
       ? `<span class="dist-th-icao" data-cat="${catNumD}" style="color:${catColD}">${dep.icao}</span>`
       : `<span class="dist-th-icao">${dep.icao}</span>`;
-    const dIsPivot = p && p.icao === dep.icao && p.axis === 'dep';
-    const dDotLbl  = dIsPivot ? (p.mode === 'nearest' ? '▲' : '▼') : '⊙';
-    const dDotTip  = dIsPivot ? (p.mode === 'nearest' ? 'Nearest arr first — click for farthest' : 'Farthest arr first — click to clear') : `Sort arr cols by distance to ${dep.icao}`;
+    const dIsPivot = pDep && pDep.icao === dep.icao;
+    const dDotLbl  = dIsPivot ? (pDep.mode === 'nearest' ? '▲' : '▼') : '⊙';
+    const dDotTip  = dIsPivot ? (pDep.mode === 'nearest' ? 'Nearest arr cols first — click for farthest' : 'Farthest arr cols first — click to clear') : `Sort arr cols by distance to ${dep.icao}`;
     html += `<tr><td class="clickable-row" data-icao="${dep.icao}" data-cat="${_catOf(dep.icao)}" onclick="_distToggleRow(this)">` +
             `<span class="dist-tooltip-wrap" data-tip-id="${tipId_r}">${icaoSpanD}</span>` +
             `<span class="wx-badge-slot" data-wx-icao="${dep.icao}"></span>` +
@@ -8078,47 +8082,17 @@ function _distUpdateSortIndicator() {
 
 function _distPivotClick(e, icao, axis) {
   e.stopPropagation();
-  // Capture the clicked header's viewport position so we can restore it
-  // after renderDistMatrix re-renders. The matrix already preserves the
-  // wrap's scrollTop / scrollLeft across the innerHTML replacement — but
-  // that keeps the same viewport OFFSET, not the same airport, and the
-  // row or column the user clicked may have moved within the table:
-  // switching pivot axis sorts the new axis by distance while reverting
-  // the previous axis to alpha, so both axes reorder. Restoring the
-  // clicked header's screen position keeps it under the cursor.
-  // Selectors target the main matrix's row/col header elements:
-  //   dep row header → <td class="clickable-row" data-icao>
-  //   arr col header → <th class="clickable"     data-icao>
-  const wrap = document.getElementById('distMatrixWrap');
-  const sel  = axis === 'dep'
-    ? `td.clickable-row[data-icao="${icao}"]`
-    : `th.clickable[data-icao="${icao}"]`;
-  const prevHdr  = wrap ? wrap.querySelector(sel) : null;
-  const prevRect = prevHdr ? prevHdr.getBoundingClientRect() : null;
-
-  const p = _distSort.pivot;
-  if (p && p.icao === icao && p.axis === axis) {
-    _distSort.pivot = p.mode === 'nearest' ? { icao, axis, mode: 'farthest' } : null;
-  } else {
-    _distSort.pivot = { icao, axis, mode: 'nearest' };
-  }
+  // Independent per-axis pivots. A dep-row ⊙ cycles pivotDep (which sorts the
+  // ARR columns); an arr-col ⊙ cycles pivotArr (which sorts the DEP rows).
+  // Because clicking a ⊙ only ever reorders the OPPOSITE axis, the header you
+  // clicked never moves — no scroll compensation needed.
+  // Each pivot cycles: none → nearest → farthest → none.
+  const cycle = p => (p && p.icao === icao)
+    ? (p.mode === 'nearest' ? { icao, mode: 'farthest' } : null)
+    : { icao, mode: 'nearest' };
+  if (axis === 'dep') _distSort.pivotDep = cycle(_distSort.pivotDep);
+  else                _distSort.pivotArr = cycle(_distSort.pivotArr);
   renderDistMatrix();
-
-  // Restore: find the new position of the same header and offset scroll
-  // by the delta so it lands where it was when clicked.
-  if (wrap && prevRect) {
-    const newHdr = wrap.querySelector(sel);
-    if (newHdr) {
-      const newRect = newHdr.getBoundingClientRect();
-      if (axis === 'dep') {
-        const dy = newRect.top - prevRect.top;
-        if (dy !== 0) wrap.scrollTop += dy;
-      } else {
-        const dx = newRect.left - prevRect.left;
-        if (dx !== 0) wrap.scrollLeft += dx;
-      }
-    }
-  }
 }
 
 // Swap hint: when set, renderDistMatrix uses these ICAOs instead of reading
@@ -11687,7 +11661,12 @@ let _rgMeasureLabelWrapEl = null;
 const _rgDeclCache   = new Map(); // keyed by "lat1_lon1" (1 dp) → {decl,approx}
 
 // Per-column sort pivot
-let _rgSortPivot = null; // null | { icao, axis: 'dep'|'arr', mode: 'nearest'|'farthest'|'alpha' }
+// Independent per-axis pivot sorts — each { icao, mode:'nearest'|'farthest' } or null.
+//   _rgPivotDep — set by clicking ⊙ on a DEP row header; sorts the ARR columns
+//   _rgPivotArr — set by clicking ⊙ on an ARR column header; sorts the DEP rows
+// Either, both, or neither may be active; clicking a ⊙ only reorders the
+// opposite axis, so the clicked header never moves.
+let _rgPivotDep = null, _rgPivotArr = null;
 
 // Map/matrix split drag
 let _rgSplitDrag    = null;
@@ -11981,54 +11960,17 @@ function _rgUpdateMeasure(toLL) {
 function _rgPivotClick(event, icao, axis) {
   event.stopPropagation();
   event.preventDefault();
-  // Capture the just-clicked header's viewport position so we can put it back
-  // under the mouse after the matrix re-renders. Switching pivot axis
-  // (e.g. arr-pivot → dep-pivot) reorders BOTH axes — the new pivot axis
-  // sorts by distance, and the previously-sorted axis reverts to alpha —
-  // which can move the row or column the user just clicked far enough away
-  // that they have to scroll to find it. We restore position along the
-  // clicked axis only:
-  //   axis='dep' → vertical scrollTop (the row the user clicked)
-  //   axis='arr' → horizontal scrollLeft (the column the user clicked)
-  // NOTE: the scrollable element is `#rgMatrixScroll` — its parent
-  // `#rgMatrixWrap` has overflow:clip and never scrolls.
-  const scroller = document.getElementById('rgMatrixScroll');
-  const sel  = axis === 'dep'
-    ? `.rg-row-hdr[data-rg-tip="${icao}"]`
-    : `.rg-col-hdr[data-rg-tip="${icao}"]`;
-  const prevHdr  = scroller ? scroller.querySelector(sel) : null;
-  const prevRect = prevHdr ? prevHdr.getBoundingClientRect() : null;
-
-  const modes = ['nearest', 'farthest', 'alpha'];
-  if (_rgSortPivot && _rgSortPivot.icao === icao && _rgSortPivot.axis === axis) {
-    const next = modes[(modes.indexOf(_rgSortPivot.mode) + 1) % modes.length];
-    if (next === 'alpha' && _rgSortPivot.mode === 'farthest') {
-      // third click: clear pivot (back to global sort)
-      _rgSortPivot = null;
-    } else {
-      _rgSortPivot.mode = next;
-    }
-  } else {
-    _rgSortPivot = { icao, axis, mode: 'nearest' };
-  }
+  // Independent per-axis pivots. A dep-row ⊙ cycles _rgPivotDep (which sorts
+  // the ARR columns); an arr-col ⊙ cycles _rgPivotArr (which sorts the DEP
+  // rows). Clicking a ⊙ only ever reorders the OPPOSITE axis, so the header
+  // you clicked never moves — no scroll compensation needed.
+  // Each pivot cycles: none → nearest → farthest → none.
+  const cycle = p => (p && p.icao === icao)
+    ? (p.mode === 'nearest' ? { icao, mode: 'farthest' } : null)
+    : { icao, mode: 'nearest' };
+  if (axis === 'dep') _rgPivotDep = cycle(_rgPivotDep);
+  else                _rgPivotArr = cycle(_rgPivotArr);
   _rgRenderMatrix();
-
-  // Restore scroll so the clicked header lands at the same screen position
-  // it occupied before the click. Delta on the new-vs-old getBoundingClientRect
-  // tells us exactly how far the post-render layout shifted that header.
-  if (scroller && prevRect) {
-    const newHdr = scroller.querySelector(sel);
-    if (newHdr) {
-      const newRect = newHdr.getBoundingClientRect();
-      if (axis === 'dep') {
-        const dy = newRect.top - prevRect.top;
-        if (dy !== 0) scroller.scrollTop += dy;
-      } else {
-        const dx = newRect.left - prevRect.left;
-        if (dx !== 0) scroller.scrollLeft += dx;
-      }
-    }
-  }
 }
 
 // ── Map initialisation ──────────────────────────────────────────────────
@@ -13382,6 +13324,101 @@ function _rgApplyDrag(e) {
   }
 }
 
+// ── Edge auto-pan while dragging a region / aiming the arrival ─────────
+// When a departure / arrival region center is dragged — or the cursor is moved
+// during the ruler phase (departure region locked, arrival not yet drawn) —
+// close to the map viewport edge, pan the map toward that edge so regions can
+// be placed / moved farther apart than the visible area allows. A
+// requestAnimationFrame loop pans a few px per frame (speed ramps with how deep
+// into the edge zone the cursor sits) and re-applies the drag / ruler aim at
+// the cursor's now-shifted geographic position each frame.
+let _rgEdgePanRafId = 0;     // rAF handle (0 = loop not running)
+let _rgEdgePanVec   = null;  // { x, y } px/frame pan velocity
+let _rgEdgePanCP    = null;  // { x, y } cursor position in map-container coords
+let _rgEdgePanUsed  = false; // did the loop pan at least once this interaction?
+
+// Edge-pan is allowed while dragging a region center, or during the ruler
+// phase (aiming the arrival region after the departure is locked).
+function _rgEdgePanActive() {
+  return _rgDragMode === 'dep_center' || _rgDragMode === 'arr_center'
+      || (!_rgDragMode && _rgPhase === 'ruler');
+}
+
+function _rgEdgePanTick() {
+  _rgEdgePanRafId = 0;
+  if (!_rgMap || !_rgEdgePanVec || !_rgEdgePanCP || !_rgEdgePanActive()) return;
+  _rgMap.panBy([_rgEdgePanVec.x, _rgEdgePanVec.y], { animate: false });
+  _rgEdgePanUsed = true;
+  // The cursor hasn't moved, but the map slid under it — re-apply whatever the
+  // cursor drives at the geographic point it now hovers.
+  const ll = _rgMap.containerPointToLatLng(L.point(_rgEdgePanCP.x, _rgEdgePanCP.y));
+  if (_rgDragMode === 'dep_center' || _rgDragMode === 'arr_center') _rgApplyDrag({ latlng: ll });
+  else if (_rgPhase === 'ruler')                                    _rgUpdateRulerTo(ll);
+  _rgEdgePanRafId = requestAnimationFrame(_rgEdgePanTick);
+}
+
+function _rgStopEdgePan() {
+  if (_rgEdgePanRafId) cancelAnimationFrame(_rgEdgePanRafId);
+  _rgEdgePanRafId = 0;
+  _rgEdgePanVec = _rgEdgePanCP = null;
+}
+
+// Evaluate the cursor's proximity to the viewport edges and start / refresh /
+// stop the auto-pan loop.
+function _rgUpdateEdgePan(containerPt) {
+  if (!_rgMap || !_rgEdgePanActive()) {
+    _rgStopEdgePan();
+    return;
+  }
+  const ZONE = 48;   // px from an edge that triggers panning
+  const MAX  = 14;   // px/frame pan speed at the very edge
+  const c = _rgMap.getContainer();
+  const w = c.clientWidth, h = c.clientHeight;
+  let vx = 0, vy = 0;
+  if      (containerPt.x < ZONE)     vx = -((ZONE - containerPt.x) / ZONE) * MAX;
+  else if (containerPt.x > w - ZONE) vx =  ((containerPt.x - (w - ZONE)) / ZONE) * MAX;
+  if      (containerPt.y < ZONE)     vy = -((ZONE - containerPt.y) / ZONE) * MAX;
+  else if (containerPt.y > h - ZONE) vy =  ((containerPt.y - (h - ZONE)) / ZONE) * MAX;
+  if (vx === 0 && vy === 0) {
+    _rgStopEdgePan();
+  } else {
+    _rgEdgePanVec = { x: vx, y: vy };
+    _rgEdgePanCP  = { x: containerPt.x, y: containerPt.y };
+    if (!_rgEdgePanRafId) _rgEdgePanRafId = requestAnimationFrame(_rgEdgePanTick);
+  }
+}
+
+// Draw / update the ruler line + nm label from the departure center to a
+// latlng. Shared by the ruler-phase mousemove handler and the edge-pan loop.
+function _rgUpdateRulerTo(ll) {
+  if (!_rgDepCenter) return;
+  if (!_rgRulerLine) {
+    _rgRulerLine = L.polyline([_rgDepCenter, ll], {
+      renderer: _rgGetGeomRenderer(),
+      color: '#00c8ff', weight: 1.5, opacity: 0.45, dashArray: '9 6', interactive: false,
+    }).addTo(_rgMap);
+  } else {
+    _rgRulerLine.setLatLngs([_rgDepCenter, ll]);
+  }
+  const nm   = _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, ll.lat, ll.lng);
+  const rect = document.getElementById('rgMapContainer').getBoundingClientRect();
+  const cpt  = _rgMap.latLngToContainerPoint(ll);
+  _rgShowNmLabel({ clientX: rect.left + cpt.x, clientY: rect.top + cpt.y },
+                 Math.round(nm) + ' nm to arrival', false);
+}
+
+// Re-fit the map to enclose both region circles — the same logic used when
+// the regions are first drawn (5% margin, max zoom 10).
+function _rgFitRegions() {
+  if (!_rgMap || !_rgDepFill || !_rgArrFill) return;
+  _rgMap.invalidateSize();
+  const b = _rgDepFill.getBounds().extend(_rgArrFill.getBounds());
+  const c = _rgMap.getContainer();
+  const padX = Math.round(c.clientWidth  * 0.05);
+  const padY = Math.round(c.clientHeight * 0.05);
+  _rgMap.fitBounds(b, { padding: [padX, padY], maxZoom: 10 });
+}
+
 // ── Antimeridian helper ────────────────────────────────────────────────
 // Returns true if the geodesic between (lng1, lng2) crosses ±180° longitude.
 // Leaflet's polyline renderer doesn't wrap the antimeridian — instead it draws
@@ -13501,6 +13538,7 @@ function _rgMapMouseDown(e) {
     const hit = _rgDragHitTest(e);
     if (!hit) return;
     _rgDragMode = hit;
+    _rgEdgePanUsed = false;
     _rgMap.dragging.disable();
     _rgSetCursor(hit.includes('center') ? 'grab' : 'resize');
     L.DomEvent.stopPropagation(e);
@@ -13630,16 +13668,8 @@ function _rgMapMouseMoveBody(e) {
     _rgShowNmLabel(cp, Math.round(nm) + ' nm', false);
 
   } else if (_rgPhase === 'ruler') {
-    if (!_rgRulerLine) {
-      _rgRulerLine = L.polyline([_rgDepCenter, e.latlng], {
-        renderer: _rgGetGeomRenderer(),
-        color: '#00c8ff', weight: 1.5, opacity: 0.45, dashArray: '9 6', interactive: false,
-      }).addTo(_rgMap);
-    } else {
-      _rgRulerLine.setLatLngs([_rgDepCenter, e.latlng]);
-    }
-    const nm = _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, e.latlng.lat, e.latlng.lng);
-    _rgShowNmLabel(cp, Math.round(nm) + ' nm to arrival', false);
+    _rgUpdateRulerTo(e.latlng);
+    _rgUpdateEdgePan(e.containerPoint);
 
   } else if (_rgPhase === 'arr_drag') {
     const nm = _haversineNm(_rgArrCenter.lat, _rgArrCenter.lng, e.latlng.lat, e.latlng.lng);
@@ -13652,7 +13682,11 @@ function _rgMapMouseMoveBody(e) {
 
   } else if (_rgPhase === 'results') {
     if (_rgDragMode) {
-      _rgApplyDrag(e);
+      // Recompute the latlng from the cursor's container point so the drag
+      // stays correct even if the edge-pan loop shifted the map underneath
+      // since this (rAF-coalesced) event was queued.
+      _rgApplyDrag({ latlng: _rgMap.containerPointToLatLng(e.containerPoint) });
+      _rgUpdateEdgePan(e.containerPoint);
     } else {
       // Cursor hint while hovering over drag targets (region + measurement handles)
       const hit = _rgDragHitTest(e) || _rgMeasureHitTest(e);
@@ -13667,7 +13701,9 @@ function _rgMapMouseMoveBody(e) {
 
 function _rgEndDrag() {
   if (!_rgDragMode) return false;
+  _rgStopEdgePan();
   const wasMeas       = _rgDragMode.startsWith('meas_');
+  const wasRegionCtr  = _rgDragMode === 'dep_center' || _rgDragMode === 'arr_center';
   const wasMeasEdge   = _rgDragMode.startsWith('meas_edge_');
   const wasMeasCenter = _rgDragMode.startsWith('meas_center_');
   const meIdx         = wasMeasEdge   ? parseInt(_rgDragMode.slice(10), 10) : -1;
@@ -13695,6 +13731,10 @@ function _rgEndDrag() {
   if (wasMeasCenter && mcIdx >= 0 && _rgMeasureSaved[mcIdx]) {
     _rgRedrawMeasureEntry(mcIdx);
   }
+  // If the map auto-panned while a region center was dragged, the regions may
+  // have ended up partly off-screen — re-fit both circles into view.
+  if (wasRegionCtr && _rgEdgePanUsed) setTimeout(_rgFitRegions, 60);
+  _rgEdgePanUsed = false;
   _rgDragJustEnded = true;
   setTimeout(() => { _rgDragJustEnded = false; }, 300);
   return true;
@@ -13905,7 +13945,7 @@ function rgUndo() {
 function rgReset(silent) {
   clearTimeout(_rgMatRefreshTm);
   _rgDragMode   = null;
-  _rgSortPivot  = null;
+  _rgPivotDep = _rgPivotArr = null;
   _rgRemoveHandles();
   [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
    _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
@@ -13952,7 +13992,7 @@ function rgExploreReturn() {
   // measurements survive clicking Done.
   clearTimeout(_rgMatRefreshTm);
   _rgDragMode  = null;
-  _rgSortPivot = null;
+  _rgPivotDep = _rgPivotArr = null;
   _rgRemoveHandles();
   [_rgDepFill, _rgDepRing, _rgDepPin, _rgArrFill, _rgArrRing, _rgArrPin,
    _rgRadLine, _rgRulerLine, _rgRangeGlow, _rgRangeRing, _rgRangeLabel].forEach(l => { if (l) l.remove(); });
@@ -14204,16 +14244,7 @@ function _rgComputeAndRender() {
     _rgRefreshFilteredAirports();
     _rgHighlightDots();
     _rgRenderMatrix();
-    if (!wasVisible) {
-      setTimeout(() => {
-        _rgMap.invalidateSize();
-        const b = _rgDepFill.getBounds().extend(_rgArrFill.getBounds());
-        const c = _rgMap.getContainer();
-        const padX = Math.round(c.clientWidth  * 0.10);
-        const padY = Math.round(c.clientHeight * 0.10);
-        _rgMap.fitBounds(b, { padding: [padX, padY], maxZoom: 8 });
-      }, 50);
-    }
+    if (!wasVisible) setTimeout(_rgFitRegions, 50);
   }, 30);
 }
 
@@ -14229,7 +14260,8 @@ function rgSetCap(val) {
 
 function rgSetSort(val) {
   if (val === 'pivot') return;
-  _rgSortPivot = null;
+  // Picking any global sort option clears both per-axis pivots.
+  _rgPivotDep = _rgPivotArr = null;
   _rgSortMode = val;
   if (_rgPhase === 'results') _rgRenderMatrix();
   else _rgUpdateSortLabel();
@@ -14292,10 +14324,17 @@ function _rgUpdateSortLabel() {
   if (!sel) return;
   const existing = sel.querySelector('option[value="pivot"]');
   if (existing) existing.remove();
-  if (_rgSortPivot) {
+  // When one or both axes are pivot-sorted, show a synthetic option naming
+  // each active pivot with a ▲ (nearest) / ▼ (farthest) glyph — matching the
+  // matrix-header dots — e.g. "KSEA ▲  |  KPDX ▼" (dep pivot, then arr pivot).
+  if (_rgPivotDep || _rgPivotArr) {
+    const tri   = p => p.mode === 'nearest' ? '▲' : '▼';
+    const parts = [];
+    if (_rgPivotDep) parts.push(_rgPivotDep.icao + ' ' + tri(_rgPivotDep));
+    if (_rgPivotArr) parts.push(_rgPivotArr.icao + ' ' + tri(_rgPivotArr));
     const opt = document.createElement('option');
     opt.value = 'pivot';
-    opt.textContent = (_rgSortPivot.mode === 'nearest' ? 'Closest ' : 'Farthest ') + _rgSortPivot.icao;
+    opt.textContent = parts.join('   |   ');
     sel.appendChild(opt);
     sel.value = 'pivot';
   } else {
@@ -14611,6 +14650,34 @@ function _rgShowOwnerLegend(anchor) {
 }
 function _rgHideOwnerLegend() {
   const el = document.getElementById('rgOwnerLegend');
+  if (!el) return;
+  el.classList.remove('visible');
+  el.style.display = 'none';
+}
+
+// Hover-only popover listing a simple set of names — used by the country /
+// region / continent breadcrumb chips so their multi-item tooltips match the
+// owner legend's styling (Rajdhani, readable size) instead of the tiny native
+// title tooltip. Reuses the .rg-owner-legend styling.
+function _rgShowListLegend(anchor, header, names) {
+  const el = document.getElementById('rgListLegend');
+  if (!el || !names || !names.length) return;
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  el.innerHTML = `<div class="rg-owner-legend-hdr">${esc(header)}</div>` +
+    names.map(n => `<div class="rg-owner-legend-row"><span class="rg-owner-legend-name">${esc(n)}</span></div>`).join('');
+  el.style.display = '';
+  el.classList.add('visible');
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  const r    = anchor.getBoundingClientRect();
+  const vw   = window.innerWidth || document.documentElement.clientWidth;
+  const popW = el.offsetWidth || 200;
+  let left = r.left;
+  if (left + popW + 8 > vw) left = Math.max(8, vw - popW - 8);
+  el.style.left = left + 'px';
+  el.style.top  = (r.bottom + 6) + 'px';
+}
+function _rgHideListLegend() {
+  const el = document.getElementById('rgListLegend');
   if (!el) return;
   el.classList.remove('visible');
   el.style.display = 'none';
@@ -14960,34 +15027,34 @@ function _rgRenderMatrix() {
     return copy;
   };
 
-  // Pivot sort: clicking ⊙ on an arr column sorts dep rows by distance to that arr airport, and vice versa
+  // Independent per-axis pivot sorts. _rgPivotDep (clicked on a dep header)
+  // sorts the ARR columns; _rgPivotArr (clicked on an arr header) sorts the
+  // DEP rows. Either, both, or neither may be active. Validate ICAOs first.
+  if (_rgPivotDep && !lookupICAO(_rgPivotDep.icao)) _rgPivotDep = null;
+  if (_rgPivotArr && !lookupICAO(_rgPivotArr.icao)) _rgPivotArr = null;
   let sortedDep, sortedArr;
-  if (_rgSortPivot) {
-    const pivotRec = lookupICAO(_rgSortPivot.icao);
-    if (!pivotRec) { _rgSortPivot = null; }
-  }
-  if (_rgSortPivot && _rgSortPivot.mode !== 'alpha' && _rgSortPivot.axis === 'arr') {
-    const pivotRec = lookupICAO(_rgSortPivot.icao);
+  if (_rgPivotArr) {
+    const pivotRec = lookupICAO(_rgPivotArr.icao);
     const copy = [...dep];
     copy.sort((a, b) => {
       const da = _haversineNm(a.rec.latitude, a.rec.longitude, pivotRec.latitude, pivotRec.longitude);
       const db = _haversineNm(b.rec.latitude, b.rec.longitude, pivotRec.latitude, pivotRec.longitude);
-      return _rgSortPivot.mode === 'nearest' ? da - db : db - da;
+      return _rgPivotArr.mode === 'nearest' ? da - db : db - da;
     });
     sortedDep = copy;
-    sortedArr = _sortAirports(arr);
-  } else if (_rgSortPivot && _rgSortPivot.mode !== 'alpha' && _rgSortPivot.axis === 'dep') {
-    const pivotRec = lookupICAO(_rgSortPivot.icao);
+  } else {
+    sortedDep = _sortAirports(dep);
+  }
+  if (_rgPivotDep) {
+    const pivotRec = lookupICAO(_rgPivotDep.icao);
     const copy = [...arr];
     copy.sort((a, b) => {
       const da = _haversineNm(pivotRec.latitude, pivotRec.longitude, a.rec.latitude, a.rec.longitude);
       const db = _haversineNm(pivotRec.latitude, pivotRec.longitude, b.rec.latitude, b.rec.longitude);
-      return _rgSortPivot.mode === 'nearest' ? da - db : db - da;
+      return _rgPivotDep.mode === 'nearest' ? da - db : db - da;
     });
-    sortedDep = _sortAirports(dep);
     sortedArr = copy;
   } else {
-    sortedDep = _sortAirports(dep);
     sortedArr = _sortAirports(arr);
   }
 
@@ -15004,9 +15071,9 @@ function _rgRenderMatrix() {
       ? `<a href="https://simfly.io/assets/airport/${a.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link" data-cat="${aCatNum}" style="color:${catCol}">${a.icao}</a>`
       : `<a href="https://simfly.io/assets/airport/${a.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link">${a.icao}</a>`;
     const ownerSpan = oi ? `<span class="rg-th-owner">${_rgX(oi.name)}</span>` : '';
-    const aIspivot = _rgSortPivot && _rgSortPivot.icao === a.icao && _rgSortPivot.axis === 'arr';
-    const aDotLbl  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
-    const aDotTip  = aIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest dep first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest dep first — click to clear' : 'Alpha — click to clear') : 'Sort dep airports by distance to ' + a.icao;
+    const aIspivot = _rgPivotArr && _rgPivotArr.icao === a.icao;
+    const aDotLbl  = aIspivot ? (_rgPivotArr.mode === 'nearest' ? '▲' : '▼') : '⊙';
+    const aDotTip  = aIspivot ? (_rgPivotArr.mode === 'nearest' ? 'Nearest dep rows first — click for farthest' : 'Farthest dep rows first — click to clear') : 'Sort dep airports by distance to ' + a.icao;
     const aStripe  = `<div class="rg-owner-stripe rg-stripe-col${oi && _rgStripeOwnerArr === oi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${col}"${oi ? ` data-rg-owner="${_rgX(oi.name)}" data-rg-side="arr" title="Show airports owned by ${_rgX(oi.name)}"` : ''}></div>`;
     hdr += `<th class="rg-col-hdr" style="--rg-oc:${col}" data-rg-tip="${a.icao}">${aStripe}${icaoSpan}${ownerSpan}<button class="rg-sort-dot${aIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${a.icao}','arr')" title="${aDotTip}">${aDotLbl}</button></th>`;
   }
@@ -15024,9 +15091,9 @@ function _rgRenderMatrix() {
       : `<a href="https://simfly.io/assets/airport/${d.icao}/details" target="_blank" rel="noopener" class="rg-th-icao rg-th-link">${d.icao}</a>`;
     const downerSpan = doi ? `<span class="rg-th-owner">${_rgX(doi.name)}</span>` : '';
 
-    const dIspivot = _rgSortPivot && _rgSortPivot.icao === d.icao && _rgSortPivot.axis === 'dep';
-    const dDotLbl  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? '▲' : _rgSortPivot.mode === 'farthest' ? '▼' : '⊙') : '⊙';
-    const dDotTip  = dIspivot ? (_rgSortPivot.mode === 'nearest' ? 'Nearest arr first — click for farthest' : _rgSortPivot.mode === 'farthest' ? 'Farthest arr first — click to clear' : 'Alpha — click to clear') : 'Sort arr airports by distance to ' + d.icao;
+    const dIspivot = _rgPivotDep && _rgPivotDep.icao === d.icao;
+    const dDotLbl  = dIspivot ? (_rgPivotDep.mode === 'nearest' ? '▲' : '▼') : '⊙';
+    const dDotTip  = dIspivot ? (_rgPivotDep.mode === 'nearest' ? 'Nearest arr cols first — click for farthest' : 'Farthest arr cols first — click to clear') : 'Sort arr airports by distance to ' + d.icao;
     const dStripe  = `<div class="rg-owner-stripe rg-stripe-row${doi && _rgStripeOwnerDep === doi.name ? ' rg-stripe-locked' : ''}" style="--rg-oc:${dcol}"${doi ? ` data-rg-owner="${_rgX(doi.name)}" data-rg-side="dep" title="Show airports owned by ${_rgX(doi.name)}"` : ''}></div>`;
     let row = `<th class="rg-row-hdr" style="--rg-oc:${dcol}" data-rg-tip="${d.icao}">${dStripe}${dicaoSpan}${downerSpan}<button class="rg-sort-dot${dIspivot ? ' active' : ''}" onclick="_rgPivotClick(event,'${d.icao}','dep')" title="${dDotTip}">${dDotLbl}</button></th>`;
 
@@ -15263,6 +15330,9 @@ function _rgUpdateBreadcrumbs() {
   const container = document.getElementById('rgBreadcrumbs');
   if (!container) return;
   container.innerHTML = '';
+  // A list-legend popover may be open over a chip that's about to be removed —
+  // no mouseleave fires when the chip vanishes, so dismiss it on every rebuild.
+  _rgHideListLegend();
 
   function mkChip(text, onClickBody, onClickX) {
     const chip = document.createElement('span');
@@ -15390,7 +15460,8 @@ function _rgUpdateBreadcrumbs() {
       const names = [..._rgMapCountryFilter]
         .map(iso => _rgCountryIsoToName.get(iso) || iso)
         .sort();
-      countryChip.title = names.join('\n');
+      countryChip.addEventListener('mouseenter', () => _rgShowListLegend(countryChip, 'Filtered countries', names));
+      countryChip.addEventListener('mouseleave', _rgHideListLegend);
     }
     container.appendChild(countryChip);
   }
@@ -15408,10 +15479,13 @@ function _rgUpdateBreadcrumbs() {
       null,
       () => { _rgMapRegionFilter = null; _rgApplyMapFilter(); }
     );
-    const names = [..._rgMapRegionFilter]
-      .map(code => _rgRegionCodeToName.get(code) || code)
-      .sort();
-    regionChip.title = names.join('\n');
+    if (n > 1) {
+      const names = [..._rgMapRegionFilter]
+        .map(code => _rgRegionCodeToName.get(code) || code)
+        .sort();
+      regionChip.addEventListener('mouseenter', () => _rgShowListLegend(regionChip, 'Filtered regions', names));
+      regionChip.addEventListener('mouseleave', _rgHideListLegend);
+    }
     container.appendChild(regionChip);
   }
 
@@ -15432,7 +15506,9 @@ function _rgUpdateBreadcrumbs() {
     const label = codes.length === 1 ? (_RG_CONTINENT_NAMES[codes[0]] || codes[0]) : `${codes.length} Continents`;
     const continentChip = mkChip(label, null, () => { _rgMapContinentFilter = null; _rgApplyMapFilter(); });
     if (codes.length > 1) {
-      continentChip.title = codes.map(c => _RG_CONTINENT_NAMES[c] || c).sort().join('\n');
+      const names = codes.map(c => _RG_CONTINENT_NAMES[c] || c).sort();
+      continentChip.addEventListener('mouseenter', () => _rgShowListLegend(continentChip, 'Filtered continents', names));
+      continentChip.addEventListener('mouseleave', _rgHideListLegend);
     }
     container.appendChild(continentChip);
   }
@@ -17025,8 +17101,9 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Row &amp; Column Sorting</div>
           <div class="help-feature-desc">
             Every row and column header in the matrix has a small <strong>⊙ pivot dot</strong> on its right side. Click the dot to sort the <em>opposite</em> axis by distance to that airport — clicking ⊙ on a departure row sorts the arrival columns by distance from that dep airport; clicking ⊙ on an arrival column sorts the departure rows by distance to that arr airport.<br/><br/>
-            Each click on the same pivot dot advances the mode: <strong>⊙ (alphabetical)</strong> &rarr; <strong>▲ Nearest first</strong> &rarr; <strong>▼ Farthest first</strong> &rarr; <strong>⊙ (cleared)</strong>. The active pivot dot is highlighted so you can always see which airport the sort is anchored to. Clicking the dot on a different airport switches the pivot to that one.<br/><br/>
-            <strong>Row and column highlighting is independent of sorting.</strong> Click a row label or column header to highlight it and populate the Departure / Arrival ICAO fields above — this does <em>not</em> change the sort. To restore alphabetical order, click the active pivot dot until it cycles back to <strong>⊙</strong>.<br/><br/>
+            Each click on the same pivot dot advances the mode: <strong>⊙ (alphabetical)</strong> &rarr; <strong>▲ Nearest first</strong> &rarr; <strong>▼ Farthest first</strong> &rarr; <strong>⊙ (cleared)</strong>. The active pivot dot is highlighted so you can always see which airport the sort is anchored to. Clicking the dot on a different airport on the same axis switches that pivot to the new airport.<br/><br/>
+            <strong>The two axes sort independently.</strong> A row pivot and a column pivot can both be active at the same time — for example, arrival columns sorted by distance to one departure airport <em>while</em> departure rows are sorted by distance to one arrival airport. Because a ⊙ only ever reorders the <em>opposite</em> axis, the header you click never moves out from under your cursor.<br/><br/>
+            <strong>Row and column highlighting is independent of sorting.</strong> Click a row label or column header to highlight it and populate the Departure / Arrival ICAO fields above — this does <em>not</em> change the sort. To restore alphabetical order, click each active pivot dot until it cycles back to <strong>⊙</strong>.<br/><br/>
             <em>Tip — hovering a pivot dot shows a tooltip describing what the next click will do (e.g. "Sort dep airports by distance to KSEA").</em>
           </div>
         </div>
@@ -17182,8 +17259,74 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.61.19</span>
+          <span class="release-version">v2.62.4</span>
           <span class="release-date">May 19, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter breadcrumb strip nudged up</strong> &mdash; small vertical alignment tweak to the region-map filter chip row.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.62.3</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Larger filter breadcrumb chips</strong> &mdash; the at-a-glance filter status chips on the region map are now 25% bigger (font, padding, and ✕ control all scaled up) for easier reading and clicking.</li>
+          <li><strong>Readable multi-item tooltips on the Countries / Regions / Continents chips</strong> &mdash; hovering a multi-item filter chip (e.g. <em>3 Regions</em>) previously showed the list in the browser&rsquo;s tiny native tooltip. It now uses the same styled popover as the <em>N Owners Displayed</em> chip — same Rajdhani font, size, and panel styling — so the names are properly legible.</li>
+          <li><strong>Region map search placeholder is easier to read</strong> &mdash; the faint &ldquo;Search ICAO, name, owner…&rdquo; placeholder text was too dim against the dark search box; its contrast has been raised.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.62.2</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Edge auto-pan now works while aiming the arrival region</strong> &mdash; v2.62.1 added edge auto-pan for dragging a region circle; it now also applies during the <em>ruler</em> phase, after the departure region is locked and while you move the cursor to choose where the arrival region will go. Reaching any map edge smoothly pans the map so the arrival can be placed far from the departure.</li>
+          <li><strong>Map re-zooms to fit both regions after an auto-panned move</strong> &mdash; when you release the mouse after a drag in which the map auto-panned, the map now re-fits both the departure and arrival region circles into view (the same fit used when the regions are first drawn). If a drag didn&rsquo;t trigger any auto-pan, the view is left alone so small nudges don&rsquo;t cause the map to jump.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.62.1</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map auto-scrolls when you drag a region to the edge</strong> &mdash; dragging a departure or arrival region center near the edge of the map now smoothly pans the map in that direction, so regions can be moved farther apart than the visible area would otherwise allow. The pan speed ramps up the closer to the edge the cursor sits, and the region circle keeps tracking the cursor as the map slides underneath.</li>
+          <li><strong>Tighter zoom when the cross-region matrix opens</strong> &mdash; the map now fits the two region circles with a 5% margin (was 10%) and allows a closer maximum zoom, so the regions fill more of the available map area instead of sitting small with wide empty borders.</li>
+          <li><strong>Region matrix Sort menu spacing</strong> &mdash; when both axes are pivot-sorted, the dual label now has more breathing room around the divider — <em>KSEA ▲&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;KPDX ▼</em>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.62.0</span>
+          <span class="release-date">May 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Independent per-axis pivot sorting — rows and columns no longer jump</strong> &mdash; both the owner distance matrix and the cross-region matrix previously used a single pivot: clicking a ⊙ on one axis snapped the other axis back to alphabetical, so the row or column you just clicked could shift out from under the cursor. Each axis now has its own independent pivot. A departure-row ⊙ only ever reorders the arrival columns; an arrival-column ⊙ only ever reorders the departure rows. Because clicking a ⊙ never touches its own axis, the header you click physically cannot move. You can also now sort both axes at once — e.g. arrival columns by distance to one departure airport <em>while</em> departure rows are sorted by distance to one arrival airport.</li>
+          <li><strong>Region matrix Sort menu shows both pivots</strong> &mdash; when a pivot is active, the Sort dropdown now displays each active pivot as an ICAO followed by a ▲ (nearest) or ▼ (farthest) glyph — the same arrows used on the matrix-header dots — e.g. <em>KSEA ▲&nbsp;&nbsp;|&nbsp;&nbsp;KPDX ▼</em> when both axes are sorted, or just <em>KSFO ▲</em> when one is. The menu was widened to fit the dual label. Choosing any plain sort option (A–Z, Group by owner, Group by category) clears both pivots.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.61.19</span>
+          <span class="release-date">May 19, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -24079,6 +24222,7 @@ function rgSendToFlightPlanner() {
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
           <div id="rgOwnerLegend" class="rg-owner-legend"></div>
           <div id="rgDeveloperLegend" class="rg-owner-legend"></div>
+          <div id="rgListLegend" class="rg-owner-legend"></div>
           <div id="rgMapOwnerPanel" class="rg-owner-panel">
             <div class="rg-owner-panel-hdr">
               <span class="rg-owner-panel-title">Filter airport owners</span>
