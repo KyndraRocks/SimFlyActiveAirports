@@ -3095,6 +3095,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-name { font-family:'Rajdhani',sans-serif; font-size:1.5rem; color:var(--text); }
   /* Range ring border label + hover tooltip */
   .rg-ring-lbl { background:rgba(0,8,18,0.82); border:1px solid rgba(255,209,102,0.55); color:#ffd166; font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:600; padding:0.1rem 0.38rem; border-radius:3px; white-space:nowrap; pointer-events:none; }
+  /* Route-total chip — distinct from the per-leg .rg-ring-lbl chips: thicker
+     accent border, soft glow, two-line layout. Background stays dark in both
+     tile modes so the text reads cleanly over street and satellite imagery.
+     border-color, glow and the main-line color are set inline (tile-aware). */
+  .rg-route-total { display:inline-flex; flex-direction:column; align-items:center; background:rgba(5,0,12,0.96); border:2px solid; border-radius:6px; padding:0.2rem 0.66rem; font-family:'Rajdhani',sans-serif; line-height:1.15; pointer-events:none; }
+  .rg-route-total-main { font-size:1rem; font-weight:700; letter-spacing:0.03em; }
+  .rg-route-total-sub  { font-size:0.72rem; font-weight:600; letter-spacing:0.02em; color:rgba(255,255,255,0.78); margin-top:1px; }
   .leaflet-tooltip.rg-ring-tip { background:rgba(0,8,18,0.9); border:1px solid rgba(255,209,102,0.5); color:#ffd166; padding:0.2rem 0.55rem; border-radius:4px; font-family:'Rajdhani',sans-serif; white-space:nowrap; pointer-events:none; }
   .leaflet-tooltip.rg-ring-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.9); }
   .rg-matrix tr.rg-row-hl > th.rg-row-hdr,
@@ -4024,7 +4031,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.62.9';
+const APP_VERSION = '2.63.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11660,6 +11667,20 @@ let _rgMeasureLastLL = null;   // last toLL — used to refresh label after asyn
 let _rgMeasureLabelWrapEl = null;
 const _rgDeclCache   = new Map(); // keyed by "lat1_lon1" (1 dp) → {decl,approx}
 
+// ── Route chaining ──────────────────────────────────────────────────────
+// After a measurement circle completes, a left-click within
+// _RG_CHAIN_WINDOW_MS continues a "route": the new circle's origin snaps to
+// the previous circle's endpoint, so legs build one continuous conjoined
+// path. Every segment in a route shares a `routeId`; the cumulative distance
+// is summed onto a per-route total chip anchored at the route's end point.
+const _RG_CHAIN_WINDOW_MS = 600;
+let _rgChainTs         = 0;         // Date.now() of the last completing mouseup
+let _rgChainAnchor     = null;      // {lat,lng} the next conjoined circle starts from
+let _rgChainPrevSeg    = null;      // the saved-measurement object just completed
+let _rgMeasureChaining = false;     // true while a conjoined (route) draw is in progress
+let _rgRouteIdSeq      = 0;         // monotonic routeId allocator
+const _rgRouteLabels   = new Map(); // routeId → L.marker (the route-total chip)
+
 // Per-column sort pivot
 // Independent per-axis pivot sorts — each { icao, mode:'nearest'|'farthest' } or null.
 //   _rgPivotDep — set by clicking ⊙ on a DEP row header; sorts the ARR columns
@@ -11771,6 +11792,7 @@ function _rgToggleMeasure() {
   if (btn) btn.classList.toggle('active', _rgMeasureActive);
   if (!_rgMeasureActive) {
     _rgClearMeasureLive(); // keep saved measurements visible; just stop in-progress
+    _rgChainAnchor = null; _rgChainPrevSeg = null; // toggling off ends any open route
     if (_rgPhase === 'idle') _rgSetCursor('cross');
     else if (_rgPhase === 'ruler') _rgSetCursor('ruler');
     else _rgSetCursor('');
@@ -11788,6 +11810,7 @@ function _rgClearMeasureLive() {
   // Re-enable dragging if we interrupted a live draw (e.g. toggle-off button click mid-drag)
   if (_rgMeasureDraw && _rgMap) _rgMap.dragging.enable();
   _rgMeasureDraw   = false;
+  _rgStopEdgePan(); // halt edge-pan if the live draw was interrupted mid-gesture
   _rgMeasureDecl   = null;
   _rgMeasureLastLL = null;
 }
@@ -11796,6 +11819,10 @@ function _rgClearMeasure() {
   _rgClearMeasureLive();
   for (const m of _rgMeasureSaved) _rgRemoveMeasureEntry(m);
   _rgMeasureSaved = [];
+  for (const marker of _rgRouteLabels.values()) marker.remove();
+  _rgRouteLabels.clear();
+  _rgChainAnchor = null;
+  _rgChainPrevSeg = null;
   _rgSyncClearBtn();
 }
 
@@ -12088,6 +12115,9 @@ function _rgRecolorAllMeasurements() {
     if (m.pin)    m.pin.setStyle({ color: c, fillColor: c });
     _rgRedrawMeasureEntry(i);
   }
+  // Route-total chips carry the tile color in their inline border / glow /
+  // text styles — re-render them to pick up the purple↔yellow swap.
+  _rgUpdateRouteTotals();
 }
 
 // ── Aircraft range ring ───────────────────────────────────────────────
@@ -13288,6 +13318,75 @@ function _rgFitMeasureLabel(marker, origin, toLL) {
   wrap.style.transform = `translate(-50%, ${offsetY}px)`;
 }
 
+// ── Route helpers ───────────────────────────────────────────────────────
+// All saved segments belonging to `routeId`, ordered by routeSeq.
+function _rgRouteSegments(routeId) {
+  if (routeId == null) return [];
+  return _rgMeasureSaved
+    .filter(m => m && m.routeId === routeId)
+    .sort((a, b) => a.routeSeq - b.routeSeq);
+}
+
+// The route segment immediately before (dir −1) or after (dir +1) `m`, or
+// null. Neighbours are resolved by routeSeq order, so deleting a middle
+// segment still leaves the survivors correctly linked.
+function _rgRouteNeighbor(m, dir) {
+  if (!m || m.routeId == null) return null;
+  const segs = _rgRouteSegments(m.routeId);
+  const i = segs.indexOf(m);
+  return (i < 0) ? null : (segs[i + dir] || null);
+}
+
+// Recompute and (re)draw the cumulative-distance chip for every route with
+// 2+ segments; remove chips for routes that no longer qualify. A route that
+// drops to a single segment (via per-circle deletion) reverts to a plain
+// standalone measurement. Called after every save, drag and deletion, and
+// on tile recolor — _rgMeasColor() is re-read each time so the chip tracks
+// the purple↔yellow tile-mode swap.
+function _rgUpdateRouteTotals() {
+  if (!_rgMap) return;
+  const groups = new Map();
+  for (const m of _rgMeasureSaved) {
+    if (!m || m.routeId == null) continue;
+    if (!groups.has(m.routeId)) groups.set(m.routeId, []);
+    groups.get(m.routeId).push(m);
+  }
+  // Drop chips for routes that fell below 2 segments / vanished entirely.
+  for (const [rid, marker] of _rgRouteLabels) {
+    const g = groups.get(rid);
+    if (!g || g.length < 2) { marker.remove(); _rgRouteLabels.delete(rid); }
+  }
+  // A route reduced to a lone segment reverts that segment to standalone.
+  for (const g of groups.values()) {
+    if (g.length < 2) { for (const m of g) { m.routeId = null; m.routeSeq = 0; } }
+  }
+  for (const [rid, g] of groups) {
+    if (g.length < 2) continue;
+    g.sort((a, b) => a.routeSeq - b.routeSeq);
+    let total = 0;
+    for (const m of g) total += _haversineNm(m.origin.lat, m.origin.lng, m.toLL.lat, m.toLL.lng);
+    const start  = g[0].origin;
+    const end    = g[g.length - 1].toLL;
+    const direct = _haversineNm(start.lat, start.lng, end.lat, end.lng);
+    const fmt    = n => n >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(1);
+    const col    = _rgMeasColor();
+    const html = `<div style="position:absolute;transform:translate(-50%,-58px);white-space:nowrap;text-align:center">` +
+      `<div class="rg-route-total" style="border-color:${col};box-shadow:0 0 14px ${_rgMeasColorRgba(0.5)}">` +
+      `<span class="rg-route-total-main" style="color:${col}">Σ ${fmt(total)} nm &nbsp;·&nbsp; ${fmt(total * 1.852)} km</span>` +
+      `<span class="rg-route-total-sub">${g.length} legs &nbsp;·&nbsp; ${fmt(direct)} nm direct</span>` +
+      `</div></div>`;
+    const icon = L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] });
+    let marker = _rgRouteLabels.get(rid);
+    if (!marker) {
+      marker = L.marker([end.lat, end.lng], { icon, interactive: false, keyboard: false, zIndexOffset: 600 }).addTo(_rgMap);
+      _rgRouteLabels.set(rid, marker);
+    } else {
+      marker.setLatLng([end.lat, end.lng]);
+      marker.setIcon(icon);
+    }
+  }
+}
+
 // px tolerance for hit-testing drag targets
 const _RG_CENTER_TOL = 20;
 const _RG_EDGE_TOL   = 16;
@@ -13353,11 +13452,27 @@ function _rgApplyDrag(e) {
       lat: e.latlng.lat + (_rgDragMeasSnap.origin.lat - _rgDragMeasSnap.mouseLat),
       lng: e.latlng.lng + (_rgDragMeasSnap.origin.lng - _rgDragMeasSnap.mouseLng),
     };
-    const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
-    const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
-    m.origin = newOrigin;
-    m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
-    _rgRedrawMeasureEntry(idx);
+    if (m.routeId != null) {
+      // Route circle: the origin pin is a waypoint handle. Move only the
+      // origin (the leg pivots around its endpoint) and drag the previous
+      // leg's endpoint along with it so the route stays conjoined.
+      m.origin = newOrigin;
+      _rgRedrawMeasureEntry(idx);
+      const prev = _rgRouteNeighbor(m, -1);
+      if (prev) {
+        prev.toLL = { lat: newOrigin.lat, lng: newOrigin.lng };
+        _rgRedrawMeasureEntry(_rgMeasureSaved.indexOf(prev));
+      }
+      _rgUpdateRouteTotals();
+    } else {
+      // Standalone measurement: translate the whole circle rigidly —
+      // direction and distance are preserved.
+      const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
+      const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
+      m.origin = newOrigin;
+      m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
+      _rgRedrawMeasureEntry(idx);
+    }
 
   } else if (_rgDragMode.startsWith('meas_edge_')) {
     const idx = parseInt(_rgDragMode.slice(10));
@@ -13379,27 +13494,41 @@ function _rgApplyDrag(e) {
       m.toLL = { lat: e.latlng.lat, lng: e.latlng.lng };
     }
     _rgRedrawMeasureEntry(idx);
+    // Route circle: the edge handle is the shared waypoint with the next
+    // leg — drag that leg's origin along so the route stays conjoined.
+    if (m.routeId != null) {
+      const next = _rgRouteNeighbor(m, 1);
+      if (next) {
+        next.origin = { lat: m.toLL.lat, lng: m.toLL.lng };
+        _rgRedrawMeasureEntry(_rgMeasureSaved.indexOf(next));
+      }
+      _rgUpdateRouteTotals();
+    }
   }
 }
 
-// ── Edge auto-pan while dragging a region / aiming the arrival ─────────
+// ── Edge auto-pan while dragging a region / aiming the arrival / measuring ──
 // When a departure / arrival region center is dragged — or the cursor is moved
-// during the ruler phase (departure region locked, arrival not yet drawn) —
-// close to the map viewport edge, pan the map toward that edge so regions can
-// be placed / moved farther apart than the visible area allows. A
-// requestAnimationFrame loop pans a few px per frame (speed ramps with how deep
-// into the edge zone the cursor sits) and re-applies the drag / ruler aim at
-// the cursor's now-shifted geographic position each frame.
+// during the ruler phase (departure region locked, arrival not yet drawn) — or
+// a measurement circle is being drawn — close to the map viewport edge, pan the
+// map toward that edge so regions / measurements can grow farther than the
+// visible area allows. A requestAnimationFrame loop pans a few px per frame
+// (speed ramps with how deep into the edge zone the cursor sits) and re-applies
+// the drag / ruler aim / measurement radius at the cursor's now-shifted
+// geographic position each frame.
 let _rgEdgePanRafId = 0;     // rAF handle (0 = loop not running)
 let _rgEdgePanVec   = null;  // { x, y } px/frame pan velocity
 let _rgEdgePanCP    = null;  // { x, y } cursor position in map-container coords
 let _rgEdgePanUsed  = false; // did the loop pan at least once this interaction?
 
-// Edge-pan is allowed while dragging a region center, or during the ruler
-// phase (aiming the arrival region after the departure is locked).
+// Edge-pan is allowed while dragging a region center, during the ruler phase
+// (aiming the arrival region after the departure is locked), or while a
+// measurement circle is actively being drawn (so the radius can grow past the
+// visible map edge).
 function _rgEdgePanActive() {
   return _rgDragMode === 'dep_center' || _rgDragMode === 'arr_center'
-      || (!_rgDragMode && _rgPhase === 'ruler');
+      || (!_rgDragMode && _rgPhase === 'ruler')
+      || (!_rgDragMode && _rgMeasureActive && _rgMeasureDraw && !!_rgMeasureOrigin);
 }
 
 function _rgEdgePanTick() {
@@ -13410,8 +13539,9 @@ function _rgEdgePanTick() {
   // The cursor hasn't moved, but the map slid under it — re-apply whatever the
   // cursor drives at the geographic point it now hovers.
   const ll = _rgMap.containerPointToLatLng(L.point(_rgEdgePanCP.x, _rgEdgePanCP.y));
-  if (_rgDragMode === 'dep_center' || _rgDragMode === 'arr_center') _rgApplyDrag({ latlng: ll });
-  else if (_rgPhase === 'ruler')                                    _rgUpdateRulerTo(ll);
+  if (_rgDragMode === 'dep_center' || _rgDragMode === 'arr_center')      _rgApplyDrag({ latlng: ll });
+  else if (_rgMeasureActive && _rgMeasureDraw && _rgMeasureOrigin)       _rgUpdateMeasure(ll);
+  else if (_rgPhase === 'ruler')                                        _rgUpdateRulerTo(ll);
   _rgEdgePanRafId = requestAnimationFrame(_rgEdgePanTick);
 }
 
@@ -13528,6 +13658,23 @@ function _rgMapMouseDown(e) {
     L.DomEvent.stopPropagation(e);
     return;
   }
+  // Route chaining — a left-click within _RG_CHAIN_WINDOW_MS of completing a
+  // measurement continues the route: a fresh circle conjoined to the previous
+  // endpoint. Runs BEFORE the handle hit-test below so the just-drawn circle's
+  // edge handle (which sits exactly under the cursor on release) can't
+  // intercept the re-click as a resize.
+  if (_rgMeasureActive && e.originalEvent && e.originalEvent.button === 0
+      && _rgChainAnchor && (Date.now() - _rgChainTs) < _RG_CHAIN_WINDOW_MS) {
+    const anchor = { lat: _rgChainAnchor.lat, lng: _rgChainAnchor.lng };
+    _rgClearMeasureLive();          // discard any partially-started drag
+    _rgMeasureOrigin   = anchor;    // conjoin: new leg starts at the prior endpoint
+    _rgMeasureDraw     = true;
+    _rgMeasureChaining = true;
+    _rgFetchDeclForOrigin();
+    _rgMap.dragging.disable();
+    L.DomEvent.stopPropagation(e);
+    return;
+  }
   // Measurement handle drag takes priority in all phases (handles are persistent)
   if (_rgMeasureSaved.length) {
     const mhit = _rgMeasureHitTest(e);
@@ -13539,8 +13686,22 @@ function _rgMapMouseDown(e) {
       // This is the only per-measurement removal path; the Clear All button
       // (visible whenever 1+ entries exist) is the bulk-remove counterpart.
       if (mhit.startsWith('meas_close_')) {
-        _rgRemoveMeasureEntry(_rgMeasureSaved[idx]);
+        // Route healing — deleting a middle leg bridges the gap so the route
+        // stays one continuous chain: the following leg's origin re-anchors
+        // onto the preceding leg's endpoint, merging the two waypoints that
+        // flanked the deleted leg. Deleting the first / last leg (or a
+        // standalone circle) just removes it — nothing to bridge. Neighbours
+        // are resolved before the splice while the victim is still indexed.
+        const victim   = _rgMeasureSaved[idx];
+        const prevSeg  = _rgRouteNeighbor(victim, -1);
+        const nextSeg  = _rgRouteNeighbor(victim, 1);
+        _rgRemoveMeasureEntry(victim);
         _rgMeasureSaved.splice(idx, 1);
+        if (prevSeg && nextSeg) {
+          nextSeg.origin = { lat: prevSeg.toLL.lat, lng: prevSeg.toLL.lng };
+          _rgRedrawMeasureEntry(_rgMeasureSaved.indexOf(nextSeg));
+        }
+        _rgUpdateRouteTotals(); // recompute the chip (or drop it if the route fell below 2 legs)
         _rgSyncClearBtn();
         L.DomEvent.stopPropagation(e);
         if (e.originalEvent && e.originalEvent.preventDefault) e.originalEvent.preventDefault();
@@ -13583,8 +13744,9 @@ function _rgMapMouseDown(e) {
     // ignored to avoid weird interactions with auto-scroll.
     if (e.originalEvent && e.originalEvent.button !== 0) return;
     _rgClearMeasureLive(); // discard any partially-started drag; saved measurements stay
-    _rgMeasureOrigin = e.latlng;
-    _rgMeasureDraw   = true;
+    _rgMeasureOrigin   = e.latlng;
+    _rgMeasureDraw     = true;
+    _rgMeasureChaining = false; // a fresh draw starts a new (unconjoined) measurement
     _rgFetchDeclForOrigin();
     _rgMap.dragging.disable();
     L.DomEvent.stopPropagation(e);
@@ -13706,6 +13868,9 @@ function _rgMapMouseMoveBody(e) {
   if (_rgMeasureActive) {
     if (_rgMeasureOrigin) {
       _rgUpdateMeasure(e.latlng);
+      // Auto-pan when the draw nears a viewport edge so the circle's radius
+      // can grow past the visible map (same mechanism as the ruler phase).
+      _rgUpdateEdgePan(e.containerPoint);
     } else if (_rgMeasureSaved.length) {
       // Cursor hints for draggable handles when not mid-draw
       const mhit = _rgMeasureHitTest(e);
@@ -13775,10 +13940,15 @@ function _rgEndDrag() {
   // Edge-handle drag: restore handle visibility AND re-render the entry so the
   // label snaps back to the line midpoint (it was riding the endpoint during
   // the drag for better cursor visibility).
-  if (wasMeasEdge && meIdx >= 0 && _rgMeasureSaved[meIdx] && _rgMeasureSaved[meIdx].edgeHandle) {
-    const eh = _rgMeasureSaved[meIdx].edgeHandle;
-    if (eh.setOpacity) eh.setOpacity(1);
+  if (wasMeasEdge && meIdx >= 0 && _rgMeasureSaved[meIdx]) {
+    const m  = _rgMeasureSaved[meIdx];
+    const eh = m.edgeHandle;
+    if (eh && eh.setOpacity) eh.setOpacity(1);
     _rgRedrawMeasureEntry(meIdx);
+    // Re-fit the conjoined next leg's label too — its origin moved with the
+    // shared waypoint during the drag.
+    const next = _rgRouteNeighbor(m, 1);
+    if (next) _rgRedrawMeasureEntry(_rgMeasureSaved.indexOf(next));
   }
   // Center-handle drag: the per-frame redraw kept _rgFitMeasureLabel skipped
   // (line shape doesn't change during translation, so re-fitting every frame
@@ -13788,7 +13958,11 @@ function _rgEndDrag() {
   // once with _rgDragMode now cleared so the fit logic restores the offset.
   if (wasMeasCenter && mcIdx >= 0 && _rgMeasureSaved[mcIdx]) {
     _rgRedrawMeasureEntry(mcIdx);
+    const prev = _rgRouteNeighbor(_rgMeasureSaved[mcIdx], -1);
+    if (prev) _rgRedrawMeasureEntry(_rgMeasureSaved.indexOf(prev));
   }
+  // Refresh the route-total chip once the geometry has settled.
+  if (wasMeas) _rgUpdateRouteTotals();
   // If the map auto-panned while a region center was dragged, the regions may
   // have ended up partly off-screen — re-fit both circles into view.
   if (wasRegionCtr && _rgEdgePanUsed) setTimeout(_rgFitRegions, 60);
@@ -13805,6 +13979,72 @@ function _rgRestoreCursor() {
   if (_rgPhase === 'idle')  { _rgSetCursor('cross'); return; }
   if (_rgPhase === 'ruler') { _rgSetCursor('ruler'); return; }
   _rgSetCursor('');
+}
+
+// Shared completion handler for a measurement draw — invoked from both
+// _rgMapMouseUp and _rgDocMouseUp (the latter covers releasing off-map). A
+// click with no drag produces no line and saves nothing. A real draw is
+// frozen into _rgMeasureSaved; a conjoined (route-chaining) draw joins or
+// starts a route. Either way the chain is re-armed so an immediate re-click
+// extends the route from this new endpoint.
+function _rgCommitMeasureDraw() {
+  _rgMeasureDraw = false;
+  if (_rgMap) _rgMap.dragging.enable();
+  _rgStopEdgePan();       // end any auto-pan started while the circle was drawn
+  _rgEdgePanUsed = false;
+  const chaining = _rgMeasureChaining;
+  _rgMeasureChaining = false;
+  if (_rgMeasureLine && _rgMap && _rgMeasureLastLL && _rgMeasureOrigin) {
+    const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
+    const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
+    const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
+      renderer: _rgGetGeomRenderer(),
+      radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
+    }).addTo(_rgMap);
+    const entry = {
+      line:   _rgMeasureLine,
+      circle: _rgMeasureCircle,
+      label:  _rgMeasureLabel,
+      origin: savedOrigin,
+      toLL:   savedToLL,
+      decl:   _rgMeasureDecl,
+      pin,
+      routeId:  null,
+      routeSeq: 0,
+    };
+    const savedIdx = _rgMeasureSaved.length;
+    _rgMeasureSaved.push(entry);
+    // A conjoined draw joins the previous segment's route. The route's first
+    // segment was drawn as a plain measurement, so it only gains a routeId
+    // retroactively here — when the second segment chains onto it.
+    if (chaining && _rgChainPrevSeg && _rgMeasureSaved.includes(_rgChainPrevSeg)) {
+      const prev = _rgChainPrevSeg;
+      if (prev.routeId == null) {
+        prev.routeId  = _rgRouteIdSeq++;
+        prev.routeSeq = 0;
+        entry.routeId  = prev.routeId;
+        entry.routeSeq = 1;
+      } else {
+        entry.routeId  = prev.routeId;
+        entry.routeSeq = prev.routeSeq + 1;
+      }
+    }
+    _rgDrawMeasureHandles(savedIdx);
+    // Live-draw rendered the label at the endpoint for cursor visibility —
+    // now that the drag is over, re-render to recenter it on the midpoint.
+    _rgRedrawMeasureEntry(savedIdx);
+    _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
+    _rgMeasureLabelWrapEl = null;
+    // Arm the chain so an immediate re-click continues the route from here.
+    _rgChainTs      = Date.now();
+    _rgChainAnchor  = { lat: savedToLL.lat, lng: savedToLL.lng };
+    _rgChainPrevSeg = entry;
+    _rgUpdateRouteTotals();
+    _rgDragJustEnded = true;
+    setTimeout(() => { _rgDragJustEnded = false; }, 300);
+  }
+  _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
+  _rgSyncClearBtn();
 }
 
 function _rgMapMouseUp() {
@@ -13827,40 +14067,7 @@ function _rgMapMouseUp() {
     }
     return;
   }
-  if (_rgMeasureDraw) {
-    _rgMeasureDraw = false;
-    _rgMap.dragging.enable();
-    if (_rgMeasureLine && _rgMeasureLastLL) {
-      const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
-      const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
-      const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
-        renderer: _rgGetGeomRenderer(),
-        radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
-      }).addTo(_rgMap);
-      const savedIdx = _rgMeasureSaved.length;
-      _rgMeasureSaved.push({
-        line:   _rgMeasureLine,
-        circle: _rgMeasureCircle,
-        label:  _rgMeasureLabel,
-        origin: savedOrigin,
-        toLL:   savedToLL,
-        decl:   _rgMeasureDecl,
-        pin,
-      });
-      _rgDrawMeasureHandles(savedIdx);
-      // Live-draw rendered the label at the endpoint for cursor visibility —
-      // now that the drag is over, re-render the saved entry to recenter the
-      // label on the line midpoint.
-      _rgRedrawMeasureEntry(savedIdx);
-      _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
-      _rgMeasureLabelWrapEl = null;
-      _rgDragJustEnded = true;
-      setTimeout(() => { _rgDragJustEnded = false; }, 300);
-    }
-    _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
-    _rgSyncClearBtn();
-    return;
-  }
+  if (_rgMeasureDraw) { _rgCommitMeasureDraw(); return; }
   if (_rgEndDrag()) return;
   if (_rgPhase === 'dep_drag') _rgLockDep();
   else if (_rgPhase === 'arr_drag') _rgLockArr();
@@ -13882,40 +14089,7 @@ function _rgDocMouseUp() {
     }
     return;
   }
-  if (_rgMeasureDraw) {
-    _rgMeasureDraw = false;
-    if (_rgMap) _rgMap.dragging.enable();
-    if (_rgMeasureLine && _rgMap && _rgMeasureLastLL) {
-      const savedOrigin = { lat: _rgMeasureOrigin.lat, lng: _rgMeasureOrigin.lng };
-      const savedToLL   = { lat: _rgMeasureLastLL.lat, lng: _rgMeasureLastLL.lng };
-      const pin = L.circleMarker([savedOrigin.lat, savedOrigin.lng], {
-        renderer: _rgGetGeomRenderer(),
-        radius: 5, weight: 2, color: _rgMeasColor(), fillColor: _rgMeasColor(), fillOpacity: 1, interactive: false,
-      }).addTo(_rgMap);
-      const savedIdx = _rgMeasureSaved.length;
-      _rgMeasureSaved.push({
-        line:   _rgMeasureLine,
-        circle: _rgMeasureCircle,
-        label:  _rgMeasureLabel,
-        origin: savedOrigin,
-        toLL:   savedToLL,
-        decl:   _rgMeasureDecl,
-        pin,
-      });
-      _rgDrawMeasureHandles(savedIdx);
-      // Live-draw rendered the label at the endpoint for cursor visibility —
-      // now that the drag is over, re-render the saved entry to recenter the
-      // label on the line midpoint.
-      _rgRedrawMeasureEntry(savedIdx);
-      _rgMeasureLine = _rgMeasureCircle = _rgMeasureLabel = null;
-      _rgMeasureLabelWrapEl = null;
-      _rgDragJustEnded = true;
-      setTimeout(() => { _rgDragJustEnded = false; }, 300);
-    }
-    _rgMeasureOrigin = null; // always clear — a click with no drag must not leave a stale origin
-    _rgSyncClearBtn();
-    return;
-  }
+  if (_rgMeasureDraw) { _rgCommitMeasureDraw(); return; }
   if (_rgEndDrag()) return;
   if (_rgPhase === 'dep_drag') _rgLockDep();
   else if (_rgPhase === 'arr_drag') _rgLockArr();
@@ -17225,7 +17399,7 @@ function rgSendToFlightPlanner() {
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the line's endpoint) to <em>both resize and rotate</em> the measurement — distance and bearing follow the cursor together. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. The on-map ✕ close handle is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes that circle. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. The on-map ✕ close handle is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map.<br/><br/>
             <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, and <em>cancels the in-progress region selection</em> during region drawing.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
@@ -17315,10 +17489,26 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.63.0</span>
+          <span class="release-date">May 21, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Continuous-path measurement &mdash; chain circles into a route</strong> &mdash; after you finish drawing a measurement circle, release the mouse and immediately click again to start a new circle that begins exactly where the last one ended. Each conjoined leg adds to a continuous route, so you can measure a multi-stop path leg by leg. A brief window after each release distinguishes &ldquo;continue the route&rdquo; from grabbing the resize handle &mdash; pause for a moment and the just-drawn circle&rsquo;s handles work as normal.</li>
+          <li><strong>Route total distance chip</strong> &mdash; once a route has two or more legs, a distinct accent-bordered chip appears at the route&rsquo;s end showing the cumulative distance (<em>&Sigma; total</em>, in both nautical miles and kilometres), the leg count, and the straight-line <em>direct</em> distance from the route&rsquo;s start to its end &mdash; so you can see at a glance how far the path deviates from a direct great-circle line. Each individual leg still shows its own distance and bearing label.</li>
+          <li><strong>Route stays conjoined when you edit it</strong> &mdash; dragging the centre or edge handle of any circle in a route moves the shared waypoint, so adjacent legs follow along and the path never pulls apart. The total chip updates live as you adjust. Standalone (non-route) measurements drag exactly as before.</li>
+          <li><strong>Deleting a route leg heals the gap</strong> &mdash; removing a circle from the middle of a route no longer leaves a break: the following leg re-anchors onto the previous leg's endpoint, so the route stays one continuous chain with one fewer leg. Deleting the first or last leg simply trims that end.</li>
+          <li><strong>Auto-scroll while measuring</strong> &mdash; when you draw a measurement circle and the cursor reaches the edge of the map, the view now auto-scrolls in that direction so the circle's radius can grow well beyond the visible area &mdash; the same edge-pan behaviour used when placing a region. Scrolling stops as soon as you release.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.62.9</span>
-          <span class="release-date">May 20, 2026 &middot; Current</span>
+          <span class="release-date">May 20, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
