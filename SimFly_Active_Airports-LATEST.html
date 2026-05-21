@@ -2875,9 +2875,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-ri:hover { text-decoration:underline; opacity:0.85; }
   .rg-hdr-ri-pending { color:var(--muted); cursor:default; }
   .rg-hdr-ri-sep { color:var(--muted); font-size:1.25rem; padding:0 0.05em; }
-  .rg-hdr-ri-swap { background:none; border:none; color:var(--muted); font-size:1.45rem; padding:0 0.15em; cursor:pointer; line-height:1; transition:color 0.12s,transform 0.18s; }
-  .rg-hdr-ri-swap:hover { color:var(--accent); transform:scale(1.18); }
-  .rg-hdr-ri-swap:active { transform:scale(0.95); }
+  /* Route-chip swap button — uses the standard .dist-owner-swap-btn oval;
+     these overrides only re-center it within the centered header flex row. */
+  .rg-hdr-ri-swap { align-self:center; margin-bottom:0; }
   .rg-hdr-center { display:flex; align-items:center; gap:0.35rem; justify-self:center; }
   .rg-hdr-right { display:flex; align-items:center; gap:0.45rem; justify-self:stretch; flex-shrink:0; }
   .rg-hdr-flex-spacer { flex:1; }
@@ -4024,7 +4024,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.62.4';
+const APP_VERSION = '2.62.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -7480,7 +7480,7 @@ function renderDistMatrix() {
     ? `<span class="dist-corner-same-badge" title="${cornerTitle}">same owner</span>`
     : '';
 
-  let html = `<thead><tr><th class="dist-corner-cell"><div class="dist-corner-inner"><span class="dist-corner-label">DEP&nbsp;&darr;<br/>ARR&nbsp;&rarr;</span></div></th>`;
+  let html = `<thead><tr><th class="dist-corner-cell"><div class="dist-corner-inner"><span class="dist-corner-label">ARR&nbsp;&rarr;<br/>DEP&nbsp;&darr;</span></div></th>`;
   for (let c = 0; c < arrAirports.length; c++) {
     const a        = arrAirports[c];
     const tipHtml_c = _buildTooltipHtml(a.icao, a.rec, false, colSortHint(), resolvedArr.name, 'arr');
@@ -11879,7 +11879,6 @@ function _rgUpdateMeasure(toLL) {
   _rgMeasureLastLL = toLL;
   const nm      = _haversineNm(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
   const trueBrg = _rgTrueBearing(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
-  const distM   = nm * 1852;
   const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
   let mbPart;
   if (_rgMeasureDecl === null) {
@@ -11892,15 +11891,10 @@ function _rgUpdateMeasure(toLL) {
   const origin  = [_rgMeasureOrigin.lat, _rgMeasureOrigin.lng];
   const crossesAM = _rgCrossesAM(_rgMeasureOrigin.lng, toLL.lng);
 
-  if (!_rgMeasureCircle) {
-    _rgMeasureCircle = L.circle(origin, {
-      renderer: _rgGetGeomRenderer(),
-      radius: distM, color: _rgMeasColor(), weight: 2,
-      opacity: 0.65, fillOpacity: 0.04, dashArray: '8 5', interactive: false,
-    }).addTo(_rgMap);
-  } else {
-    _rgMeasureCircle.setRadius(distM);
-  }
+  _rgMeasureCircle = _rgGeoCircle(_rgMeasureCircle, _rgMeasureOrigin.lat, _rgMeasureOrigin.lng, nm, {
+    color: _rgMeasColor(), weight: 2, opacity: 0.65, dashArray: '8 5',
+    fillColor: _rgMeasColor(), fillOpacity: 0.04,
+  });
 
   // Measurement line is already dashed by default. When the segment crosses
   // the antimeridian, switch to a more prominent dash so the cue is visible
@@ -12074,7 +12068,7 @@ function _rgToggleLayer() {
 function _rgRecolorAllMeasurements() {
   const c = _rgMeasColor();
   // Live in-progress drawing (if any)
-  if (_rgMeasureCircle) _rgMeasureCircle.setStyle({ color: c });
+  if (_rgMeasureCircle) _rgMeasureCircle.setStyle({ color: c, fillColor: c });
   if (_rgMeasureLine)   _rgMeasureLine.setStyle({ color: c });
   // The live label includes the color in its inline border style — re-render
   // by replaying _rgUpdateMeasure with the last cursor position. Falls back
@@ -12090,7 +12084,7 @@ function _rgRecolorAllMeasurements() {
     const m = _rgMeasureSaved[i];
     if (!m) continue;
     if (m.line)   m.line.setStyle({ color: c });
-    if (m.circle) m.circle.setStyle({ color: c });
+    if (m.circle) m.circle.setStyle({ color: c, fillColor: c });
     if (m.pin)    m.pin.setStyle({ color: c, fillColor: c });
     _rgRedrawMeasureEntry(i);
   }
@@ -12107,19 +12101,21 @@ function _rgUpdateRangeRing() {
   if (!ac || !ac.range_nm) return;
   const nm = _acGetAdjustedRange() ?? ac.range_nm;
   if (!nm) return;
-  const center = [_rgDepCenter.lat, _rgDepCenter.lng];
+  // Drawn as a true geodesic ring — Leaflet's L.circle distorts badly at the
+  // multi-thousand-nm radii typical of aircraft range, and breaks entirely
+  // once the radius exceeds ~85° of arc (its sample latitudes run off a pole).
+  const rangeLLs = _rgGeodesicCircleLatLngs(_rgDepCenter.lat, _rgDepCenter.lng, nm);
   // Glow halo underneath (stored so it can be removed on next call)
-  _rgRangeGlow = L.circle(center, {
+  _rgRangeGlow = L.polyline(rangeLLs, {
     renderer: _rgGetGeomRenderer(),
-    radius: nm * 1852, color: '#ffd166', weight: 10,
-    opacity: 0.18, fillOpacity: 0, interactive: false,
+    color: '#ffd166', weight: 10,
+    opacity: 0.18, interactive: false,
   }).addTo(_rgMap);
   // Main ring — thicker, more opaque; fully non-interactive (view-only)
-  _rgRangeRing = L.circle(center, {
+  _rgRangeRing = L.polyline(rangeLLs, {
     renderer: _rgGetGeomRenderer(),
-    radius: nm * 1852, color: '#ffd166', weight: 3,
-    opacity: 0.9, fillOpacity: 0, dashArray: '12 6',
-    interactive: false,
+    color: '#ffd166', weight: 3,
+    opacity: 0.9, dashArray: '12 6', interactive: false,
   }).addTo(_rgMap);
   // Border label at east edge — wrapper pattern avoids Leaflet icon container artifacts
   const eastLL = _rgDestLL(_rgDepCenter.lat, _rgDepCenter.lng, 90, nm);
@@ -12895,13 +12891,14 @@ function _rgRefreshSelOverlay() {
 // airports become a clickable link to the airport details page; unowned
 // entries render as a plain span. Hover handlers reuse the existing
 // _rgHdrChipTip so the tooltip matches the header chip exactly.
-function _rgSelRouteChipHtml(icao, name) {
+function _rgSelRouteChipHtml(icao, name, role, depIcao) {
   if (!icao) return '';
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const safeIcao = icao.replace(/[^A-Z0-9]/gi, '');
+  const safeDep  = (depIcao || '').replace(/[^A-Z0-9]/gi, '');
   const col   = _rgCatOf(icao);
   const style = col ? ` style="color:${col}"` : '';
-  const tip   = ` onmouseenter="_rgHdrChipTip('${safeIcao}',event.clientX,event.clientY)"` +
+  const tip   = ` onmouseenter="_rgHdrChipTip('${safeIcao}','${role||''}','${safeDep}',event.clientX,event.clientY)"` +
                 ` onmouseleave="if(window._tipAPI)_tipAPI.hide()"` +
                 ` onmousemove="if(window._tipAPI)_tipAPI.move(event.clientX,event.clientY)"`;
   const wxSlot   = `<span class="wx-badge-slot" data-wx-icao="${safeIcao}"></span>`;
@@ -12914,19 +12911,24 @@ function _rgSelRouteChipHtml(icao, name) {
   return `<span class="rg-sel-link"${style}${tip}>${safeIcao}${nameHtml}${wxSlot}</span>`;
 }
 
-function _rgHdrChipTip(icao, cx, cy) {
+function _rgHdrChipTip(icao, role, depIcao, cx, cy) {
   if (!window._tipAPI) return;
   _tipAPI.showLive(() => {
     const rec = airportDB && airportDB.get(icao.toUpperCase());
     if (!rec) return `<strong>${icao}</strong>`;
     const ownerName = _rgOwnerMap && _rgOwnerMap.get(icao.toUpperCase());
     const owned = !!ownerName;
-    let html = _buildTooltipHtml(icao, rec,
+    // Pass the chip's route role ('dep'/'arr') so the arrival tooltip runs the
+    // aircraft range check — _buildAcSuitabilityHtml needs the departure record
+    // to compute route distance. Without an explicit depRec the range line is
+    // silently dropped. Mirrors the main-screen matrix tooltips.
+    const acRole = (role === 'dep' || role === 'arr') ? role : null;
+    const depRec = (acRole === 'arr' && depIcao) ? (lookupICAO(depIcao) || null) : undefined;
+    // _buildTooltipHtml already appends the weather section from _wxTooltipHtml
+    // when a METAR is cached — do not append a second copy here.
+    return _buildTooltipHtml(icao, rec,
       owned ? `Click to view SimFly details for ${icao}` : false,
-      null, ownerName, null);
-    const wx = _wxTooltipHtml(icao);
-    if (wx) html += `<span class="tip-ac-section"><span class="tip-ac-label">Weather</span>${wx}</span>`;
-    return html;
+      null, ownerName, acRole, depRec, (acRole === 'arr' ? depIcao : undefined));
   }, cx, cy);
 }
 
@@ -12943,11 +12945,11 @@ function _rgUpdateClearDotBtn() {
     return;
   }
 
-  function _riChip(icao) {
+  function _riChip(icao, role, depIcao) {
     if (!icao) return `<span class="rg-hdr-ri rg-hdr-ri-pending">—</span>`;
     const col   = _rgCatOf(icao);
     const style = col ? ` style="color:${col}"` : '';
-    const tip   = ` onmouseenter="_rgHdrChipTip('${icao}',event.clientX,event.clientY)"` +
+    const tip   = ` onmouseenter="_rgHdrChipTip('${icao}','${role||''}','${depIcao||''}',event.clientX,event.clientY)"` +
                   ` onmouseleave="if(window._tipAPI)_tipAPI.hide()"` +
                   ` onmousemove="if(window._tipAPI)_tipAPI.move(event.clientX,event.clientY)"`;
     // Weather slot — _wxApplyBadges() populates from _wxCache. pointer-events:none
@@ -12968,9 +12970,9 @@ function _rgUpdateClearDotBtn() {
   // button. While only the departure is chosen (mid-route-selection), keep the
   // simple → arrow so it doesn't suggest an action that would do nothing.
   const sep = (_rgDotSelDep && _rgDotSelArr)
-    ? `<button class="rg-hdr-ri-swap" onclick="_rgSwapDotSel()" title="Swap departure and arrival">⇄</button>`
+    ? `<button class="dist-owner-swap-btn rg-hdr-ri-swap" onclick="_rgSwapDotSel()" title="Swap departure and arrival" tabindex="-1">⇄</button>`
     : `<span class="rg-hdr-ri-sep">→</span>`;
-  hdr.innerHTML = _riChip(_rgDotSelDep) + sep + _riChip(_rgDotSelArr || null);
+  hdr.innerHTML = _riChip(_rgDotSelDep, 'dep', '') + sep + _riChip(_rgDotSelArr || null, 'arr', _rgDotSelDep);
   // Populate the wx-badge-slot inside each chip from the existing cache.
   // _wxFetchOne and _wxFetch each call this on their own, but the header chips
   // can re-render via dot clicks while a cached METAR is already in hand —
@@ -13015,7 +13017,60 @@ function _rgDestLL(lat, lng, bearingDeg, nm) {
   const θ  = bearingDeg * Math.PI / 180;
   const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(θ));
   const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2));
-  return L.latLng(φ2 * 180 / Math.PI, λ2 * 180 / Math.PI);
+  // Normalize longitude to [-180,180). A great-circle hop over a pole (or any
+  // long arc) can push λ2 well outside that range; an un-normalized value
+  // would place handle markers in the wrong world copy and desync them from
+  // the (normalized) geodesic ring and hit-tests.
+  const lngDeg = ((((λ2 * 180 / Math.PI) % 360) + 540) % 360) - 180;
+  return L.latLng(φ2 * 180 / Math.PI, lngDeg);
+}
+
+// True geodesic circle of radius `nm` around (lat,lng), returned as one or
+// more polyline point-arrays — split wherever consecutive samples cross the
+// ±180° antimeridian so Leaflet never draws a wrap-around segment. Leaflet's
+// own L.circle is a center-latitude ellipse approximation: it diverges from a
+// real constant-distance ring at continental scale and breaks outright once
+// the radius passes ~85° of arc (its top/bottom sample latitudes run off the
+// poles). Measurement rings routinely reach that range, so they are drawn
+// from explicit geodesic samples instead.
+function _rgGeodesicCircleLatLngs(lat, lng, nm, segs) {
+  segs = segs || 180;
+  const pieces = [];
+  let cur = [], prev = null;
+  for (let i = 0; i <= segs; i++) {
+    const p = _rgDestLL(lat, lng, (i / segs) * 360, nm);
+    if (prev !== null && Math.abs(p.lng - prev) > 180) {
+      if (cur.length) pieces.push(cur);
+      cur = [];
+    }
+    cur.push([p.lat, p.lng]);
+    prev = p.lng;
+  }
+  if (cur.length) pieces.push(cur);
+  return pieces;
+}
+
+// Render a geodesic circle as a single layer, returned for the caller to keep
+// (callers MUST reassign: x = _rgGeoCircle(x, ...)). Filled (L.polygon) when
+// the ring is one contiguous piece and a fill is requested via style; an
+// unfilled outline (L.polyline) otherwise — a ring that wraps the antimeridian
+// or encloses a pole splits into 2+ pieces and cannot be a sane filled polygon.
+// The layer is recreated, not morphed, when it crosses that threshold.
+function _rgGeoCircle(layer, lat, lng, nm, style) {
+  const pieces = _rgGeodesicCircleLatLngs(lat, lng, nm);
+  const filled = pieces.length === 1 && style.fillOpacity > 0;
+  const geom   = filled ? pieces[0] : pieces;
+  const isPoly = !!layer && (layer instanceof L.Polygon);
+  if (layer && isPoly === filled) {
+    layer.setLatLngs(geom);
+    layer.setStyle(style);
+    return layer;
+  }
+  if (layer) layer.remove();
+  const created = (filled ? L.polygon : L.polyline)(geom,
+    Object.assign({ renderer: _rgGetGeomRenderer(), interactive: false }, style));
+  created.addTo(_rgMap);
+  return created;
 }
 
 function _rgHandleIcon(color, title) {
@@ -13157,8 +13212,10 @@ function _rgRedrawMeasureEntry(i) {
     const mbStr  = Math.round(magBrg).toString().padStart(3, '0');
     mbPart = (m.decl.approx ? '≈' : '') + mbStr + '° M';
   }
-  m.circle.setLatLng([origin.lat, origin.lng]);
-  m.circle.setRadius(nm * 1852);
+  m.circle = _rgGeoCircle(m.circle, origin.lat, origin.lng, nm, {
+    color: _rgMeasColor(), weight: 2, opacity: 0.65, dashArray: '8 5',
+    fillColor: _rgMeasColor(), fillOpacity: 0.04,
+  });
   m.line.setLatLngs([[origin.lat, origin.lng], [toLL.lat, toLL.lng]]);
   m.pin.setLatLng([origin.lat, origin.lng]);
   const crossesAM = _rgCrossesAM(origin.lng, toLL.lng);
@@ -15699,8 +15756,8 @@ function _rgFinishRouteClick(selRoute, selDep, selArr, selNm) {
 
   _rgSelDep = _rgDotSelDep;
   _rgSelArr = _rgDotSelArr;
-  if (selDep) selDep.innerHTML = _rgSelRouteChipHtml(_rgDotSelDep, depR.name || '');
-  if (selArr) selArr.innerHTML = _rgSelRouteChipHtml(_rgDotSelArr, arrR.name || '');
+  if (selDep) selDep.innerHTML = _rgSelRouteChipHtml(_rgDotSelDep, depR.name || '', 'dep', '');
+  if (selArr) selArr.innerHTML = _rgSelRouteChipHtml(_rgDotSelArr, arrR.name || '', 'arr', _rgDotSelDep);
   if (selNm)  selNm.textContent  = nm + ' nm';
   if (selRoute) selRoute.classList.add('visible');
   if (typeof _wxApplyBadges === 'function') _wxApplyBadges();
@@ -16854,8 +16911,8 @@ function _rgRouteFromDots(depIcao, arrIcao) {
   _rgDrawRouteHL(depIcao, arrIcao, nm);
   _rgSelDep = depIcao;
   _rgSelArr = arrIcao;
-  document.getElementById('rgSelDep').innerHTML = _rgSelRouteChipHtml(depIcao, depEntry.rec.name || '');
-  document.getElementById('rgSelArr').innerHTML = _rgSelRouteChipHtml(arrIcao, arrEntry.rec.name || '');
+  document.getElementById('rgSelDep').innerHTML = _rgSelRouteChipHtml(depIcao, depEntry.rec.name || '', 'dep', '');
+  document.getElementById('rgSelArr').innerHTML = _rgSelRouteChipHtml(arrIcao, arrEntry.rec.name || '', 'arr', depIcao);
   document.getElementById('rgSelNm').textContent = nm + ' nm';
   document.getElementById('rgSelRoute').classList.add('visible');
   if (typeof _wxApplyBadges === 'function') _wxApplyBadges();
@@ -16971,9 +17028,9 @@ function _rgSelectCell(td, depIcao, arrIcao, nm) {
   const arrRec = _rgArrAirports.find(a => a.icao === arrIcao);
 
   document.getElementById('rgSelDep').innerHTML =
-    _rgSelRouteChipHtml(depIcao, (depRec && depRec.rec) ? depRec.rec.name : '');
+    _rgSelRouteChipHtml(depIcao, (depRec && depRec.rec) ? depRec.rec.name : '', 'dep', '');
   document.getElementById('rgSelArr').innerHTML =
-    _rgSelRouteChipHtml(arrIcao, (arrRec && arrRec.rec) ? arrRec.rec.name : '');
+    _rgSelRouteChipHtml(arrIcao, (arrRec && arrRec.rec) ? arrRec.rec.name : '', 'arr', depIcao);
   document.getElementById('rgSelNm').textContent = nm + ' nm';
   document.getElementById('rgSelRoute').classList.add('visible');
   if (typeof _wxApplyBadges === 'function') _wxApplyBadges();
@@ -17166,7 +17223,7 @@ function rgSendToFlightPlanner() {
             <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+California</em> to also include California airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, region, continent, and pinned filters and replaces them with the new result.<br/><br/>
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
-            <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
+            <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) to translate the whole measurement — direction and distance are preserved; grab the <strong>edge handle</strong> (the resize grip at the line's endpoint) to <em>both resize and rotate</em> the measurement — distance and bearing follow the cursor together. Each measurement also has a <strong>✕ close handle</strong> at the top of the ring (12 o'clock, bearing 0°) — clicking it removes <em>that specific measurement</em> without disturbing any others. Cursor changes to a grab hand over the center, a resize arrow over the edge handle, and a pointer over the close handle. The on-map ✕ close handle is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map.<br/><br/>
             <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, and <em>cancels the in-progress region selection</em> during region drawing.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
@@ -17257,10 +17314,61 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.62.8</span>
+          <span class="release-date">May 20, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft range ring now drawn as a true geodesic circle</strong> &mdash; the dashed gold range ring on the region map used Leaflet&rsquo;s built-in circle, which distorts at long range and breaks entirely for high-range aircraft (a 5,000+ nm ring runs off a pole). It now uses the same real great-circle drawing as the measurement ring, so it is accurate at any range.</li>
+          <li><strong>Measurement range ring is shaded again when it does not span a pole</strong> &mdash; the v2.62.7 ring fix dropped the ring&rsquo;s faint fill tint. The fill is back: the ring is a filled disc whenever it is an ordinary circle, and automatically switches to an unfilled outline only when it is large enough to wrap a pole or the antimeridian (where a filled shape can&rsquo;t be drawn sensibly).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.62.7</span>
+          <span class="release-date">May 20, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Measurement range ring now drawn as a true geodesic circle</strong> &mdash; on long measurements the dashed range ring drifted away from the cursor, and the close &#x2715; and resize handles appeared detached from it. The ring was drawn with Leaflet&rsquo;s built-in circle, which is an approximation that distorts badly at continental distances and breaks entirely once the ring is large enough to reach over a pole. It is now built from real great-circle points, so the ring always passes exactly through the line endpoint, the resize handle, and the close &#x2715; handle &mdash; at any distance.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.62.6</span>
+          <span class="release-date">May 20, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance matrix corner reordered to ARR / DEP</strong> &mdash; the top-left corner cell of the main distance matrix now shows <strong>ARR&nbsp;&rarr;</strong> on top and <strong>DEP&nbsp;&darr;</strong> below, swapping the previous order.</li>
+          <li><strong>Region-map swap button now uses the standard orange pill</strong> &mdash; the &#x21C4; swap control between the route ICAO chips on the region map was a plain text glyph. It now uses the same orange-oval pill button as the Departure / Arrival owner swap on the main screen, so the swap control looks consistent everywhere.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.62.5</span>
+          <span class="release-date">May 20, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Duplicate weather block in region-map route tooltips fixed</strong> &mdash; hovering the departure or arrival airport chip on the region map sometimes showed the decoded METAR / weather section twice. The chip tooltip was appending its own weather block on top of the one the shared tooltip builder already includes; the redundant copy has been removed so weather now appears once.</li>
+          <li><strong>Aircraft range now evaluated in region-map route tooltips</strong> &mdash; with an aircraft selected, hovering the arrival airport chip on the region map now shows the in-range / out-of-range check against the aircraft&rsquo;s range, just like the main-screen matrix tooltips. Previously the chip tooltips did not know which endpoint was the departure, so the arrival&rsquo;s range line was silently dropped. Each chip&rsquo;s tooltip now shows the suitability verdict for its own role &mdash; takeoff for the departure, landing plus range for the arrival.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.62.4</span>
-          <span class="release-date">May 19, 2026 &middot; Current</span>
+          <span class="release-date">May 19, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
