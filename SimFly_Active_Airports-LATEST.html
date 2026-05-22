@@ -4040,7 +4040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.64.2';
+const APP_VERSION = '2.64.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6548,8 +6548,18 @@ async function fileOnSimbrief() {
   const arr = document.getElementById('distArr').value.trim();
   if (!dep || !arr) return;
   const { fltnum, newPilots } = _simbriefCompute(dep, arr);
+  // SimBrief expects ICAO/Navigraph codes. SimFly stores short local codes for
+  // airports without a 4-letter ICAO (e.g. 1G4 — SimBrief wants K1G4). lookupICAO
+  // already bridges the US/Canada/Australia prefix conventions; resolve dep/arr
+  // through it for the URL only. Skip OurAirports synthetic idents (e.g. GB-0464
+  // from the DB_LOOKUP fallback) — not codes SimBrief recognises — by keeping
+  // the raw value when the resolved code isn't a clean 3–4 char identifier.
+  const _sbCode = raw => {
+    const rec = (typeof lookupICAO === 'function') ? lookupICAO(raw) : null;
+    return (rec && rec.icao && /^[A-Z0-9]{3,4}$/.test(rec.icao)) ? rec.icao : raw;
+  };
   const openSB = () => {
-    let url = `https://www.simbrief.com/system/dispatch.php?orig=${encodeURIComponent(dep)}&dest=${encodeURIComponent(arr)}`;
+    let url = `https://www.simbrief.com/system/dispatch.php?orig=${encodeURIComponent(_sbCode(dep))}&dest=${encodeURIComponent(_sbCode(arr))}`;
     if (_acSelectedCode) url += `&type=${encodeURIComponent(_acSelectedCode)}`;
     if (fltnum) url += `&fltnum=${encodeURIComponent(fltnum)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -17592,8 +17602,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v2.64.3</span>
+          <span class="release-date">May 22, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>File on SimBrief now resolves short airport codes</strong> &mdash; airports that SimFly identifies with a short local code (e.g. <code>1G4</code>) were passed to SimBrief verbatim, but SimBrief expects the ICAO form (<code>K1G4</code>) and couldn&rsquo;t find them. The dispatch URL now resolves the departure and arrival codes through the same OurAirports lookup the rest of the app already uses, so the US (<code>K</code>), Canada (<code>CY</code>/<code>C</code>) and Australia (<code>Y</code>) prefix conventions are handled automatically &mdash; SimBrief receives a code it recognises. Codes with no clean ICAO equivalent are left untouched.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v2.64.2</span>
-          <span class="release-date">May 21, 2026 &middot; Current</span>
+          <span class="release-date">May 21, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>

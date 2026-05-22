@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.64.2**
+**Current version: v2.64.3**
 
 ---
 
@@ -154,7 +154,7 @@ An interactive map renders all departure and arrival airports with colour-coded 
 The departure and arrival airports auto-fetch a METAR the moment you set or change either ICAO, and again whenever you return to the tab if their cached data is older than 30 minutes — the route endpoints are always current without you doing anything. Click **⛅ Get Weather** to additionally fetch live METARs for every other airport currently in view in one batch. Flight category dots (VFR / MVFR / IFR / LIFR) appear on every matrix header and inline on the departure/arrival name lines. Hovering any dot shows a decoded weather breakdown: conditions, wind, visibility, ceiling, altimeter, and raw METAR. **Hovering the big departure or arrival ICAO / name text** on the main screen also includes the full decoded weather section in the tooltip — flight category pill, raw METAR, wind, visibility, sky, temperature / dewpoint, altimeter, observed time — alongside the existing airport details (owner, runways, etc.). If you hover before the METAR arrives, the tooltip refreshes itself in place the moment the data lands. Data is cached for 30 minutes and invalidates automatically when you change owners.
 
 ### File on SimBrief
-Once departure and arrival ICAOs are set, the **File on SimBrief →** button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.
+Once departure and arrival ICAOs are set, the **File on SimBrief →** button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click. Airports that SimFly identifies with a short local code (e.g. `1G4`) are automatically converted to the ICAO form SimBrief expects (`K1G4`), so the dispatch page resolves them correctly.
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
