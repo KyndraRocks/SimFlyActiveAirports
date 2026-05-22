@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.64.0**
+**Current version: v2.64.2**
 
 ---
 
@@ -99,7 +99,7 @@ The map includes a **📐 Measurement** ruler — click **📐 Measurement** in 
 
 **Continuous-path measurement routes** — to measure a multi-stop path, draw a measurement circle, then release the mouse and immediately click again: the next circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route — pause for a moment before clicking and the just-drawn circle behaves normally, with its handles available for resizing. Once a route has two or more legs, a distinct accent-bordered **route total chip** appears at the route's end showing the cumulative distance, the leg count, and the straight-line **direct** distance from start to end — all in both **nautical miles and kilometres** — so you can see at a glance how far the path deviates from a direct great-circle line. Each individual leg still shows its own distance and bearing label. Dragging the centre or edge handle of any circle in a route moves the shared waypoint, so the adjacent legs follow and the path stays conjoined; deleting a circle from the **middle** of a route bridges the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain. And when a measurement draw reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow well beyond the visible area — the same edge-pan used when placing a region.
 
-**Right-mouse drag = pan the map** — throughout the map, in every phase and mode, right-mouse drag pans it. Left-click is owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag), so right-mouse is the consistent navigation gesture that never interferes. A pure right-click without dragging preserves its original meaning: over an airport dot in explore / results, it opens the Quick-Rate popover; over the map during region drawing, it cancels the in-progress selection.
+**Right-mouse drag = pan the map** — throughout the map, in every phase and mode, right-mouse drag pans it. Left-click is owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag), so right-mouse is the consistent navigation gesture that never interferes. A pure right-click without dragging preserves its original meaning: over an airport dot in explore / results, it opens the Quick-Rate popover; over the map during region drawing, it cancels the in-progress selection; and on an empty area of the map while measuring, it exits measurement mode.
 
 **Crosses antimeridian cue** — when a route, measurement, or dep→arr region distance crosses ±180° longitude (e.g. New Zealand to Hawaii), Leaflet draws the visual line the long way across the map even though the displayed distance is the short-way real-world figure. In that case the on-map distance chip shows a second row reading **Crosses antimeridian** (amber pill with a dark navy background so it's legible on both street and satellite tiles), and the line itself switches to a dashed style so the apparent mismatch is explained at a glance.
 

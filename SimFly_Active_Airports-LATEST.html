@@ -2946,11 +2946,18 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-matrix th.rg-col-hdr:not(.rg-corner) .rg-sort-dot.active { color:#ff6a00; }
   .rg-matrix th.rg-col-hdr:not(.rg-corner), .rg-matrix th.rg-row-hdr { padding-right:1.6rem !important; }
   #rgMapContainer { flex:1 1 0; min-height:260px; position:relative; }
-  #rgMapContainer.rg-cross  .leaflet-container, #rgMapContainer.rg-cross  { cursor:crosshair !important; }
-  #rgMapContainer.rg-grab   .leaflet-container, #rgMapContainer.rg-grab   { cursor:grabbing  !important; }
-  #rgMapContainer.rg-ruler  .leaflet-container, #rgMapContainer.rg-ruler  { cursor:crosshair !important; }
-  #rgMapContainer.rg-resize .leaflet-container, #rgMapContainer.rg-resize { cursor:ew-resize !important; }
-  #rgMapContainer.rg-pointer .leaflet-container, #rgMapContainer.rg-pointer { cursor:pointer !important; }
+  /* rg-* cursor classes drive every map cursor. The trailing .leaflet-interactive
+     selector is essential: Leaflet stamps that class on the airport-dot canvas
+     while a dot is hovered (cursor:pointer), and since the handle / close-X
+     markers are pointer-events:none the cursor falls through to that canvas —
+     so without forcing it here the handle cursor flickers depending on whether
+     a dot happens to sit underneath. Forcing it keeps every handle / close-X /
+     move cursor consistent regardless of dots beneath. */
+  #rgMapContainer.rg-cross,   #rgMapContainer.rg-cross   .leaflet-interactive { cursor:crosshair !important; }
+  #rgMapContainer.rg-grab,    #rgMapContainer.rg-grab    .leaflet-interactive { cursor:grabbing  !important; }
+  #rgMapContainer.rg-ruler,   #rgMapContainer.rg-ruler   .leaflet-interactive { cursor:crosshair !important; }
+  #rgMapContainer.rg-resize,  #rgMapContainer.rg-resize  .leaflet-interactive { cursor:ew-resize !important; }
+  #rgMapContainer.rg-pointer, #rgMapContainer.rg-pointer .leaflet-interactive { cursor:pointer  !important; }
   .rg-resize-handle { width:20px; height:20px; border-radius:50%; border:2.5px solid; background:rgba(0,8,18,0.78); box-sizing:border-box; box-shadow:0 0 7px 2px rgba(0,0,0,0.55); }
   /* Close-measurement handle — sits on the circumference opposite the resize handle. Click removes that specific measurement. */
   /* Route info label (cell-selection line midpoint) */
@@ -4033,7 +4040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.64.0';
+const APP_VERSION = '2.64.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11725,6 +11732,9 @@ let _rgRightPanLast      = null;
 let _rgRightPanStart     = null;
 let _rgRightPanMoved     = false;
 let _rgRightPanJustEnded = false;
+// Date.now() of the last Quick-Rate popover open (a dot right-click / long-press).
+// _rgMapContextMenu reads it to tell a dot right-click from an empty-map one.
+let _rgDotCtxTs = 0;
 let _rgResizeDrag    = null;  // active col/row resize drag state   // null | 'dep_center' | 'arr_center' | 'dep_edge' | 'arr_edge'
 let _rgDepHandle     = null;  // L.marker — visual edge resize handle (dep)
 let _rgArrHandle     = null;  // L.marker — visual edge resize handle (arr)
@@ -12864,6 +12874,7 @@ function _rgApplySceneryState() {
 let _rgRatePopoverIcao = null;
 
 function _rgShowRatePopover(latlng, icao) {
+  _rgDotCtxTs = Date.now(); // stamp so _rgMapContextMenu can exclude dot right-clicks
   _rgCloseRatePopover();
   if (!_rgMap || !icao) return;
   const mapEl = _rgMap.getContainer();
@@ -13711,6 +13722,13 @@ function _rgMapContextMenu(e) {
   if (e && e.originalEvent) e.originalEvent.preventDefault();
   if (e) L.DomEvent.stopPropagation(e);
   if (_rgRightPanJustEnded) return;
+  // Measurement mode: a pure right-click on empty map cancels measurement mode.
+  // A right-click on an airport dot is excluded — that opens the Quick-Rate
+  // popover, which stamps _rgDotCtxTs microseconds before this handler runs.
+  if (_rgMeasureActive && (Date.now() - _rgDotCtxTs) > 60) {
+    _rgToggleMeasure();
+    return;
+  }
   if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
       _rgPhase === 'ruler' || _rgPhase === 'arr_drag') {
     rgExploreReturn();
@@ -13951,12 +13969,13 @@ function _rgMapMouseMoveBody(e) {
       _rgUpdateEdgePan(e.containerPoint);
     } else {
       // Crosshair everywhere in measurement mode, except a grab cursor over a
-      // measurement's move handle (origin pin) and a resize cursor over its
-      // edge handle. The close ✕ and empty map keep the crosshair.
+      // measurement's move handle (origin pin), a resize cursor over its edge
+      // handle, and a pointer over its close ✕.
       const mhit = _rgMeasureSaved.length ? _rgMeasureHitTest(e) : null;
       _rgSetCursor(
-        (mhit && mhit.indexOf('meas_center') === 0) ? 'grab'   :
-        (mhit && mhit.indexOf('meas_edge')   === 0) ? 'resize' :
+        (mhit && mhit.indexOf('meas_center') === 0) ? 'grab'    :
+        (mhit && mhit.indexOf('meas_edge')   === 0) ? 'resize'  :
+        (mhit && mhit.indexOf('meas_close')  === 0) ? 'pointer' :
         'cross');
     }
     return; // always return early — prevent phase handlers from overriding the crosshair cursor
@@ -17481,8 +17500,8 @@ function rgSendToFlightPlanner() {
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle and a resize arrow over an edge handle. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map.<br/><br/>
-            <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, and <em>cancels the in-progress region selection</em> during region drawing.<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle, a resize arrow over an edge handle, and a pointer over the close ✕ badge. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map. A plain <strong>right-click on an empty part of the map</strong> also exits measurement mode (right-click drag still pans; right-clicking a dot still opens its Quick-Rate popover).<br/><br/>
+            <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, <em>cancels the in-progress region selection</em> during region drawing, and <em>exits measurement mode</em> when made on an empty area of the map while measuring.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
         </div>
@@ -17571,10 +17590,34 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.64.2</span>
+          <span class="release-date">May 21, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Consistent cursor over measurement handles</strong> &mdash; hovering a measurement&rsquo;s resize handle, move handle or close&nbsp;&times; now reliably shows the matching cursor (resize arrows, move hand, pointer). Previously the cursor could flicker to a plain pointer whenever an airport dot happened to sit beneath the handle &mdash; the dot layer&rsquo;s hover cursor was winning. The handle cursors now take priority everywhere.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.64.1</span>
+          <span class="release-date">May 21, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Right-click to exit measurement mode</strong> &mdash; while measurement mode is active, a plain right-click on an empty area of the map now turns it off &mdash; a quick way out without reaching for the toolbar button. Right-click <em>drag</em> still pans the map, and right-clicking an airport dot still opens its Quick-Rate popover, so neither is affected.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.64.0</span>
-          <span class="release-date">May 21, 2026 &middot; Current</span>
+          <span class="release-date">May 21, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
