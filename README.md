@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.70.1**
+**Current version: v2.71.0**
 
 ---
 
@@ -193,7 +193,7 @@ Click **🔔 Alerts** in the map header to open the configuration modal. Five in
 - **↘ Descent Started** — one-shot alarm that fires when sustained descent begins from cruise. Same adaptive approach as Cruise.
 - **▼ Altitude Minimum** — fires when MSL altitude drops below a threshold you set. Accepts both **plain feet** (`10000`, `10,000`) and **flight levels** (`FL350`, `FL 200`). The hint next to the input echoes the parsed value as you type.
 
-Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell; ▶ preview without arming), and a **⋮⋮ drag handle**. **Drag cards up/down to reorder them** — list order is *priority order*, so the highest-priority tripped alarm's sound plays. Hovering any alarm icon or title shows a plain-English description of what it does and when it fires.
+Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell; ▶ preview without arming), **sound duration** (*Indefinite (until dismissed)* — the default — or *Specific time…* with a configurable number of seconds; your seconds value is remembered as the default for the next alarm you switch to seconds mode), and a **⋮⋮ drag handle**. **Drag cards up/down to reorder them** — list order is *priority order*, so the highest-priority tripped alarm's sound plays. Hovering any alarm icon or title shows a plain-English description of what it does and when it fires. **Keyboard shortcut:** on the geofence and waypoint quick-add modals, press **Enter** to commit the alarm without reaching for the Add Alarm button.
 
 **When an alarm trips** a full-screen overlay covers the map with a pulsing red **ALARM** header listing every alarm currently tripped. The sound loops continuously until you click **DISMISS ALL**. The browser tab title also flashes *⚠ ALARM — SimFly* as a cross-window cue. **Only one sound ever plays at a time** — the highest-priority tripped alarm wins, so additional alarms that pile on just get added to the overlay list. If you dismiss alarms one at a time via the ✕ on each row, the audio swaps to the next-highest still-tripped alarm seamlessly.
 

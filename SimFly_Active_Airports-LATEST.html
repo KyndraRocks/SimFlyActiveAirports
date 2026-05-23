@@ -4524,7 +4524,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.70.1';
+const APP_VERSION = '2.71.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9667,9 +9667,41 @@ const _afkETA = (() => {
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
-const _AFK_LS_KEY = 'simfly_aa_afk_alarms';
-const _AFK_LS_DP  = 'simfly_aa_afk_dp_collapsed';
-let _afkAlarmIdSeq = 1;
+const _AFK_LS_KEY     = 'simfly_aa_afk_alarms';
+const _AFK_LS_DP      = 'simfly_aa_afk_dp_collapsed';
+const _AFK_LS_DUR_SEC = 'simfly_aa_afk_alarm_duration_sec'; // user's preferred seconds value
+let _afkAlarmIdSeq    = 1;
+
+// Get the user's preferred duration-in-seconds value. Returns 10 if they
+// haven't picked one yet. NOTE: this is just the SECONDS DEFAULT — new
+// alarms still default to mode='indefinite'. Once the user switches an
+// alarm to mode='seconds' and changes the value, this preference is
+// remembered for the next time they use seconds mode.
+function _afkGetUserDefaultDurationSec() {
+  try {
+    const v = parseInt(localStorage.getItem(_AFK_LS_DUR_SEC), 10);
+    return isFinite(v) && v > 0 ? v : 10;
+  } catch (_) { return 10; }
+}
+function _afkSetUserDefaultDurationSec(v) {
+  try { localStorage.setItem(_AFK_LS_DUR_SEC, String(v)); } catch (_) {}
+}
+
+// Per-alarm auto-dismiss timers when mode='seconds'. Stored by alarm id.
+const _afkAlarmTimers = {};
+function _afkClearAlarmTimer(id) {
+  if (_afkAlarmTimers[id]) { clearTimeout(_afkAlarmTimers[id]); delete _afkAlarmTimers[id]; }
+}
+function _afkScheduleAutoDismiss(alarm) {
+  if (!alarm || (alarm.params && alarm.params.durationMode) !== 'seconds') return;
+  const sec = parseInt(alarm.params.durationSec, 10);
+  if (!isFinite(sec) || sec <= 0) return;
+  _afkClearAlarmTimer(alarm.id);
+  _afkAlarmTimers[alarm.id] = setTimeout(() => {
+    delete _afkAlarmTimers[alarm.id];
+    if (typeof _afkDismissOne === 'function') _afkDismissOne(alarm.id);
+  }, sec * 1000);
+}
 
 const _afkAlarms = (() => {
   let alarms = [];
@@ -10008,7 +10040,7 @@ function _afkTakeoffTrack(ac) {
 }
 
 // ---------------------- TRIP / DISMISS LIFECYCLE --------------------------
-function _afkOnTripped(_newTrips) {
+function _afkOnTripped(newTrips) {
   // Play sound of the HIGHEST-PRIORITY tripped alarm (top of the list).
   // The user can re-order alarms by dragging cards up/down — list order
   // drives sound priority. Latest trips at lower priority just queue silently
@@ -10019,6 +10051,11 @@ function _afkOnTripped(_newTrips) {
     if (_afkAudio.currentId() !== (highest.sound || 'digital-clock')) {
       _afkAudio.play(highest.sound || 'digital-clock');
     }
+  }
+  // Schedule auto-dismiss timers for any newly-tripped alarms with a
+  // duration cap. Indefinite alarms get no timer (current behaviour).
+  if (newTrips && newTrips.length) {
+    newTrips.forEach(a => _afkScheduleAutoDismiss(a));
   }
   _afkShowTripOverlay();
   _afkStartTabFlash();
@@ -10034,6 +10071,7 @@ function _afkOnDismiss(alarm) {
 function _afkDismissOne(id) {
   const a = _afkAlarms.get(id);
   if (!a) return;
+  _afkClearAlarmTimer(id);
   _afkOnDismiss(a);
   // If others remain tripped, swap audio to the next-highest-priority
   // (top-of-list) still-tripped alarm.
@@ -10050,6 +10088,7 @@ function _afkDismissOne(id) {
 }
 
 function _afkDismissAll() {
+  Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
   _afkAlarms.dismissAll();
   _afkAudio.stop();
   _afkHideTripOverlay();
@@ -10059,6 +10098,7 @@ function _afkDismissAll() {
 }
 
 function _afkDisableAll() {
+  Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
   _afkAlarms.disableAll();
   _afkAudio.stop();
   _afkHideTripOverlay();
@@ -10073,6 +10113,7 @@ function _afkDisableAll() {
 
 function _afkDeleteAll() {
   if (_afkAlarms.count() === 0) return;
+  Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
   _afkAlarms.list().forEach(a => _afkAlarms.remove(a.id));
   _afkAudio.stop();
   _afkHideTripOverlay();
@@ -10342,6 +10383,25 @@ function _afkRenderEditor(a) {
       '</select>' +
       '<button class="afk-icon-btn" onclick="_afkPreviewSelectedSound(\'' + soundSelectId + '\')" title="Preview sound">▶</button>' +
     '</div>';
+  // Duration row — indefinite (default, sounds until dismissed) or auto-stop
+  // after N seconds. The seconds value the user types gets saved as their
+  // preferred default for the next time they use seconds mode (but the mode
+  // itself still defaults to indefinite on new alarms).
+  const durMode = (a.params && a.params.durationMode) || 'indefinite';
+  const durSec  = (a.params && a.params.durationSec)  || _afkGetUserDefaultDurationSec();
+  const durSecInput = durMode === 'seconds'
+    ? '<input type="number" class="afk-input" style="width:70px;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" title="Auto-stop the alarm sound after this many seconds. Your value is saved as the default for new alarms.">' +
+      '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">seconds</span>'
+    : '';
+  const durationRow =
+    '<div class="afk-edit-row">' +
+      '<span class="afk-edit-label">Sound for</span>' +
+      '<select class="afk-select" onchange="_afkSetDurationMode(' + a.id + ', this.value)">' +
+        '<option value="indefinite"' + (durMode === 'indefinite' ? ' selected' : '') + '>Indefinite (until dismissed)</option>' +
+        '<option value="seconds"'    + (durMode === 'seconds'    ? ' selected' : '') + '>Specific time…</option>' +
+      '</select>' +
+      durSecInput +
+    '</div>';
   let body = '';
   if (a.type === 'geofence') {
     const p = a.params;
@@ -10386,10 +10446,11 @@ function _afkRenderEditor(a) {
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
       '</div>';
   }
-  return '<div class="afk-card-editor">' + body + soundRow + '</div>';
+  return '<div class="afk-card-editor">' + body + soundRow + durationRow + '</div>';
 }
 
 function _afkToggleAlarm(id, on) {
+  if (!on) _afkClearAlarmTimer(id);
   _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -10397,6 +10458,7 @@ function _afkToggleAlarm(id, on) {
   _afkRenderWaypointVisuals();
 }
 function _afkRemoveAlarm(id) {
+  _afkClearAlarmTimer(id);
   _afkAlarms.remove(id);
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -10468,6 +10530,30 @@ function _afkSetAltMin(id, v) {
   }
 }
 
+function _afkSetDurationMode(id, mode) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.durationMode = (mode === 'seconds') ? 'seconds' : 'indefinite';
+  // When switching INTO seconds mode, seed the value from the user's
+  // saved preferred default (or 10) if the alarm doesn't already have one.
+  if (a.params.durationMode === 'seconds' && (!a.params.durationSec || a.params.durationSec < 1)) {
+    a.params.durationSec = _afkGetUserDefaultDurationSec();
+  }
+  _afkAlarms.update(id, { params: a.params });
+  // If we just switched away from seconds while a timer was pending, cancel it.
+  if (a.params.durationMode !== 'seconds') _afkClearAlarmTimer(id);
+  _afkRenderAlarmList(); // re-render to show/hide the seconds input
+}
+
+function _afkSetDurationSec(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const sec = Math.max(1, parseInt(v, 10) || 0);
+  a.params.durationSec = sec;
+  _afkAlarms.update(id, { params: a.params });
+  // Save as the user's preferred default for the next time they use seconds
+  // mode on a NEW alarm. New alarms still default to indefinite mode.
+  _afkSetUserDefaultDurationSec(sec);
+}
+
 // ---------------------- ADD ALARM (type-specific) -------------------------
 function _afkAddAlarm(type) {
   _afkAudio.unlock();
@@ -10480,6 +10566,10 @@ function _afkAddAlarm(type) {
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  // Duration default — always indefinite for new alarms (the user's saved
+  // seconds preference is only applied when they explicitly switch the
+  // mode to 'seconds' on a card).
+  base.params.durationMode = 'indefinite';
   _afkAlarms.add(base);
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -10672,7 +10762,7 @@ function _afkWpAlarmModalSave() {
   _afkAlarms.add({
     type: 'waypoint',
     sound,
-    params: { scope: 'specific', fixIdents: [ident] },
+    params: { scope: 'specific', fixIdents: [ident], durationMode: 'indefinite' },
     state: {},
   });
   _afkWpAlarmPending = null;
@@ -10691,7 +10781,7 @@ function _afkGeofenceModalSave() {
   _afkAlarms.add({
     type: 'geofence',
     sound,
-    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label },
+    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label, durationMode: 'indefinite' },
     state: { wasInside: null },
   });
   // Remove preview layers; the persistent visual will re-render below
@@ -10949,6 +11039,23 @@ function _afkToggleDataPanel() {
   try { localStorage.setItem(_AFK_LS_DP, collapsed ? '1' : '0'); } catch (_) {}
 }
 
+// Wire the Enter key to a modal's primary action. Only fires while the modal
+// has the .open class. Skips if focus is on a BUTTON (browsers handle Enter
+// natively on buttons) so the user can Tab to Cancel and press Enter to cancel.
+function _afkBindModalEnter(modalId, submitFn) {
+  const m = document.getElementById(modalId);
+  if (!m || m._afkEnterBound) return;
+  m._afkEnterBound = true;
+  m.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (!m.classList.contains('open')) return;
+    if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
+    if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') return;
+    e.preventDefault();
+    try { submitFn(); } catch (_) {}
+  });
+}
+
 function _afkInit() {
   // Restore data panel collapsed state
   try {
@@ -10959,6 +11066,11 @@ function _afkInit() {
       if (btn) btn.textContent = '⏶';
     }
   } catch (_) {}
+  // Enter key on the per-geofence / per-waypoint modals = primary action.
+  // The main Alerts config modal is a list manager (no single primary action)
+  // so it's intentionally not bound here.
+  _afkBindModalEnter('afkGeofenceModal', _afkGeofenceModalSave);
+  _afkBindModalEnter('afkWpAlarmModal',  _afkWpAlarmModalSave);
   // Render persistent visuals once the map is up
   _afkUpdateBadge();
   setTimeout(() => {
@@ -20632,6 +20744,8 @@ function rgSendToFlightPlanner() {
               <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a threshold you set. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
+            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference.<br/><br/>
+            <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the left of any alarm card and drag it up or down to re-rank. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
             <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
@@ -20693,10 +20807,24 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.71.0</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Per-alarm sound duration &mdash; indefinite or auto-stop after N seconds.</strong> Every alarm card now has a new <strong>Sound for</strong> row: choose <em>Indefinite (until dismissed)</em> (the default for new alarms, preserves current behaviour) or <em>Specific time…</em> which auto-stops the alarm sound and dismisses it from the trip overlay after a number of seconds you specify. The seconds value defaults to 10 the first time you switch into seconds mode; if you change it, your value is saved to <code>localStorage</code> (<code>simfly_aa_afk_alarm_duration_sec</code>) as the default for the next time you use seconds mode on a different alarm. <strong>New alarms always default to indefinite</strong> &mdash; only switching the mode picker to seconds applies your saved preference. Auto-dismiss timers are properly cleared when an alarm is manually dismissed, disabled, deleted, or when <em>Disable All</em> / <em>Delete All</em> runs &mdash; never a stale timer leaking past its alarm.</li>
+          <li><strong>[Enter] = submit on the per-geofence and per-waypoint quick-add modals.</strong> After drawing a geofence or right-clicking a waypoint, you can now press <strong>Enter</strong> to commit the alarm without reaching for the <em>Add Alarm</em> button. Skips when focus is on a button (so Tab-to-Cancel + Enter still cancels). The main Alerts config modal is a list manager (no single primary action) so it's intentionally not bound &mdash; Enter still toggles dropdowns / commits text inputs there as normal.</li>
+          <li><strong>Toolbar reorder: ✕ Clear route moved before ✈ SimBrief Flight Plan.</strong> The dot-routing <em>Clear route</em> button was previously buried at the end of the toolbar (after the Alerts button); moved up to sit immediately after <em>📐 Measurement</em> for better logical grouping &mdash; route controls now cluster together near the start of the toolbar.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.70.1</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -28025,13 +28153,13 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
+        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <button class="rg-btn" id="sbOfpBtn" onclick="_sbOfpButtonClick(event)" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
         <button class="rg-btn" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event)" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
         <button class="rg-btn" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event)" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
         <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" style="display:none" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
-        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <div id="rgHdrRoute"></div>
       </div>
