@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.64.3**
+**Current version: v2.68.1**
 
 ---
 
@@ -155,6 +155,31 @@ The departure and arrival airports auto-fetch a METAR the moment you set or chan
 
 ### File on SimBrief
 Once departure and arrival ICAOs are set, the **File on SimBrief →** button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click. Airports that SimFly identifies with a short local code (e.g. `1G4`) are automatically converted to the ICAO form SimBrief expects (`K1G4`), so the dispatch page resolves them correctly.
+
+### SimBrief Flight Plan — plot the route on the map
+Open the interactive map and click **✈ SimBrief Flight Plan** in the header bar. The app fetches your most recent SimBrief flight plan via SimBrief's public API and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots, plus magenta rings at the origin and destination. Each waypoint shows its ident as a permanent label by default; hovering the origin / destination ring brings up the route summary (flight number, total air distance, waypoint count, the SimBrief route string).
+
+The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrief.com → Account → Pilot ID*). The ID is saved in your browser's localStorage so subsequent clicks fetch instantly. Clicking the button while a flight plan is plotted clears it.
+
+**Shift-click the button to open Flight Plan Settings.** The modal lets you change three things, all persisted to localStorage:
+- **SimBrief Pilot ID** — replace the value you entered on first use.
+- **Display waypoint labels** *(default On)* — when on, each waypoint's ident is shown as a permanent label next to its dot. When off, idents only appear on hover, along with altitude, via-airway, and flight stage (climb / cruise / descent).
+- **Route color** *(default magenta)* — a color picker plus a hex input. Applies to the polyline, waypoint dots, and origin / destination rings.
+
+If a flight plan is already plotted when you save the modal, the route repaints in place with the new color and label mode — no re-fetch.
+
+### Live Aircraft Tracking (FSUIPC)
+Open the interactive map and click **🔌 FSUIPC Live** in the header bar. The app connects to **Paul Henty's WebSocket Server** running locally as part of **FSUIPC7** and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age. Updates push every 500 ms (2 Hz) — smooth across a continental-scale map. The icon grays out automatically after 30 seconds without a fresh fix (sim paused, MSFS exited, FSUIPC stopped).
+
+**One-time setup:**
+1. Install **FSUIPC7** from [fsuipc.com](https://fsuipc.com/). The free unregistered tier is sufficient — position reads (latitude, longitude, altitude, heading, ground speed) are not paid features.
+2. During install (or via FSUIPC7's add-on manager) make sure **Paul Henty's WebSocket Server** add-on is enabled — it's bundled with FSUIPC7 and listens on `ws://localhost:2048/fsuipc/`.
+3. Run FSUIPC7 alongside MSFS. Load any flight.
+4. In the map header click **🔌 FSUIPC Live**. The button switches to **⏹ FSUIPC Tracking…** and within ~1 second your aircraft appears.
+
+Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), the app shows an error toast and retries every 10 seconds while the button stays active — MSFS restarts don't require re-clicking.
+
+No cloud round-trip, no API tokens, no handshakes that can silently fail. Position data travels straight from your sim to your browser over loopback. Browsers exempt `localhost` from mixed-content blocking (W3C "potentially trustworthy" rule), so the local WebSocket works even though the app itself is served over HTTPS.
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.

@@ -606,6 +606,109 @@
   .npc-btn-save   { border-color: var(--accent2); color: var(--accent2); background: rgba(255,106,0,0.15); }
   .npc-btn-save:hover { background: rgba(255,106,0,0.3); }
 
+  /* ── FLIGHT PLAN SETTINGS MODAL ── */
+  /* Region map (#regionModal) sits at z-index 9000 — Flight Plan settings modal
+     is opened on top of it, so it needs to clear that. */
+  #fpSettingsModal { z-index: 9500; }
+  .fp-settings-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.85rem 1.1rem;
+    align-items: start;
+    margin-bottom: 1.1rem;
+  }
+  .fp-settings-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding-top: 0.4rem;
+    white-space: nowrap;
+  }
+  .fp-settings-control { display: flex; flex-direction: column; gap: 0.3rem; }
+  .fp-settings-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .fp-settings-input:focus { border-color: var(--accent); outline: none; }
+  .fp-settings-hint { font-size: 0.74rem; color: var(--muted); line-height: 1.35; }
+  .fp-settings-hint a { color: var(--accent); text-decoration: none; }
+  .fp-settings-hint a:hover { text-decoration: underline; }
+
+  .fp-toggle { display: inline-flex; align-items: center; gap: 0.55rem; cursor: pointer; user-select: none; }
+  .fp-toggle input[type="checkbox"] { display: none; }
+  .fp-toggle-slider {
+    position: relative;
+    width: 38px;
+    height: 20px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .fp-toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    background: var(--muted);
+    border-radius: 50%;
+    transition: left 0.15s, background 0.15s;
+  }
+  .fp-toggle input[type="checkbox"]:checked + .fp-toggle-slider { background: rgba(0,200,255,0.25); border-color: var(--accent); }
+  .fp-toggle input[type="checkbox"]:checked + .fp-toggle-slider::after { left: 20px; background: var(--accent); }
+  .fp-toggle-text { font-family: 'Rajdhani', sans-serif; font-size: 0.92rem; color: var(--text); min-width: 2.4em; }
+
+  .fp-color-row { display: flex; align-items: center; gap: 0.55rem; }
+  .fp-color-picker {
+    width: 38px; height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0;
+    cursor: pointer;
+    background: transparent;
+  }
+  .fp-color-picker::-webkit-color-swatch-wrapper { padding: 2px; }
+  .fp-color-picker::-webkit-color-swatch { border: none; border-radius: 2px; }
+  .fp-color-hex { max-width: 110px; }
+  .fp-color-reset {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid var(--muted);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .fp-color-reset:hover { border-color: var(--text); color: var(--text); }
+
+  .fp-settings-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; margin-top: 0.4rem; }
+
+  /* Permanent waypoint labels along plotted SimBrief flight plan */
+  .leaflet-tooltip.sb-ofp-wpt-label {
+    background: rgba(10,18,36,0.88);
+    border: 1px solid rgba(255,255,255,0.18);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 0.05rem 0.32rem;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.55);
+    white-space: nowrap;
+  }
+  .leaflet-tooltip.sb-ofp-wpt-label::before { display: none; }   /* hide tooltip pointer arrow on permanent labels */
+  body.light-mode .leaflet-tooltip.sb-ofp-wpt-label { background: rgba(255,255,255,0.92); border-color: rgba(0,0,0,0.18); }
+
   /* ── RELEASE TAG BADGES ── */
   .release-tag {
     font-family: 'Orbitron', monospace;
@@ -4040,7 +4143,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.64.3';
+const APP_VERSION = '2.68.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8036,6 +8139,615 @@ function _dmRenderMap() {
       infoPanel.style.display = 'none';
     }
   }
+}
+
+// ── SimBrief OFP plot ─────────────────────────────────────────────────────────
+// Fetches the pilot's most recent OFP from SimBrief's public API and renders
+// the route (origin → navlog waypoints → destination) on the region map (_rgMap).
+// Polylines use the canvas geom renderer (_rgGetGeomRenderer) per the
+// drawn-geometry convention; waypoint dots remain on the default SVG renderer
+// so their hover tooltips work. Pilot ID is captured once via prompt and
+// persisted in localStorage.
+let _sbOfpLayers = [];   // Leaflet layers belonging to the plotted OFP
+
+function _sbOfpGetPid() {
+  try { return (localStorage.getItem('simfly_aa_sb_pid') || '').trim(); } catch (_) { return ''; }
+}
+function _sbOfpSetPid(pid) {
+  try { localStorage.setItem('simfly_aa_sb_pid', pid); } catch (_) {}
+}
+
+// Cache the most recent successful OFP fetch so the user can change Flight
+// Plan settings (color, labels) and instantly re-render without a re-fetch.
+let _sbOfpLastData = null;
+
+// ── Flight Plan settings (localStorage-backed, surfaced via shift-click modal)
+const _FP_DEFAULT_COLOR  = '#ff3da8';
+const _FP_DEFAULT_LABELS = true;
+
+function _fpGetPid() { try { return (localStorage.getItem('simfly_aa_sb_pid') || '').trim(); } catch (_) { return ''; } }
+function _fpSetPid(v) { try { v ? localStorage.setItem('simfly_aa_sb_pid', v) : localStorage.removeItem('simfly_aa_sb_pid'); } catch (_) {} }
+function _fpGetLabels() { try { return localStorage.getItem('simfly_aa_fp_labels') !== '0'; } catch (_) { return _FP_DEFAULT_LABELS; } }
+function _fpSetLabels(on) { try { localStorage.setItem('simfly_aa_fp_labels', on ? '1' : '0'); } catch (_) {} }
+function _fpGetColor()  { try { const c = localStorage.getItem('simfly_aa_fp_color'); return (c && /^#[0-9a-fA-F]{6}$/.test(c)) ? c : _FP_DEFAULT_COLOR; } catch (_) { return _FP_DEFAULT_COLOR; } }
+function _fpSetColor(c) { try { c ? localStorage.setItem('simfly_aa_fp_color', c) : localStorage.removeItem('simfly_aa_fp_color'); } catch (_) {} }
+
+// Aliases for the existing pilot-ID helpers used elsewhere — keep callers working.
+function _sbOfpGetPid() { return _fpGetPid(); }
+function _sbOfpSetPid(v) { _fpSetPid(v); }
+
+function _fpOpenModal() {
+  const modal = document.getElementById('fpSettingsModal');
+  if (!modal) return;
+  // Populate from current localStorage values
+  document.getElementById('fpSettingsPid').value      = _fpGetPid();
+  const labelsOn = _fpGetLabels();
+  document.getElementById('fpSettingsLabels').checked = labelsOn;
+  document.getElementById('fpSettingsLabelsText').textContent = labelsOn ? 'On' : 'Off';
+  const color = _fpGetColor();
+  document.getElementById('fpSettingsColor').value    = color;
+  document.getElementById('fpSettingsColorHex').value = color;
+  modal.classList.add('open');
+}
+
+function _fpCloseModal() {
+  const modal = document.getElementById('fpSettingsModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function _fpSaveModal() {
+  const pidVal    = (document.getElementById('fpSettingsPid').value || '').trim();
+  const labelsOn  = document.getElementById('fpSettingsLabels').checked;
+  let   colorVal  = (document.getElementById('fpSettingsColorHex').value || '').trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(colorVal)) colorVal = document.getElementById('fpSettingsColor').value || _FP_DEFAULT_COLOR;
+  _fpSetPid(pidVal);
+  _fpSetLabels(labelsOn);
+  _fpSetColor(colorVal);
+  _fpCloseModal();
+  _aaRtToast('✈ Flight Plan settings saved.', 'ok');
+  // If an OFP is currently plotted, re-render with the new settings.
+  if (_sbOfpLastData && _rgMap) _sbOfpRender(_sbOfpLastData);
+}
+
+function _fpBindModalLiveControls() {
+  // One-time wiring; safe to call repeatedly because we use a flag.
+  if (window._fpModalBound) return;
+  window._fpModalBound = true;
+  const colorPicker = document.getElementById('fpSettingsColor');
+  const colorHex    = document.getElementById('fpSettingsColorHex');
+  const labelsCb    = document.getElementById('fpSettingsLabels');
+  const labelsText  = document.getElementById('fpSettingsLabelsText');
+  const resetBtn    = document.getElementById('fpSettingsColorReset');
+  if (colorPicker) colorPicker.addEventListener('input', () => { colorHex.value = colorPicker.value; });
+  if (colorHex)    colorHex.addEventListener('input', () => {
+    const v = colorHex.value.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) colorPicker.value = v;
+  });
+  if (labelsCb)    labelsCb.addEventListener('change', () => { labelsText.textContent = labelsCb.checked ? 'On' : 'Off'; });
+  if (resetBtn)    resetBtn.addEventListener('click', () => { colorPicker.value = _FP_DEFAULT_COLOR; colorHex.value = _FP_DEFAULT_COLOR; });
+}
+// Bind once DOM is parsed.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _fpBindModalLiveControls);
+else _fpBindModalLiveControls();
+
+function _sbOfpButtonClick(e) {
+  // Shift-click opens the Flight Plan Settings modal (Pilot ID, waypoint
+  // labels toggle, route color). The modal also writes Pilot ID to
+  // localStorage, replacing the old shift-click → clear-pid behaviour.
+  if (e && e.shiftKey) { _fpOpenModal(); return; }
+  if (_sbOfpLayers.length) { _sbOfpClear(); return; }
+  _sbOfpPlot();
+}
+
+async function _sbOfpPlot() {
+  if (!_rgMap) {
+    _aaRtToast('Map not initialised — open the map first.', 'err');
+    return;
+  }
+  let pid = _fpGetPid();
+  if (!pid) {
+    pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nIt is saved locally so you only enter it once. Shift-click the button later to open Flight Plan settings (Pilot ID, waypoint labels, route color).') || '').trim();
+    if (!pid) return;
+    _fpSetPid(pid);
+  }
+  _aaRtToast('✈ Fetching latest SimBrief flight plan for Pilot ID ' + pid + '…', 'ok');
+  let data;
+  try {
+    const url  = `https://www.simbrief.com/api/xml.fetcher.php?username=${encodeURIComponent(pid)}&json=1&t=${Date.now()}`;
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    data = await resp.json();
+  } catch (err) {
+    _aaRtToast('✕ SimBrief fetch failed (' + (err && err.message ? err.message : err) + ') — shift-click the button to open settings, or check your network.', 'err');
+    return;
+  }
+  if (data && data.fetch && data.fetch.status && /^Error/i.test(String(data.fetch.status))) {
+    _aaRtToast('✕ SimBrief: ' + data.fetch.status + ' — generate a flight plan at simbrief.com first.', 'err');
+    return;
+  }
+  if (!data || !data.origin || !data.destination) {
+    _aaRtToast('✕ SimBrief returned no flight plan for Pilot ID ' + pid + '. Generate one at simbrief.com first.', 'err');
+    return;
+  }
+  _sbOfpLastData = data;
+  _sbOfpRender(data);
+}
+
+// Render or re-render the cached OFP using current Flight Plan settings.
+// Extracted from _sbOfpPlot so the settings-modal "Save" can repaint without
+// a re-fetch.
+function _sbOfpRender(data) {
+  if (!_rgMap || !data) return;
+  const origLat = parseFloat(data.origin.pos_lat),  origLng = parseFloat(data.origin.pos_long);
+  const destLat = parseFloat(data.destination.pos_lat), destLng = parseFloat(data.destination.pos_long);
+  if (!isFinite(origLat) || !isFinite(origLng) || !isFinite(destLat) || !isFinite(destLng)) {
+    _aaRtToast('✕ SimBrief flight plan missing origin/destination coordinates.', 'err');
+    return;
+  }
+  const fixesRaw = data.navlog && data.navlog.fix;
+  const fixes    = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  const coords   = [[origLat, origLng]];
+  fixes.forEach(f => {
+    const lat = parseFloat(f.pos_lat), lng = parseFloat(f.pos_long);
+    if (isFinite(lat) && isFinite(lng)) coords.push([lat, lng]);
+  });
+  coords.push([destLat, destLng]);
+
+  _sbOfpClearLayers();
+  if (coords.length < 2) {
+    _aaRtToast('✕ Could not plot flight plan — insufficient route points.', 'err');
+    return;
+  }
+
+  const color     = _fpGetColor();
+  const showLabel = _fpGetLabels();
+
+  // Build summary text (used by end-ring tooltips and the success toast).
+  const dist  = data.general && data.general.air_distance ? (parseFloat(data.general.air_distance) || 0) : 0;
+  const route = (data.general && data.general.route) ? String(data.general.route) : '';
+  const flt   = (data.general && data.general.flight_number)
+    ? ((data.general.icao_airline || '') + data.general.flight_number)
+    : '';
+  const safeRoute = route.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const summary =
+    `<strong>SimBrief Flight Plan</strong> — ` +
+    `${data.origin.icao_code || '?'} → ${data.destination.icao_code || '?'}` +
+    (flt ? ` (${flt})` : '') +
+    (dist ? ` · ${dist.toLocaleString()} nm` : '') +
+    ` · ${fixes.length} waypoint${fixes.length !== 1 ? 's' : ''}` +
+    (safeRoute ? `<br><span style="opacity:0.75;font-size:0.85em">${safeRoute}</span>` : '');
+
+  // Polyline (glow halo + bright core) on the canvas geom renderer per the AA
+  // drawn-geometry convention. Color comes from settings — re-rendering on
+  // modal Save updates the entire route palette in one pass.
+  const _rend = (typeof _rgGetGeomRenderer === 'function') ? _rgGetGeomRenderer() : undefined;
+  _sbOfpLayers.push(L.polyline(coords, { renderer: _rend, color, weight: 14, opacity: 0.18, interactive: false }).addTo(_rgMap));
+  _sbOfpLayers.push(L.polyline(coords, { renderer: _rend, color, weight: 3,  opacity: 0.95, interactive: false }).addTo(_rgMap));
+
+  // Waypoint dots. Default SVG renderer so hover/tooltip events reach the
+  // marker (geom canvas has pointer-events:none). When showLabel is true,
+  // bind a permanent ident-only label to the right of each dot; when false,
+  // fall back to the v2.65 sticky-on-hover tooltip with full ident + altitude
+  // + airway + stage details.
+  fixes.forEach(f => {
+    const lat = parseFloat(f.pos_lat), lng = parseFloat(f.pos_long);
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    const ident = (f.ident || '').toString();
+    if (!ident) return;
+    const m = L.circleMarker([lat, lng], {
+      radius: 3.5, color, weight: 2, fillColor: '#0a1224', fillOpacity: 1,
+    }).addTo(_rgMap);
+    if (showLabel) {
+      m.bindTooltip(`<span style="color:${color}">${ident}</span>`, {
+        permanent: true, direction: 'right', offset: [6, 0], className: 'sb-ofp-wpt-label',
+      });
+    } else {
+      const altFt  = parseFloat(f.altitude_feet);
+      const altLbl = isFinite(altFt) && altFt > 0
+        ? (altFt >= 18000 ? 'FL' + String(Math.round(altFt / 100)).padStart(3, '0') : Math.round(altFt).toLocaleString() + ' ft')
+        : '';
+      const via = (f.via_airway || '').toString();
+      const stg = (f.stage || '').toString();
+      const parts = [];
+      if (altLbl) parts.push(altLbl);
+      if (via && via !== 'DCT') parts.push('via ' + via);
+      if (stg) parts.push(stg);
+      m.bindTooltip(`<strong>${ident}</strong>${parts.length ? '<br><span style="opacity:0.75">' + parts.join(' · ') + '</span>' : ''}`,
+                    { sticky: true, direction: 'top', offset: [0, -4] });
+    }
+    _sbOfpLayers.push(m);
+  });
+
+  // Larger rings at origin and destination, with the route summary as a sticky
+  // tooltip so the user can recall the OFP details after the toast fades.
+  const _sbEndRing = (lat, lng, role) => {
+    const m = L.circleMarker([lat, lng], { radius: 8, color, weight: 3, fill: false }).addTo(_rgMap);
+    m.bindTooltip(summary + '<br><span style="opacity:0.7">' + role + '</span>', { sticky: true, direction: 'top', offset: [0, -8] });
+    _sbOfpLayers.push(m);
+  };
+  _sbEndRing(origLat, origLng, `${data.origin.icao_code || ''} · departure`);
+  _sbEndRing(destLat, destLng, `${data.destination.icao_code || ''} · destination`);
+
+  // Fit map to the flight-plan extents.
+  try { _rgMap.fitBounds(coords, { padding: [40, 40] }); } catch (_) {}
+
+  _aaRtToast(`✈ SimBrief flight plan plotted — ${data.origin.icao_code || '?'} → ${data.destination.icao_code || '?'}${flt ? ' (' + flt + ')' : ''}${dist ? ' · ' + dist.toLocaleString() + ' nm' : ''} · ${fixes.length} wpt${fixes.length !== 1 ? 's' : ''}`, 'ok');
+
+  const btn = document.getElementById('sbOfpBtn');
+  if (btn) {
+    const lbl = btn.querySelector('.rg-btn-label');
+    if (lbl) lbl.textContent = 'Clear Flight Plan';
+    btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✕ ');
+    btn.title = 'Remove the plotted SimBrief flight plan — Shift-click to open Flight Plan settings';
+  }
+}
+
+function _sbOfpClearLayers() {
+  _sbOfpLayers.forEach(l => { try { if (_rgMap) _rgMap.removeLayer(l); } catch (_) {} });
+  _sbOfpLayers = [];
+}
+
+function _sbOfpClear() {
+  _sbOfpClearLayers();
+  const btn = document.getElementById('sbOfpBtn');
+  if (btn) {
+    const lbl = btn.querySelector('.rg-btn-label');
+    if (lbl) lbl.textContent = 'SimBrief Flight Plan';
+    btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✈ ');
+    btn.title = 'Fetch and plot your most recent SimBrief flight plan — Shift-click to open Flight Plan settings (Pilot ID, waypoint labels, route color)';
+  }
+}
+
+// ── Live aircraft — shared marker manager + per-source modules ────────────────
+// Two sources supported as of v2.67.0:
+//   (A) SimToolkitPro public API — cloud-based, 10 s polling, requires STKP
+//       desktop client + token. Zero local server, but Start-Flight handshake.
+//   (B) FSUIPC7 + Paul Henty WebSocket Server — local ws://localhost:2048/fsuipc/,
+//       100 ms push updates, no token, no cloud round-trip. Free FSUIPC7
+//       unregistered tier covers position reads. Browser exempt from
+//       mixed-content blocking for localhost ("potentially trustworthy" rule).
+// Only ONE source is active at a time — activating either stops the other.
+// Both render through the same _liveAc* marker manager so the rotating-plane
+// UX, tooltip, and stale-state code lives in one place.
+
+const _LIVE_AC_STALE_MS = 30000;
+
+let _liveAcMarker     = null;
+let _liveAcLastData   = null;      // normalized {lat,lng,hdg,alt,gs,ident,af,phase,dep,dest,source}
+let _liveAcLastUpdate = 0;
+let _liveAcStaleTimer = 0;
+let _liveAcSource     = null;      // 'stkp' | 'fsuipc' | null
+let _liveAcCentred    = false;     // true once we've re-centred on first fix
+
+function _liveAcStopOthers(thisSource) {
+  if (_liveAcSource && _liveAcSource !== thisSource) {
+    if (_liveAcSource === 'stkp')   _stkpStop();
+    if (_liveAcSource === 'fsuipc') _fsuipcStop();
+  }
+}
+
+function _liveAcPlaneIcon(hdgDeg, stale) {
+  const color  = stale ? '#888' : '#00e676';
+  const shadow = stale ? 'rgba(0,0,0,0.5)' : 'rgba(0,230,118,0.55)';
+  const html =
+    `<div style="width:34px;height:34px;transform:rotate(${hdgDeg}deg);filter:drop-shadow(0 0 6px ${shadow});">` +
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="34" height="34">` +
+        `<path fill="${color}" stroke="#000" stroke-width="0.6" stroke-linejoin="round" ` +
+              `d="M12 2 L13.4 9.2 L22 13 L22 15 L13.4 13.2 L13.4 18.5 L16 20 L16 21.5 L12 20.4 L8 21.5 L8 20 L10.6 18.5 L10.6 13.2 L2 15 L2 13 L10.6 9.2 Z"/>` +
+      `</svg>` +
+    `</div>`;
+  return L.divIcon({ className: 'live-ac-icon', html, iconSize: [34, 34], iconAnchor: [17, 17] });
+}
+
+function _liveAcRenderMarker(d) {
+  if (!_rgMap) return;
+  const lat = parseFloat(d.lat), lng = parseFloat(d.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return;
+  // Skip the literal (0,0) — common when the sim is at the main menu with no
+  // flight loaded. Real flights near the equator/prime-meridian land outside
+  // this 10-metre window.
+  if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
+  const hdg = isFinite(parseFloat(d.hdg)) ? parseFloat(d.hdg) : 0;
+  _liveAcLastData   = d;
+  _liveAcLastUpdate = performance.now();
+  const icon = _liveAcPlaneIcon(hdg, false);
+  if (!_liveAcMarker) {
+    _liveAcMarker = L.marker([lat, lng], { icon, zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
+    _liveAcMarker.on('mouseover', e => _tipAPI && _tipAPI.showLive(_liveAcTooltipHtml, e.originalEvent.clientX, e.originalEvent.clientY));
+    _liveAcMarker.on('mousemove', e => _tipAPI && _tipAPI.move(e.originalEvent.clientX, e.originalEvent.clientY));
+    _liveAcMarker.on('mouseout',  () => _tipAPI && _tipAPI.hide());
+  } else {
+    _liveAcMarker.setLatLng([lat, lng]);
+    _liveAcMarker.setIcon(icon);
+  }
+  if (!_liveAcCentred) {
+    try { _rgMap.setView([lat, lng], Math.max(_rgMap.getZoom(), 6), { animate: true }); } catch (_) {}
+    _liveAcCentred = true;
+  }
+  _liveAcScheduleStaleCheck();
+}
+
+function _liveAcMarkStale() {
+  if (!_liveAcMarker) return;
+  const hdg = (_liveAcLastData && parseFloat(_liveAcLastData.hdg)) || 0;
+  _liveAcMarker.setIcon(_liveAcPlaneIcon(hdg, true));
+}
+
+function _liveAcScheduleStaleCheck() {
+  if (_liveAcStaleTimer) clearTimeout(_liveAcStaleTimer);
+  _liveAcStaleTimer = setTimeout(() => {
+    if (!_liveAcMarker || !_liveAcLastUpdate) return;
+    if (performance.now() - _liveAcLastUpdate >= _LIVE_AC_STALE_MS) _liveAcMarkStale();
+  }, _LIVE_AC_STALE_MS + 500);
+}
+
+function _liveAcClear() {
+  if (_liveAcStaleTimer) { clearTimeout(_liveAcStaleTimer); _liveAcStaleTimer = 0; }
+  if (_liveAcMarker) { try { _rgMap && _rgMap.removeLayer(_liveAcMarker); } catch (_) {} _liveAcMarker = null; }
+  _liveAcLastData   = null;
+  _liveAcLastUpdate = 0;
+  _liveAcSource     = null;
+  _liveAcCentred    = false;
+}
+
+function _liveAcTooltipHtml() {
+  const d = _liveAcLastData || {};
+  const age = _liveAcLastUpdate ? Math.round((performance.now() - _liveAcLastUpdate) / 1000) : -1;
+  const ident = d.ident || '—';
+  const af    = d.af    || '';
+  const phase = d.phase || '';
+  const alt   = (d.alt != null && isFinite(d.alt)) ? Math.round(d.alt).toLocaleString() + ' ft' : '—';
+  const spd   = (d.gs  != null && isFinite(d.gs))  ? Math.round(d.gs) + ' kt' : '—';
+  const hdg   = (d.hdg != null && isFinite(d.hdg)) ? Math.round(d.hdg) + '°' : '—';
+  const route = (d.dep || d.dest) ? `${d.dep || '?'} → ${d.dest || '?'}` : '';
+  const src   = d.source === 'fsuipc' ? 'FSUIPC' : (d.source === 'stkp' ? 'STKP' : '?');
+  const lines = [];
+  lines.push(`<strong>${ident}${af ? '  ·  ' + af : ''}</strong>`);
+  if (route) lines.push(`<span class="tip-line">${route}</span>`);
+  if (phase) lines.push(`<span class="tip-line">Phase: ${phase}</span>`);
+  lines.push(`<span class="tip-line">Alt: ${alt}  ·  GS: ${spd}  ·  Hdg: ${hdg}</span>`);
+  if (age >= 0) {
+    const stale = age > (_LIVE_AC_STALE_MS / 1000);
+    lines.push(`<span class="tip-line" style="opacity:0.7">${src} · updated ${age}s ago${stale ? ' (stale)' : ''}</span>`);
+  }
+  return lines.join('');
+}
+
+// ── Source A: SimToolkitPro (cloud polling, every 10 s) ───────────────────────
+// Polls https://api.simtoolkitpro.co.uk/api/v1/live-flight?token=<key>. Auth
+// is the user's STKP token (localStorage). See memory project_aa_stkp_integration:
+// query-param auth only (never headers), wrapper field is Type on success /
+// Status on failure, Start-Flight handshake must fire in the STKP desktop app
+// before the API authorises the token.
+const _STKP_POLL_MS = 10000;
+let _stkpTimer = 0;
+
+function _stkpGetToken() { try { return (localStorage.getItem('simfly_aa_stkp_token') || '').trim(); } catch (_) { return ''; } }
+function _stkpSetToken(t) { try { localStorage.setItem('simfly_aa_stkp_token', t); } catch (_) {} }
+
+function _stkpButtonClick(e) {
+  if (e && e.shiftKey) {
+    try { localStorage.removeItem('simfly_aa_stkp_token'); } catch (_) {}
+    if (_stkpTimer) _stkpStop();
+    _aaRtToast('SimToolkitPro token cleared — click again to enter a new one.', 'warn');
+    return;
+  }
+  if (_stkpTimer) { _stkpStop(); return; }
+  _stkpStart();
+}
+
+function _stkpStart() {
+  if (!_rgMap) { _aaRtToast('Open the map first.', 'err'); return; }
+  let token = _stkpGetToken();
+  if (!token) {
+    token = (prompt('Enter your SimToolkitPro API token.\n\nGenerate one at: simtoolkitpro.co.uk/account/apikeys\n\nIMPORTANT: STKP\'s server only authorises the token AFTER you click "Start Flight" in the desktop app\'s Flight Planning tab. If you load MSFS mid-air and never click Start Flight, the API will return Authfail even though the desktop map shows your aircraft. Click Start Flight first, then click this button.\n\nThe token is saved locally so you only enter it once. Shift-click the button to change it later.') || '').trim();
+    if (!token) return;
+    _stkpSetToken(token);
+  }
+  _liveAcStopOthers('stkp');
+  _liveAcSource = 'stkp';
+  _stkpFetchOnce();
+  _stkpTimer = setInterval(_stkpFetchOnce, _STKP_POLL_MS);
+  _stkpUpdateButtonState(true);
+  _aaRtToast('🛩 Tracking via SimToolkitPro (10s updates)…', 'ok');
+}
+
+function _stkpStop() {
+  if (_stkpTimer) { clearInterval(_stkpTimer); _stkpTimer = 0; }
+  if (_liveAcSource === 'stkp') _liveAcClear();
+  _stkpUpdateButtonState(false);
+}
+
+function _stkpUpdateButtonState(active) {
+  const btn = document.getElementById('stkpLiveBtn');
+  if (!btn) return;
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (lbl) lbl.textContent = active ? 'STKP Tracking…' : 'STKP Live';
+  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.nodeValue = active ? '⏹ ' : '🛩 ';
+  btn.title = active
+    ? 'Stop SimToolkitPro live-aircraft tracking — Shift-click to change token'
+    : 'Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token';
+  btn.classList.toggle('active', active);
+}
+
+async function _stkpFetchOnce() {
+  const token = _stkpGetToken();
+  if (!token) { _stkpStop(); return; }
+  let data;
+  try {
+    const url  = `https://api.simtoolkitpro.co.uk/api/v1/live-flight?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    data = await resp.json();
+  } catch (err) {
+    if (!_liveAcMarker) _aaRtToast('STKP network error: ' + (err && err.message ? err.message : err), 'warn');
+    return;
+  }
+  const ok = (data && (data.Type === 'OK' || data.Status === 'OK'));
+  if (!ok) {
+    const why = (data && (data.Status || data.Type)) ? String(data.Status || data.Type) : 'unknown error';
+    if (/authfail|invalid|unauth/i.test(why)) {
+      _stkpStop();
+      _aaRtToast('✕ SimToolkitPro: ' + why + '. If your token is correct, click "Start Flight" in the STKP desktop app first — the API stays unauthorised until that handshake fires (common when you load MSFS mid-air). Otherwise shift-click the button to update your token.', 'err');
+    }
+    return;
+  }
+  const sd = data.Data || {};
+  _liveAcRenderMarker({
+    lat:    parseFloat(sd.lat),
+    lng:    parseFloat(sd.lon),
+    hdg:    parseFloat(sd.head),
+    alt:    sd.alt   ? parseInt(sd.alt, 10)   : null,
+    gs:     sd.speed ? parseInt(sd.speed, 10) : null,
+    ident:  sd.ident || sd.flight || null,
+    af:     sd.af    || null,
+    phase:  sd.phase || null,
+    dep:    sd.dep   || null,
+    dest:   sd.dest  || null,
+    source: 'stkp',
+  });
+}
+
+// ── Source B: FSUIPC7 + Paul Henty WebSocket Server (local push, every 100 ms)
+// ws://localhost:2048/fsuipc/ with the 'fsuipc' subprotocol (REQUIRED — the
+// server rejects connections without it). Free unregistered FSUIPC7 covers
+// position reads. Browser exempts localhost from mixed-content blocking.
+// Protocol: declare a named offset group, then subscribe with offsets.read
+// at a polling interval with changesOnly:true. Server pushes
+// { success, command, name, data:{name→value, ...} } on each update.
+// Reference clients: github.com/winternet-studio/flightsim-aircraft-panel
+// and github.com/paulalexandrow/a32nx-webremote.
+const _FSUIPC_WS_URL    = 'ws://localhost:2048/fsuipc/';
+const _FSUIPC_WS_PROTO  = 'fsuipc';
+const _FSUIPC_GROUP     = 'simflyPos';
+const _FSUIPC_INTERVAL  = 500;        // ms — push cadence; 100 ms with changesOnly suppressed pushes for parked aircraft in v2.67.0, 500 ms works reliably without changesOnly
+const _FSUIPC_RECONNECT = 10000;      // ms — retry while button is active
+const _FSUIPC_DEBUG     = true;       // set false to silence the console log on each push
+let _fsuipcWs           = null;
+let _fsuipcReconnectTmr = 0;
+let _fsuipcUserActive   = false;      // true while user wants tracking; survives reconnects
+
+function _fsuipcButtonClick() {
+  if (_fsuipcUserActive) { _fsuipcStop(); return; }
+  _fsuipcStart();
+}
+
+function _fsuipcStart() {
+  if (!_rgMap) { _aaRtToast('Open the map first.', 'err'); return; }
+  if (typeof WebSocket === 'undefined') { _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
+  _liveAcStopOthers('fsuipc');
+  _liveAcSource = 'fsuipc';
+  _fsuipcUserActive = true;
+  _fsuipcUpdateButtonState(true);
+  _aaRtToast('🔌 Connecting to FSUIPC at ' + _FSUIPC_WS_URL + '…', 'ok');
+  _fsuipcOpenWs();
+}
+
+function _fsuipcStop() {
+  _fsuipcUserActive = false;
+  if (_fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; }
+  if (_fsuipcWs) {
+    try { _fsuipcWs.close(); } catch (_) {}
+    _fsuipcWs = null;
+  }
+  if (_liveAcSource === 'fsuipc') _liveAcClear();
+  _fsuipcUpdateButtonState(false);
+}
+
+function _fsuipcUpdateButtonState(active) {
+  const btn = document.getElementById('fsuipcLiveBtn');
+  if (!btn) return;
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (lbl) lbl.textContent = active ? 'FSUIPC Tracking…' : 'FSUIPC Live';
+  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.nodeValue = active ? '⏹ ' : '🔌 ';
+  btn.title = active
+    ? 'Stop FSUIPC live-aircraft tracking'
+    : 'Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)';
+  btn.classList.toggle('active', active);
+}
+
+function _fsuipcOpenWs() {
+  try {
+    _fsuipcWs = new WebSocket(_FSUIPC_WS_URL, _FSUIPC_WS_PROTO);
+  } catch (err) {
+    _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on?', 'err');
+    return;
+  }
+  _fsuipcWs.onopen = () => {
+    // Declare the offset group, then subscribe with interval+changesOnly.
+    // 'lat'/'lon' types yield decimal degrees direct (server does the FSUIPC
+    // bit-twiddling). 'int' on 0x0574 returns altitude in metres direct.
+    // 'uint' on 0x0580 (heading) and 'int' on 0x02B4 (ground speed, m/s*65536)
+    // return raw values needing client-side conversion (see _fsuipc onmessage).
+    const declare = {
+      command: 'offsets.declare',
+      name: _FSUIPC_GROUP,
+      offsets: [
+        { name: 'lat', address: 0x0560, type: 'lat',  size: 8 },
+        { name: 'lon', address: 0x0568, type: 'lon',  size: 8 },
+        { name: 'alt', address: 0x0574, type: 'int',  size: 4 },
+        { name: 'hdg', address: 0x0580, type: 'uint', size: 4 },
+        { name: 'gs',  address: 0x02B4, type: 'uint', size: 4 },
+      ],
+    };
+    try {
+      _fsuipcWs.send(JSON.stringify(declare));
+      // changesOnly:true was suppressing pushes in v2.67.0 for users whose aircraft
+      // wasn't actively moving (parked, taxiing slowly). Removed in v2.67.1 — the
+      // server now pushes at every interval regardless. Bandwidth impact is
+      // negligible (one small JSON per 500 ms over loopback).
+      _fsuipcWs.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: _FSUIPC_INTERVAL }));
+    } catch (e) {
+      _aaRtToast('✕ FSUIPC handshake failed: ' + e.message, 'err');
+      return;
+    }
+    _aaRtToast('🔌 Tracking via FSUIPC (' + _FSUIPC_INTERVAL + ' ms updates).', 'ok');
+  };
+  _fsuipcWs.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (_FSUIPC_DEBUG) console.log('[fsuipc]', msg);
+    if (msg.command !== 'offsets.read' || msg.name !== _FSUIPC_GROUP) return;
+    if (!msg.success) return;
+    const d = msg.data || {};
+    const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    // Convert raw FSUIPC values: heading 0x0580 (uint, * 4294967296/360) → deg;
+    // ground speed 0x02B4 (uint, * 65536 m/s) → kt (× 3600 / (65536 * 1852)).
+    const hdgRaw = parseFloat(d.hdg);
+    const hdgDeg = isFinite(hdgRaw) ? (((hdgRaw * 360) / 4294967296) % 360 + 360) % 360 : 0;
+    const altMet = parseFloat(d.alt);
+    const altFt  = isFinite(altMet) ? altMet * 3.28084 : null;
+    const gsRaw  = parseFloat(d.gs);
+    const gsKts  = isFinite(gsRaw) ? (gsRaw / 65536) * 1.94384 : null;
+    _liveAcRenderMarker({
+      lat, lng,
+      hdg:    hdgDeg,
+      alt:    altFt,
+      gs:     gsKts,
+      ident:  'My Aircraft',
+      af:     null,
+      phase:  null,
+      dep:    null,
+      dest:   null,
+      source: 'fsuipc',
+    });
+  };
+  _fsuipcWs.onerror = () => {
+    // onclose fires immediately after onerror; report from onclose so we
+    // don't double-toast.
+  };
+  _fsuipcWs.onclose = () => {
+    _fsuipcWs = null;
+    if (!_fsuipcUserActive) return;
+    if (!_liveAcMarker) {
+      _aaRtToast('✕ FSUIPC WebSocket closed — couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying in 10 s…', 'warn');
+    }
+    _fsuipcReconnectTmr = setTimeout(() => {
+      _fsuipcReconnectTmr = 0;
+      if (_fsuipcUserActive) _fsuipcOpenWs();
+    }, _FSUIPC_RECONNECT);
+  };
 }
 
 // SVG padlock icons — locked (sticky on) and unlocked (sticky off).
@@ -17361,6 +18073,49 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<div class="modal-overlay" id="fpSettingsModal" onclick="if(event.target===this)_fpCloseModal()">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <span class="modal-title">✈ &nbsp;SimBrief Flight Plan Settings</span>
+      <button class="modal-close" onclick="_fpCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="fp-settings-grid">
+        <label class="fp-settings-label" for="fpSettingsPid">SimBrief Pilot ID</label>
+        <div class="fp-settings-control">
+          <input type="text" id="fpSettingsPid" class="fp-settings-input" autocomplete="off" spellcheck="false" placeholder="Find at simbrief.com → Account → Pilot ID">
+          <div class="fp-settings-hint">Saved locally in your browser. Never sent to SimFly. Generate or look up at <a href="https://www.simbrief.com/system/profile.php" target="_blank" rel="noopener">simbrief.com → Account → Pilot ID</a>.</div>
+        </div>
+
+        <label class="fp-settings-label" for="fpSettingsLabels">Display waypoint labels</label>
+        <div class="fp-settings-control">
+          <label class="fp-toggle">
+            <input type="checkbox" id="fpSettingsLabels">
+            <span class="fp-toggle-slider"></span>
+            <span class="fp-toggle-text" id="fpSettingsLabelsText">On</span>
+          </label>
+          <div class="fp-settings-hint">When on, each waypoint ident is shown as a permanent label next to its dot. When off, idents only appear on hover.</div>
+        </div>
+
+        <label class="fp-settings-label" for="fpSettingsColor">Route color</label>
+        <div class="fp-settings-control">
+          <div class="fp-color-row">
+            <input type="color" id="fpSettingsColor" class="fp-color-picker">
+            <input type="text" id="fpSettingsColorHex" class="fp-settings-input fp-color-hex" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#ff3da8">
+            <button type="button" class="fp-color-reset" id="fpSettingsColorReset" title="Reset to default magenta">Reset</button>
+          </div>
+          <div class="fp-settings-hint">Applies to the route polyline, waypoint dots, and origin / destination rings.</div>
+        </div>
+      </div>
+
+      <div class="fp-settings-btns">
+        <button class="npc-btn npc-btn-cancel" id="fpSettingsCancelBtn" onclick="_fpCloseModal()">Cancel</button>
+        <button class="npc-btn npc-btn-save" id="fpSettingsSaveBtn" onclick="_fpSaveModal()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="helpModal" onclick="closeHelp(event)">
   <div class="modal" style="max-width:clamp(680px,35vw,1400px);">
     <div class="modal-header">
@@ -17386,6 +18141,49 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Once both departure and arrival ICAOs are valid, the <strong>File on SimBrief →</strong> button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.<br/><br/>
             <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">✈️</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Plot SimBrief Flight Plan on the Map</div>
+          <div class="help-feature-desc">
+            Open the interactive map (the <strong>⊙ Map</strong> button at the top of the Flight Planner) and click <strong>✈ SimBrief Flight Plan</strong> in the header bar, just to the right of <strong>📐 Measurement</strong>. The app calls SimBrief's public API for your most recent flight plan and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots. Hover the magenta origin or destination ring for the route summary (flight number, total distance, waypoint count, SimBrief route string).<br/><br/>
+            The first click prompts once for your <strong>SimBrief Pilot ID</strong> — find it at <em>simbrief.com → Account → Pilot ID</em>. It's stored locally so subsequent clicks fetch instantly. Clicking the button while a flight plan is plotted clears it.<br/><br/>
+
+            <strong>Shift-click the button to open Flight Plan Settings.</strong> The modal lets you change:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>SimBrief Pilot ID</strong> — replace the value you entered on first use.</li>
+              <li><strong>Display waypoint labels</strong> (default On) — when on, each waypoint's ident is shown as a permanent label next to its dot. When off, idents only appear on hover (along with altitude, via-airway, and flight stage).</li>
+              <li><strong>Route color</strong> (default magenta) — color picker + hex input. Applies to the polyline, waypoint dots, and origin / destination rings.</li>
+            </ul>
+            Settings are saved to <code>localStorage</code> and persist between sessions. If a flight plan is already plotted when you save, AA re-renders it in place with the new settings — no need to re-fetch.<br/><br/>
+
+            Status feedback (fetching, success, errors) appears as a toast pill at the bottom-right of the window.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">🔌</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Live Aircraft Tracking (FSUIPC)</div>
+          <div class="help-feature-desc">
+            Open the interactive map and click <strong>🔌 FSUIPC Live</strong> in the header bar. AA connects to <a href="http://fsuipcwebsockets.paulhenty.com/" target="_blank" rel="noopener">Paul Henty's WebSocket Server</a> running locally as part of <a href="https://fsuipc.com/" target="_blank" rel="noopener">FSUIPC7</a> and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age. Updates push every 500&nbsp;ms (2&nbsp;Hz) — smooth across a continental-scale map. The plane grays out automatically after 30 seconds without a fresh fix.<br/><br/>
+
+            <strong>One-time setup:</strong>
+            <ol style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li>Install <strong>FSUIPC7</strong> from <a href="https://fsuipc.com/" target="_blank" rel="noopener">fsuipc.com</a>. The free <em>unregistered</em> tier is sufficient — position reads (latitude, longitude, altitude, heading, ground speed) are not paid features.</li>
+              <li>During install (or via FSUIPC7's add-on manager) make sure <strong>Paul Henty's WebSocket Server</strong> add-on is enabled — it's bundled with FSUIPC7 and listens on <code>ws://localhost:2048/fsuipc/</code>.</li>
+              <li>Run FSUIPC7 alongside MSFS. Load any flight (doesn't need to be moving).</li>
+              <li>In AA's map header click <strong>🔌 FSUIPC Live</strong>. The button switches to <strong>⏹ FSUIPC Tracking…</strong> and within ~1 second your green plane appears.</li>
+            </ol>
+            <br/>
+            Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 10 seconds while the button stays active — so MSFS restarts don't require re-clicking.<br/><br/>
+
+            <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.
           </div>
         </div>
       </div>
@@ -17602,8 +18400,112 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v2.68.1</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight Plan Settings modal now opens above the map</strong> &mdash; v2.68.0 shipped the new settings modal at the standard <code>.modal-overlay</code> z-index (1000), but the region-map modal sits at z-index&nbsp;9000, so shift-clicking the SimBrief Flight Plan button appeared to do nothing &mdash; the settings modal opened underneath the map and was only visible after closing the map. <code>#fpSettingsModal</code> is now pinned to <code>z-index: 9500</code> so it stacks above the map overlay. No behaviour change beyond visibility.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.68.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight Plan Settings modal</strong> &mdash; the SimBrief button is renamed from <strong>&#9992;&nbsp;SimBrief OFP</strong> to <strong>&#9992;&nbsp;SimBrief Flight Plan</strong>, and shift-clicking it now opens a settings modal where you can change three things, all persisted to <code>localStorage</code>:
+            <ul>
+              <li><strong>SimBrief Pilot ID</strong> &mdash; previously the shift-click cleared the stored ID and re-prompted; it now goes through the modal&rsquo;s text input. The first-click prompt for users without a stored ID is unchanged.</li>
+              <li><strong>Display waypoint labels</strong> (default On) &mdash; when on, each waypoint&rsquo;s ident is shown as a permanent label next to its dot along the route. When off, the original behaviour is preserved: idents and detail (altitude, via-airway, climb/cruise/descent stage) appear on hover only.</li>
+              <li><strong>Route color</strong> (default magenta <code>#ff3da8</code>) &mdash; a colour picker plus a hex input. Applies to the polyline glow / core, waypoint dots, and origin / destination rings in one pass.</li>
+            </ul>
+            If a flight plan is already plotted when you save the modal, AA re-renders it in place with the new settings &mdash; no re-fetch, no network round-trip. The new modal lives under <code>#fpSettingsModal</code> with toggle / colour-picker styling that matches the rest of the UI.</li>
+          <li><strong>STKP Live button hidden</strong> &mdash; the SimToolkitPro live-aircraft button is hidden in this release. All STKP plumbing (poll loop, token storage, auth-handshake handling, mutex with FSUIPC) is intentionally preserved in the JS so the source can be re-enabled in a future release without rewriting the integration. The STKP help section is removed from the help modal; its full text is archived in Kyndra&rsquo;s local memory at <code>project_aa_stkp_help_text.md</code> for restoration.</li>
+          <li><strong>FSUIPC is now the primary Live Aircraft source.</strong> The help modal&rsquo;s &ldquo;Live Aircraft Tracking&rdquo; section is rewritten to cover only the FSUIPC path (FSUIPC7 install, Paul Henty&rsquo;s WebSocket Server add-on, free unregistered tier covers position reads).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.67.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>FSUIPC Live &mdash; marker now renders for parked / slow aircraft</strong> &mdash; v2.67.0 sent <code>changesOnly:&nbsp;true</code> on the FSUIPC subscription, which the Paul Henty server interprets as &ldquo;only push when at least one offset value changes&rdquo;. For users whose aircraft was parked or taxiing slowly at low precision, no fields changed between polls, so the server never pushed and the green plane icon never appeared on the map &mdash; even though the WebSocket was happily connected. <code>changesOnly</code> is now removed; the server pushes at every interval regardless. Polling interval also relaxed from 100&nbsp;ms to 500&nbsp;ms &mdash; still smooth (2&nbsp;Hz) but lighter on the loopback. Bonus: incoming WS frames are now logged to the browser console (prefix <code>[fsuipc]</code>) when FSUIPC Live is active, so any future protocol surprises can be diagnosed without paste-test workarounds. Toggle <code>_FSUIPC_DEBUG = false</code> at the top of the FSUIPC module to silence the logging.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.67.0</span>
+          <span class="release-date">May 22, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live aircraft &mdash; FSUIPC source added alongside SimToolkitPro</strong> &mdash; the map header now offers two live-aircraft sources. The existing <strong>&#128747; STKP Live</strong> button is unchanged (10 s cloud polling, requires the STKP desktop client + your STKP token). A new <strong>&#128268; FSUIPC Live</strong> button connects to <strong>FSUIPC7 + Paul Henty&rsquo;s WebSocket Server</strong> running locally on the user&rsquo;s PC (<code>ws://localhost:2048/fsuipc/</code> with the <code>fsuipc</code> subprotocol). Updates push every 100 ms (100&times; faster than STKP polling), no token, no cloud round-trip, no Start-Flight handshake. Reads FSUIPC offsets <code>0x0560</code> (lat), <code>0x0568</code> (lon), <code>0x0574</code> (alt&nbsp;m), <code>0x0580</code> (true heading), <code>0x02B4</code> (ground speed) and applies the necessary unit conversions client-side. Free unregistered FSUIPC7 covers position reads &mdash; users do not need a paid FSUIPC licence for this feature. Only one source is active at a time &mdash; activating either stops the other. Both render through one shared marker manager (<code>_liveAc*</code>), so the rotating-plane icon, tooltip (callsign, aircraft type, route, phase, altitude, ground speed, heading, age, source label), stale-state grayout at 30&nbsp;s, and first-fix recentre all behave identically. Auto-reconnect at 10&nbsp;s while FSUIPC tracking is active, so MSFS restarts no longer require re-clicking the button. <strong>Mixed-content note:</strong> AA is served over HTTPS, but browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the <code>ws://</code> connection works from a GitHub Pages page without TLS on the local server.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.66.1</span>
+          <span class="release-date">May 22, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live Aircraft onboarding flags the STKP &ldquo;Start Flight&rdquo; requirement</strong> &mdash; SimToolkitPro&rsquo;s public API only authorises your token <em>after</em> you click <strong>Start Flight</strong> in the STKP desktop app&rsquo;s Flight Planning tab. If you launch STKP after you&rsquo;re already airborne, the desktop map still tracks you locally but the web API returns <code>Authfail</code> until that handshake fires. The token-entry prompt, the help-modal section, and the Authfail error toast now all explain this gotcha and point at the fix (load any flight plan &mdash; even a dummy one &mdash; and click <strong>Start Flight</strong>; allow ~30&nbsp;s for cloud sync). No code-level behaviour change; pure UX/documentation improvement.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.66.0</span>
+          <span class="release-date">May 22, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live aircraft tracking via SimToolkitPro</strong> &mdash; a new <strong>&#128747; Live Aircraft</strong> button in the map header polls the public SimToolkitPro API every 10 seconds (their published rate-limit floor) for your own aircraft&rsquo;s real-time position and draws a rotating green plane icon on the map at your reported lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, dep&rarr;dest, flight phase, altitude, ground speed, heading, and how long ago the position was last updated. On first click the button prompts once for your personal SimToolkitPro API token (generate one at <code>simtoolkitpro.co.uk/account/apikeys</code>); the token is saved locally in <code>localStorage</code> and never leaves your browser. <em>Shift-click</em> the button to change the stored token; clicking while tracking stops polling. The icon grays out automatically if no new position arrives for 30&nbsp;s (sim paused, MSFS exited, or STKP desktop client offline). The first successful fix re-centres the map so your plane is on-screen. <strong>Requirements:</strong> SimToolkitPro desktop client installed and running locally; AA users without STKP can ignore the button entirely. CORS, auth, and TOS all verified &mdash; no proxy, no Kyndra-hosted infrastructure, no local server.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.65.1</span>
+          <span class="release-date">May 22, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Plot SimBrief OFP &mdash; moved to the main map header</strong> &mdash; the <strong>&#9992; SimBrief OFP</strong> button now lives in the interactive map&rsquo;s header bar, immediately to the right of the <strong>&#128208; Measurement</strong> tool, so it is reachable any time the map is open (not just while the Flight Planner&rsquo;s Route Map panel is expanded). The polylines now use the dedicated canvas geometry renderer per the AA drawn-geometry convention, so long routes do not slow the map down at high zoom. Status feedback &mdash; fetching, success, and error &mdash; now surfaces through the standard bottom-right toast pill, and the route summary stays available by hovering the magenta origin or destination ring on the map.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.65.0</span>
+          <span class="release-date">May 22, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Plot SimBrief OFP on the map</strong> &mdash; a new <strong>&#9992; SimBrief OFP</strong> button fetches your most recent SimBrief OFP via SimBrief&rsquo;s public API and draws the full route &mdash; origin, every navlog waypoint, and destination &mdash; as a magenta polyline with waypoint dots that show ident, altitude (FL or ft), the via-airway, and the climb/cruise/descent stage on hover. The first click prompts once for your SimBrief Pilot ID (saved locally in <code>localStorage</code>) so subsequent clicks fetch instantly. <em>Shift-click</em> the button to change the stored Pilot ID; clicking the button while an OFP is plotted clears it.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v2.64.3</span>
-          <span class="release-date">May 22, 2026 &middot; Current</span>
+          <span class="release-date">May 22, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -24669,6 +25571,9 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
         <button class="rg-btn" id="rgRulerBtn" onclick="_rgToggleMeasure()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
+        <button class="rg-btn" id="sbOfpBtn" onclick="_sbOfpButtonClick(event)" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
+        <button class="rg-btn" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event)" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
+        <button class="rg-btn" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event)" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" style="display:none" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
