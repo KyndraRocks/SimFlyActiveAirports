@@ -4151,6 +4151,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     display:flex; align-items:center; gap:0.85rem;
     min-height:40px;
     user-select:none;
+    /* v2.80.2 — anchor the gear-menu popover against the panel itself,
+       not some far ancestor. Without this, .afk-dp-menu's position:absolute
+       resolved against the body and the popover landed off-screen. */
+    position:relative;
   }
   body.light-mode #afkDataPanel {
     background:linear-gradient(180deg, rgba(245,245,235,0.95) 0%, rgba(232,230,215,0.98) 100%);
@@ -4159,14 +4163,127 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   #afkDataPanel.collapsed { padding:0.18rem 0.85rem; min-height:auto; }
   #afkDataPanel.collapsed .afk-dp-sections { display:none; }
-  .afk-dp-sections { display:flex; align-items:center; justify-content:center; gap:2.2rem; flex:1 1 auto; flex-wrap:wrap; }
-  .afk-dp-section {
-    display:flex; align-items:center; gap:1.7rem;
-    padding:0 0.8rem;
+  /* v2.80.0 — panel is fully dynamic. Sections were retired; users group
+     fields with explicit Spacer items (the vertical bar formerly drawn by
+     the section divider is now an addable, draggable element). */
+  .afk-dp-sections { display:flex; align-items:center; justify-content:center; gap:1.4rem; flex:1 1 auto; flex-wrap:wrap; }
+  .afk-dp-field { display:flex; flex-direction:column; line-height:1.05; position:relative; }
+  /* Vertical-bar spacer — the divider users can drop in between groups */
+  .afk-dp-spacer {
+    flex:0 0 auto;
+    width:1px; height:32px;
+    background:rgba(255,255,255,0.18);
+    margin:0 0.4rem;
+    position:relative;
   }
-  .afk-dp-section + .afk-dp-section { border-left:1px solid rgba(255,255,255,0.12); padding-left:1.7rem; }
-  body.light-mode .afk-dp-section + .afk-dp-section { border-left-color:rgba(0,0,0,0.15); }
-  .afk-dp-field { display:flex; flex-direction:column; line-height:1.05; }
+  body.light-mode .afk-dp-spacer { background:rgba(0,0,0,0.18); }
+  .afk-dp-spacer.afk-dp-draggable { cursor:grab; }
+  .afk-dp-spacer.afk-dp-draggable:active { cursor:grabbing; }
+  /* Per-row grip — unobtrusive: only fades in when hovering the field */
+  .afk-dp-grip {
+    position:absolute;
+    top:-10px; left:50%; transform:translateX(-50%);
+    color:#5e6a7a;
+    font-size:0.85rem; line-height:1;
+    cursor:grab; user-select:none;
+    opacity:0; transition:opacity 0.12s, color 0.12s;
+  }
+  .afk-dp-grip:active { cursor:grabbing; }
+  .afk-dp-grip:hover  { color:var(--accent); }
+  .afk-dp-field:hover .afk-dp-grip,
+  .afk-dp-spacer:hover .afk-dp-grip { opacity:0.85; }
+  body.light-mode .afk-dp-grip { color:#7a8aa0; }
+  /* Drop indicators while a row is being dragged */
+  .afk-dp-field.afk-dp-dragging,
+  .afk-dp-spacer.afk-dp-dragging { opacity:0.4; }
+  .afk-dp-field.afk-dp-drop-before,
+  .afk-dp-spacer.afk-dp-drop-before { box-shadow:inset 3px 0 0 var(--accent); }
+  .afk-dp-field.afk-dp-drop-after,
+  .afk-dp-spacer.afk-dp-drop-after  { box-shadow:inset -3px 0 0 var(--accent); }
+  /* Gear button — sits next to the ⏷ collapse toggle */
+  .afk-dp-gear {
+    flex-shrink:0;
+    background:none; border:1px solid rgba(255,255,255,0.18);
+    color:#8090a8; cursor:pointer;
+    width:24px; height:24px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.95rem; padding:0; line-height:1;
+    transition:color 0.12s, border-color 0.12s, transform 0.18s;
+    margin-right:0.3rem;
+  }
+  .afk-dp-gear:hover { color:var(--accent); border-color:var(--accent); transform:rotate(35deg); }
+  body.light-mode .afk-dp-gear { color:#5a6878; border-color:rgba(0,0,0,0.2); }
+  #afkDataPanel.collapsed .afk-dp-gear { display:none; }
+  /* Show/hide menu popover */
+  .afk-dp-menu {
+    position:absolute;
+    right:0.85rem;
+    /* Sit above the data panel with a 6 px gap. v2.80.0 used
+       calc(100% - 4px) which pushed the popover INSIDE the panel and
+       hid it behind the field labels. */
+    bottom:calc(100% + 6px);
+    z-index:1003;
+    background:rgba(10,14,26,0.98);
+    border:1px solid rgba(0,200,255,0.35);
+    border-radius:8px;
+    box-shadow:0 -8px 26px rgba(0,0,0,0.55);
+    padding:0.65rem 0.8rem 0.85rem;
+    min-width:280px; max-width:min(420px,90vw);
+    max-height:60vh; overflow-y:auto;
+    font-family:'Rajdhani',sans-serif;
+    color:#dde4f0;
+    display:none;
+  }
+  body.light-mode .afk-dp-menu {
+    background:rgba(248,246,236,0.99);
+    border-color:rgba(0,150,200,0.55);
+    color:#1a1f2e;
+    box-shadow:0 -8px 26px rgba(0,0,0,0.18);
+  }
+  .afk-dp-menu.open { display:block; }
+  .afk-dp-menu-hdr {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:0.78rem; letter-spacing:0.10em; text-transform:uppercase;
+    color:#7a8aa0; font-weight:700; margin-bottom:0.45rem;
+  }
+  .afk-dp-menu-close {
+    background:none; border:none; color:#7a8aa0; cursor:pointer;
+    font-size:1.1rem; line-height:1; padding:0;
+  }
+  .afk-dp-menu-close:hover { color:var(--accent); }
+  .afk-dp-menu-group { margin-bottom:0.5rem; }
+  .afk-dp-menu-group-title {
+    font-size:0.7rem; letter-spacing:0.10em; text-transform:uppercase;
+    color:#5e6a7a; font-weight:600; margin:0.45rem 0 0.18rem;
+    border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:0.18rem;
+  }
+  body.light-mode .afk-dp-menu-group-title { color:#5a6878; border-bottom-color:rgba(0,0,0,0.1); }
+  .afk-dp-menu label {
+    display:flex; align-items:center; gap:0.5rem;
+    padding:0.18rem 0.3rem; border-radius:4px;
+    cursor:pointer; font-size:0.95rem;
+  }
+  .afk-dp-menu label:hover { background:rgba(0,200,255,0.10); }
+  .afk-dp-menu label input { cursor:pointer; }
+  .afk-dp-menu-actions {
+    display:flex; gap:0.5rem; margin-top:0.65rem;
+    padding-top:0.45rem; border-top:1px solid rgba(255,255,255,0.08);
+  }
+  body.light-mode .afk-dp-menu-actions { border-top-color:rgba(0,0,0,0.1); }
+  .afk-dp-menu-btn {
+    flex:1; background:rgba(0,200,255,0.10);
+    border:1px solid rgba(0,200,255,0.45);
+    color:var(--accent);
+    font-family:'Rajdhani',sans-serif; font-weight:600;
+    padding:0.35rem 0.6rem; border-radius:4px; cursor:pointer;
+    font-size:0.92rem;
+    transition:background 0.12s;
+  }
+  .afk-dp-menu-btn:hover { background:rgba(0,200,255,0.22); }
+  .afk-dp-menu-btn.subtle {
+    background:transparent; border-color:rgba(255,255,255,0.18); color:#8090a8;
+  }
+  .afk-dp-menu-btn.subtle:hover { color:#fff; border-color:rgba(255,255,255,0.4); background:rgba(255,255,255,0.05); }
   .afk-dp-label {
     font-size:0.7rem; color:#7a8aa0; letter-spacing:0.10em;
     text-transform:uppercase; font-weight:600;
@@ -4199,6 +4316,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #afkDpElapsed,
   #afkDpRemaining { min-width:4.5em; }
   #afkDpDistRem   { min-width:5.5em; }
+  #afkDpTrkRem    { min-width:5.5em; }
   #afkDpEtaLcl    { min-width:3.5em; }
   #afkDpEtaUtc    { min-width:4.0em; }
   #afkDpNextAlarm { min-width:9.5em; max-width:18em; overflow:hidden; text-overflow:ellipsis; }
@@ -4604,7 +4722,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.78.1';
+const APP_VERSION = '2.80.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9608,6 +9726,13 @@ function _fsuipcOpenWs() {
         { name: 'hdg', address: 0x0580, type: 'uint', size: 4 },
         { name: 'gs',     address: 0x02B4, type: 'uint', size: 4 },
         { name: 'ias',    address: 0x02BC, type: 'uint', size: 4 },
+        // IND ALT was attempted via FSUIPC offset 0x6020 in v2.79.1
+        // (type:'double') and v2.80.1 (type:'bytearray' + DataView
+        // decode). Neither produced a usable reading from Paul Henty's
+        // WebSocket on this user's build — field stayed at —. Removed
+        // entirely in v2.80.2. A SimVar-passthrough approach
+        // (INDICATED ALTITUDE simvar via simvars.declare) is the path
+        // forward if this is ever revisited.
         // AGL was previously derived from FSUIPC offset 0x0B4C (Ground
         // altitude metres × 256), but in MSFS via FSUIPC7 that offset
         // frequently returns the nearest-airport reference elevation
@@ -11998,35 +12123,375 @@ function _afkFmtHMS(secs) {
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
+// Sum of track miles remaining along the loaded SimBrief route — from the
+// aircraft's current position to the next un-passed fix, then every leg
+// after that through the destination. Returns NaN when the plan has no
+// navlog fixes or the call args are unusable.
+//
+// "Current leg" detection: walk every consecutive pair (origin → fix1 →
+// fix2 → … → destination) and pick the leg whose endpoints' distances to
+// the aircraft sum closest to the leg's own length — i.e. the aircraft is
+// most nearly on that line. Robust to small lateral deviations and route
+// doglegs. Tied legs keep the EARLIER index so a fix that lies near two
+// legs (a sharp turn) routes the aircraft to the next one ahead.
+function _afkTrackMilesRemaining(ac, fp) {
+  if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng) || !fp || !fp.origin || !fp.destination) return NaN;
+  const oLat = parseFloat(fp.origin.pos_lat),       oLng = parseFloat(fp.origin.pos_long);
+  const dLat = parseFloat(fp.destination.pos_lat),  dLng = parseFloat(fp.destination.pos_long);
+  if (!isFinite(oLat) || !isFinite(oLng) || !isFinite(dLat) || !isFinite(dLng)) return NaN;
+  const fixesRaw = fp.navlog && fp.navlog.fix;
+  const fixes    = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  // Build ordered point list [origin, ...fixes, destination].
+  const pts = [[oLat, oLng]];
+  fixes.forEach(f => {
+    const la = parseFloat(f.pos_lat), ln = parseFloat(f.pos_long);
+    if (isFinite(la) && isFinite(ln)) pts.push([la, ln]);
+  });
+  pts.push([dLat, dLng]);
+  if (pts.length < 2) return NaN;
+  // Find the leg the aircraft is most plausibly on.
+  let bestIdx = 0;
+  let bestScore = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i], B = pts[i + 1];
+    const dA  = _afkDistNm(ac.lat, ac.lng, A[0], A[1]);
+    const dB  = _afkDistNm(ac.lat, ac.lng, B[0], B[1]);
+    const dAB = _afkDistNm(A[0], A[1], B[0], B[1]);
+    if (!isFinite(dA) || !isFinite(dB) || !isFinite(dAB)) continue;
+    const excess = (dA + dB) - dAB; // 0 = perfectly on the line
+    if (excess < bestScore) { bestScore = excess; bestIdx = i; }
+  }
+  // Remaining = (cur -> end of current leg) + sum of every subsequent leg.
+  let total = _afkDistNm(ac.lat, ac.lng, pts[bestIdx + 1][0], pts[bestIdx + 1][1]);
+  if (!isFinite(total)) return NaN;
+  for (let i = bestIdx + 1; i < pts.length - 1; i++) {
+    const d = _afkDistNm(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+    if (isFinite(d)) total += d;
+  }
+  return total;
+}
+
+// =====================================================================
+// Customisable data panel (v2.80.0)
+//
+// Registry of every available field — id → { label, group, valueId,
+// title, minWidth }. The valueId is the DOM id _afkUpdateDataPanel writes
+// into (kept identical to the pre-v2.80.0 ids so the update path is
+// untouched). The user's config (an ordered array of element ids, with
+// 'spacer-N' tokens for vertical-bar dividers) is persisted to
+// localStorage; default config matches the pre-v2.80.0 layout.
+// =====================================================================
+const _AFK_DP_ELEMENTS = {
+  lat:       { label:'LAT',          group:'Position',  valueId:'afkDpLat',       minWidth:'7.5em' },
+  lon:       { label:'LON',          group:'Position',  valueId:'afkDpLon',       minWidth:'8.0em' },
+  hdg:       { label:'HDG',          group:'Position',  valueId:'afkDpHdg',       minWidth:'3.2em' },
+  altMsl:    { label:'ALT MSL',      group:'Altitude',  valueId:'afkDpAlt',       minWidth:'5.0em',
+               title:'Altitude above mean sea level' },
+  gs:        { label:'GS',           group:'Speed',     valueId:'afkDpGs',        minWidth:'4.0em' },
+  ias:       { label:'IAS',          group:'Speed',     valueId:'afkDpIas',       minWidth:'4.0em' },
+  vs:        { label:'VS',           group:'Speed',     valueId:'afkDpVs',        minWidth:'6.0em' },
+  phase:     { label:'PHASE',        group:'Status',    valueId:'afkDpPhase',     minWidth:'5.0em' },
+  elapsed:   { label:'ELAPSED',      group:'Time',      valueId:'afkDpElapsed',   minWidth:'4.5em' },
+  remaining: { label:'REMAINING',    group:'Time',      valueId:'afkDpRemaining', minWidth:'4.5em' },
+  etaLcl:    { label:'ETA LOCAL',    group:'Time',      valueId:'afkDpEtaLcl',    minWidth:'3.5em' },
+  etaUtc:    { label:'ETA UTC',      group:'Time',      valueId:'afkDpEtaUtc',    minWidth:'4.0em' },
+  distRem:   { label:'DIST TO DEST', group:'Distance',  valueId:'afkDpDistRem',   minWidth:'5.5em',
+               title:"Great-circle nautical miles directly from your current position to the destination airport — straight line, ignores the planned route's dogleg." },
+  trkRem:    { label:'TRK MILES REM',group:'Distance',  valueId:'afkDpTrkRem',    minWidth:'5.5em',
+               title:'Track miles remaining along the SimBrief route — from your current position to the next un-passed waypoint, plus the sum of all remaining legs to the destination. Drives the REMAINING / ETA estimates.' },
+  nextAlarm: { label:'NEXT ALARM',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
+  nextEta:   { label:'IN',           group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
+};
+
+const _AFK_DP_DEFAULT_CONFIG = [
+  'lat', 'lon', 'hdg', 'altMsl', 'gs', 'ias', 'vs', 'phase',
+  'spacer-1',
+  'elapsed', 'remaining', 'distRem', 'trkRem', 'etaLcl', 'etaUtc',
+  'spacer-2',
+  'nextAlarm', 'nextEta',
+];
+
+const _AFK_DP_LS_CONFIG = 'simfly_aa_afk_dp_config';
+
+function _afkDpGetConfig() {
+  try {
+    const raw = localStorage.getItem(_AFK_DP_LS_CONFIG);
+    if (!raw) return _AFK_DP_DEFAULT_CONFIG.slice();
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return _AFK_DP_DEFAULT_CONFIG.slice();
+    // Sanity-filter: drop anything that isn't a known element id or a
+    // 'spacer-XXX' token so a stale config from before v2.80.0 doesn't
+    // wedge the render.
+    return arr.filter(id => typeof id === 'string' && (_AFK_DP_ELEMENTS[id] || /^spacer-/.test(id)));
+  } catch (_) { return _AFK_DP_DEFAULT_CONFIG.slice(); }
+}
+function _afkDpSetConfig(arr) {
+  try { localStorage.setItem(_AFK_DP_LS_CONFIG, JSON.stringify(arr)); } catch (_) {}
+}
+function _afkDpResetConfig() {
+  try { localStorage.removeItem(_AFK_DP_LS_CONFIG); } catch (_) {}
+  _afkDpRender();
+}
+
+// Build a new unique spacer id given the existing config.
+function _afkDpNextSpacerId(config) {
+  let n = 1;
+  while (config.indexOf('spacer-' + n) !== -1) n++;
+  return 'spacer-' + n;
+}
+
+function _afkDpEscapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Render the data-panel content from the saved config. Each field carries
+// its stable value-id so _afkUpdateDataPanel can write into it without
+// caring whether the user reordered, hid, or duplicated anything.
+function _afkDpRender() {
+  const root = document.getElementById('afkDataPanelSections');
+  if (!root) return;
+  const cfg = _afkDpGetConfig();
+  const parts = [];
+  cfg.forEach(id => {
+    if (/^spacer-/.test(id)) {
+      parts.push(
+        '<div class="afk-dp-spacer afk-dp-draggable" data-dp-id="' + id + '"' +
+          ' draggable="true"' +
+          ' ondragstart="_afkDpDragStart(event,\'' + id + '\')"' +
+          ' ondragover="_afkDpDragOver(event,\'' + id + '\')"' +
+          ' ondragleave="_afkDpDragLeave(event)"' +
+          ' ondrop="_afkDpDrop(event,\'' + id + '\')"' +
+          ' ondragend="_afkDpDragEnd(event)"' +
+          ' title="Vertical-bar spacer — drag to reorder; remove from the ⚙ menu"></div>');
+      return;
+    }
+    const def = _AFK_DP_ELEMENTS[id];
+    if (!def) return;
+    const styleBits = [];
+    if (def.minWidth) styleBits.push('min-width:' + def.minWidth);
+    if (def.maxWidth) styleBits.push('max-width:' + def.maxWidth + ';overflow:hidden;text-overflow:ellipsis');
+    const titleAttr = def.title ? ' title="' + _afkDpEscapeAttr(def.title) + '"' : '';
+    parts.push(
+      '<div class="afk-dp-field" data-dp-id="' + id + '"' + titleAttr +
+        ' draggable="true"' +
+        ' ondragstart="_afkDpDragStart(event,\'' + id + '\')"' +
+        ' ondragover="_afkDpDragOver(event,\'' + id + '\')"' +
+        ' ondragleave="_afkDpDragLeave(event)"' +
+        ' ondrop="_afkDpDrop(event,\'' + id + '\')"' +
+        ' ondragend="_afkDpDragEnd(event)">' +
+        '<span class="afk-dp-grip" title="Drag to reorder">⋮⋮</span>' +
+        '<div class="afk-dp-label">' + def.label + '</div>' +
+        '<div class="afk-dp-value" id="' + def.valueId + '"' + (styleBits.length ? ' style="' + styleBits.join(';') + '"' : '') + '>—</div>' +
+      '</div>');
+  });
+  root.innerHTML = parts.join('');
+}
+
+// ---- Show/hide menu --------------------------------------------------
+function _afkDpToggleMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const m = document.getElementById('afkDpMenu');
+  if (!m) return;
+  if (m.classList.contains('open')) { m.classList.remove('open'); return; }
+  _afkDpRenderMenu();
+  m.classList.add('open');
+  // Click-outside closes the menu.
+  setTimeout(() => {
+    const onDocClick = (e) => {
+      if (m.contains(e.target)) return;
+      if (e.target && e.target.id === 'afkDpGearBtn') return;
+      m.classList.remove('open');
+      document.removeEventListener('mousedown', onDocClick, true);
+    };
+    document.addEventListener('mousedown', onDocClick, true);
+  }, 0);
+}
+
+function _afkDpRenderMenu() {
+  const m = document.getElementById('afkDpMenu');
+  if (!m) return;
+  const cfg = _afkDpGetConfig();
+  const visible = new Set(cfg);
+  // Group elements alphabetically by group name; alphabetical within.
+  const byGroup = {};
+  Object.keys(_AFK_DP_ELEMENTS).forEach(id => {
+    const g = _AFK_DP_ELEMENTS[id].group;
+    if (!byGroup[g]) byGroup[g] = [];
+    byGroup[g].push(id);
+  });
+  const groupNames = Object.keys(byGroup).sort();
+  let html =
+    '<div class="afk-dp-menu-hdr">' +
+      '<span>Data panel fields</span>' +
+      '<button class="afk-dp-menu-close" onclick="_afkDpToggleMenu(event)" title="Close">&times;</button>' +
+    '</div>';
+  groupNames.forEach(g => {
+    const ids = byGroup[g].slice().sort((a, b) =>
+      _AFK_DP_ELEMENTS[a].label.localeCompare(_AFK_DP_ELEMENTS[b].label));
+    html += '<div class="afk-dp-menu-group">' +
+      '<div class="afk-dp-menu-group-title">' + g + '</div>' +
+      ids.map(id => {
+        const checked = visible.has(id) ? ' checked' : '';
+        return '<label><input type="checkbox" data-id="' + id + '"' + checked +
+          ' onchange="_afkDpToggleField(\'' + id + '\', this.checked)"> ' +
+          _AFK_DP_ELEMENTS[id].label +
+        '</label>';
+      }).join('') +
+    '</div>';
+  });
+  // Spacer section — list each active spacer + an Add Spacer action.
+  const spacers = cfg.filter(id => /^spacer-/.test(id));
+  html += '<div class="afk-dp-menu-group">' +
+    '<div class="afk-dp-menu-group-title">Spacers</div>';
+  if (spacers.length === 0) {
+    html += '<div style="color:#5e6a7a;font-size:0.88rem;padding:0.18rem 0.3rem;">No vertical-bar spacers yet — add as many as you like below.</div>';
+  } else {
+    spacers.forEach((sid, idx) => {
+      html += '<label><input type="checkbox" data-id="' + sid + '" checked' +
+        ' onchange="_afkDpToggleField(\'' + sid + '\', this.checked)"> ' +
+        'Vertical bar #' + (idx + 1) +
+      '</label>';
+    });
+  }
+  html += '</div>';
+  html +=
+    '<div class="afk-dp-menu-actions">' +
+      '<button class="afk-dp-menu-btn" onclick="_afkDpAddSpacer()" title="Add a vertical-bar spacer at the end of the panel — drag it to position">+ Add Spacer</button>' +
+      '<button class="afk-dp-menu-btn subtle" onclick="_afkDpResetConfig();_afkDpRenderMenu()" title="Restore the default layout (all fields visible in the original order, two spacers)">Reset to Default</button>' +
+    '</div>';
+  m.innerHTML = html;
+}
+
+function _afkDpToggleField(id, on) {
+  let cfg = _afkDpGetConfig();
+  if (on) {
+    if (cfg.indexOf(id) === -1) cfg.push(id);
+  } else {
+    cfg = cfg.filter(x => x !== id);
+  }
+  _afkDpSetConfig(cfg);
+  _afkDpRender();
+  _afkDpRenderMenu();
+  // Push current live-aircraft values into the freshly-rendered DOM so
+  // toggled-on fields aren't blank until the next tick.
+  if (_liveAcLastData) {
+    try {
+      _afkUpdateDataPanel({
+        lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng),
+        alt: _liveAcLastData.alt,
+        gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg
+      });
+    } catch (_) {}
+  }
+}
+
+function _afkDpAddSpacer() {
+  const cfg = _afkDpGetConfig();
+  cfg.push(_afkDpNextSpacerId(cfg));
+  _afkDpSetConfig(cfg);
+  _afkDpRender();
+  _afkDpRenderMenu();
+}
+
+// ---- Drag-to-reorder -------------------------------------------------
+let _afkDpDragFromId = null;
+function _afkDpDragStart(ev, id) {
+  _afkDpDragFromId = id;
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); } catch (_) {}
+  if (ev.currentTarget) ev.currentTarget.classList.add('afk-dp-dragging');
+}
+function _afkDpDragOver(ev, id) {
+  if (_afkDpDragFromId == null || id === _afkDpDragFromId) return;
+  ev.preventDefault();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+  const el = ev.currentTarget;
+  const r  = el.getBoundingClientRect();
+  const before = ev.clientX < r.left + r.width / 2;
+  el.classList.toggle('afk-dp-drop-before', before);
+  el.classList.toggle('afk-dp-drop-after',  !before);
+}
+function _afkDpDragLeave(ev) {
+  const el = ev.currentTarget;
+  if (el) { el.classList.remove('afk-dp-drop-before'); el.classList.remove('afk-dp-drop-after'); }
+}
+function _afkDpDrop(ev, toId) {
+  if (_afkDpDragFromId == null || toId === _afkDpDragFromId) return;
+  ev.preventDefault();
+  const el = ev.currentTarget;
+  const r  = el.getBoundingClientRect();
+  const before = ev.clientX < r.left + r.width / 2;
+  const fromId = _afkDpDragFromId;
+  _afkDpDragFromId = null;
+  // Reorder the config: remove fromId, insert before/after toId.
+  let cfg = _afkDpGetConfig();
+  cfg = cfg.filter(x => x !== fromId);
+  let pos = cfg.indexOf(toId);
+  if (pos < 0) pos = cfg.length;
+  if (!before) pos += 1;
+  cfg.splice(pos, 0, fromId);
+  _afkDpSetConfig(cfg);
+  _afkDpRender();
+  // Replay values so the moved row isn't blank for a tick.
+  if (_liveAcLastData) {
+    try {
+      _afkUpdateDataPanel({
+        lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng),
+        alt: _liveAcLastData.alt,
+        gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg
+      });
+    } catch (_) {}
+  }
+}
+function _afkDpDragEnd(ev) {
+  _afkDpDragFromId = null;
+  document.querySelectorAll('.afk-dp-field.afk-dp-dragging, .afk-dp-spacer.afk-dp-dragging')
+    .forEach(el => el.classList.remove('afk-dp-dragging'));
+  document.querySelectorAll('.afk-dp-drop-before, .afk-dp-drop-after')
+    .forEach(el => { el.classList.remove('afk-dp-drop-before'); el.classList.remove('afk-dp-drop-after'); });
+}
+
+// Every field is optional after v2.80.0 — the user can hide any of them
+// via the ⚙ menu. _afkDpSet is the null-tolerant helper used everywhere
+// in the update path so a hidden field is just a no-op instead of a throw.
+function _afkDpSet(id, text, klass) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  if (text !== undefined) el.textContent = text;
+  if (klass !== undefined) el.className = klass;
+  return el;
+}
+
 function _afkUpdateDataPanel(ac) {
-  if (!document.getElementById('afkDpLat')) return;
-  document.getElementById('afkDpLat').textContent = _afkFmtCoord(ac.lat, true);
-  document.getElementById('afkDpLon').textContent = _afkFmtCoord(ac.lng, false);
+  _afkDpSet('afkDpLat', _afkFmtCoord(ac.lat, true));
+  _afkDpSet('afkDpLon', _afkFmtCoord(ac.lng, false));
   const hdgEl = document.getElementById('afkDpHdg');
-  hdgEl.textContent = (ac.hdg != null && isFinite(ac.hdg)) ? Math.round(ac.hdg).toString().padStart(3, '0') + '°' : '—';
-  document.getElementById('afkDpAlt').textContent = _afkFmtInt(ac.alt, 'ft');
-  document.getElementById('afkDpGs').textContent  = _afkFmtInt(ac.gs, 'kt');
-  document.getElementById('afkDpIas').textContent = (ac.ias != null && isFinite(ac.ias)) ? Math.round(ac.ias) + ' kt' : '—';
+  if (hdgEl) hdgEl.textContent = (ac.hdg != null && isFinite(ac.hdg)) ? Math.round(ac.hdg).toString().padStart(3, '0') + '°' : '—';
+  _afkDpSet('afkDpAlt', _afkFmtInt(ac.alt, 'ft'));
+  _afkDpSet('afkDpGs',  _afkFmtInt(ac.gs, 'kt'));
+  _afkDpSet('afkDpIas', (ac.ias != null && isFinite(ac.ias)) ? (Math.round(ac.ias) + ' kt') : '—');
   const vs = _afkPhase.vsFpm();
-  const vsEl = document.getElementById('afkDpVs');
   if (isFinite(vs)) {
     const arrow = vs > 50 ? '↑' : vs < -50 ? '↓' : '–';
-    vsEl.textContent = arrow + ' ' + Math.abs(Math.round(vs)).toLocaleString() + ' fpm';
-    vsEl.className = 'afk-dp-value' + (vs < -1500 ? ' warn' : '');
-  } else { vsEl.textContent = '—'; vsEl.className = 'afk-dp-value'; }
+    _afkDpSet('afkDpVs',
+      arrow + ' ' + Math.abs(Math.round(vs)).toLocaleString() + ' fpm',
+      'afk-dp-value' + (vs < -1500 ? ' warn' : ''));
+  } else {
+    _afkDpSet('afkDpVs', '—', 'afk-dp-value');
+  }
   const phase = _afkPhase.get();
-  document.getElementById('afkDpPhase').textContent = phase ? phase.toUpperCase() : '—';
+  _afkDpSet('afkDpPhase', phase ? phase.toUpperCase() : '—');
 
   // Elapsed
-  const elapsedEl = document.getElementById('afkDpElapsed');
   if (_afkTakeoffAt > 0) {
-    elapsedEl.textContent = _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000);
-    elapsedEl.className = 'afk-dp-value';
-  } else { elapsedEl.textContent = '—'; elapsedEl.className = 'afk-dp-value muted'; }
+    _afkDpSet('afkDpElapsed', _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000), 'afk-dp-value');
+  } else {
+    _afkDpSet('afkDpElapsed', '—', 'afk-dp-value muted');
+  }
 
   // Destination ETA
   const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
   const distEl = document.getElementById('afkDpDistRem');
+  const trkEl  = document.getElementById('afkDpTrkRem');
   const remEl  = document.getElementById('afkDpRemaining');
   const etaLEl = document.getElementById('afkDpEtaLcl');
   const etaUEl = document.getElementById('afkDpEtaUtc');
@@ -12034,26 +12499,39 @@ function _afkUpdateDataPanel(ac) {
     const destLat = parseFloat(fp.destination.pos_lat);
     const destLng = parseFloat(fp.destination.pos_long);
     const dNm = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
-    distEl.textContent = isFinite(dNm) ? dNm.toFixed(1) + ' nm' : '—';
-    distEl.className = 'afk-dp-value';
-    if (isFinite(dNm) && ac.gs > 5) {
-      const remSec = (dNm / ac.gs) * 3600;
-      remEl.textContent = _afkFmtHMS(remSec);
-      remEl.className = 'afk-dp-value';
-      const eta = new Date(Date.now() + remSec * 1000);
-      etaLEl.textContent = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-      etaUEl.textContent = eta.getUTCHours().toString().padStart(2, '0') + ':' + eta.getUTCMinutes().toString().padStart(2, '0') + 'Z';
-      etaLEl.className = 'afk-dp-value'; etaUEl.className = 'afk-dp-value';
+    if (distEl) distEl.textContent = isFinite(dNm) ? dNm.toFixed(1) + ' nm' : '—';
+    if (distEl) distEl.className = 'afk-dp-value';
+    // Track miles remaining along the SimBrief route — sums the leg from
+    // current position to the next un-passed fix, then every leg after
+    // that through the destination. Falls back to the great-circle figure
+    // when the plan has no navlog fixes (origin direct to destination).
+    const trkNm = _afkTrackMilesRemaining(ac, fp);
+    const remNm = isFinite(trkNm) ? trkNm : dNm;
+    if (isFinite(remNm)) {
+      if (trkEl) { trkEl.textContent = remNm.toFixed(1) + ' nm'; trkEl.className = 'afk-dp-value'; }
     } else {
-      remEl.textContent = '—'; remEl.className = 'afk-dp-value muted';
-      etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted';
-      etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted';
+      if (trkEl) { trkEl.textContent = '—'; trkEl.className = 'afk-dp-value muted'; }
+    }
+    // REMAINING / ETA now use track miles (more accurate on legs with a
+    // dogleg); fall back to the great-circle figure if the plan has no
+    // navlog fixes.
+    if (isFinite(remNm) && ac.gs > 5) {
+      const remSec = (remNm / ac.gs) * 3600;
+      if (remEl) { remEl.textContent = _afkFmtHMS(remSec); remEl.className = 'afk-dp-value'; }
+      const eta = new Date(Date.now() + remSec * 1000);
+      if (etaLEl) { etaLEl.textContent = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }); etaLEl.className = 'afk-dp-value'; }
+      if (etaUEl) { etaUEl.textContent = eta.getUTCHours().toString().padStart(2, '0') + ':' + eta.getUTCMinutes().toString().padStart(2, '0') + 'Z'; etaUEl.className = 'afk-dp-value'; }
+    } else {
+      if (remEl)  { remEl.textContent = '—';  remEl.className = 'afk-dp-value muted'; }
+      if (etaLEl) { etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted'; }
+      if (etaUEl) { etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted'; }
     }
   } else {
-    distEl.textContent = '—'; distEl.className = 'afk-dp-value muted';
-    remEl.textContent = '—';  remEl.className = 'afk-dp-value muted';
-    etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted';
-    etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted';
+    if (distEl) { distEl.textContent = '—'; distEl.className = 'afk-dp-value muted'; }
+    if (trkEl)  { trkEl.textContent  = '—'; trkEl.className  = 'afk-dp-value muted'; }
+    if (remEl)  { remEl.textContent = '—';  remEl.className = 'afk-dp-value muted'; }
+    if (etaLEl) { etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted'; }
+    if (etaUEl) { etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted'; }
   }
 
   // Next alarm
@@ -12064,29 +12542,32 @@ function _afkUpdateDataPanel(ac) {
     const label = _afkAlarmTypeLabel(nx.alarm.type) +
       (nx.alarm.type === 'geofence' && nx.alarm.params.label ? ' (' + nx.alarm.params.label + ')' : '') +
       (nx.alarm.type === 'waypoint' && nx.location && nx.location.label ? ' (' + nx.location.label + ')' : '');
-    nextEl.textContent = label;
+    if (nextEl) nextEl.textContent = label;
     // Geofence + waypoint alarms have a fixed map location — make the label
     // a click target that recentres the map on the alarm and disables the
     // follow-aircraft mode (per [[feedback_disclosure_triangle_direction]]
     // and the v2.75.0 follow-aircraft work).
-    if (nx.location) {
-      nextEl.className = 'afk-dp-value is-link';
-      nextEl.title = 'Click to centre the map on this alarm';
-      nextEl.onclick = () => _afkRecentreOnAlarm(nx.location);
-    } else {
-      nextEl.className = 'afk-dp-value';
+    if (nextEl) {
+      if (nx.location) {
+        nextEl.className = 'afk-dp-value is-link';
+        nextEl.title = 'Click to centre the map on this alarm';
+        nextEl.onclick = () => _afkRecentreOnAlarm(nx.location);
+      } else {
+        nextEl.className = 'afk-dp-value';
+        nextEl.title = '';
+        nextEl.onclick = null;
+      }
+    }
+    if (nextEtaEl) { nextEtaEl.textContent = _afkETA.fmt(nx.etaSec); nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : ''); }
+  } else {
+    const armed = _afkAlarms.armedCount();
+    if (nextEl) {
+      nextEl.textContent = armed > 0 ? '(' + armed + ' armed, none ETA-predictable)' : '—';
+      nextEl.className = 'afk-dp-value' + (armed > 0 ? '' : ' muted');
       nextEl.title = '';
       nextEl.onclick = null;
     }
-    nextEtaEl.textContent = _afkETA.fmt(nx.etaSec);
-    nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : '');
-  } else {
-    const armed = _afkAlarms.armedCount();
-    nextEl.textContent = armed > 0 ? '(' + armed + ' armed, none ETA-predictable)' : '—';
-    nextEl.className = 'afk-dp-value' + (armed > 0 ? '' : ' muted');
-    nextEl.title = '';
-    nextEl.onclick = null;
-    nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted';
+    if (nextEtaEl) { nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted'; }
   }
 }
 
@@ -12144,6 +12625,9 @@ function _afkBindModalEnter(modalId, submitFn) {
 }
 
 function _afkInit() {
+  // Build the data panel from the saved (or default) field configuration.
+  // Has to happen before anything tries to write into afkDpXxx ids.
+  try { _afkDpRender(); } catch (_) {}
   // Restore data panel collapsed state
   try {
     if (localStorage.getItem(_AFK_LS_DP) === '1') {
@@ -21957,10 +22441,12 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Aircraft Data Panel</div>
           <div class="help-feature-desc">
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
-            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE. ALT MSL is altitude above mean sea level. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. A SimVar-based replacement may return in a future release. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
-            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. REMAINING (great-circle distance to destination &divide; current GS), DIST TO GO (great-circle nm to destination), ETA LOCAL, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
+            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
+            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
             <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.<br/><br/>
             Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
+
+            <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
             <strong>FSUIPC offset note</strong> &mdash; IAS reads FSUIPC offset <code>0x02BC</code> (uint, knots&nbsp;&times;&nbsp;128). STKP doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; when STKP is the active source.
           </div>
         </div>
@@ -21987,10 +22473,80 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.80.2</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⚙ gear menu now actually opens.</strong> v2.80.0's popover was positioned <code>absolute</code> inside <code>#afkDataPanel</code>, but the panel had no <code>position:relative</code> so the menu's anchor resolved against the document body and the popover landed off-screen. Added <code>position:relative</code> to the panel and corrected the <code>bottom</code> offset from <code>calc(100% - 4px)</code> (which placed the menu INSIDE the panel) to <code>calc(100% + 6px)</code> (a clean 6&nbsp;px gap above the bar).</li>
+          <li><strong>IND ALT removed.</strong> v2.79.1 tried <code>type:'double'</code>, v2.80.1 tried <code>type:'bytearray'</code> + manual <code>DataView.getFloat64()</code>; neither produced a usable reading from FSUIPC offset <code>0x6020</code> through Paul Henty's WebSocket on real-world setups (the field stayed at <code>&mdash;</code>). Removed cleanly: registry entry, default config token, FSUIPC offset declaration, decode block, live-aircraft payload field, data-panel write, CSS rule, and help text. Existing saved layouts that included <code>'indAlt'</code> get the entry silently filtered out by <code>_afkDpGetConfig</code> (no migration step needed). A SimVar-passthrough approach (<code>INDICATED ALTITUDE</code> via Paul Henty's <code>simvars.declare</code> channel) is the path forward if this is ever revisited.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.80.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>IND ALT now actually populates under FSUIPC.</strong> v2.79.1 declared FSUIPC offset <code>0x6020</code> as <code>type:'double'</code> — Paul Henty's WebSocket Server didn't honor that on this build (the field stayed at <code>&mdash;</code>). v2.80.1 declares the offset as <code>type:'bytearray', size:8</code> instead and decodes the raw 8 bytes locally with <code>DataView.getFloat64(0, true)</code> (little-endian IEEE 754). Wrapped in <code>try / catch</code> + a <code>±1 000 000 ft</code> sanity clamp so a malformed payload can never poison the data panel. Backward-compatible: if a future Paul Henty build does start passing a real JS number through, the decode path picks it up directly without re-declaring the offset.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.80.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft Data Panel is now fully customisable.</strong> Every field can be shown, hidden, reordered, or surrounded by vertical-bar spacers entirely under your control:
+            <ul>
+              <li><strong>⚙ gear button</strong> on the right of the panel opens a small popover menu with checkboxes for every available field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick a box to show, untick to hide &mdash; the panel re-renders instantly.</li>
+              <li><strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere else on the bar. An accent-coloured drop indicator shows where the item will land. Works the same on field rows and on vertical-bar spacers.</li>
+              <li><strong>Vertical-bar spacers are now first-class addable elements.</strong> The vertical divider lines previously drawn between the three fixed sections are now individual spacer items you can add as many of as you want (one per click on <em>+ Add Spacer</em> in the gear menu), drag to any position, and remove via the checkbox list in the menu. Default layout still shows the original two dividers in their familiar positions.</li>
+              <li><strong>Configuration persists to <code>localStorage</code></strong> (key <code>simfly_aa_afk_dp_config</code>) and restores whenever the map loads. <em>Reset to Default</em> in the gear menu wipes the saved layout and falls back to the original order.</li>
+            </ul>
+            Internally driven by a new <code>_AFK_DP_ELEMENTS</code> registry that knows each field's id, label, group, target value-DOM-id, min-width, and optional tooltip text. The pre-v2.80.0 <code>afkDpXxx</code> DOM ids are preserved so the live-aircraft update path is null-safe but otherwise unchanged. Every direct-write in <code>_afkUpdateDataPanel</code> now goes through a null-tolerant helper (<code>_afkDpSet</code>) or guard, so hiding a field is a clean no-op instead of a throw.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.79.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New <em>IND ALT</em> field on the Aircraft Data Panel.</strong> Shows the Kollsman-calibrated indicated altitude &mdash; what the cockpit altimeter actually reads given the current QNH setting &mdash; positioned immediately before <em>ALT MSL</em> so you can see at a glance how much the indicated reading deviates from true altitude. Sourced from FSUIPC offset <code>0x6020</code> (<em>INDICATED ALTITUDE CALIBRATED</em>, IEEE 754 double in feet) read via Paul Henty's WebSocket with <code>type:'double'</code>. STKP's public payload doesn't expose indicated altitude, so the field shows <code>&mdash;</code> under that source.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.79.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New <em>TRK MILES REM</em> field on the Aircraft Data Panel &mdash; sums the actual track miles remaining along the SimBrief route.</strong> Walks the ordered fix list (origin, every navlog fix, destination), picks the leg the aircraft is currently on (the one whose endpoints' distances to the aircraft sum closest to the leg's own length &mdash; robust to small lateral deviations and route doglegs), then totals (current position &rarr; next un-passed fix) + every remaining leg through the destination. Falls back to the great-circle figure when the plan has no navlog fixes (origin-direct-to-destination).</li>
+          <li><strong>Old <em>DIST TO GO</em> field renamed to <em>DIST TO DEST</em>.</strong> Same value as before &mdash; great-circle nautical miles straight from your current position to the destination airport, ignoring any planned dogleg. With TRK MILES REM sitting next to it, the two side-by-side now read cleanly: <em>"how far in a straight line"</em> vs <em>"how far along the route I will actually fly"</em>.</li>
+          <li><strong><em>REMAINING</em> and ETA now use track miles instead of great-circle distance.</strong> A 350 nm SimBrief route that doglegs around a TMA used to under-report its remaining time using the 320 nm straight-line figure; the new estimate is based on the 350 nm number, so REMAINING / ETA LOCAL / ETA UTC match what you'll actually fly. Falls back to the great-circle figure if the plan has no navlog fixes.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.78.1</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -29626,30 +30182,14 @@ function rgSendToFlightPlanner() {
       <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
     </div>
     <div id="afkDataPanel">
-      <div class="afk-dp-sections" id="afkDataPanelSections">
-        <div class="afk-dp-section">
-          <div class="afk-dp-field"><div class="afk-dp-label">LAT</div><div class="afk-dp-value" id="afkDpLat">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">LON</div><div class="afk-dp-value" id="afkDpLon">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">HDG</div><div class="afk-dp-value" id="afkDpHdg">—</div></div>
-          <div class="afk-dp-field" title="Altitude above mean sea level"><div class="afk-dp-label">ALT MSL</div><div class="afk-dp-value" id="afkDpAlt">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">GS</div><div class="afk-dp-value" id="afkDpGs">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">IAS</div><div class="afk-dp-value" id="afkDpIas">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">VS</div><div class="afk-dp-value" id="afkDpVs">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">PHASE</div><div class="afk-dp-value" id="afkDpPhase">—</div></div>
-        </div>
-        <div class="afk-dp-section">
-          <div class="afk-dp-field"><div class="afk-dp-label">ELAPSED</div><div class="afk-dp-value" id="afkDpElapsed">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">REMAINING</div><div class="afk-dp-value" id="afkDpRemaining">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">DIST TO GO</div><div class="afk-dp-value" id="afkDpDistRem">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">ETA LOCAL</div><div class="afk-dp-value" id="afkDpEtaLcl">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">ETA UTC</div><div class="afk-dp-value" id="afkDpEtaUtc">—</div></div>
-        </div>
-        <div class="afk-dp-section">
-          <div class="afk-dp-field"><div class="afk-dp-label">NEXT ALARM</div><div class="afk-dp-value" id="afkDpNextAlarm">—</div></div>
-          <div class="afk-dp-field"><div class="afk-dp-label">IN</div><div class="afk-dp-value" id="afkDpNextEta">—</div></div>
-        </div>
-      </div>
+      <!-- Dynamic content — _afkDpRender() builds field rows + spacers
+           from the user's saved config (LS-backed). Each field carries the
+           stable id afkDpXxx that _afkUpdateDataPanel writes values into. -->
+      <div class="afk-dp-sections" id="afkDataPanelSections"></div>
+      <button class="afk-dp-gear" id="afkDpGearBtn" onclick="_afkDpToggleMenu(event)" title="Customise the data panel — show / hide fields, add spacers, drag to reorder">⚙</button>
       <button class="afk-dp-toggle" id="afkDpToggleBtn" onclick="_afkToggleDataPanel()" title="Collapse / expand data panel">⏷</button>
+      <!-- Show/hide menu popover. Hidden until ⚙ is clicked. -->
+      <div class="afk-dp-menu" id="afkDpMenu" role="dialog" aria-label="Data panel settings"></div>
     </div>
     <div id="afkGeofenceBanner" class="afk-geofence-banner">
       <span id="afkGeofenceBannerText">🔔 Click and drag on the map to draw a geofence circle</span>

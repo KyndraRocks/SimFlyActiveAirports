@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.78.1**
+**Current version: v2.80.2**
 
 ---
 
@@ -214,13 +214,35 @@ Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Dig
 Alarms persist to `localStorage` and survive page reloads. **Active geofence rings and waypoint highlight rings also re-render on every page load**, and the most recently plotted **SimBrief flight plan is restored** at map-init time (route line, end-rings, waypoint markers, and any waypoint-alarm rings reappear without re-clicking *SimBrief Flight Plan*). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any *Specific waypoints* picks are automatically cleared with a toast notification. Alerts need a live aircraft source (FSUIPC) to evaluate; Waypoint, TOC, and TOD additionally need a SimBrief flight plan loaded.
 
 ### Aircraft Data Panel
-A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:
+A persistent strip at the bottom of the map that streams live flight parameters in real time. As of v2.80.0 the panel is **fully customisable** — every field can be shown, hidden, reordered, or surrounded by vertical-bar spacers entirely under your control.
 
-- **Position & motion** — LAT, LON, HDG, **ALT MSL**, GS, IAS, VS (with directional arrow + magnitude), PHASE. ALT MSL is altitude above mean sea level. Vertical speed is computed locally from a rolling altitude buffer so it works the same regardless of source. (*AGL was retired in v2.76.1 because the FSUIPC offset it relied on frequently returned the nearest-airport reference elevation in MSFS rather than actual terrain — readings were unreliable over hills, lakes, or anywhere away from a runway. A SimVar-based replacement may return later.*)
-- **Flight progress** — ELAPSED (clock time since takeoff, detected when ground speed first exceeds 40 kt sustained for 10 s), REMAINING, DIST TO GO, ETA local time, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. The **wheels-up timestamp persists** across browser reloads, so refreshing mid-flight keeps the timer accurate — it resets cleanly only on landing or when a new SimBrief plan is loaded on the ground.
-- **Next alarm** — shows which armed alarm will trip soonest and how long until it does (**H:MM:SS**). Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable. The **Cruise Reached** alarm becomes predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS). The **Descent Started** alarm becomes predictable when a SimBrief plan is loaded and you're well above the destination (rough ETA-to-TOD via the 3× rule). The countdown pulses red when under 60 seconds. **Geofence and waypoint next-alarm names are clickable** — click the name to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.
+**Available fields** (grouped by category in the **⚙** menu):
+
+- **Alerts** — NEXT ALARM, IN (H:MM:SS countdown to the soonest-tripping armed alarm).
+- **Altitude** — ALT MSL (true altitude above mean sea level).
+- **Distance** — DIST TO DEST (great-circle nm straight to the destination), TRK MILES REM (track miles along the SimBrief route — current position to the next un-passed fix + every remaining leg through the destination).
+- **Position** — LAT, LON, HDG.
+- **Speed** — GS, IAS, VS (with directional arrow + magnitude).
+- **Status** — PHASE.
+- **Time** — ELAPSED, REMAINING, ETA LOCAL, ETA UTC.
+
+**Customise the panel:**
+
+- **⚙ gear button** on the right of the bar opens a popover with checkboxes for every field, grouped by category and alphabetised within each group. Tick to show, untick to hide.
+- **Drag-to-reorder** — hover any field and a small `⋮⋮` grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too.
+- **+ Add Spacer** in the gear menu drops in another vertical-bar divider; you can add as many as you want. The dividers in the default layout are themselves spacer items you can move or remove.
+- **Reset to Default** restores the original layout.
+- Your layout persists to `localStorage` (key `simfly_aa_afk_dp_config`) and restores on every map load.
+
+**Derived-field notes:**
+
+- **ELAPSED** is detected when ground speed first exceeds 40 kt sustained for 10 s. The wheels-up timestamp persists to `localStorage`, so refreshing the page mid-flight keeps the timer accurate — it resets only on landing or when a new SimBrief plan is loaded on the ground.
+- **REMAINING / ETA LOCAL / ETA UTC** are computed from **track miles**, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes.
+- **NEXT ALARM** — Geofence, Waypoint, TOC, TOD, and Altitude alarms are ETA-predictable. Cruise Reached becomes predictable when you've set a target cruise altitude. Descent Started becomes predictable when a SimBrief plan is loaded and you're well above the destination (rough ETA-to-TOD via the classic 3× rule). The countdown pulses red when under 60 seconds. Geofence and waypoint next-alarm names are **clickable** — click to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre sticks.
 
 Click the small **⏷** chevron on the right of the panel to collapse it to a single-line strip — collapsed state persists across sessions. The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field minimum width sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.
+
+*AGL was retired in v2.76.1 because the FSUIPC offset it relied on frequently returned the nearest-airport reference elevation in MSFS rather than actual terrain — readings were unreliable. IND ALT was attempted in v2.79.1 and v2.80.1 and removed in v2.80.2 — FSUIPC offset `0x6020` didn't return usable values through Paul Henty's WebSocket on real-world setups. A SimVar-passthrough approach is the path forward if either is revisited.*
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
