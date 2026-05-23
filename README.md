@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.69.0**
+**Current version: v2.70.0**
 
 ---
 
@@ -188,7 +188,7 @@ While a live aircraft source is active, the app draws a **green breadcrumb trail
 Click **🔔 Alerts** in the map header to open the configuration modal. Five independent alarm types can be armed in any combination for a single flight:
 
 - **⊙ Geofence** — click and drag on the map to draw a circular region of any size. Choose **ENTER**, **EXIT**, or **both** as the trigger. Label, sound, and trigger settings are picked in a small sub-modal after you finish the draw. Orange ring persists on the map; pulses red when tripped.
-- **📍 Waypoint** — fires when your aircraft passes a SimBrief flight-plan waypoint. Uses **closest-point-of-approach (CPA) detection**, so it fires correctly even when your track is a few nm off the planned line. Pick *Every waypoint*, *TOC* (top of climb), *TOD* (top of descent), or a specific multi-select.
+- **📍 Waypoint** — fires when your aircraft passes a SimBrief flight-plan waypoint. Uses **closest-point-of-approach (CPA) detection**, so it fires correctly even when your track is a few nm off the planned line. Pick *Every waypoint*, *TOC* (top of climb), *TOD* (top of descent), or a specific multi-select. **Shortcut:** right-click any waypoint dot on the plotted route to open a quick-add modal pre-populated with that fix's ident and a sound picker.
 - **─ Cruise Reached** — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an *adaptive detector* — it tracks the peak climb vertical speed for this flight and treats cruise/descent thresholds as a fraction of it. Works for both a Cessna 152 climbing at 700 fpm and a Boeing 777 climbing at 3,000 fpm without per-aircraft tuning.
 - **↘ Descent Started** — one-shot alarm that fires when sustained descent begins from cruise. Same adaptive approach as Cruise.
 - **▼ Altitude Minimum** — fires when MSL altitude drops below a threshold you set. Accepts both **plain feet** (`10000`, `10,000`) and **flight levels** (`FL350`, `FL 200`). The hint next to the input echoes the parsed value as you type.

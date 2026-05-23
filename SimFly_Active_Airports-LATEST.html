@@ -4161,6 +4161,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #afkGeofenceModal { z-index:9550; }
   #afkGeofenceModal .modal { max-width:420px; }
 
+  /* Right-click-a-waypoint quick-add modal */
+  #afkWpAlarmModal { z-index:9550; }
+  #afkWpAlarmModal .modal { max-width:420px; }
+
   /* Geofence + waypoint map labels — Leaflet's default .leaflet-div-icon adds
      a white background + grey border that shows up as a misaligned dark box
      behind our custom-styled inner pill. Strip those defaults so only the
@@ -4514,7 +4518,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.69.0';
+const APP_VERSION = '2.70.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8743,6 +8747,14 @@ function _sbOfpRender(data) {
       m.bindTooltip(`<strong>${ident}</strong>${parts.length ? '<br><span style="opacity:0.75">' + parts.join(' · ') + '</span>' : ''}`,
                     { sticky: true, direction: 'top', offset: [0, -4] });
     }
+    // Right-click any waypoint → open the Quick-Add-Alarm modal pre-populated
+    // with this fix's ident + position. Creates a scope='specific' waypoint
+    // alarm on Add. Suppresses the browser's native context menu.
+    m.on('contextmenu', (ev) => {
+      if (ev.originalEvent && ev.originalEvent.preventDefault) ev.originalEvent.preventDefault();
+      if (typeof L !== 'undefined' && L.DomEvent && L.DomEvent.stopPropagation) L.DomEvent.stopPropagation(ev);
+      if (typeof _afkOpenWpAlarmModal === 'function') _afkOpenWpAlarmModal(ident, lat, lng);
+    });
     _sbOfpLayers.push(m);
   });
 
@@ -10486,6 +10498,10 @@ function _afkGeofenceDrawStart() {
 
 function _afkGfOnDown(e) {
   if (!_afkGfDrawState) return;
+  // Only left-click initiates a draw. Right-click is the universal map-pan
+  // affordance (handled by _rgMapMouseDown's right-pan system) and must not
+  // start a geofence draw at the click point.
+  if (e.originalEvent && e.originalEvent.button !== 0) return;
   _afkGfDrawState.phase = 'drag';
   _afkGfDrawState.centerLatLng = e.latlng;
 }
@@ -10528,7 +10544,11 @@ function _afkGfRenderPreview(centerLatLng, radiusNm) {
     iconAnchor: [0, 0],
   });
   try {
-    _afkGfDrawState.labelLayer = L.marker(centerLatLng, { icon: label, interactive: false }).addTo(_rgMap);
+    // High zIndexOffset so the live radius readout floats above all other
+    // map content during a draw (waypoint labels, geofence labels, live
+    // aircraft icon). Persistent post-commit labels stay at the lower 1200
+    // offset so they layer alongside the rest of the AA overlays.
+    _afkGfDrawState.labelLayer = L.marker(centerLatLng, { icon: label, interactive: false, zIndexOffset: 10000 }).addTo(_rgMap);
   } catch (_) {}
 }
 
@@ -10558,6 +10578,12 @@ function _afkGfTeardown(removeVisuals) {
 }
 
 function _afkGeofenceCancel() {
+  // Don't cancel the draw if the user was just right-mouse-dragging the map
+  // — the existing region-map right-pan system stamps _rgRightPanJustEnded
+  // for ~300 ms after a pan release so the trailing contextmenu event can
+  // be suppressed. We need to honour the same flag here so right-drag-pan
+  // works during a geofence draw.
+  if (typeof _rgRightPanJustEnded !== 'undefined' && _rgRightPanJustEnded) return;
   if (_afkGfDrawState && _afkGfDrawState.circleLayer) { try { _rgMap.removeLayer(_afkGfDrawState.circleLayer); } catch (_) {} }
   if (_afkGfDrawState && _afkGfDrawState.labelLayer)  { try { _rgMap.removeLayer(_afkGfDrawState.labelLayer);  } catch (_) {} }
   _afkGfDrawState = null;
@@ -10583,6 +10609,54 @@ function _afkGeofenceModalCancel() {
   const m = document.getElementById('afkGeofenceModal');
   if (m) m.classList.remove('open');
   _afkGeofenceCancel();
+}
+
+// ---------------------- RIGHT-CLICK-WAYPOINT QUICK-ADD --------------------
+// Public entry — called from the SimBrief waypoint marker contextmenu handler
+// in _sbOfpRender. Opens a small modal pre-populated with the waypoint info
+// and lets the user pick a sound, then creates a scope='specific' waypoint
+// alarm targeting just that ident.
+let _afkWpAlarmPending = null; // { ident, lat, lng }
+
+function _afkOpenWpAlarmModal(ident, lat, lng) {
+  if (!ident) return;
+  _afkAudio.unlock();
+  _afkWpAlarmPending = { ident, lat: parseFloat(lat), lng: parseFloat(lng) };
+  document.getElementById('afkWpAlarmIdent').textContent = ident;
+  const latS = isFinite(_afkWpAlarmPending.lat) ? Math.abs(_afkWpAlarmPending.lat).toFixed(4) + '°' + (_afkWpAlarmPending.lat >= 0 ? 'N' : 'S') : '—';
+  const lngS = isFinite(_afkWpAlarmPending.lng) ? Math.abs(_afkWpAlarmPending.lng).toFixed(4) + '°' + (_afkWpAlarmPending.lng >= 0 ? 'E' : 'W') : '—';
+  document.getElementById('afkWpAlarmPos').textContent = 'Position: ' + latS + ' / ' + lngS;
+  document.getElementById('afkWpAlarmSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
+  // Warn if a specific-waypoint alarm already covers this ident.
+  const dup = _afkAlarms.list().some(a =>
+    a.type === 'waypoint' &&
+    a.params && a.params.scope === 'specific' &&
+    (a.params.fixIdents || []).indexOf(ident) >= 0
+  );
+  document.getElementById('afkWpAlarmDupHint').style.display = dup ? '' : 'none';
+  document.getElementById('afkWpAlarmModal').classList.add('open');
+}
+
+function _afkWpAlarmModalCancel() {
+  _afkWpAlarmPending = null;
+  document.getElementById('afkWpAlarmModal').classList.remove('open');
+}
+
+function _afkWpAlarmModalSave() {
+  if (!_afkWpAlarmPending) { _afkWpAlarmModalCancel(); return; }
+  const ident = _afkWpAlarmPending.ident;
+  const sound = document.getElementById('afkWpAlarmSound').value || 'digital-clock';
+  _afkAlarms.add({
+    type: 'waypoint',
+    sound,
+    params: { scope: 'specific', fixIdents: [ident] },
+    state: {},
+  });
+  _afkWpAlarmPending = null;
+  document.getElementById('afkWpAlarmModal').classList.remove('open');
+  _afkRenderWaypointVisuals();
+  _afkUpdateBadge();
+  _aaRtToast('🔔 Alarm added for waypoint ' + ident + '.', 'ok');
 }
 
 function _afkGeofenceModalSave() {
@@ -20508,7 +20582,7 @@ function rgSendToFlightPlanner() {
             <strong>The five alarm types:</strong>
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
-              <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.</li>
+              <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires the first time the aircraft levels off into cruise. The detector is <em>adaptive</em> &mdash; it tracks the peak climb vertical speed for this flight and treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60 seconds. Works for both a Cessna 152 climbing at 700&nbsp;fpm and a Boeing 777 climbing at 3,000&nbsp;fpm without any per-aircraft tuning.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise.</li>
               <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a threshold you set. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
@@ -20577,8 +20651,22 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.69.0</span>
+          <span class="release-version">v2.70.0</span>
           <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Right-click any SimBrief waypoint to add a per-fix alarm.</strong> Each plotted waypoint dot now responds to a right-click by opening a small quick-add modal pre-populated with the waypoint's ident and lat/lng position. Pick a sound (with ▶ preview) and click <strong>Add Alarm</strong> — the app creates a <code>scope: 'specific'</code> waypoint alarm targeting just that fix and immediately renders its cyan ring overlay on the route. If a specific-waypoint alarm already covers that ident, an amber warning hint appears in the modal so you don't unintentionally double-arm. Suppresses the browser's native context menu so the right-click cleanly routes to the alarm UI.</li>
+          <li><strong>Geofence draw mode &mdash; right-mouse drag now pans the map.</strong> Previously, attempting to right-drag during a geofence draw would either do nothing or cancel the in-progress draw (because the trailing <code>contextmenu</code> event fired on mouse release). Two fixes: (1) <code>_afkGfOnDown</code> now ignores any mousedown whose button isn't left (so right-mouse no longer initiates a draw at the click point), and (2) <code>_afkGeofenceCancel</code> honours the existing region-map <code>_rgRightPanJustEnded</code> sentinel so a right-drag release doesn't trigger the cancel path. Result: right-mouse drag pans freely while drawing a geofence circle, matching the rest of the map's right-pan affordance. Pure right-click still cancels the draw.</li>
+          <li><strong>Geofence radius readout floats above all other map content.</strong> The live "X.XX nm" label that follows the cursor during a geofence draw was previously at the default zIndexOffset, so on busy maps with permanent waypoint labels or other AA overlays it could end up partially obscured. Bumped to <code>zIndexOffset: 10000</code> so it always renders on top during a draw. Persistent post-commit geofence labels stay at the lower offset so they layer alongside the rest of the AA overlays.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.69.0</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -27795,6 +27883,33 @@ function rgSendToFlightPlanner() {
         <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alarm, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
         <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alarm from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- AFK Per-Waypoint Quick-Add Modal (opened by right-clicking a SimBrief waypoint) -->
+<div class="modal-overlay" id="afkWpAlarmModal" onclick="if(event.target===this)_afkWpAlarmModalCancel()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">🔔 &nbsp;Add Waypoint Alarm</span>
+      <button class="modal-close" onclick="_afkWpAlarmModalCancel()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:1.0rem 1.2rem;">
+      <div style="margin-bottom:0.8rem;font-family:'Rajdhani',sans-serif;font-size:1.1rem;">
+        <span style="color:var(--muted);">Waypoint:</span>
+        <strong id="afkWpAlarmIdent" style="color:var(--accent);font-size:1.25rem;letter-spacing:0.05em;margin-left:0.3rem;">—</strong>
+      </div>
+      <div class="afk-footer-info" id="afkWpAlarmPos" style="margin-bottom:0.9rem;"></div>
+      <div class="afk-edit-row" style="margin-bottom:0.5rem;">
+        <span class="afk-edit-label">Sound</span>
+        <select id="afkWpAlarmSound" class="afk-select"></select>
+        <button class="afk-icon-btn" onclick="_afkPreviewSelectedSound('afkWpAlarmSound')" title="Preview sound">▶</button>
+      </div>
+      <div class="afk-footer-info" id="afkWpAlarmDupHint" style="margin-top:0.4rem;color:#ffaa55;display:none;">⚠ A specific-waypoint alarm already covers this fix. Adding another will create a duplicate.</div>
+    </div>
+    <div class="afk-modal-footer">
+      <button class="rg-btn" onclick="_afkWpAlarmModalCancel()">Cancel</button>
+      <button class="rg-btn" style="background:rgba(0,200,255,0.18);border-color:var(--accent);color:var(--accent);" onclick="_afkWpAlarmModalSave()">Add Alarm</button>
     </div>
   </div>
 </div>
