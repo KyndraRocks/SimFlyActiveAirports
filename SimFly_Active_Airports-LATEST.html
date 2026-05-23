@@ -693,21 +693,27 @@
 
   .fp-settings-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; margin-top: 0.4rem; }
 
-  /* Permanent waypoint labels along plotted SimBrief flight plan */
+  /* Permanent waypoint labels along plotted SimBrief flight plan.
+     Uses a neutral white pill with dark text instead of the user's chosen
+     route color — guarantees high contrast on any map background (street,
+     satellite, light mode, dark mode) regardless of what route color the
+     user picks for the polyline. */
   .leaflet-tooltip.sb-ofp-wpt-label {
-    background: rgba(10,18,36,0.88);
-    border: 1px solid rgba(255,255,255,0.18);
+    background: #ffffff;
+    color: #0a1224;
+    border: 1px solid rgba(0,0,0,0.55);
     font-family: 'Rajdhani', sans-serif;
-    font-size: 0.74rem;
+    font-size: 0.78rem;
     font-weight: 700;
-    letter-spacing: 0.03em;
-    padding: 0.05rem 0.32rem;
-    border-radius: 3px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.55);
+    letter-spacing: 0.04em;
+    padding: 0.10rem 0.44rem;
+    border-radius: 999px;        /* full pill */
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.55) inset;
     white-space: nowrap;
+    opacity: 0.96;
   }
   .leaflet-tooltip.sb-ofp-wpt-label::before { display: none; }   /* hide tooltip pointer arrow on permanent labels */
-  body.light-mode .leaflet-tooltip.sb-ofp-wpt-label { background: rgba(255,255,255,0.92); border-color: rgba(0,0,0,0.18); }
+  /* Label colour is fixed (always white pill + dark text) — no light-mode override needed. */
 
   /* ── RELEASE TAG BADGES ── */
   .release-tag {
@@ -3800,6 +3806,371 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode #rgPayoutThumb { background:var(--accent) !important; box-shadow:0 0 6px rgba(0,0,0,0.4) !important; }
   /* The "Hide < N%" callout colour. */
   body.light-mode #rgPayoutFilterLabel { color:#7a4400 !important; }
+
+  /* ==========================================================================
+     AFK Alerts + Aircraft Data Panel (v2.69.0)
+     ========================================================================== */
+
+  /* Toolbar button badge — number of armed alarms */
+  .afk-btn-wrap { position:relative; display:inline-flex; }
+  .afk-btn-badge {
+    position:absolute; top:-6px; right:-6px;
+    min-width:18px; height:18px; padding:0 5px;
+    background:#ff3d5a; color:#fff;
+    border-radius:9px;
+    font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:700;
+    line-height:18px; text-align:center;
+    box-shadow:0 0 0 1.5px rgba(15,20,35,0.95);
+    pointer-events:none;
+    display:none;
+  }
+  .afk-btn-badge.show { display:block; }
+  #afkAlertsBtn.armed { background:rgba(255,140,40,0.16); border-color:rgba(255,140,40,0.55); color:#ffaa55; }
+  #afkAlertsBtn.tripping { background:rgba(255,61,90,0.22); border-color:#ff3d5a; color:#ff8090;
+    animation:afkBtnPulse 0.8s ease-in-out infinite alternate; }
+  @keyframes afkBtnPulse { from { box-shadow:0 0 0 rgba(255,61,90,0.0); } to { box-shadow:0 0 14px rgba(255,61,90,0.7); } }
+
+  /* Config modal */
+  #afkConfigModal { z-index:9500; }
+  #afkConfigModal .modal { max-width:clamp(720px,52vw,1080px); }
+  .afk-config-body { display:flex; gap:1.1rem; min-height:62vh; max-height:82vh; }
+  .afk-add-col {
+    flex:0 0 220px;
+    display:flex; flex-direction:column; gap:0.5rem;
+    border-right:1px solid rgba(255,255,255,0.08);
+    padding-right:1.0rem;
+  }
+  .afk-add-col-title {
+    font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:600;
+    color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;
+    margin-bottom:0.2rem;
+  }
+  .afk-add-btn {
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.55rem 0.7rem;
+    background:rgba(255,255,255,0.04);
+    border:1px solid var(--border);
+    border-radius:6px;
+    color:var(--text);
+    font-family:'Rajdhani',sans-serif; font-size:1.02rem; font-weight:600;
+    cursor:pointer; text-align:left;
+    transition:border-color 0.12s, color 0.12s, background 0.12s;
+  }
+  .afk-add-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .afk-add-btn-icon { font-size:1.2rem; flex-shrink:0; line-height:1; width:1.4em; text-align:center; }
+
+  .afk-list-col {
+    flex:1 1 auto;
+    overflow-y:auto;
+    padding-right:0.4rem;
+  }
+  .afk-list-empty {
+    padding:2rem 1rem;
+    text-align:center;
+    color:var(--muted);
+    font-family:'Rajdhani',sans-serif; font-size:1.05rem;
+  }
+  .afk-card {
+    background:rgba(255,255,255,0.03);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:0.7rem 0.85rem;
+    margin-bottom:0.65rem;
+  }
+  .afk-card.disabled { opacity:0.55; }
+  .afk-card.tripped { border-color:#ff3d5a; background:rgba(255,61,90,0.10); }
+  .afk-card-row { display:flex; align-items:center; gap:0.55rem; }
+  .afk-card[draggable="true"] { cursor:default; }
+  .afk-card.dragging { opacity:0.35; }
+  .afk-card.drop-before { border-top:2px solid var(--accent); margin-top:-1px; }
+  .afk-card.drop-after  { border-bottom:2px solid var(--accent); margin-bottom:-1px; }
+  .afk-card-grip {
+    flex:0 0 14px;
+    color:var(--muted);
+    font-size:1.05rem; line-height:1;
+    cursor:grab;
+    user-select:none;
+    letter-spacing:-2px;
+  }
+  .afk-card-grip:active { cursor:grabbing; }
+  .afk-card-grip:hover { color:var(--accent); }
+  .afk-card-icon {
+    flex:0 0 28px; height:28px;
+    background:rgba(0,200,255,0.12);
+    border:1px solid rgba(0,200,255,0.35);
+    border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.1rem;
+  }
+  .afk-card.tripped .afk-card-icon { background:rgba(255,61,90,0.2); border-color:#ff3d5a; }
+  .afk-card-desc {
+    flex:1 1 auto;
+    font-family:'Rajdhani',sans-serif; font-size:1.02rem; color:var(--text);
+    font-variant-numeric:tabular-nums;
+    min-width:0;
+  }
+  .afk-card-desc-title { font-weight:600; }
+  .afk-card-desc-sub { font-size:0.86rem; color:var(--muted); margin-top:0.1rem; }
+  .afk-card-actions { display:flex; align-items:center; gap:0.4rem; flex-shrink:0; }
+  .afk-icon-btn {
+    background:none; border:1px solid var(--border);
+    color:var(--muted); cursor:pointer;
+    width:28px; height:28px; border-radius:5px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.95rem;
+    transition:color 0.12s, border-color 0.12s;
+  }
+  .afk-icon-btn:hover { color:var(--accent); border-color:var(--accent); }
+  .afk-icon-btn.danger:hover { color:var(--danger); border-color:var(--danger); }
+  .afk-card-editor {
+    margin-top:0.55rem;
+    padding-top:0.55rem;
+    border-top:1px solid rgba(255,255,255,0.06);
+    display:flex; flex-direction:column; gap:0.5rem;
+  }
+  .afk-edit-row { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+  .afk-edit-label {
+    font-family:'Rajdhani',sans-serif; font-size:0.88rem;
+    color:var(--muted); letter-spacing:0.04em; text-transform:uppercase;
+    flex-shrink:0;
+  }
+  .afk-select, .afk-input {
+    background:rgba(0,0,0,0.45);
+    border:1px solid var(--border);
+    color:#f0f4fa;
+    font-family:'Rajdhani',sans-serif; font-size:1.02rem; font-weight:600;
+    padding:0.3rem 0.55rem;
+    border-radius:4px;
+    font-variant-numeric:tabular-nums;
+  }
+  body.light-mode .afk-select, body.light-mode .afk-input { color:#1a1f2e; background:rgba(255,255,255,0.9); }
+  /* Native <option> popup uses OS rendering; force solid dark background + bright
+     text so the dropdown is readable instead of the default low-contrast cyan-on-
+     translucent that some browsers fall back to. */
+  .afk-select option {
+    background:#101826;
+    color:#f0f4fa;
+    font-weight:600;
+    padding:6px 8px;
+  }
+  body.light-mode .afk-select option { background:#ffffff; color:#1a1f2e; }
+  .afk-select:focus, .afk-input:focus { border-color:var(--accent); outline:none; }
+  .afk-toggle { display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer; user-select:none; }
+  .afk-toggle input { accent-color:var(--accent); }
+  .afk-wp-multi {
+    max-height:120px; overflow-y:auto;
+    border:1px solid var(--border); border-radius:4px;
+    padding:0.35rem 0.5rem;
+    background:rgba(0,0,0,0.25);
+    font-family:'Rajdhani',sans-serif; font-size:0.96rem;
+    width:100%;
+  }
+  .afk-wp-row { display:flex; align-items:center; gap:0.4rem; padding:0.12rem 0; }
+  .afk-wp-stage {
+    font-size:0.78rem; color:var(--muted);
+    text-transform:uppercase; letter-spacing:0.06em;
+    margin-left:auto;
+  }
+
+  .afk-modal-footer {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:0.85rem 1.2rem;
+    border-top:1px solid rgba(255,255,255,0.08);
+    gap:0.6rem;
+  }
+  .afk-footer-info {
+    font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--muted);
+  }
+  .afk-btn-disable-all, .afk-btn-delete-all {
+    background:rgba(255,61,90,0.10);
+    border:1px solid rgba(255,61,90,0.5);
+    color:#ff8090;
+    padding:0.4rem 0.9rem;
+    font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600;
+    border-radius:4px;
+    cursor:pointer;
+  }
+  .afk-btn-disable-all:hover { background:rgba(255,61,90,0.2); color:#ffb0bd; }
+  .afk-btn-delete-all {
+    background:rgba(180,30,55,0.18);
+    border-color:rgba(180,30,55,0.7);
+    color:#ff5070;
+  }
+  .afk-btn-delete-all:hover { background:rgba(180,30,55,0.32); color:#ffa0b0; }
+
+  /* Trip overlay — full-screen */
+  #afkTripOverlay {
+    position:fixed; inset:0;
+    background:rgba(0,0,0,0.78);
+    z-index:9700;
+    display:none;
+    align-items:center; justify-content:center;
+    backdrop-filter:blur(4px);
+  }
+  #afkTripOverlay.open { display:flex; }
+  .afk-trip-panel {
+    background:linear-gradient(180deg, #1a0510 0%, #2a0a15 100%);
+    border:2px solid #ff3d5a;
+    border-radius:14px;
+    box-shadow:0 0 60px rgba(255,61,90,0.45), inset 0 0 30px rgba(255,61,90,0.15);
+    padding:2rem 2.5rem;
+    min-width:min(540px, 92vw);
+    max-width:min(720px, 96vw);
+    text-align:center;
+  }
+  .afk-trip-title {
+    font-family:'Orbitron',sans-serif;
+    font-size:2.4rem; font-weight:900; letter-spacing:0.12em;
+    color:#ff5d70;
+    margin-bottom:0.3rem;
+    animation:afkTripPulse 0.9s ease-in-out infinite alternate;
+  }
+  @keyframes afkTripPulse {
+    from { text-shadow:0 0 6px rgba(255,61,90,0.4); color:#ff5d70; }
+    to   { text-shadow:0 0 24px rgba(255,180,200,0.95); color:#ffbacc; }
+  }
+  .afk-trip-sub {
+    font-family:'Rajdhani',sans-serif; font-size:1.1rem; color:#ffaab8;
+    margin-bottom:1.4rem;
+  }
+  .afk-trip-list {
+    list-style:none; padding:0; margin:0 0 1.5rem 0;
+    display:flex; flex-direction:column; gap:0.55rem;
+    max-height:40vh; overflow-y:auto;
+    text-align:left;
+  }
+  .afk-trip-item {
+    display:flex; align-items:center; gap:0.7rem;
+    padding:0.6rem 0.9rem;
+    background:rgba(255,61,90,0.12);
+    border:1px solid rgba(255,61,90,0.5);
+    border-radius:6px;
+    font-family:'Rajdhani',sans-serif; font-size:1.05rem;
+    font-variant-numeric:tabular-nums;
+    color:#ffd5dd;
+  }
+  .afk-trip-item-icon { font-size:1.3rem; flex-shrink:0; }
+  .afk-trip-item-text { flex:1 1 auto; }
+  .afk-trip-item-x {
+    background:none; border:1px solid rgba(255,180,200,0.45); color:#ffbacc;
+    width:28px; height:28px; border-radius:4px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:1.0rem; flex-shrink:0;
+  }
+  .afk-trip-item-x:hover { background:rgba(255,180,200,0.15); border-color:#ffbacc; color:#fff; }
+  .afk-dismiss-all {
+    background:linear-gradient(180deg, #ff3d5a 0%, #c61c34 100%);
+    color:#fff; border:none;
+    padding:1rem 2.2rem;
+    font-family:'Rajdhani',sans-serif; font-size:1.4rem; font-weight:700;
+    letter-spacing:0.12em; text-transform:uppercase;
+    border-radius:8px;
+    cursor:pointer;
+    box-shadow:0 4px 16px rgba(255,61,90,0.45);
+    transition:transform 0.08s;
+  }
+  .afk-dismiss-all:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(255,61,90,0.6); }
+  .afk-dismiss-all:active { transform:translateY(0); }
+
+  /* Bottom aircraft data panel — sits as a flex sibling of #rgMapContainer
+     in the .rg-modal column. NEVER place inside the Leaflet container
+     (#rgMapContainer is Leaflet-initialized; non-pane children break tile
+     rendering in some browsers). */
+  #afkDataPanel {
+    flex:0 0 auto;
+    z-index:1002;
+    background:linear-gradient(180deg, rgba(8,12,22,0.92) 0%, rgba(4,6,14,0.97) 100%);
+    border-top:1px solid rgba(0,200,255,0.25);
+    box-shadow:0 -4px 18px rgba(0,0,0,0.45);
+    padding:0.55rem 0.85rem;
+    font-family:'Rajdhani',sans-serif;
+    font-variant-numeric:tabular-nums;
+    color:#dde4f0;
+    pointer-events:auto;
+    display:flex; align-items:center; gap:0.85rem;
+    min-height:40px;
+    user-select:none;
+  }
+  body.light-mode #afkDataPanel {
+    background:linear-gradient(180deg, rgba(245,245,235,0.95) 0%, rgba(232,230,215,0.98) 100%);
+    border-top:1px solid rgba(0,150,200,0.4);
+    color:#1a1f2e;
+  }
+  #afkDataPanel.collapsed { padding:0.18rem 0.85rem; min-height:auto; }
+  #afkDataPanel.collapsed .afk-dp-sections { display:none; }
+  .afk-dp-sections { display:flex; align-items:center; justify-content:center; gap:2.2rem; flex:1 1 auto; flex-wrap:wrap; }
+  .afk-dp-section {
+    display:flex; align-items:center; gap:1.7rem;
+    padding:0 0.8rem;
+  }
+  .afk-dp-section + .afk-dp-section { border-left:1px solid rgba(255,255,255,0.12); padding-left:1.7rem; }
+  body.light-mode .afk-dp-section + .afk-dp-section { border-left-color:rgba(0,0,0,0.15); }
+  .afk-dp-field { display:flex; flex-direction:column; line-height:1.05; }
+  .afk-dp-label {
+    font-size:0.7rem; color:#7a8aa0; letter-spacing:0.10em;
+    text-transform:uppercase; font-weight:600;
+  }
+  body.light-mode .afk-dp-label { color:#5a6878; }
+  .afk-dp-value {
+    font-size:1.02rem; font-weight:600; color:#dde4f0;
+    font-variant-numeric:tabular-nums;
+    line-height:1.15;
+  }
+  body.light-mode .afk-dp-value { color:#1a1f2e; }
+  .afk-dp-value.warn { color:#ffaa55; }
+  .afk-dp-value.danger { color:#ff5d70; }
+  .afk-dp-value.muted { color:#5e6a7a; }
+  .afk-dp-value.next-alarm-soon { color:#ff5d70; animation:afkTripPulse 1.1s ease-in-out infinite alternate; }
+  .afk-dp-toggle {
+    flex-shrink:0;
+    background:none; border:1px solid rgba(255,255,255,0.18);
+    color:#8090a8; cursor:pointer;
+    width:24px; height:24px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.85rem; padding:0;
+    transition:color 0.12s, border-color 0.12s;
+  }
+  .afk-dp-toggle:hover { color:var(--accent); border-color:var(--accent); }
+  body.light-mode .afk-dp-toggle { color:#5a6878; border-color:rgba(0,0,0,0.2); }
+
+  /* Geofence draw mode crosshair (re-uses rgMapContainer cursor classes; new class for visual distinction) */
+  #rgMapContainer.afk-geofence-draw, #rgMapContainer.afk-geofence-draw .leaflet-interactive { cursor:crosshair !important; }
+  /* Geofence-draw banner — fixed-positioned overlay so it floats above the
+     map regardless of the modal's flex layout. */
+  .afk-geofence-banner {
+    position:fixed; top:84px; left:50%; transform:translateX(-50%);
+    z-index:9100;
+    background:rgba(255,140,40,0.95);
+    color:#1a0a00;
+    padding:0.5rem 1.0rem;
+    border-radius:6px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.0rem;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    display:none;
+    user-select:none;
+  }
+  .afk-geofence-banner.show { display:block; }
+  .afk-geofence-banner button {
+    background:rgba(0,0,0,0.25); color:#fff; border:none;
+    padding:0.2rem 0.6rem; border-radius:4px;
+    font-family:'Rajdhani',sans-serif; font-weight:600;
+    margin-left:0.6rem; cursor:pointer;
+  }
+
+  /* Geofence sub-modal (per-fence enter/exit/both + label + sound) */
+  #afkGeofenceModal { z-index:9550; }
+  #afkGeofenceModal .modal { max-width:420px; }
+
+  /* Geofence + waypoint map labels — Leaflet's default .leaflet-div-icon adds
+     a white background + grey border that shows up as a misaligned dark box
+     behind our custom-styled inner pill. Strip those defaults so only the
+     inner <div>'s styling is visible. */
+  .afk-gf-label, .afk-wp-ring {
+    background:transparent !important;
+    border:none !important;
+    box-shadow:none !important;
+  }
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -4143,7 +4514,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.68.1';
+const APP_VERSION = '2.69.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6839,7 +7210,8 @@ function _getOwnerData() {
 const _distDdBuf        = { dep:'', arr:'' };
 const _distDdTimer      = { dep:null, arr:null };
 const _distDdArrow      = { dep:-1, arr:-1 };
-const _panelKeyHandlers = { dep:null, arr:null };
+const _panelKeyHandlers     = { dep:null, arr:null };
+const _panelOutsideHandlers = { dep:null, arr:null };  // mousedown closures tracked so toggle-close removes them
 
 // ── Custom owner dropdown helpers ─────────────────────────────────────────
 
@@ -6921,6 +7293,10 @@ function _distOwnerDdToggle(which) {
       document.removeEventListener('keydown', _panelKeyHandlers[otherW]);
       _panelKeyHandlers[otherW] = null;
     }
+    if (_panelOutsideHandlers[otherW]) {
+      document.removeEventListener('mousedown', _panelOutsideHandlers[otherW], true);
+      _panelOutsideHandlers[otherW] = null;
+    }
   }
   const opening = !panel.classList.contains('open');
   if (opening) {
@@ -6956,9 +7332,14 @@ function _distOwnerDdToggle(which) {
           document.removeEventListener('mousedown', outside, true);
           document.removeEventListener('keydown', kh);
           if (_panelKeyHandlers[which] === kh) _panelKeyHandlers[which] = null;
+          if (_panelOutsideHandlers[which] === outside) _panelOutsideHandlers[which] = null;
           clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
         }
       };
+      // Track the closure so the toggle-close path below can also remove it —
+      // without this, clicking the dropdown button to close it leaks the
+      // document mousedown listener (the only cleanup was on outside-click).
+      _panelOutsideHandlers[which] = outside;
       document.addEventListener('mousedown', outside, true);
     }, 0);
   } else {
@@ -6966,6 +7347,10 @@ function _distOwnerDdToggle(which) {
     if (_panelKeyHandlers[which]) {
       document.removeEventListener('keydown', _panelKeyHandlers[which]);
       _panelKeyHandlers[which] = null;
+    }
+    if (_panelOutsideHandlers[which]) {
+      document.removeEventListener('mousedown', _panelOutsideHandlers[which], true);
+      _panelOutsideHandlers[which] = null;
     }
     clearTimeout(_distDdTimer[which]); _distDdBuf[which] = ''; _distDdArrow[which] = -1;
   }
@@ -8338,7 +8723,10 @@ function _sbOfpRender(data) {
       radius: 3.5, color, weight: 2, fillColor: '#0a1224', fillOpacity: 1,
     }).addTo(_rgMap);
     if (showLabel) {
-      m.bindTooltip(`<span style="color:${color}">${ident}</span>`, {
+      // Label colour is fixed in CSS (.sb-ofp-wpt-label — white pill, dark
+      // text) so it stays readable on any map background regardless of the
+      // user's chosen route colour.
+      m.bindTooltip(ident, {
         permanent: true, direction: 'right', offset: [6, 0], className: 'sb-ofp-wpt-label',
       });
     } else {
@@ -8419,6 +8807,31 @@ let _liveAcStaleTimer = 0;
 let _liveAcSource     = null;      // 'stkp' | 'fsuipc' | null
 let _liveAcCentred    = false;     // true once we've re-centred on first fix
 
+// Aircraft breadcrumb trail — green glow + core polyline of the actual flown
+// path. Independent of the SimBrief plotted route so deviation from plan is
+// always visible. Trail clears on source-stop and on big position jumps.
+//
+// Tiered storage so trans-Pacific / ULR flights are fully covered without
+// burning memory on dense cruise-leg samples:
+//   • Fresh tier — last 75 nm at 0.05 nm spacing (1,500 pts) for fine detail
+//     when zooming into recent activity (holds, turns, patterns).
+//   • Archive tier — older history at 1.0 nm spacing (10,000 pts) for the
+//     full flight at a coarser resolution. When fresh points age out, they
+//     get added to archive only if ≥ 1 nm from the last archive point
+//     (decimation — straight cruise legs collapse to far fewer points).
+// Combined max: 11,500 points ≈ 184 KB memory, ~10,075 nm of coverage —
+// fits any real-world commercial flight (longest non-stop is SIN→EWR at
+// ~9,500 nm; KJFK→YSSY is ~9,950 nm).
+let _liveAcTrailFresh   = [];      // array of [lat, lng] — fine-detail recent
+let _liveAcTrailArchive = [];      // array of [lat, lng] — coarse-detail older
+let _liveAcTrailGlow    = null;
+let _liveAcTrailCore    = null;
+const _LIVE_AC_TRAIL_FRESH_MAX     = 1500;   // fresh-tier capacity
+const _LIVE_AC_TRAIL_FRESH_NM      = 0.05;   // fresh spacing (~300 ft)
+const _LIVE_AC_TRAIL_ARCHIVE_MAX   = 10000;  // archive-tier capacity
+const _LIVE_AC_TRAIL_ARCHIVE_NM    = 1.0;    // archive spacing (~6,000 ft)
+const _LIVE_AC_TRAIL_TELEPORT_NM   = 100;    // clear trail on big position jumps (sim restart)
+
 function _liveAcStopOthers(thisSource) {
   if (_liveAcSource && _liveAcSource !== thisSource) {
     if (_liveAcSource === 'stkp')   _stkpStop();
@@ -8450,6 +8863,12 @@ function _liveAcRenderMarker(d) {
   const hdg = isFinite(parseFloat(d.hdg)) ? parseFloat(d.hdg) : 0;
   _liveAcLastData   = d;
   _liveAcLastUpdate = performance.now();
+  // Aircraft breadcrumb trail — add a new point if it's far enough from the
+  // last one. Clears the trail on teleport (sim restart / new flight loaded).
+  _liveAcUpdateTrail(lat, lng);
+  // AFK Alerts + Aircraft Data Panel tick — defensive guard so a tick failure
+  // never breaks live-aircraft rendering.
+  if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
   const icon = _liveAcPlaneIcon(hdg, false);
   if (!_liveAcMarker) {
     _liveAcMarker = L.marker([lat, lng], { icon, zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
@@ -8465,6 +8884,79 @@ function _liveAcRenderMarker(d) {
     _liveAcCentred = true;
   }
   _liveAcScheduleStaleCheck();
+}
+
+// ── Aircraft breadcrumb trail ───────────────────────────────────────────
+// Two-tier storage (fresh + archive) so the trail covers any real-world
+// flight without burning memory on dense cruise-leg samples. Two-layer
+// polyline (outer glow + inner core), green to match the plane icon.
+// Renders via the shared canvas geom renderer ([[project_aa_geom_canvas]]).
+function _liveAcUpdateTrail(lat, lng) {
+  if (!_rgMap) return;
+  // Latest stored point — fresh wins, fall back to last archive point if
+  // fresh is empty (just-cleared state).
+  const lastFresh = _liveAcTrailFresh[_liveAcTrailFresh.length - 1];
+  const last = lastFresh || _liveAcTrailArchive[_liveAcTrailArchive.length - 1];
+  if (last) {
+    const d = _afkDistNm(last[0], last[1], lat, lng);
+    if (isFinite(d)) {
+      if (d > _LIVE_AC_TRAIL_TELEPORT_NM) {
+        // Big jump = sim restart / new flight loaded. Wipe and start over.
+        _liveAcClearTrail();
+      } else if (lastFresh && d < _LIVE_AC_TRAIL_FRESH_NM) {
+        // Too close to the previous fresh point — skip to avoid clutter.
+        return;
+      }
+    }
+  }
+  // Add to fresh tier at fine detail.
+  _liveAcTrailFresh.push([lat, lng]);
+  // Age oldest fresh into archive at coarse spacing. Drop points that fall
+  // within ARCHIVE_NM of the last archive entry — straight cruise legs
+  // collapse from thousands of fresh samples to far fewer archive points
+  // without losing the visible shape of the trail.
+  while (_liveAcTrailFresh.length > _LIVE_AC_TRAIL_FRESH_MAX) {
+    const aging = _liveAcTrailFresh.shift();
+    const lastArchive = _liveAcTrailArchive[_liveAcTrailArchive.length - 1];
+    if (!lastArchive ||
+        _afkDistNm(lastArchive[0], lastArchive[1], aging[0], aging[1]) >= _LIVE_AC_TRAIL_ARCHIVE_NM) {
+      _liveAcTrailArchive.push(aging);
+    }
+    // else: decimated (within ARCHIVE_NM of the previous archive entry)
+  }
+  // Cap archive — oldest points fall off only on extreme-distance flights
+  // (>10,000 nm with 1 nm spacing).
+  while (_liveAcTrailArchive.length > _LIVE_AC_TRAIL_ARCHIVE_MAX) {
+    _liveAcTrailArchive.shift();
+  }
+  // Render combined polyline (archive first, then fresh — chronological).
+  const combined = _liveAcTrailArchive.concat(_liveAcTrailFresh);
+  if (combined.length < 2) return;
+  if (_liveAcTrailGlow) {
+    _liveAcTrailGlow.setLatLngs(combined);
+  } else {
+    _liveAcTrailGlow = L.polyline(combined, {
+      renderer: _rgGetGeomRenderer(),
+      color: '#00e676', weight: 7, opacity: 0.22,
+      lineCap: 'round', lineJoin: 'round', interactive: false,
+    }).addTo(_rgMap);
+  }
+  if (_liveAcTrailCore) {
+    _liveAcTrailCore.setLatLngs(combined);
+  } else {
+    _liveAcTrailCore = L.polyline(combined, {
+      renderer: _rgGetGeomRenderer(),
+      color: '#00e676', weight: 2.2, opacity: 0.92,
+      lineCap: 'round', lineJoin: 'round', interactive: false,
+    }).addTo(_rgMap);
+  }
+}
+
+function _liveAcClearTrail() {
+  if (_liveAcTrailGlow) { try { _rgMap && _rgMap.removeLayer(_liveAcTrailGlow); } catch (_) {} _liveAcTrailGlow = null; }
+  if (_liveAcTrailCore) { try { _rgMap && _rgMap.removeLayer(_liveAcTrailCore); } catch (_) {} _liveAcTrailCore = null; }
+  _liveAcTrailFresh   = [];
+  _liveAcTrailArchive = [];
 }
 
 function _liveAcMarkStale() {
@@ -8484,6 +8976,7 @@ function _liveAcScheduleStaleCheck() {
 function _liveAcClear() {
   if (_liveAcStaleTimer) { clearTimeout(_liveAcStaleTimer); _liveAcStaleTimer = 0; }
   if (_liveAcMarker) { try { _rgMap && _rgMap.removeLayer(_liveAcMarker); } catch (_) {} _liveAcMarker = null; }
+  _liveAcClearTrail();
   _liveAcLastData   = null;
   _liveAcLastUpdate = 0;
   _liveAcSource     = null;
@@ -8687,7 +9180,11 @@ function _fsuipcOpenWs() {
         { name: 'lon', address: 0x0568, type: 'lon',  size: 8 },
         { name: 'alt', address: 0x0574, type: 'int',  size: 4 },
         { name: 'hdg', address: 0x0580, type: 'uint', size: 4 },
-        { name: 'gs',  address: 0x02B4, type: 'uint', size: 4 },
+        { name: 'gs',     address: 0x02B4, type: 'uint', size: 4 },
+        { name: 'ias',    address: 0x02BC, type: 'uint', size: 4 },
+        // Ground elevation under aircraft: signed int32, metres × 256.
+        // Used by the AFK aircraft data panel to compute AGL = MSL − ground.
+        { name: 'gndAlt', address: 0x0B4C, type: 'int',  size: 4 },
       ],
     };
     try {
@@ -8720,11 +9217,19 @@ function _fsuipcOpenWs() {
     const altFt  = isFinite(altMet) ? altMet * 3.28084 : null;
     const gsRaw  = parseFloat(d.gs);
     const gsKts  = isFinite(gsRaw) ? (gsRaw / 65536) * 1.94384 : null;
+    // IAS offset 0x02BC (uint, knots × 128) → kt
+    const iasRaw = parseFloat(d.ias);
+    const iasKts = isFinite(iasRaw) ? iasRaw / 128 : null;
+    // Ground altitude 0x0B4C (int32, metres × 256) → ft
+    const gndRaw = parseFloat(d.gndAlt);
+    const gndFt  = isFinite(gndRaw) ? (gndRaw / 256) * 3.28084 : null;
     _liveAcRenderMarker({
       lat, lng,
       hdg:    hdgDeg,
       alt:    altFt,
       gs:     gsKts,
+      ias:    iasKts,
+      gndAlt: gndFt,
       ident:  'My Aircraft',
       af:     null,
       phase:  null,
@@ -8749,6 +9254,1609 @@ function _fsuipcOpenWs() {
     }, _FSUIPC_RECONNECT);
   };
 }
+
+/* ===========================================================================
+   AFK Alerts + Aircraft Data Panel  (v2.69.0)
+   ---------------------------------------------------------------------------
+   Self-contained module. Public entry points (called from HTML / other code):
+     _afkOpenConfig / _afkCloseConfig
+     _afkAddAlarm(type)
+     _afkRemoveAlarm(id) / _afkToggleAlarm(id) / _afkSetAlarmSound(id, soundId)
+     _afkDisableAll
+     _afkGeofenceCancel / _afkGeofenceModalSave / _afkGeofenceModalCancel
+     _afkDismissAll / _afkDismissOne(id)
+     _afkPreviewSelectedSound(selectId)
+     _afkToggleDataPanel
+     _afkTick(data)  ← called from _liveAcRenderMarker after each position update
+   =========================================================================== */
+
+// ---------------------- AUDIO ENGINE (Web Audio synthesis) -----------------
+const _AFK_SOUNDS = [
+  { id: 'digital-clock',  name: 'Digital Clock',  pattern: [{ f: 880, d: 120, g: 0.45 }, { f: 0, d: 120 }, { f: 880, d: 120, g: 0.45 }, { f: 0, d: 120 }, { f: 880, d: 120, g: 0.45 }, { f: 0, d: 120 }, { f: 880, d: 300, g: 0.45 }, { f: 0, d: 700 }] },
+  { id: 'klaxon',         name: 'Klaxon',         pattern: [{ f: 440, d: 350, g: 0.55, type: 'sawtooth' }, { f: 660, d: 350, g: 0.55, type: 'sawtooth' }] },
+  { id: 'soft-chime',     name: 'Soft Chime',     pattern: [{ f: 660, d: 180, g: 0.35, type: 'sine' }, { f: 880, d: 400, g: 0.35, type: 'sine' }, { f: 0, d: 1400 }] },
+  { id: 'urgent-beeper',  name: 'Urgent Beeper',  pattern: [{ f: 1200, d: 90, g: 0.5 }, { f: 0, d: 60 }, { f: 1200, d: 90, g: 0.5 }, { f: 0, d: 60 }, { f: 1200, d: 90, g: 0.5 }, { f: 0, d: 500 }] },
+  { id: 'gentle-bell',    name: 'Gentle Bell',    pattern: [{ f: 880, d: 60, g: 0.45, type: 'sine' }, { f: 880, d: 900, g: 0.0, type: 'sine', decay: true }, { f: 0, d: 1500 }] },
+];
+
+const _afkAudio = (() => {
+  let ctx = null;
+  let activeTimer = null;
+  let activeSoundId = null;
+  let previewTimer = null;
+  let previewStopAt = 0;
+
+  function _ensureCtx() {
+    if (!ctx) {
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { ctx = null; }
+    }
+    if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+    return ctx;
+  }
+
+  function _scheduleNote(when, note) {
+    const c = _ensureCtx();
+    if (!c || !note || !note.f) return;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = note.type || 'square';
+    osc.frequency.setValueAtTime(note.f, when);
+    const peak = note.g != null ? note.g : 0.4;
+    if (note.decay) {
+      gain.gain.setValueAtTime(peak, when);
+      gain.gain.exponentialRampToValueAtTime(0.001, when + note.d / 1000);
+    } else {
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.linearRampToValueAtTime(peak, when + 0.005);
+      gain.gain.setValueAtTime(peak, when + note.d / 1000 - 0.01);
+      gain.gain.linearRampToValueAtTime(0.0001, when + note.d / 1000);
+    }
+    osc.connect(gain).connect(c.destination);
+    osc.start(when);
+    osc.stop(when + note.d / 1000 + 0.02);
+  }
+
+  function _playPatternOnce(sound) {
+    const c = _ensureCtx();
+    if (!c) return 0;
+    let t = c.currentTime + 0.01;
+    let totalMs = 0;
+    sound.pattern.forEach(note => {
+      if (note.f && note.f > 0) _scheduleNote(t, note);
+      t += note.d / 1000;
+      totalMs += note.d;
+    });
+    return totalMs;
+  }
+
+  function play(soundId) {
+    stop();
+    const sound = _AFK_SOUNDS.find(s => s.id === soundId) || _AFK_SOUNDS[0];
+    activeSoundId = sound.id;
+    function loop() {
+      const ms = _playPatternOnce(sound);
+      activeTimer = setTimeout(loop, ms || 1000);
+    }
+    loop();
+  }
+
+  function stop() {
+    if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+    activeSoundId = null;
+  }
+
+  function preview(soundId) {
+    if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+    // Pause any active alarm sound during preview, then resume.
+    const wasActive = activeSoundId;
+    if (wasActive) stop();
+    const sound = _AFK_SOUNDS.find(s => s.id === soundId) || _AFK_SOUNDS[0];
+    previewStopAt = performance.now() + 2500;
+    function loop() {
+      if (performance.now() >= previewStopAt) {
+        previewTimer = null;
+        if (wasActive) play(wasActive);
+        return;
+      }
+      const ms = _playPatternOnce(sound);
+      previewTimer = setTimeout(loop, ms || 1000);
+    }
+    loop();
+  }
+
+  function unlock() { _ensureCtx(); }
+  function currentId() { return activeSoundId; }
+
+  return { play, stop, preview, unlock, currentId };
+})();
+
+function _afkPreviewSelectedSound(selectId) {
+  const sel = document.getElementById(selectId);
+  if (sel && sel.value) _afkAudio.preview(sel.value);
+}
+
+// ---------------------- PHASE TRACKER + ALTITUDE BUFFER -------------------
+const _afkPhase = (() => {
+  const MAX_SAMPLES = 240;          // rolling buffer length (~2 min @ 500ms or 40 min @ 10s)
+  const samples = [];               // { t, alt }
+  let peakClimbVS = 0;              // max sustained climb VS this flight (fpm)
+  let lastEmittedPhase = null;
+  let lastTransition = null;        // { from, to, t }
+  let lastChangeAt = 0;
+  // Detection state
+  let cruiseCandidateSince = 0;
+  let descentCandidateSince = 0;
+
+  function reset() {
+    samples.length = 0;
+    peakClimbVS = 0;
+    lastEmittedPhase = null;
+    lastTransition = null;
+    lastChangeAt = 0;
+    cruiseCandidateSince = 0;
+    descentCandidateSince = 0;
+  }
+
+  function pushSample(altFt) {
+    const now = performance.now();
+    samples.push({ t: now, alt: altFt });
+    while (samples.length > MAX_SAMPLES) samples.shift();
+    // Drop very-stale samples (> 5 min) so VS computations aren't poisoned
+    while (samples.length > 2 && (now - samples[0].t) > 300000) samples.shift();
+  }
+
+  function currentVSfpm() {
+    if (samples.length < 2) return 0;
+    // Use newest sample and the oldest sample within the last 30 seconds (or
+    // the oldest available if fewer than 30 s of data).
+    const now = samples[samples.length - 1];
+    const cutoff = now.t - 30000;
+    let oldest = samples[0];
+    for (let i = 0; i < samples.length; i++) {
+      if (samples[i].t >= cutoff) { oldest = samples[i]; break; }
+    }
+    const dtSec = (now.t - oldest.t) / 1000;
+    if (dtSec < 2) return 0;
+    return ((now.alt - oldest.alt) / dtSec) * 60; // ft/min
+  }
+
+  function _computePhase(altFt, gsKts) {
+    const vs = currentVSfpm();
+    // Update peak climb VS (positive only, sustained)
+    if (vs > peakClimbVS) peakClimbVS = vs;
+    const cruiseDeadband = Math.max(200, peakClimbVS * 0.10);   // |VS| < this → "level"
+    const descentTrigger = -Math.max(300, peakClimbVS * 0.10);  // VS < this → "descending"
+    const onGround = (gsKts != null && gsKts < 30 && altFt != null && altFt < 1000) ||
+                     (gsKts != null && gsKts < 5);
+    const now = performance.now();
+    const prev = lastEmittedPhase;
+    let next = prev;
+    if (onGround) {
+      next = 'ground';
+      cruiseCandidateSince = 0; descentCandidateSince = 0;
+    } else if (!prev || prev === 'ground') {
+      // Just left the ground
+      next = vs > 100 ? 'climb' : 'climb'; // assume climb on first airborne sample
+      cruiseCandidateSince = 0; descentCandidateSince = 0;
+    } else if (prev === 'climb') {
+      if (Math.abs(vs) < cruiseDeadband) {
+        if (!cruiseCandidateSince) cruiseCandidateSince = now;
+        if (now - cruiseCandidateSince >= 60000) { next = 'cruise'; cruiseCandidateSince = 0; }
+      } else {
+        cruiseCandidateSince = 0;
+      }
+      // Surprise descent during "climb" is unusual; require sustained
+      if (vs < descentTrigger) {
+        if (!descentCandidateSince) descentCandidateSince = now;
+        if (now - descentCandidateSince >= 60000) { next = 'descent'; descentCandidateSince = 0; }
+      } else {
+        descentCandidateSince = 0;
+      }
+    } else if (prev === 'cruise') {
+      if (vs < descentTrigger) {
+        if (!descentCandidateSince) descentCandidateSince = now;
+        if (now - descentCandidateSince >= 30000) { next = 'descent'; descentCandidateSince = 0; }
+      } else {
+        descentCandidateSince = 0;
+      }
+    } else if (prev === 'descent') {
+      // Stay in descent until approach/landing detected
+      if (altFt != null && altFt < 2500 && gsKts != null && gsKts < 200) {
+        next = 'approach';
+      }
+    } else if (prev === 'approach') {
+      // Stays approach until on-ground (handled above)
+    }
+    if (next !== prev) {
+      lastTransition = { from: prev, to: next, t: now };
+      lastChangeAt = now;
+      lastEmittedPhase = next;
+    } else if (!prev) {
+      lastEmittedPhase = next;
+    }
+    return next;
+  }
+
+  // Update on every tick. If source is STKP and `phaseFromSource` is supplied,
+  // we trust it for the named phase but still build the altitude buffer for
+  // ETA + VS computations.
+  function update(data) {
+    if (!data) return null;
+    const alt = (data.alt != null && isFinite(data.alt)) ? data.alt : null;
+    const gs  = (data.gs  != null && isFinite(data.gs))  ? data.gs  : null;
+    if (alt != null) pushSample(alt);
+    const phaseFromSource = (data.phase && typeof data.phase === 'string') ? data.phase.toLowerCase() : null;
+    if (phaseFromSource && data.source === 'stkp') {
+      // Normalize STKP phase strings
+      let p = phaseFromSource;
+      if (p.includes('climb')) p = 'climb';
+      else if (p.includes('cruise')) p = 'cruise';
+      else if (p.includes('descent') || p.includes('descend')) p = 'descent';
+      else if (p.includes('approach') || p.includes('final')) p = 'approach';
+      else if (p.includes('ground') || p.includes('taxi') || p.includes('parked')) p = 'ground';
+      if (p !== lastEmittedPhase) {
+        lastTransition = { from: lastEmittedPhase, to: p, t: performance.now() };
+        lastChangeAt = performance.now();
+        lastEmittedPhase = p;
+      }
+      // Also keep peakClimbVS up-to-date even when we don't own the state
+      const vs = currentVSfpm();
+      if (vs > peakClimbVS) peakClimbVS = vs;
+    } else if (alt != null) {
+      _computePhase(alt, gs);
+    }
+    return lastEmittedPhase;
+  }
+
+  function get() { return lastEmittedPhase; }
+  function vsFpm() { return currentVSfpm(); }
+  function lastChange() { return lastTransition; }
+  function lastChangeTime() { return lastChangeAt; }
+
+  return { reset, update, get, vsFpm, lastChange, lastChangeTime };
+})();
+
+// ---------------------- HAVERSINE HELPER (nm) -----------------------------
+function _afkDistNm(lat1, lon1, lat2, lon2) {
+  if (!isFinite(lat1) || !isFinite(lon1) || !isFinite(lat2) || !isFinite(lon2)) return NaN;
+  const R = 3440.065; // earth radius in nautical miles
+  const toRad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * toRad;
+  const dLon = (lon2 - lon1) * toRad;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// ---------------------- ETA CALCULATOR ------------------------------------
+const _afkETA = (() => {
+  function fmt(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return '—';
+    if (seconds > 60 * 60 * 24) return '—';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function _wpForAlarm(alarm) {
+    const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    if (!fp || !fp.navlog || !fp.navlog.fix) return null;
+    const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix];
+    const scope = alarm.params && alarm.params.scope;
+    if (scope === 'toc') {
+      for (const f of fixes) {
+        const stage = (f.stage || '').toString().toLowerCase();
+        if (stage === 'cruise' || stage === 'crz') return { fix: f, label: 'TOC' };
+      }
+      return null;
+    }
+    if (scope === 'tod') {
+      // First descent fix after at least one cruise fix
+      let seenCruise = false;
+      for (const f of fixes) {
+        const stage = (f.stage || '').toString().toLowerCase();
+        if (stage === 'cruise' || stage === 'crz') seenCruise = true;
+        if (seenCruise && (stage === 'descent' || stage === 'desc')) return { fix: f, label: 'TOD' };
+      }
+      return null;
+    }
+    if (scope === 'specific') {
+      // Find the next un-tripped specific waypoint along the route
+      const trippedFixes = (alarm.state && alarm.state.trippedFixes) || {};
+      const picks = (alarm.params.fixIdents) || [];
+      for (const f of fixes) {
+        if (trippedFixes[f.ident]) continue;
+        if (picks.indexOf(f.ident) >= 0) return { fix: f, label: f.ident };
+      }
+      return null;
+    }
+    // scope === 'all' → next un-tripped waypoint
+    const trippedFixes = (alarm.state && alarm.state.trippedFixes) || {};
+    for (const f of fixes) {
+      if (trippedFixes[f.ident]) continue;
+      return { fix: f, label: f.ident };
+    }
+    return null;
+  }
+
+  function compute(alarm, ac) {
+    if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
+    if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
+    const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
+    if (alarm.type === 'geofence') {
+      const p = alarm.params;
+      const d = _afkDistNm(ac.lat, ac.lng, p.lat, p.lng);
+      if (!isFinite(d)) return NaN;
+      const inside = d < p.radiusNm;
+      if (p.trigger === 'enter') {
+        if (inside) return NaN; // already inside; can't predict exit
+        if (gs < 5) return Infinity;
+        return ((d - p.radiusNm) / gs) * 3600;
+      } else if (p.trigger === 'exit') {
+        if (!inside) return NaN;
+        if (gs < 5) return Infinity;
+        // Rough estimate: assume straight-line crossing in current heading direction
+        return ((p.radiusNm - d) / gs) * 3600;
+      } else { // both
+        if (gs < 5) return Infinity;
+        return (Math.abs(d - p.radiusNm) / gs) * 3600;
+      }
+    }
+    if (alarm.type === 'waypoint') {
+      const wp = _wpForAlarm(alarm);
+      if (!wp) return NaN;
+      const d = _afkDistNm(ac.lat, ac.lng, parseFloat(wp.fix.pos_lat), parseFloat(wp.fix.pos_long));
+      if (!isFinite(d)) return NaN;
+      if (gs < 5) return Infinity;
+      return (d / gs) * 3600;
+    }
+    if (alarm.type === 'alt-min') {
+      const vs = _afkPhase.vsFpm();
+      const thresh = parseFloat(alarm.params.altFt);
+      if (ac.alt == null || !isFinite(ac.alt) || !isFinite(thresh)) return NaN;
+      if (ac.alt <= thresh) return 0;
+      if (vs >= 0) return NaN; // not descending
+      return ((ac.alt - thresh) / Math.abs(vs)) * 60;
+    }
+    // cruise, descent, phase-change — not ETA-predictable from instantaneous state
+    return NaN;
+  }
+
+  function next(ac) {
+    let bestEta = Infinity, bestAlarm = null;
+    _afkAlarms.list().forEach(a => {
+      if (!a.enabled || a.status === 'tripped') return;
+      const e = compute(a, ac);
+      if (isFinite(e) && e < bestEta) { bestEta = e; bestAlarm = a; }
+    });
+    return bestAlarm ? { alarm: bestAlarm, etaSec: bestEta } : null;
+  }
+
+  return { compute, next, fmt };
+})();
+
+// ---------------------- ALARM REGISTRY ------------------------------------
+const _AFK_LS_KEY = 'simfly_aa_afk_alarms';
+const _AFK_LS_DP  = 'simfly_aa_afk_dp_collapsed';
+let _afkAlarmIdSeq = 1;
+
+const _afkAlarms = (() => {
+  let alarms = [];
+
+  function _load() {
+    try {
+      const raw = localStorage.getItem(_AFK_LS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return;
+      alarms = arr
+        // v2.69.0 removed the 'phase-change' type — drop any saved instances
+        // silently. Cruise + Descent cover the same ground.
+        .filter(a => a.type !== 'phase-change')
+        .map(a => {
+          if (a.id >= _afkAlarmIdSeq) _afkAlarmIdSeq = a.id + 1;
+          // Reset transient state on reload
+          a.status = a.status === 'tripped' ? 'armed' : a.status;
+          a.state = a.state || {};
+          return a;
+        });
+    } catch (_) {}
+  }
+
+  function _save() {
+    try { localStorage.setItem(_AFK_LS_KEY, JSON.stringify(alarms)); } catch (_) {}
+  }
+
+  function list() { return alarms.slice(); }
+  function get(id) { return alarms.find(a => a.id === id) || null; }
+  function count() { return alarms.length; }
+  function armedCount() { return alarms.filter(a => a.enabled).length; }
+  function trippedCount() { return alarms.filter(a => a.status === 'tripped').length; }
+  function tripped() { return alarms.filter(a => a.status === 'tripped'); }
+
+  function add(alarm) {
+    alarm.id = _afkAlarmIdSeq++;
+    alarm.status = 'armed';
+    alarm.enabled = alarm.enabled !== false;
+    alarm.state = alarm.state || {};
+    alarm.trippedAt = null;
+    alarms.push(alarm);
+    _save();
+    return alarm;
+  }
+
+  function remove(id) {
+    const a = get(id);
+    if (a && a.status === 'tripped') _afkOnDismiss(a);
+    alarms = alarms.filter(x => x.id !== id);
+    _save();
+  }
+
+  function update(id, patch) {
+    const a = get(id);
+    if (!a) return;
+    Object.assign(a, patch);
+    _save();
+  }
+
+  function trip(id) {
+    const a = get(id);
+    if (!a || a.status === 'tripped') return;
+    a.status = 'tripped';
+    a.trippedAt = Date.now();
+    _save();
+  }
+
+  function dismiss(id) {
+    const a = get(id);
+    if (!a) return;
+    a.status = 'armed';
+    a.trippedAt = null;
+    if (a.state) {
+      // Per-alarm one-shot reset where appropriate
+      if (a.type === 'phase-change') a.state.lastPhaseSeen = _afkPhase.get();
+      if (a.type === 'cruise') a.state.fired = false;
+      if (a.type === 'descent') a.state.fired = false;
+    }
+    _save();
+  }
+
+  function dismissAll() {
+    alarms.forEach(a => {
+      if (a.status === 'tripped') {
+        a.status = 'armed';
+        a.trippedAt = null;
+      }
+    });
+    _save();
+  }
+
+  function disableAll() {
+    alarms.forEach(a => {
+      a.enabled = false;
+      a.status = 'armed';
+      a.trippedAt = null;
+    });
+    _save();
+  }
+
+  function reorder(fromId, toId, position) {
+    // Move alarm with `fromId` to be just before `toId` (position='before')
+    // or just after (position='after'). List order = sound priority order.
+    if (fromId === toId) return;
+    const fromIdx = alarms.findIndex(a => a.id === fromId);
+    const toIdx   = alarms.findIndex(a => a.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = alarms.splice(fromIdx, 1);
+    // After splice the toIdx may have shifted by one
+    let insertIdx = alarms.findIndex(a => a.id === toId);
+    if (position === 'after') insertIdx = insertIdx + 1;
+    alarms.splice(insertIdx, 0, moved);
+    _save();
+  }
+
+  function flightPlanChanged() {
+    // Drop waypoint-specific picks (the old fix idents no longer apply)
+    let dropped = 0;
+    alarms.forEach(a => {
+      if (a.type === 'waypoint' && a.params && a.params.scope === 'specific') {
+        if ((a.params.fixIdents || []).length) {
+          a.params.fixIdents = [];
+          dropped++;
+        }
+      }
+      if (a.type === 'waypoint' && a.state) {
+        a.state.trippedFixes = {};
+      }
+    });
+    if (dropped) _save();
+    return dropped;
+  }
+
+  _load();
+  return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, reorder, flightPlanChanged };
+})();
+
+// ---------------------- EVALUATORS ----------------------------------------
+function _afkEvalGeofence(alarm, ac) {
+  const p = alarm.params;
+  const d = _afkDistNm(ac.lat, ac.lng, p.lat, p.lng);
+  if (!isFinite(d)) return false;
+  const inside = d < p.radiusNm;
+  const s = alarm.state;
+  if (s.wasInside == null) { s.wasInside = inside; return false; }
+  let trip = false;
+  if ((p.trigger === 'enter' || p.trigger === 'both') && !s.wasInside && inside) trip = true;
+  if ((p.trigger === 'exit'  || p.trigger === 'both') && s.wasInside && !inside) trip = true;
+  s.wasInside = inside;
+  return trip;
+}
+
+// CPA (closest-point-of-approach) detection constants. See memory note
+// project_aa_afk_alerts.md for the design rationale and edge-case coverage.
+const _AFK_WP_CPA_MAX_NM      = 5;    // local min must be ≤ this to count as "reached"
+const _AFK_WP_TELEPORT_NM     = 100;  // single-tick Δdistance > this resets state
+const _AFK_WP_NEAR_CROSS_NM   = 2;    // STKP fallback: was within N nm, now moving away
+const _AFK_AIRBORNE_GS_KT     = 30;   // skip evaluation while on ground / taxiing
+
+function _afkWpCandidates(alarm, fixes) {
+  const scope = alarm.params.scope || 'all';
+  if (scope === 'toc') {
+    for (const f of fixes) if ((f.stage || '').toString().toLowerCase().startsWith('cru')) return [f];
+    return [];
+  }
+  if (scope === 'tod') {
+    let seenCruise = false;
+    for (const f of fixes) {
+      const st = (f.stage || '').toString().toLowerCase();
+      if (st.startsWith('cru')) seenCruise = true;
+      if (seenCruise && st.startsWith('des')) return [f];
+    }
+    return [];
+  }
+  if (scope === 'specific') {
+    const picks = alarm.params.fixIdents || [];
+    return fixes.filter(f => picks.indexOf(f.ident) >= 0);
+  }
+  return fixes; // 'all'
+}
+
+function _afkEvalWaypoint(alarm, ac) {
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || !fp.navlog || !fp.navlog.fix) return false;
+  const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix];
+  // Edge-case (1): skip while on ground / taxiing. Prevents spurious
+  // "reached" trips during pre-flight taxi or post-landing roll-out.
+  if (!isFinite(ac.gs) || ac.gs < _AFK_AIRBORNE_GS_KT) return false;
+  if (!alarm.state.trippedFixes) alarm.state.trippedFixes = {};
+  if (!alarm.state.wpTrack) alarm.state.wpTrack = {}; // per-ident: { prevDist, minDist }
+  const candidates = _afkWpCandidates(alarm, fixes);
+  if (candidates.length === 0) return false;
+  // Find the next un-tripped candidate (route order).
+  const nextIdx = candidates.findIndex(f => !alarm.state.trippedFixes[f.ident]);
+  if (nextIdx < 0) return false;
+  const f = candidates[nextIdx];
+  const wpLat = parseFloat(f.pos_lat), wpLng = parseFloat(f.pos_long);
+  const d = _afkDistNm(ac.lat, ac.lng, wpLat, wpLng);
+  if (!isFinite(d)) return false;
+  const track = alarm.state.wpTrack[f.ident] || {};
+  const prev  = track.prevDist;
+  // Edge-case (2): teleport detection — sim restart / new flight loaded.
+  // Reset state and don't fire on huge distance jumps.
+  if (prev != null && Math.abs(d - prev) > _AFK_WP_TELEPORT_NM) {
+    alarm.state.wpTrack[f.ident] = { prevDist: d, minDist: d };
+    return false;
+  }
+  const minDist = track.minDist != null ? Math.min(track.minDist, d) : d;
+  // CPA detection: distance was decreasing (prev) and is now increasing (d > prev).
+  // Edge-case (4): require local-min ≤ CPA_MAX_NM so loiter / hold patterns
+  // with minima 8+ nm out don't fire.
+  const isLocalMin = prev != null && d > prev && minDist <= _AFK_WP_CPA_MAX_NM;
+  // Edge-case (3): STKP coarse-sample fallback. At 10 s polling × 500 kt, the
+  // aircraft can fly past a waypoint between two samples. If we were within
+  // NEAR_CROSS_NM last tick and we're now moving away, we crossed it.
+  const crossedBetweenSamples = prev != null && prev < _AFK_WP_NEAR_CROSS_NM && d > prev;
+  const shouldFire = isLocalMin || crossedBetweenSamples;
+  if (!shouldFire) {
+    alarm.state.wpTrack[f.ident] = { prevDist: d, minDist };
+    return false;
+  }
+  // FIRE — and edge-case (5): cluster cascade. Also fire any subsequent
+  // un-tripped candidate within CPA_MAX_NM of this one (KSEA + KBFI sit
+  // 4 nm apart — one overflight clears both).
+  alarm.state.trippedFixes[f.ident] = true;
+  alarm.state._lastFiredFix = f.ident;
+  delete alarm.state.wpTrack[f.ident];
+  for (let i = nextIdx + 1; i < candidates.length; i++) {
+    const f2 = candidates[i];
+    if (alarm.state.trippedFixes[f2.ident]) continue;
+    const dBetween = _afkDistNm(wpLat, wpLng, parseFloat(f2.pos_lat), parseFloat(f2.pos_long));
+    if (isFinite(dBetween) && dBetween <= _AFK_WP_CPA_MAX_NM) {
+      alarm.state.trippedFixes[f2.ident] = true;
+      delete alarm.state.wpTrack[f2.ident];
+    } else {
+      break; // cluster ended
+    }
+  }
+  return true;
+}
+
+function _afkEvalCruise(alarm) {
+  if (alarm.state.fired) return false;
+  if (_afkPhase.get() === 'cruise') { alarm.state.fired = true; return true; }
+  return false;
+}
+
+function _afkEvalDescent(alarm) {
+  if (alarm.state.fired) return false;
+  if (_afkPhase.get() === 'descent') { alarm.state.fired = true; return true; }
+  return false;
+}
+
+function _afkEvalAltMin(alarm, ac) {
+  if (alarm.state.fired) return false;
+  const t = parseFloat(alarm.params.altFt);
+  if (ac.alt == null || !isFinite(ac.alt) || !isFinite(t)) return false;
+  if (ac.alt < t) { alarm.state.fired = true; return true; }
+  return false;
+}
+
+function _afkEvaluate(alarm, ac) {
+  if (!alarm.enabled || alarm.status === 'tripped') return false;
+  switch (alarm.type) {
+    case 'geofence':     return _afkEvalGeofence(alarm, ac);
+    case 'waypoint':     return _afkEvalWaypoint(alarm, ac);
+    case 'cruise':       return _afkEvalCruise(alarm);
+    case 'descent':      return _afkEvalDescent(alarm);
+    case 'alt-min':      return _afkEvalAltMin(alarm, ac);
+  }
+  return false;
+}
+
+// ---------------------- TICK ORCHESTRATOR ---------------------------------
+let _afkLastSbFingerprint = null;
+function _afkSbFingerprint() {
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || !fp.navlog) return null;
+  const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix];
+  return (fp.origin && fp.origin.icao_code || '?') + '→' + (fp.destination && fp.destination.icao_code || '?') + '·' + fixes.length;
+}
+
+function _afkTick(data) {
+  if (!data) return;
+  // Detect flight-plan changes (drop specific-waypoint picks if route differs)
+  const fpFp = _afkSbFingerprint();
+  if (fpFp !== _afkLastSbFingerprint) {
+    if (_afkLastSbFingerprint !== null && fpFp !== null) {
+      const dropped = _afkAlarms.flightPlanChanged();
+      if (dropped > 0) {
+        _aaRtToast('⚠ Flight plan changed — cleared specific-waypoint picks on ' + dropped + ' alarm(s).', 'warn');
+      }
+      _afkRenderWaypointVisuals();
+    }
+    _afkLastSbFingerprint = fpFp;
+  }
+  _afkPhase.update(data);
+  const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg, gndAlt: data.gndAlt };
+  const newTrips = [];
+  _afkAlarms.list().forEach(a => {
+    if (_afkEvaluate(a, ac)) {
+      _afkAlarms.trip(a.id);
+      newTrips.push(a);
+    }
+  });
+  // Track takeoff for ELAPSED
+  _afkTakeoffTrack(ac);
+  if (newTrips.length > 0) _afkOnTripped(newTrips);
+  _afkUpdateBadge();
+  _afkUpdateDataPanel(ac);
+  _afkSyncTripOverlay();
+}
+
+// ---------------------- TAKEOFF / LANDING DETECTION ------------------------
+let _afkTakeoffAt = 0;
+let _afkAirborneSince = 0;
+let _afkLastGsAbove40 = 0;
+function _afkTakeoffTrack(ac) {
+  const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
+  const now = performance.now();
+  if (gs > 40) {
+    if (!_afkLastGsAbove40) _afkLastGsAbove40 = now;
+    if (!_afkTakeoffAt && (now - _afkLastGsAbove40) > 10000) {
+      _afkTakeoffAt = Date.now();
+      _afkAirborneSince = now;
+    }
+  } else {
+    _afkLastGsAbove40 = 0;
+    // Landing detection: sustained low GS at low altitude after takeoff
+    if (_afkTakeoffAt && gs < 30 && (ac.alt == null || ac.alt < 500)) {
+      _afkTakeoffAt = 0; // reset for next leg
+      _afkAirborneSince = 0;
+    }
+  }
+}
+
+// ---------------------- TRIP / DISMISS LIFECYCLE --------------------------
+function _afkOnTripped(_newTrips) {
+  // Play sound of the HIGHEST-PRIORITY tripped alarm (top of the list).
+  // The user can re-order alarms by dragging cards up/down — list order
+  // drives sound priority. Latest trips at lower priority just queue silently
+  // in the overlay; their sound takes over only if the higher one is dismissed.
+  const allTripped = _afkAlarms.tripped(); // returns in list order
+  if (allTripped.length > 0) {
+    const highest = allTripped[0];
+    if (_afkAudio.currentId() !== (highest.sound || 'digital-clock')) {
+      _afkAudio.play(highest.sound || 'digital-clock');
+    }
+  }
+  _afkShowTripOverlay();
+  _afkStartTabFlash();
+  _afkUpdateBtnState();
+}
+
+function _afkOnDismiss(alarm) {
+  // Called when an individual alarm is dismissed
+  _afkAlarms.dismiss(alarm.id);
+  _afkSyncTripOverlay();
+}
+
+function _afkDismissOne(id) {
+  const a = _afkAlarms.get(id);
+  if (!a) return;
+  _afkOnDismiss(a);
+  // If others remain tripped, swap audio to the next-highest-priority
+  // (top-of-list) still-tripped alarm.
+  const remaining = _afkAlarms.tripped(); // list order
+  if (remaining.length > 0) {
+    _afkAudio.play(remaining[0].sound || 'digital-clock');
+  } else {
+    _afkAudio.stop();
+    _afkHideTripOverlay();
+    _afkStopTabFlash();
+  }
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+}
+
+function _afkDismissAll() {
+  _afkAlarms.dismissAll();
+  _afkAudio.stop();
+  _afkHideTripOverlay();
+  _afkStopTabFlash();
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+}
+
+function _afkDisableAll() {
+  _afkAlarms.disableAll();
+  _afkAudio.stop();
+  _afkHideTripOverlay();
+  _afkStopTabFlash();
+  _afkClearAllGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  _afkRenderAlarmList();
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+  _aaRtToast('🔔 All alarms disabled.', 'ok');
+}
+
+function _afkDeleteAll() {
+  if (_afkAlarms.count() === 0) return;
+  _afkAlarms.list().forEach(a => _afkAlarms.remove(a.id));
+  _afkAudio.stop();
+  _afkHideTripOverlay();
+  _afkStopTabFlash();
+  _afkClearAllGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  _afkRenderAlarmList();
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+  _aaRtToast('🔔 All alarms deleted.', 'ok');
+}
+
+// ---------------------- TRIP OVERLAY --------------------------------------
+function _afkShowTripOverlay() {
+  const ov = document.getElementById('afkTripOverlay');
+  if (!ov) return;
+  ov.classList.add('open');
+  _afkSyncTripOverlay();
+}
+function _afkHideTripOverlay() {
+  const ov = document.getElementById('afkTripOverlay');
+  if (ov) ov.classList.remove('open');
+}
+function _afkSyncTripOverlay() {
+  const ov = document.getElementById('afkTripOverlay');
+  if (!ov) return;
+  const list = document.getElementById('afkTripList');
+  if (!list) return;
+  const tripped = _afkAlarms.tripped(); // list order = priority order
+  if (tripped.length === 0) {
+    ov.classList.remove('open');
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = tripped.map(a => {
+    const icon = _afkAlarmIcon(a.type);
+    const desc = _afkAlarmShortDescription(a, true);
+    return '<li class="afk-trip-item">' +
+      '<span class="afk-trip-item-icon">' + icon + '</span>' +
+      '<span class="afk-trip-item-text">' + desc + '</span>' +
+      '<button class="afk-trip-item-x" onclick="_afkDismissOne(' + a.id + ')" title="Dismiss this alarm (others keep sounding)">✕</button>' +
+      '</li>';
+  }).join('');
+}
+
+// ---------------------- TAB-TITLE FLASH -----------------------------------
+let _afkTabFlashTimer = 0;
+let _afkOrigTitle = null;
+function _afkStartTabFlash() {
+  if (_afkTabFlashTimer) return;
+  _afkOrigTitle = document.title;
+  let phase = 0;
+  _afkTabFlashTimer = setInterval(() => {
+    phase = 1 - phase;
+    document.title = phase ? '⚠ ALARM — SimFly' : _afkOrigTitle;
+  }, 900);
+}
+function _afkStopTabFlash() {
+  if (_afkTabFlashTimer) { clearInterval(_afkTabFlashTimer); _afkTabFlashTimer = 0; }
+  if (_afkOrigTitle) { document.title = _afkOrigTitle; _afkOrigTitle = null; }
+}
+
+// ---------------------- TOOLBAR BUTTON STATE ------------------------------
+function _afkUpdateBtnState() {
+  const btn = document.getElementById('afkAlertsBtn');
+  if (!btn) return;
+  btn.classList.remove('armed', 'tripping');
+  if (_afkAlarms.trippedCount() > 0) btn.classList.add('tripping');
+  else if (_afkAlarms.armedCount() > 0) btn.classList.add('armed');
+}
+function _afkUpdateBadge() {
+  const badge = document.getElementById('afkBtnBadge');
+  if (!badge) return;
+  const n = _afkAlarms.armedCount();
+  if (n > 0) { badge.textContent = String(n); badge.classList.add('show'); }
+  else { badge.classList.remove('show'); }
+  _afkUpdateBtnState();
+}
+
+// ---------------------- CONFIG MODAL --------------------------------------
+function _afkOpenConfig() {
+  _afkAudio.unlock(); // user gesture
+  const m = document.getElementById('afkConfigModal');
+  if (!m) return;
+  m.classList.add('open');
+  _afkRenderAlarmList();
+}
+function _afkCloseConfig() {
+  const m = document.getElementById('afkConfigModal');
+  if (m) m.classList.remove('open');
+}
+
+function _afkAlarmIcon(type) {
+  switch (type) {
+    case 'geofence':     return '⊙';
+    case 'waypoint':     return '📍';
+    case 'cruise':       return '─';
+    case 'descent':      return '↘';
+    case 'alt-min':      return '▼';
+  }
+  return '🔔';
+}
+
+function _afkAlarmTypeLabel(type) {
+  switch (type) {
+    case 'geofence':     return 'Geofence';
+    case 'waypoint':     return 'Waypoint';
+    case 'cruise':       return 'Cruise Reached';
+    case 'descent':      return 'Descent Started';
+    case 'alt-min':      return 'Altitude Minimum';
+  }
+  return 'Alarm';
+}
+
+// Layperson tooltip text — what the alarm does and when it fires.
+function _afkAlarmTooltip(type) {
+  switch (type) {
+    case 'geofence':
+      return 'Geofence — fires when your aircraft crosses into (or out of) a circular region you drew on the map. Useful for "wake me when I\'m 10 nm from the destination" or "alert me when I reach the practice area".';
+    case 'waypoint':
+      return 'Waypoint — fires when your aircraft passes within ~1.5 nm of a chosen waypoint in the active SimBrief flight plan. Pick Every waypoint, TOC (top of climb), TOD (top of descent), or specific fixes.';
+    case 'cruise':
+      return 'Cruise Reached — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an adaptive detector so it works for both light pistons and heavy jets without tuning.';
+    case 'descent':
+      return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise. Useful as the "wake me up before TOD" backstop.';
+    case 'alt-min':
+      return 'Altitude Minimum — fires when your aircraft\'s altitude drops below a threshold you set. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
+  }
+  return '';
+}
+
+function _afkAlarmShortDescription(a, includeTitle) {
+  const title = includeTitle ? '<span style="font-weight:600;">' + _afkAlarmTypeLabel(a.type) + '</span> · ' : '';
+  if (a.type === 'geofence') {
+    const p = a.params;
+    const label = p.label ? (p.label + ' — ') : '';
+    return title + label + p.radiusNm.toFixed(1) + ' nm circle at ' +
+      p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + '° (on ' + p.trigger.toUpperCase() + ')';
+  }
+  if (a.type === 'waypoint') {
+    const s = a.params.scope;
+    if (s === 'toc') return title + 'Top of Climb (TOC)';
+    if (s === 'tod') return title + 'Top of Descent (TOD)';
+    if (s === 'specific') {
+      const ids = a.params.fixIdents || [];
+      return title + (ids.length ? ids.slice(0, 6).join(', ') + (ids.length > 6 ? '…' : '') : '(no waypoints picked)');
+    }
+    return title + 'Every waypoint in the flight plan';
+  }
+  if (a.type === 'cruise')       return title + 'Aircraft levels off into cruise';
+  if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
+  if (a.type === 'alt-min')      return title + 'Altitude descends below ' + _afkFmtAltDisplay(a.params.altFt);
+  return title;
+}
+
+function _afkSoundOptionsHtml(selectedId) {
+  return _AFK_SOUNDS.map(s =>
+    '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' + s.name + '</option>'
+  ).join('');
+}
+
+function _afkRenderAlarmList() {
+  const list = document.getElementById('afkAlarmList');
+  if (!list) return;
+  const items = _afkAlarms.list();
+  if (items.length === 0) {
+    list.innerHTML = '<div class="afk-list-empty">No alarms configured. Pick a type on the left to add one.</div>';
+    _afkUpdateFooterInfo();
+    return;
+  }
+  list.innerHTML = items.map(a => {
+    const trippedClass = a.status === 'tripped' ? ' tripped' : '';
+    const disabledClass = a.enabled ? '' : ' disabled';
+    const tip = _afkAlarmTooltip(a.type).replace(/"/g, '&quot;');
+    return '<div class="afk-card' + trippedClass + disabledClass + '" data-afk-id="' + a.id + '"' +
+        ' draggable="true"' +
+        ' ondragstart="_afkCardDragStart(event,' + a.id + ')"' +
+        ' ondragover="_afkCardDragOver(event,' + a.id + ')"' +
+        ' ondragleave="_afkCardDragLeave(event)"' +
+        ' ondrop="_afkCardDrop(event,' + a.id + ')"' +
+        ' ondragend="_afkCardDragEnd(event)">' +
+      '<div class="afk-card-row">' +
+        '<div class="afk-card-grip" title="Drag to reorder — higher in the list = higher priority. When multiple alarms are tripped, the top one\'s sound plays.">⋮⋮</div>' +
+        '<div class="afk-card-icon" title="' + tip + '">' + _afkAlarmIcon(a.type) + '</div>' +
+        '<div class="afk-card-desc">' +
+          '<div class="afk-card-desc-title" title="' + tip + '">' + _afkAlarmTypeLabel(a.type) + '</div>' +
+          '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
+        '</div>' +
+        '<div class="afk-card-actions">' +
+          '<label class="afk-toggle" title="Enable / disable this alarm"><input type="checkbox"' + (a.enabled ? ' checked' : '') + ' onchange="_afkToggleAlarm(' + a.id + ', this.checked)"></label>' +
+          '<button class="afk-icon-btn danger" onclick="_afkRemoveAlarm(' + a.id + ')" title="Delete this alarm">✕</button>' +
+        '</div>' +
+      '</div>' +
+      _afkRenderEditor(a) +
+    '</div>';
+  }).join('');
+  _afkUpdateFooterInfo();
+}
+
+function _afkUpdateFooterInfo() {
+  const info = document.getElementById('afkFooterInfo');
+  if (!info) return;
+  const armed = _afkAlarms.armedCount();
+  const total = _afkAlarms.count();
+  if (total === 0) info.textContent = 'No alarms configured';
+  else if (armed === 0) info.textContent = total + ' alarm(s) configured · 0 armed';
+  else info.textContent = armed + ' of ' + total + ' alarm(s) armed';
+}
+
+// ---------------------- DRAG-TO-REORDER ALARM CARDS -----------------------
+let _afkDragFromId = null;
+function _afkCardDragStart(ev, id) {
+  _afkDragFromId = id;
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(id)); } catch (_) {}
+  const card = ev.currentTarget;
+  if (card) card.classList.add('dragging');
+}
+function _afkCardDragOver(ev, id) {
+  if (_afkDragFromId == null || id === _afkDragFromId) return;
+  ev.preventDefault();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+  const card = ev.currentTarget;
+  const r = card.getBoundingClientRect();
+  const halfway = r.top + r.height / 2;
+  card.classList.toggle('drop-before', ev.clientY < halfway);
+  card.classList.toggle('drop-after',  ev.clientY >= halfway);
+}
+function _afkCardDragLeave(ev) {
+  const card = ev.currentTarget;
+  if (card) { card.classList.remove('drop-before'); card.classList.remove('drop-after'); }
+}
+function _afkCardDrop(ev, toId) {
+  if (_afkDragFromId == null || toId === _afkDragFromId) return;
+  ev.preventDefault();
+  const card = ev.currentTarget;
+  const r = card.getBoundingClientRect();
+  const halfway = r.top + r.height / 2;
+  const position = ev.clientY < halfway ? 'before' : 'after';
+  _afkAlarms.reorder(_afkDragFromId, toId, position);
+  _afkDragFromId = null;
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  // If a sound is currently playing, swap to the new highest-priority
+  // tripped alarm (list order changed).
+  const tripped = _afkAlarms.tripped();
+  if (tripped.length > 0 && _afkAudio.currentId() !== (tripped[0].sound || 'digital-clock')) {
+    _afkAudio.play(tripped[0].sound || 'digital-clock');
+  }
+}
+function _afkCardDragEnd(ev) {
+  _afkDragFromId = null;
+  document.querySelectorAll('.afk-card.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.afk-card.drop-before, .afk-card.drop-after').forEach(el => { el.classList.remove('drop-before'); el.classList.remove('drop-after'); });
+}
+
+function _afkRenderEditor(a) {
+  const soundSelectId = 'afkSnd_' + a.id;
+  const soundRow =
+    '<div class="afk-edit-row">' +
+      '<span class="afk-edit-label">Sound</span>' +
+      '<select class="afk-select" id="' + soundSelectId + '" onchange="_afkSetAlarmSound(' + a.id + ', this.value)">' +
+        _afkSoundOptionsHtml(a.sound) +
+      '</select>' +
+      '<button class="afk-icon-btn" onclick="_afkPreviewSelectedSound(\'' + soundSelectId + '\')" title="Preview sound">▶</button>' +
+    '</div>';
+  let body = '';
+  if (a.type === 'geofence') {
+    const p = a.params;
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Trigger</span>' +
+        '<select class="afk-select" onchange="_afkSetGeofenceTrigger(' + a.id + ', this.value)">' +
+          ['enter', 'exit', 'both'].map(t => '<option value="' + t + '"' + (p.trigger === t ? ' selected' : '') + '>On ' + t.toUpperCase() + '</option>').join('') +
+        '</select>' +
+      '</div>';
+  }
+  if (a.type === 'waypoint') {
+    const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    const fixes = (fp && fp.navlog && fp.navlog.fix) ? (Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix]) : [];
+    const noFp = fixes.length === 0;
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Scope</span>' +
+        '<select class="afk-select" onchange="_afkSetWaypointScope(' + a.id + ', this.value)">' +
+          ['all', 'toc', 'tod', 'specific'].map(s => '<option value="' + s + '"' + (a.params.scope === s ? ' selected' : '') + '>' + ({all:'Every waypoint',toc:'TOC (Top of Climb)',tod:'TOD (Top of Descent)',specific:'Specific waypoints…'}[s]) + '</option>').join('') +
+        '</select>' +
+      '</div>';
+    if (noFp) {
+      body += '<div class="afk-footer-info" style="color:var(--muted);">No SimBrief flight plan loaded — click ✈ SimBrief Flight Plan in the toolbar first.</div>';
+    } else if (a.params.scope === 'specific') {
+      const picks = a.params.fixIdents || [];
+      const rows = fixes.map(f => {
+        const checked = picks.indexOf(f.ident) >= 0 ? ' checked' : '';
+        const stage = (f.stage || '').toString().toLowerCase();
+        return '<div class="afk-wp-row">' +
+          '<input type="checkbox" value="' + f.ident + '"' + checked + ' onchange="_afkToggleWaypointPick(' + a.id + ', \'' + f.ident.replace(/'/g, "\\'") + '\', this.checked)">' +
+          '<span>' + f.ident + '</span>' +
+          (stage ? '<span class="afk-wp-stage">' + stage + '</span>' : '') +
+        '</div>';
+      }).join('');
+      body += '<div class="afk-wp-multi">' + rows + '</div>';
+    }
+  }
+  if (a.type === 'alt-min') {
+    const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Below</span>' +
+        '<input type="text" class="afk-input" style="width:130px;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200)">' +
+        '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
+      '</div>';
+  }
+  return '<div class="afk-card-editor">' + body + soundRow + '</div>';
+}
+
+function _afkToggleAlarm(id, on) {
+  _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
+  _afkRenderAlarmList();
+  _afkUpdateBadge();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+}
+function _afkRemoveAlarm(id) {
+  _afkAlarms.remove(id);
+  _afkRenderAlarmList();
+  _afkUpdateBadge();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  _afkSyncTripOverlay();
+}
+function _afkSetAlarmSound(id, s) { _afkAlarms.update(id, { sound: s }); }
+function _afkSetGeofenceTrigger(id, t) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.trigger = t; a.state.wasInside = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+}
+function _afkSetWaypointScope(id, s) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.scope = s;
+  if (s !== 'specific') a.params.fixIdents = [];
+  a.state.trippedFixes = {};
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList();
+  _afkRenderWaypointVisuals();
+}
+function _afkToggleWaypointPick(id, ident, on) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const picks = a.params.fixIdents || [];
+  const i = picks.indexOf(ident);
+  if (on && i < 0) picks.push(ident);
+  if (!on && i >= 0) picks.splice(i, 1);
+  a.params.fixIdents = picks;
+  _afkAlarms.update(id, { params: a.params });
+  _afkRenderWaypointVisuals();
+}
+// Parse altitude input — accepts "10000", "10,000", "FL350", "FL 350", etc.
+// Returns ft as a number, or NaN if unparseable.
+function _afkParseAlt(text) {
+  if (text == null) return NaN;
+  const t = text.toString().trim().replace(/,/g, '').toUpperCase();
+  if (!t) return NaN;
+  const flMatch = t.match(/^FL\s*(\d+)$/);
+  if (flMatch) return parseInt(flMatch[1], 10) * 100;
+  const ftMatch = t.match(/^(\d+)(?:\s*FT)?$/);
+  if (ftMatch) return parseInt(ftMatch[1], 10);
+  const fallback = parseFloat(t);
+  return isFinite(fallback) ? fallback : NaN;
+}
+
+// Pretty-print an altitude in feet — uses "FL350" form for round hundreds
+// at or above 18,000 ft (typical FL transition); otherwise "10,000 ft MSL".
+function _afkFmtAltDisplay(ft) {
+  if (ft == null || !isFinite(ft) || ft <= 0) return '—';
+  if (ft >= 18000 && ft % 100 === 0) return 'FL' + (ft / 100);
+  return ft.toLocaleString() + ' ft MSL';
+}
+
+function _afkSetAltMin(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const parsed = _afkParseAlt(v);
+  a.params.altText = v;
+  a.params.altFt = isFinite(parsed) ? parsed : 0;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  // Live-update the hint next to the input and the subtitle line on the card
+  const hint = document.getElementById('afkAltHint_' + id);
+  if (hint) hint.textContent = _afkFmtAltDisplay(a.params.altFt);
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
+// ---------------------- ADD ALARM (type-specific) -------------------------
+function _afkAddAlarm(type) {
+  _afkAudio.unlock();
+  if (type === 'geofence') {
+    _afkCloseConfig();
+    _afkGeofenceDrawStart();
+    return;
+  }
+  const base = { type, sound: 'digital-clock', params: {}, state: {} };
+  if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
+  if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000' };
+  if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  _afkAlarms.add(base);
+  _afkRenderAlarmList();
+  _afkUpdateBadge();
+  _afkRenderWaypointVisuals();
+}
+
+// ---------------------- GEOFENCE DRAW -------------------------------------
+let _afkGfDrawState = null; // { phase: 'idle'|'drag', centerLatLng, circleLayer, labelLayer }
+let _afkGfPendingResult = null;
+const _AFK_GF_COLOR = '#ff8c28';
+
+function _afkGeofenceDrawStart() {
+  if (!_rgMap) { _aaRtToast('Open the map first to draw a geofence.', 'warn'); return; }
+  if (!document.getElementById('regionModal').classList.contains('open')) {
+    openRegionModal();
+    // Map init is async; wait a tick
+    setTimeout(_afkGeofenceDrawStart, 350);
+    return;
+  }
+  // Cancel any competing draw mode
+  if (typeof _rgMeasureActive !== 'undefined' && _rgMeasureActive) _rgToggleMeasure();
+  _afkGfDrawState = { phase: 'idle', centerLatLng: null, circleLayer: null, labelLayer: null };
+  const container = document.getElementById('rgMapContainer');
+  if (container) container.classList.add('afk-geofence-draw');
+  const banner = document.getElementById('afkGeofenceBanner');
+  if (banner) banner.classList.add('show');
+  // Suspend Leaflet pan / box-zoom / dblclick while drawing — without this,
+  // mousedown starts a map drag at the same time as our draw, sending the
+  // viewport into oblivion (blank gray) on the very first click.
+  try { _rgMap.dragging.disable(); } catch (_) {}
+  try { _rgMap.boxZoom && _rgMap.boxZoom.disable(); } catch (_) {}
+  try { _rgMap.doubleClickZoom && _rgMap.doubleClickZoom.disable(); } catch (_) {}
+  _rgMap.on('mousedown', _afkGfOnDown);
+  _rgMap.on('mousemove', _afkGfOnMove);
+  _rgMap.on('mouseup',   _afkGfOnUp);
+  // Right-click cancels
+  _rgMap.on('contextmenu', _afkGeofenceCancel);
+}
+
+function _afkGfOnDown(e) {
+  if (!_afkGfDrawState) return;
+  _afkGfDrawState.phase = 'drag';
+  _afkGfDrawState.centerLatLng = e.latlng;
+}
+function _afkGfOnMove(e) {
+  if (!_afkGfDrawState || _afkGfDrawState.phase !== 'drag') return;
+  const c = _afkGfDrawState.centerLatLng;
+  if (!c) return;
+  const radiusNm = _afkDistNm(c.lat, c.lng, e.latlng.lat, e.latlng.lng);
+  _afkGfRenderPreview(c, radiusNm);
+}
+function _afkGfOnUp(e) {
+  if (!_afkGfDrawState || _afkGfDrawState.phase !== 'drag') return;
+  const c = _afkGfDrawState.centerLatLng;
+  if (!c) { _afkGeofenceCancel(); return; }
+  const radiusNm = _afkDistNm(c.lat, c.lng, e.latlng.lat, e.latlng.lng);
+  if (!isFinite(radiusNm) || radiusNm < 0.05) { _afkGeofenceCancel(); return; }
+  _afkGfPendingResult = { lat: c.lat, lng: c.lng, radiusNm };
+  _afkGfTeardown(false); // keep preview circle until user confirms / cancels modal
+  _afkOpenGeofenceModal();
+}
+
+function _afkGfRenderPreview(centerLatLng, radiusNm) {
+  if (!_rgMap) return;
+  // CRITICAL: pass the existing layer (or null) as first arg to _rgGeoCircle —
+  // NOT _rgMap. The helper calls `.remove()` on the layer arg when the layer
+  // type doesn't match, which would call _rgMap.remove() and destroy the map.
+  const style = { color: _AFK_GF_COLOR, weight: 2, opacity: 0.95, fillColor: _AFK_GF_COLOR, fillOpacity: 0.10 };
+  try {
+    _afkGfDrawState.circleLayer = _rgGeoCircle(_afkGfDrawState.circleLayer, centerLatLng.lat, centerLatLng.lng, radiusNm, style);
+  } catch (_) {}
+  // Replace the divIcon label each frame so the radius readout updates
+  if (_afkGfDrawState.labelLayer) {
+    try { _rgMap.removeLayer(_afkGfDrawState.labelLayer); } catch (_) {}
+    _afkGfDrawState.labelLayer = null;
+  }
+  const label = L.divIcon({
+    className: 'afk-gf-label',
+    html: '<div style="display:inline-block;background:rgba(20,10,5,0.92);color:#ffaa55;padding:2px 8px;border-radius:4px;font-family:Rajdhani,sans-serif;font-size:0.95rem;font-weight:600;border:1px solid #ff8c28;white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1.2;">' + radiusNm.toFixed(2) + ' nm</div>',
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  try {
+    _afkGfDrawState.labelLayer = L.marker(centerLatLng, { icon: label, interactive: false }).addTo(_rgMap);
+  } catch (_) {}
+}
+
+function _afkGfTeardown(removeVisuals) {
+  if (_rgMap) {
+    _rgMap.off('mousedown', _afkGfOnDown);
+    _rgMap.off('mousemove', _afkGfOnMove);
+    _rgMap.off('mouseup', _afkGfOnUp);
+    _rgMap.off('contextmenu', _afkGeofenceCancel);
+    // Restore Leaflet's normal interactions
+    try { _rgMap.dragging.enable(); } catch (_) {}
+    try { _rgMap.boxZoom && _rgMap.boxZoom.enable(); } catch (_) {}
+    try { _rgMap.doubleClickZoom && _rgMap.doubleClickZoom.enable(); } catch (_) {}
+  }
+  const container = document.getElementById('rgMapContainer');
+  if (container) container.classList.remove('afk-geofence-draw');
+  const banner = document.getElementById('afkGeofenceBanner');
+  if (banner) banner.classList.remove('show');
+  if (removeVisuals && _afkGfDrawState) {
+    if (_afkGfDrawState.circleLayer) { try { _rgMap.removeLayer(_afkGfDrawState.circleLayer); } catch (_) {} }
+    if (_afkGfDrawState.labelLayer)  { try { _rgMap.removeLayer(_afkGfDrawState.labelLayer);  } catch (_) {} }
+    _afkGfDrawState = null;
+  } else if (_afkGfDrawState) {
+    // Keep preview but stop listening
+    _afkGfDrawState.phase = 'pending';
+  }
+}
+
+function _afkGeofenceCancel() {
+  if (_afkGfDrawState && _afkGfDrawState.circleLayer) { try { _rgMap.removeLayer(_afkGfDrawState.circleLayer); } catch (_) {} }
+  if (_afkGfDrawState && _afkGfDrawState.labelLayer)  { try { _rgMap.removeLayer(_afkGfDrawState.labelLayer);  } catch (_) {} }
+  _afkGfDrawState = null;
+  _afkGfPendingResult = null;
+  _afkGfTeardown(false);
+  const m = document.getElementById('afkGeofenceModal');
+  if (m) m.classList.remove('open');
+}
+
+function _afkOpenGeofenceModal() {
+  const m = document.getElementById('afkGeofenceModal');
+  if (!m || !_afkGfPendingResult) return;
+  const r = _afkGfPendingResult;
+  document.getElementById('afkGfLabel').value = '';
+  document.getElementById('afkGfTrigger').value = 'enter';
+  document.getElementById('afkGfSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
+  document.getElementById('afkGfCoords').textContent =
+    'Center ' + r.lat.toFixed(4) + '°, ' + r.lng.toFixed(4) + '°   ·   Radius ' + r.radiusNm.toFixed(2) + ' nm';
+  m.classList.add('open');
+}
+
+function _afkGeofenceModalCancel() {
+  const m = document.getElementById('afkGeofenceModal');
+  if (m) m.classList.remove('open');
+  _afkGeofenceCancel();
+}
+
+function _afkGeofenceModalSave() {
+  const r = _afkGfPendingResult;
+  if (!r) { _afkGeofenceModalCancel(); return; }
+  const label   = document.getElementById('afkGfLabel').value.trim();
+  const trigger = document.getElementById('afkGfTrigger').value;
+  const sound   = document.getElementById('afkGfSound').value;
+  _afkAlarms.add({
+    type: 'geofence',
+    sound,
+    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label },
+    state: { wasInside: null },
+  });
+  // Remove preview layers; the persistent visual will re-render below
+  if (_afkGfDrawState && _afkGfDrawState.circleLayer) { try { _rgMap.removeLayer(_afkGfDrawState.circleLayer); } catch (_) {} }
+  if (_afkGfDrawState && _afkGfDrawState.labelLayer)  { try { _rgMap.removeLayer(_afkGfDrawState.labelLayer);  } catch (_) {} }
+  _afkGfDrawState = null;
+  _afkGfPendingResult = null;
+  const m = document.getElementById('afkGeofenceModal');
+  if (m) m.classList.remove('open');
+  _afkRenderGeofenceVisuals();
+  _afkUpdateBadge();
+  _aaRtToast('🔔 Geofence alarm added.', 'ok');
+  _afkOpenConfig();
+}
+
+// ---------------------- PERSISTENT MAP VISUALS ----------------------------
+const _afkGeofenceLayers = {}; // id → { circle, label }
+function _afkRenderGeofenceVisuals() {
+  if (!_rgMap) return;
+  // Remove layers for alarms that no longer exist or are disabled
+  const validIds = new Set(_afkAlarms.list().filter(a => a.type === 'geofence' && a.enabled).map(a => a.id));
+  Object.keys(_afkGeofenceLayers).forEach(idStr => {
+    const id = parseInt(idStr, 10);
+    if (!validIds.has(id)) {
+      const layers = _afkGeofenceLayers[id];
+      if (layers.circle) { try { _rgMap.removeLayer(layers.circle); } catch (_) {} }
+      if (layers.label)  { try { _rgMap.removeLayer(layers.label);  } catch (_) {} }
+      delete _afkGeofenceLayers[id];
+    }
+  });
+  // Add / refresh
+  _afkAlarms.list().forEach(a => {
+    if (a.type !== 'geofence' || !a.enabled) return;
+    const p = a.params;
+    const existing = _afkGeofenceLayers[a.id];
+    if (existing && existing.label) { try { _rgMap.removeLayer(existing.label); } catch (_) {} }
+    const color = a.status === 'tripped' ? '#ff3d5a' : _AFK_GF_COLOR;
+    const style = { color, weight: 2, opacity: 0.85, fillColor: color, fillOpacity: 0.08 };
+    let circle = null, label = null;
+    try {
+      // First arg is the EXISTING layer (or null) — _rgGeoCircle will update
+      // in place when possible, else remove + recreate. Never pass _rgMap.
+      circle = _rgGeoCircle(existing && existing.circle ? existing.circle : null, p.lat, p.lng, p.radiusNm, style);
+    } catch (_) {}
+    const text = (p.label ? p.label + ' · ' : '') + p.radiusNm.toFixed(1) + ' nm · ' + p.trigger.toUpperCase();
+    const ic = L.divIcon({
+      className: 'afk-gf-label',
+      // display:inline-block so the background sizes to the text content. Without
+      // it the inner <div> renders block-level inside a 0×0 Leaflet wrapper, so
+      // the background paints at 0 width while the text overflows visibly — the
+      // misaligned-rectangle bug reported in v2.69.0 development.
+      html: '<div style="display:inline-block;background:rgba(20,10,5,0.92);color:' + color + ';padding:2px 8px;border-radius:4px;font-family:Rajdhani,sans-serif;font-size:0.92rem;font-weight:600;border:1px solid ' + color + ';white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1.2;">🔔 ' + text + '</div>',
+      iconSize: [0, 0], iconAnchor: [0, -8],
+    });
+    try {
+      label = L.marker([p.lat, p.lng], { icon: ic, interactive: false, zIndexOffset: 1200 }).addTo(_rgMap);
+    } catch (_) {}
+    _afkGeofenceLayers[a.id] = { circle, label };
+  });
+}
+
+function _afkClearAllGeofenceVisuals() {
+  if (!_rgMap) return;
+  Object.keys(_afkGeofenceLayers).forEach(idStr => {
+    const layers = _afkGeofenceLayers[idStr];
+    if (layers.circle) { try { _rgMap.removeLayer(layers.circle); } catch (_) {} }
+    if (layers.label)  { try { _rgMap.removeLayer(layers.label);  } catch (_) {} }
+  });
+  for (const k in _afkGeofenceLayers) delete _afkGeofenceLayers[k];
+}
+
+const _afkWaypointLayers = {}; // ident → L.marker (ring overlay)
+function _afkRenderWaypointVisuals() {
+  if (!_rgMap) return;
+  // Remove all existing waypoint overlays first
+  Object.keys(_afkWaypointLayers).forEach(k => {
+    try { _rgMap.removeLayer(_afkWaypointLayers[k]); } catch (_) {}
+    delete _afkWaypointLayers[k];
+  });
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || !fp.navlog || !fp.navlog.fix) return;
+  const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix];
+  // Build set of fixes that should be highlighted, mapped to their alarm types
+  const highlighted = {}; // ident → { all, specific, toc, tod }
+  _afkAlarms.list().forEach(a => {
+    if (a.type !== 'waypoint' || !a.enabled) return;
+    const s = a.params.scope || 'all';
+    if (s === 'all') {
+      fixes.forEach(f => { highlighted[f.ident] = Object.assign(highlighted[f.ident] || {}, { all: true, tripped: a.status === 'tripped' }); });
+    } else if (s === 'specific') {
+      (a.params.fixIdents || []).forEach(id => { highlighted[id] = Object.assign(highlighted[id] || {}, { specific: true, tripped: a.status === 'tripped' }); });
+    } else if (s === 'toc') {
+      for (const f of fixes) if ((f.stage || '').toString().toLowerCase().startsWith('cru')) { highlighted[f.ident] = Object.assign(highlighted[f.ident] || {}, { toc: true, tripped: a.status === 'tripped' }); break; }
+    } else if (s === 'tod') {
+      let seenCruise = false;
+      for (const f of fixes) {
+        const st = (f.stage || '').toString().toLowerCase();
+        if (st.startsWith('cru')) seenCruise = true;
+        if (seenCruise && st.startsWith('des')) { highlighted[f.ident] = Object.assign(highlighted[f.ident] || {}, { tod: true, tripped: a.status === 'tripped' }); break; }
+      }
+    }
+  });
+  Object.keys(highlighted).forEach(ident => {
+    const f = fixes.find(x => x.ident === ident);
+    if (!f) return;
+    const flags = highlighted[ident];
+    const ringColor = flags.tripped ? '#ff3d5a' : '#00ddff';
+    let badge = '';
+    if (flags.toc) badge = '<div style="position:absolute;left:14px;top:-4px;background:rgba(8,12,22,0.9);color:#00ddff;border:1px solid #00ddff;border-radius:3px;padding:0 4px;font-family:Rajdhani,sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;">🔔 TOC</div>';
+    else if (flags.tod) badge = '<div style="position:absolute;left:14px;top:-4px;background:rgba(8,12,22,0.9);color:#00ddff;border:1px solid #00ddff;border-radius:3px;padding:0 4px;font-family:Rajdhani,sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;">🔔 TOD</div>';
+    const ic = L.divIcon({
+      className: 'afk-wp-ring',
+      html: '<div style="position:relative;width:24px;height:24px;"><div style="position:absolute;left:0;top:0;width:24px;height:24px;border:2px solid ' + ringColor + ';border-radius:50%;box-shadow:0 0 6px ' + ringColor + ';opacity:0.9;"></div>' + badge + '</div>',
+      iconSize: [24, 24], iconAnchor: [12, 12],
+    });
+    try {
+      _afkWaypointLayers[ident] = L.marker([parseFloat(f.pos_lat), parseFloat(f.pos_long)], { icon: ic, interactive: false, zIndexOffset: 1100 }).addTo(_rgMap);
+    } catch (_) {}
+  });
+}
+
+// ---------------------- DATA PANEL ----------------------------------------
+function _afkFmtCoord(v, isLat) {
+  if (v == null || !isFinite(v)) return '—';
+  const hemi = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
+  return Math.abs(v).toFixed(4) + '°' + hemi;
+}
+function _afkFmtInt(v, unit) {
+  if (v == null || !isFinite(v)) return '—';
+  return Math.round(v).toLocaleString() + (unit ? ' ' + unit : '');
+}
+function _afkFmtHMS(secs) {
+  if (!isFinite(secs) || secs < 0) return '—';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  if (h > 0) return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function _afkUpdateDataPanel(ac) {
+  if (!document.getElementById('afkDpLat')) return;
+  document.getElementById('afkDpLat').textContent = _afkFmtCoord(ac.lat, true);
+  document.getElementById('afkDpLon').textContent = _afkFmtCoord(ac.lng, false);
+  const hdgEl = document.getElementById('afkDpHdg');
+  hdgEl.textContent = (ac.hdg != null && isFinite(ac.hdg)) ? Math.round(ac.hdg).toString().padStart(3, '0') + '°' : '—';
+  document.getElementById('afkDpAlt').textContent = _afkFmtInt(ac.alt, 'ft');
+  const aglEl = document.getElementById('afkDpAgl');
+  if (aglEl) {
+    if (ac.gndAlt != null && isFinite(ac.gndAlt) && ac.alt != null && isFinite(ac.alt)) {
+      const agl = Math.max(0, ac.alt - ac.gndAlt);
+      aglEl.textContent = Math.round(agl).toLocaleString() + ' ft';
+      aglEl.className = 'afk-dp-value' + (agl < 1000 ? ' warn' : '');
+    } else {
+      aglEl.textContent = '—';
+      aglEl.className = 'afk-dp-value muted';
+    }
+  }
+  document.getElementById('afkDpGs').textContent  = _afkFmtInt(ac.gs, 'kt');
+  document.getElementById('afkDpIas').textContent = (ac.ias != null && isFinite(ac.ias)) ? Math.round(ac.ias) + ' kt' : '—';
+  const vs = _afkPhase.vsFpm();
+  const vsEl = document.getElementById('afkDpVs');
+  if (isFinite(vs)) {
+    const arrow = vs > 50 ? '↑' : vs < -50 ? '↓' : '–';
+    vsEl.textContent = arrow + ' ' + Math.abs(Math.round(vs)).toLocaleString() + ' fpm';
+    vsEl.className = 'afk-dp-value' + (vs < -1500 ? ' warn' : '');
+  } else { vsEl.textContent = '—'; vsEl.className = 'afk-dp-value'; }
+  const phase = _afkPhase.get();
+  document.getElementById('afkDpPhase').textContent = phase ? phase.toUpperCase() : '—';
+
+  // Elapsed
+  const elapsedEl = document.getElementById('afkDpElapsed');
+  if (_afkTakeoffAt > 0) {
+    elapsedEl.textContent = _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000);
+    elapsedEl.className = 'afk-dp-value';
+  } else { elapsedEl.textContent = '—'; elapsedEl.className = 'afk-dp-value muted'; }
+
+  // Destination ETA
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  const distEl = document.getElementById('afkDpDistRem');
+  const remEl  = document.getElementById('afkDpRemaining');
+  const etaLEl = document.getElementById('afkDpEtaLcl');
+  const etaUEl = document.getElementById('afkDpEtaUtc');
+  if (fp && fp.destination && isFinite(parseFloat(fp.destination.pos_lat))) {
+    const destLat = parseFloat(fp.destination.pos_lat);
+    const destLng = parseFloat(fp.destination.pos_long);
+    const dNm = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
+    distEl.textContent = isFinite(dNm) ? dNm.toFixed(1) + ' nm' : '—';
+    distEl.className = 'afk-dp-value';
+    if (isFinite(dNm) && ac.gs > 5) {
+      const remSec = (dNm / ac.gs) * 3600;
+      remEl.textContent = _afkFmtHMS(remSec);
+      remEl.className = 'afk-dp-value';
+      const eta = new Date(Date.now() + remSec * 1000);
+      etaLEl.textContent = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      etaUEl.textContent = eta.getUTCHours().toString().padStart(2, '0') + ':' + eta.getUTCMinutes().toString().padStart(2, '0') + 'Z';
+      etaLEl.className = 'afk-dp-value'; etaUEl.className = 'afk-dp-value';
+    } else {
+      remEl.textContent = '—'; remEl.className = 'afk-dp-value muted';
+      etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted';
+      etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted';
+    }
+  } else {
+    distEl.textContent = '—'; distEl.className = 'afk-dp-value muted';
+    remEl.textContent = '—';  remEl.className = 'afk-dp-value muted';
+    etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted';
+    etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted';
+  }
+
+  // Next alarm
+  const nextEl = document.getElementById('afkDpNextAlarm');
+  const nextEtaEl = document.getElementById('afkDpNextEta');
+  const nx = _afkETA.next(ac);
+  if (nx) {
+    nextEl.textContent = _afkAlarmTypeLabel(nx.alarm.type) +
+      (nx.alarm.type === 'geofence' && nx.alarm.params.label ? ' (' + nx.alarm.params.label + ')' : '');
+    nextEl.className = 'afk-dp-value';
+    nextEtaEl.textContent = _afkETA.fmt(nx.etaSec);
+    nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : '');
+  } else {
+    const armed = _afkAlarms.armedCount();
+    nextEl.textContent = armed > 0 ? '(' + armed + ' armed, none ETA-predictable)' : '—';
+    nextEl.className = 'afk-dp-value' + (armed > 0 ? '' : ' muted');
+    nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted';
+  }
+}
+
+function _afkToggleDataPanel() {
+  const dp = document.getElementById('afkDataPanel');
+  const btn = document.getElementById('afkDpToggleBtn');
+  if (!dp || !btn) return;
+  const collapsed = dp.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '⏶' : '⏷';
+  try { localStorage.setItem(_AFK_LS_DP, collapsed ? '1' : '0'); } catch (_) {}
+}
+
+function _afkInit() {
+  // Restore data panel collapsed state
+  try {
+    if (localStorage.getItem(_AFK_LS_DP) === '1') {
+      const dp = document.getElementById('afkDataPanel');
+      const btn = document.getElementById('afkDpToggleBtn');
+      if (dp) dp.classList.add('collapsed');
+      if (btn) btn.textContent = '⏶';
+    }
+  } catch (_) {}
+  // Render persistent visuals once the map is up
+  _afkUpdateBadge();
+  setTimeout(() => {
+    _afkRenderGeofenceVisuals();
+    _afkRenderWaypointVisuals();
+  }, 800);
+  // 1 Hz heartbeat so elapsed / ETA / countdown fields advance even between
+  // live-aircraft updates (or with no live source connected at all).
+  setInterval(() => {
+    const ac = _liveAcLastData
+      ? { lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng), alt: _liveAcLastData.alt, gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg, gndAlt: _liveAcLastData.gndAlt }
+      : { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null, gndAlt: null };
+    _afkUpdateDataPanel(ac);
+  }, 1000);
+}
+document.addEventListener('DOMContentLoaded', _afkInit);
 
 // SVG padlock icons — locked (sticky on) and unlocked (sticky off).
 // Both use currentColor so they inherit the pill's text color automatically.
@@ -11285,9 +13393,23 @@ function _slToggleOverflow() {
   const m = document.getElementById('slOverflowMenu');
   if (!m) return;
   const opening = !m.classList.contains('open');
+  // Always tear down any previous outside-click listener before toggling —
+  // without this, toggle-close (clicking ⋯ again instead of clicking
+  // elsewhere) would leak the document click listener.
+  if (m._slCloseHandler) {
+    document.removeEventListener('click', m._slCloseHandler, true);
+    m._slCloseHandler = null;
+  }
   m.classList.toggle('open');
   if (opening) {
-    const close = e => { if (!m.contains(e.target)) { m.classList.remove('open'); document.removeEventListener('click', close, true); } };
+    const close = e => {
+      if (!m.contains(e.target)) {
+        m.classList.remove('open');
+        document.removeEventListener('click', close, true);
+        if (m._slCloseHandler === close) m._slCloseHandler = null;
+      }
+    };
+    m._slCloseHandler = close;
     setTimeout(() => document.addEventListener('click', close, true), 0);
   }
 }
@@ -18377,6 +20499,61 @@ function rgSendToFlightPlanner() {
         </div>
       </div>
 
+      <div class="help-feature">
+        <div class="help-feature-icon">🔔</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Alerts</div>
+          <div class="help-feature-desc">
+            Get notified by a loud, looping alarm when key events happen during long flights while you&rsquo;re away from the keyboard. Click <strong>🔔 Alerts</strong> in the map header to open the configuration modal. The left column lists five independent alarm types you can mix and match for a single flight; each one you add shows up as a card on the right with its own enable toggle, sound selection, and per-type settings. <em>Hover any alarm icon or title in a card for a plain-English description of what it does and when it fires.</em><br/><br/>
+            <strong>The five alarm types:</strong>
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
+              <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires the first time the aircraft levels off into cruise. The detector is <em>adaptive</em> &mdash; it tracks the peak climb vertical speed for this flight and treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60 seconds. Works for both a Cessna 152 climbing at 700&nbsp;fpm and a Boeing 777 climbing at 3,000&nbsp;fpm without any per-aircraft tuning.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise.</li>
+              <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a threshold you set. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
+            </ul>
+            <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
+            <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the left of any alarm card and drag it up or down to re-rank. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
+            <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
+            <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
+            <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads. If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
+            <strong>Sources required</strong> &mdash; Alerts need a live aircraft source (FSUIPC Live or STKP Live) to evaluate. Waypoint, TOC, and TOD alarms additionally need a SimBrief flight plan loaded.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">〰️</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Aircraft Track / Trail</div>
+          <div class="help-feature-desc">
+            While a live aircraft source (FSUIPC or STKP) is active, AA draws a <strong>green breadcrumb trail</strong> behind the aircraft showing the actual path you've flown. The trail is a two-layer polyline (outer glow + bright inner core) that stays visible on both street and satellite map backgrounds, and is intentionally a different colour from the SimBrief route line so deviations from the plan are obvious at a glance.<br/><br/>
+            <strong>Two-tier storage</strong> &mdash; the trail uses a smart sampling strategy so it can record any real-world flight without burning memory:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>Fresh tier</strong> &mdash; last <strong>~75 nm</strong> at fine detail (0.05 nm spacing, ~300 ft between points). This is what you see when you zoom in to inspect a recent turn, hold, or pattern.</li>
+              <li><strong>Archive tier</strong> &mdash; older history at coarser detail (1 nm spacing). As points age out of the fresh tier they're either added to the archive or dropped if they're within 1 nm of the previous archive point. Straight cruise legs collapse from thousands of fresh samples to far fewer archive points without losing the visible shape of the trail.</li>
+            </ul>
+            Total capacity: 11,500 points (~184 KB memory) covering <strong>~10,000 nm</strong> &mdash; enough for any non-stop commercial flight on Earth, including KJFK&rarr;YSSY (~9,950 nm) and SIN&rarr;EWR (~9,500 nm). The trail auto-clears when the live source is stopped, and resets if a large position jump is detected (sim restart or loading a new flight).
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">📊</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Aircraft Data Panel</div>
+          <div class="help-feature-desc">
+            A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
+            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, <strong>AGL</strong>, GS, IAS, VS, PHASE. ALT MSL is altitude above mean sea level. AGL is altitude above ground level, computed as <code>MSL − ground elevation</code> using FSUIPC offset <code>0x0B4C</code> (signed int32, metres &times; 256) &mdash; STKP&rsquo;s public payload doesn&rsquo;t expose ground elevation, so AGL shows &mdash; under that source. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
+            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing), REMAINING (great-circle distance to destination &divide; current GS), DIST TO GO (great-circle nm to destination), ETA LOCAL, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
+            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (MM:SS), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude Minimum alarms are ETA-predictable; Cruise, Descent, and Phase Change alarms are not (those depend on future events that can&rsquo;t be reliably extrapolated from instantaneous state). The countdown pulses red when under 60 seconds.<br/><br/>
+            Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, so column widths stay rock-steady even as values change.<br/><br/>
+            <strong>FSUIPC offset note</strong> &mdash; IAS reads FSUIPC offset <code>0x02BC</code> (uint, knots&nbsp;&times;&nbsp;128). STKP doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; when STKP is the active source.
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -18398,10 +20575,40 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.69.0</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alerts &mdash; configurable cockpit alarms for long flights.</strong> New <strong>🔔 Alerts</strong> button in the map header opens a configuration modal where five independent alarm types can be armed in any combination for a single flight:
+            <ul>
+              <li><strong>⊙ Geofence</strong> &mdash; click and drag on the map to draw a circular region (radius shown live in nm); choose <em>ENTER</em>, <em>EXIT</em>, or <em>both</em> as the trigger. Orange ring persists on the map.</li>
+              <li><strong>📍 Waypoint</strong> &mdash; alerts when the aircraft passes a SimBrief flight-plan waypoint, using <em>closest-point-of-approach (CPA)</em> detection so it fires even when your track is a few nm off the planned line. Skips on the ground, resets on sim restart, cascades tight clusters, and falls back to a "near-miss" check for STKP's coarse 10&nbsp;s polling. Pick <em>Every waypoint</em>, <em>TOC</em>, <em>TOD</em>, or a specific multi-select. Selected fixes get a cyan ring overlay on the route plot.</li>
+              <li><strong>─ Cruise Reached</strong> and <strong>↘ Descent Started</strong> &mdash; one-shot alarms using an <em>adaptive</em> detector that tracks the peak climb VS for this flight and treats cruise / descent thresholds as a fraction of it. Works for both a Cessna 152 and a Boeing 777 without per-aircraft tuning.</li>
+              <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a configurable threshold. Input accepts both <em>plain feet</em> (<code>10000</code>) and <em>flight levels</em> (<code>FL350</code>, <code>FL 200</code>); the hint next to the input echoes the parsed value as you type.</li>
+            </ul>
+            Each alarm has its own enable toggle, sound selection (5 synthesized tones &mdash; Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell; ▶ preview without arming), and a <strong>⋮⋮ drag handle</strong> for reordering. <em>Hover any alarm icon or title for a plain-English description of what it does and when it fires.</em> <strong>List order is priority order</strong> &mdash; drag cards up or down to re-rank, and the highest-priority tripped alarm&rsquo;s sound is what plays. When an alarm trips, a full-screen overlay covers the map with a pulsing red <strong>ALARM</strong> header and the looping sound continues until <strong>DISMISS ALL</strong> is clicked. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one sound ever plays at a time</strong>; dismissing the leading alarm seamlessly swaps audio to the next-highest still-tripped one. The modal footer offers <strong>Disable All</strong> (disarms everything, clears map visuals, stops audio &mdash; config preserved for individual re-enable) and <strong>Delete All</strong> (permanently removes every alarm from the queue). Alarms persist to <code>localStorage</code>; if the loaded SimBrief plan changes (different origin/destination/fix count), specific-waypoint picks are auto-cleared with a toast notification.</li>
+          <li><strong>Aircraft track / trail.</strong> While a live source is active, AA draws a green breadcrumb polyline (outer glow + bright inner core) behind the aircraft showing the actual path flown. Intentionally a different colour from the SimBrief route line so deviations are obvious. Uses a <strong>two-tier sampling strategy</strong>: the last ~75 nm at fine detail (0.05 nm spacing, 1,500-point cap) for zoom-in inspection of recent turns / holds / patterns, plus an archive tier at coarser 1 nm spacing (10,000-point cap) for the rest of the flight. Older points are decimated when they age out &mdash; straight cruise legs collapse from thousands of fresh samples to far fewer archive points without losing the visible shape of the trail. Total capacity: 11,500 points (~184 KB) covering ~10,000 nm &mdash; enough for any non-stop commercial flight on Earth (KJFK&rarr;YSSY ~9,950 nm, SIN&rarr;EWR ~9,500 nm). Auto-clears on source-stop and on large position jumps (sim restart). Visible on both street and satellite map backgrounds.</li>
+          <li><strong>SimBrief waypoint labels &mdash; always-readable design.</strong> Permanent waypoint labels along the plotted route now render as <strong>white pills with dark navy text</strong> instead of using the user's chosen route colour for the text. Previous behaviour failed when the user picked a light route colour (yellow, light cyan, etc.) — text became unreadable against light terrain or the light-mode UI. The pill shape, dark border, and drop shadow keep the labels legible on street maps, satellite imagery, and light-mode UIs alike. Route polyline still follows the user's colour choice.</li>
+          <li><strong>Aircraft Data Panel &mdash; persistent live-flight readout at the bottom of the map.</strong> Three sections in Rajdhani tabular-numeric:
+            <ul>
+              <li><strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, <strong>AGL</strong>, GS, IAS, VS (with directional arrow), PHASE. ALT MSL = altitude above mean sea level; AGL = altitude above ground level, computed from FSUIPC ground elevation (offset <code>0x0B4C</code>, int32 m&times;256). STKP has no ground-elevation field, so AGL shows &mdash; under that source. VS is computed locally from a rolling altitude buffer (works uniformly for both sources).</li>
+              <li><strong>Flight progress</strong> &mdash; ELAPSED (since takeoff, detected when GS &gt; 40&nbsp;kt sustained 10&nbsp;s), REMAINING, DIST TO GO, ETA LOCAL, ETA UTC. SimBrief flight plan required for destination-relative fields; ELAPSED works without one.</li>
+              <li><strong>Next alarm</strong> &mdash; the soonest-tripping armed alarm + countdown (M:SS), pulses red when under 60&nbsp;s. Geofence, waypoint, TOC, TOD, and Altitude Minimum are ETA-predictable; cruise and descent depend on future events and are not.</li>
+            </ul>
+            The panel collapses to a single-line strip via the <strong>⏷</strong> chevron; collapsed state persists across sessions. Refreshes at 1&nbsp;Hz regardless of source cadence, so elapsed and countdown fields tick smoothly even between live-aircraft updates.</li>
+          <li><strong>FSUIPC IAS offset added.</strong> Live-aircraft FSUIPC reader now subscribes to offset <code>0x02BC</code> (uint, knots &times; 128) and exposes it as <code>ias</code> on the live-aircraft payload for the data panel. STKP&rsquo;s public payload doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; under that source.</li>
+          <li><strong>Help modal updated</strong> with full sections covering AFK Alerts and the Aircraft Data Panel (per CLAUDE.md §3).</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.68.1</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -25562,6 +27769,80 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- AFK Alerts Configuration Modal -->
+<div class="modal-overlay" id="afkConfigModal" onclick="if(event.target===this)_afkCloseConfig()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">🔔 &nbsp;Alerts</span>
+      <button class="modal-close" onclick="_afkCloseConfig()">&times;</button>
+    </div>
+    <div class="modal-body afk-config-body">
+      <div class="afk-add-col">
+        <div class="afk-add-col-title">Add alarm</div>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">▼</span><span>Altitude Minimum</span></button>
+      </div>
+      <div class="afk-list-col" id="afkAlarmList">
+        <div class="afk-list-empty">No alarms configured. Pick a type on the left to add one.</div>
+      </div>
+    </div>
+    <div class="afk-modal-footer">
+      <span class="afk-footer-info" id="afkFooterInfo">No alarms armed</span>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alarm, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
+        <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alarm from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AFK Per-Geofence Sub-Modal (opened after drawing) -->
+<div class="modal-overlay" id="afkGeofenceModal" onclick="if(event.target===this)_afkGeofenceModalCancel()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">⊙ &nbsp;Configure Geofence</span>
+      <button class="modal-close" onclick="_afkGeofenceModalCancel()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:1.0rem 1.2rem;">
+      <div class="afk-edit-row" style="margin-bottom:0.7rem;">
+        <span class="afk-edit-label">Label</span>
+        <input type="text" id="afkGfLabel" class="afk-input" style="flex:1 1 auto;" placeholder="e.g. Practice area">
+      </div>
+      <div class="afk-edit-row" style="margin-bottom:0.7rem;">
+        <span class="afk-edit-label">Trigger</span>
+        <select id="afkGfTrigger" class="afk-select">
+          <option value="enter">On ENTER</option>
+          <option value="exit">On EXIT</option>
+          <option value="both">On either ENTER or EXIT</option>
+        </select>
+      </div>
+      <div class="afk-edit-row" style="margin-bottom:0.7rem;">
+        <span class="afk-edit-label">Sound</span>
+        <select id="afkGfSound" class="afk-select"></select>
+        <button class="afk-icon-btn" onclick="_afkPreviewSelectedSound('afkGfSound')" title="Preview sound">▶</button>
+      </div>
+      <div class="afk-footer-info" id="afkGfCoords" style="margin-top:0.3rem;"></div>
+    </div>
+    <div class="afk-modal-footer">
+      <button class="rg-btn" onclick="_afkGeofenceModalCancel()">Cancel</button>
+      <button class="rg-btn" style="background:rgba(0,200,255,0.18);border-color:var(--accent);color:var(--accent);" onclick="_afkGeofenceModalSave()">Add Geofence</button>
+    </div>
+  </div>
+</div>
+
+<!-- AFK Trip Overlay (full-screen, alarm tripped) -->
+<div id="afkTripOverlay">
+  <div class="afk-trip-panel">
+    <div class="afk-trip-title">ALARM</div>
+    <div class="afk-trip-sub" id="afkTripSub">Tap DISMISS ALL when you're back at the keyboard.</div>
+    <ul class="afk-trip-list" id="afkTripList"></ul>
+    <button class="afk-dismiss-all" onclick="_afkDismissAll()">Dismiss All</button>
+  </div>
+</div>
+
 <!-- Region Mode Modal -->
 <div id="regionModal">
   <div class="rg-modal">
@@ -25574,6 +27855,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="sbOfpBtn" onclick="_sbOfpButtonClick(event)" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
         <button class="rg-btn" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event)" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
         <button class="rg-btn" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event)" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
+        <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" style="display:none" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
@@ -25697,6 +27979,37 @@ function rgSendToFlightPlanner() {
         <button class="rg-cat-warning-close" onclick="document.getElementById('rgCategoryWarning').classList.remove('visible')" title="Dismiss">✕</button>
       </div>
       <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
+    </div>
+    <div id="afkDataPanel">
+      <div class="afk-dp-sections" id="afkDataPanelSections">
+        <div class="afk-dp-section">
+          <div class="afk-dp-field"><div class="afk-dp-label">LAT</div><div class="afk-dp-value" id="afkDpLat">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">LON</div><div class="afk-dp-value" id="afkDpLon">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">HDG</div><div class="afk-dp-value" id="afkDpHdg">—</div></div>
+          <div class="afk-dp-field" title="Altitude above mean sea level"><div class="afk-dp-label">ALT MSL</div><div class="afk-dp-value" id="afkDpAlt">—</div></div>
+          <div class="afk-dp-field" title="Altitude above ground level — requires FSUIPC (STKP source does not expose ground elevation)"><div class="afk-dp-label">AGL</div><div class="afk-dp-value" id="afkDpAgl">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">GS</div><div class="afk-dp-value" id="afkDpGs">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">IAS</div><div class="afk-dp-value" id="afkDpIas">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">VS</div><div class="afk-dp-value" id="afkDpVs">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">PHASE</div><div class="afk-dp-value" id="afkDpPhase">—</div></div>
+        </div>
+        <div class="afk-dp-section">
+          <div class="afk-dp-field"><div class="afk-dp-label">ELAPSED</div><div class="afk-dp-value" id="afkDpElapsed">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">REMAINING</div><div class="afk-dp-value" id="afkDpRemaining">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">DIST TO GO</div><div class="afk-dp-value" id="afkDpDistRem">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">ETA LOCAL</div><div class="afk-dp-value" id="afkDpEtaLcl">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">ETA UTC</div><div class="afk-dp-value" id="afkDpEtaUtc">—</div></div>
+        </div>
+        <div class="afk-dp-section">
+          <div class="afk-dp-field"><div class="afk-dp-label">NEXT ALARM</div><div class="afk-dp-value" id="afkDpNextAlarm">—</div></div>
+          <div class="afk-dp-field"><div class="afk-dp-label">IN</div><div class="afk-dp-value" id="afkDpNextEta">—</div></div>
+        </div>
+      </div>
+      <button class="afk-dp-toggle" id="afkDpToggleBtn" onclick="_afkToggleDataPanel()" title="Collapse / expand data panel">⏷</button>
+    </div>
+    <div id="afkGeofenceBanner" class="afk-geofence-banner">
+      <span id="afkGeofenceBannerText">🔔 Click and drag on the map to draw a geofence circle</span>
+      <button onclick="_afkGeofenceCancel()">✕ Cancel</button>
     </div>
     <div id="rgVSplit" class="rg-vsplit" onmousedown="_rgSplitDown(event)" title="Drag to resize the map versus the route matrix"></div>
     <div class="rg-results-bar" id="rgResultsBar">

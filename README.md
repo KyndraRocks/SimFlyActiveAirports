@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.68.1**
+**Current version: v2.69.0**
 
 ---
 
@@ -180,6 +180,35 @@ Open the interactive map and click **🔌 FSUIPC Live** in the header bar. The a
 Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), the app shows an error toast and retries every 10 seconds while the button stays active — MSFS restarts don't require re-clicking.
 
 No cloud round-trip, no API tokens, no handshakes that can silently fail. Position data travels straight from your sim to your browser over loopback. Browsers exempt `localhost` from mixed-content blocking (W3C "potentially trustworthy" rule), so the local WebSocket works even though the app itself is served over HTTPS.
+
+### Aircraft Trail
+While a live aircraft source is active, the app draws a **green breadcrumb trail** behind the aircraft showing the actual path you've flown. The trail uses a two-tier sampling strategy: the most recent ~75 nm at fine detail (for zooming in to inspect a turn, hold, or pattern), plus an archive at coarser 1 nm spacing for the rest of the flight. Total capacity is ~10,000 nm — enough for any non-stop commercial flight on Earth (transatlantic, transpacific, even ULR routes like KJFK → YSSY at ~9,950 nm). Straight cruise legs decimate efficiently; turns and curves preserve their shape. The trail color is intentionally distinct from the SimBrief route line so deviations from the plan are obvious at a glance. Visible on both street and satellite map backgrounds. Auto-clears when the live source is stopped, and resets if a sim restart / new flight load is detected.
+
+### Alerts — configurable cockpit alarms for long flights
+Click **🔔 Alerts** in the map header to open the configuration modal. Five independent alarm types can be armed in any combination for a single flight:
+
+- **⊙ Geofence** — click and drag on the map to draw a circular region of any size. Choose **ENTER**, **EXIT**, or **both** as the trigger. Label, sound, and trigger settings are picked in a small sub-modal after you finish the draw. Orange ring persists on the map; pulses red when tripped.
+- **📍 Waypoint** — fires when your aircraft passes a SimBrief flight-plan waypoint. Uses **closest-point-of-approach (CPA) detection**, so it fires correctly even when your track is a few nm off the planned line. Pick *Every waypoint*, *TOC* (top of climb), *TOD* (top of descent), or a specific multi-select.
+- **─ Cruise Reached** — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an *adaptive detector* — it tracks the peak climb vertical speed for this flight and treats cruise/descent thresholds as a fraction of it. Works for both a Cessna 152 climbing at 700 fpm and a Boeing 777 climbing at 3,000 fpm without per-aircraft tuning.
+- **↘ Descent Started** — one-shot alarm that fires when sustained descent begins from cruise. Same adaptive approach as Cruise.
+- **▼ Altitude Minimum** — fires when MSL altitude drops below a threshold you set. Accepts both **plain feet** (`10000`, `10,000`) and **flight levels** (`FL350`, `FL 200`). The hint next to the input echoes the parsed value as you type.
+
+Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell; ▶ preview without arming), and a **⋮⋮ drag handle**. **Drag cards up/down to reorder them** — list order is *priority order*, so the highest-priority tripped alarm's sound plays. Hovering any alarm icon or title shows a plain-English description of what it does and when it fires.
+
+**When an alarm trips** a full-screen overlay covers the map with a pulsing red **ALARM** header listing every alarm currently tripped. The sound loops continuously until you click **DISMISS ALL**. The browser tab title also flashes *⚠ ALARM — SimFly* as a cross-window cue. **Only one sound ever plays at a time** — the highest-priority tripped alarm wins, so additional alarms that pile on just get added to the overlay list. If you dismiss alarms one at a time via the ✕ on each row, the audio swaps to the next-highest still-tripped alarm seamlessly.
+
+**Modal footer** has two bulk-action buttons: **Disable All** disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound — while preserving alarm config so individual cards can be re-enabled. **Delete All** permanently removes every alarm from the queue.
+
+Alarms persist to `localStorage` and survive page reloads. If the loaded SimBrief flight plan changes (different origin/destination/fix count), any *Specific waypoints* picks are automatically cleared with a toast notification. Alerts need a live aircraft source (FSUIPC) to evaluate; Waypoint, TOC, and TOD additionally need a SimBrief flight plan loaded.
+
+### Aircraft Data Panel
+A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:
+
+- **Position & motion** — LAT, LON, HDG, **ALT MSL**, **AGL**, GS, IAS, VS (with directional arrow + magnitude), PHASE. ALT MSL is altitude above mean sea level; AGL is altitude above ground level (computed via FSUIPC's ground-elevation offset). Vertical speed is computed locally from a rolling altitude buffer so it works the same regardless of source.
+- **Flight progress** — ELAPSED (clock time since takeoff, detected when ground speed first exceeds 40 kt sustained for 10 s), REMAINING (great-circle distance to destination ÷ current GS), DIST TO GO, ETA local time, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.
+- **Next alarm** — shows which armed alarm will trip soonest and how long until it does (MM:SS). Geofence, waypoint, TOC, TOD, and Altitude Minimum alarms are ETA-predictable; Cruise and Descent depend on future events that can't be reliably extrapolated from instantaneous state. The countdown pulses red when under 60 seconds.
+
+Click the small **⏷** chevron on the right of the panel to collapse it to a single-line strip — collapsed state persists across sessions. The panel renders in Rajdhani with tabular-numeric digits, so column widths stay rock-steady even as values change.
 
 ### Aircraft Panel
 View aircraft specs relevant to the selected route — estimated flight time, fuel burn, and range figures. The aircraft max-range marker is drawn directly on the distance slider so you can see at a glance which routes are within range. All figures are rough planning estimates; use SimBrief for final calculations.
