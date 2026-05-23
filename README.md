@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.73.0**
+**Current version: v2.74.0**
 
 ---
 
@@ -185,8 +185,9 @@ No cloud round-trip, no API tokens, no handshakes that can silently fail. Positi
 While a live aircraft source is active, the app draws a **green breadcrumb trail** behind the aircraft showing the actual path you've flown. The trail uses a two-tier sampling strategy: the most recent ~75 nm at fine detail (for zooming in to inspect a turn, hold, or pattern), plus an archive at coarser 1 nm spacing for the rest of the flight. Total capacity is ~10,000 nm — enough for any non-stop commercial flight on Earth (transatlantic, transpacific, even ULR routes like KJFK → YSSY at ~9,950 nm). Straight cruise legs decimate efficiently; turns and curves preserve their shape. The trail color is intentionally distinct from the SimBrief route line so deviations from the plan are obvious at a glance. Visible on both street and satellite map backgrounds. Auto-clears when the live source is stopped, and resets if a sim restart / new flight load is detected.
 
 ### Alerts — configurable cockpit alarms for long flights
-Click **🔔 Alerts** in the map header to open the configuration modal. Five independent alarm types can be armed in any combination for a single flight:
+Click **🔔 Alerts** in the map header to open the configuration modal. Six independent alarm types can be armed in any combination for a single flight:
 
+- **⏰ Timer** — a simple clock / countdown timer, independent of aircraft position. Two modes: *Countdown* (set hours / minutes / seconds; alarm fires after that delay) or *At specific time* (native time picker for the local clock; if past today, fires tomorrow). Card shows the absolute target time AND the live remaining countdown. Useful for "wake me in 30 minutes" or "alarm me at 14:30". Survives a page reload — set a Timer for 14:30 and refresh at 14:25, it still fires at 14:30.
 - **⊙ Geofence** — click and drag on the map to draw a circular region of any size. Choose **ENTER**, **EXIT**, or **both** as the trigger. Label, sound, and trigger settings are picked in a small sub-modal after you finish the draw. Orange ring persists on the map; pulses red when tripped.
 - **📍 Waypoint** — fires when your aircraft passes a SimBrief flight-plan waypoint. Uses **closest-point-of-approach (CPA) detection**, so it fires correctly even when your track is a few nm off the planned line. Pick *Every waypoint*, *TOC* (top of climb), *TOD* (top of descent), or a specific multi-select. **Shortcut:** right-click any waypoint dot on the plotted route to open a quick-add modal pre-populated with that fix's ident and a sound picker.
 - **─ Cruise Reached** — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an *adaptive detector* — it tracks the peak climb vertical speed for this flight and treats cruise/descent thresholds as a fraction of it. Works for both a Cessna 152 climbing at 700 fpm and a Boeing 777 climbing at 3,000 fpm without per-aircraft tuning.

@@ -3890,6 +3890,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .afk-card.dragging { opacity:0.35; }
   .afk-card.drop-before { border-top:2px solid var(--accent); margin-top:-1px; }
   .afk-card.drop-after  { border-bottom:2px solid var(--accent); margin-bottom:-1px; }
+  /* Collapsible cards — chevron in the card header toggles the editor body. */
+  .afk-card.collapsed .afk-card-editor { display:none; }
+  .afk-card-chevron {
+    flex:0 0 22px;
+    background:none; border:1px solid var(--border);
+    color:var(--muted); cursor:pointer;
+    width:22px; height:22px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.7rem; padding:0; line-height:1;
+    transition:transform 0.18s, color 0.12s, border-color 0.12s;
+  }
+  .afk-card-chevron:hover { color:var(--accent); border-color:var(--accent); }
+  .afk-card.collapsed .afk-card-chevron { transform:rotate(-90deg); }
   .afk-card-grip {
     flex:0 0 14px;
     color:var(--muted);
@@ -4524,7 +4537,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.73.0';
+const APP_VERSION = '2.74.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9654,6 +9667,14 @@ const _afkETA = (() => {
 
   function compute(alarm, ac) {
     if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
+    // Timer alarms are independent of aircraft state — compute first so
+    // they work without a live source.
+    if (alarm.type === 'timer') {
+      if (alarm.state && alarm.state.fired) return NaN;
+      const t = alarm.state && alarm.state.targetMs;
+      if (!t) return NaN;
+      return Math.max(0, (t - Date.now()) / 1000);
+    }
     if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
     const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
     if (alarm.type === 'geofence') {
@@ -9717,10 +9738,129 @@ const _afkETA = (() => {
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
-const _AFK_LS_KEY     = 'simfly_aa_afk_alarms';
-const _AFK_LS_DP      = 'simfly_aa_afk_dp_collapsed';
-const _AFK_LS_DUR_SEC = 'simfly_aa_afk_alarm_duration_sec'; // user's preferred seconds value
-let _afkAlarmIdSeq    = 1;
+const _AFK_LS_KEY        = 'simfly_aa_afk_alarms';
+const _AFK_LS_DP         = 'simfly_aa_afk_dp_collapsed';
+const _AFK_LS_DUR_SEC    = 'simfly_aa_afk_alarm_duration_sec'; // user's preferred seconds value
+const _AFK_LS_CARDS_COLL = 'simfly_aa_afk_collapsed_cards';    // Array<number> of card ids
+let _afkAlarmIdSeq       = 1;
+
+// Per-alarm collapsed-card state. Default new cards are expanded so the
+// user sees options immediately; user-collapsed state is persisted by id.
+const _afkCollapsedCards = new Set();
+(function _afkLoadCollapsed() {
+  try {
+    const raw = localStorage.getItem(_AFK_LS_CARDS_COLL);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) arr.forEach(id => { if (typeof id === 'number') _afkCollapsedCards.add(id); });
+  } catch (_) {}
+})();
+function _afkSaveCollapsed() {
+  try { localStorage.setItem(_AFK_LS_CARDS_COLL, JSON.stringify([..._afkCollapsedCards])); } catch (_) {}
+}
+function _afkToggleCardCollapse(id) {
+  if (_afkCollapsedCards.has(id)) _afkCollapsedCards.delete(id);
+  else _afkCollapsedCards.add(id);
+  _afkSaveCollapsed();
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) card.classList.toggle('collapsed', _afkCollapsedCards.has(id));
+}
+
+// ── Timer alarm helpers ─────────────────────────────────────────────────
+// Storage key for the user's last-used timer values — new Timer alarms
+// pre-fill from this so the second-and-subsequent timer setups are fast.
+const _AFK_LS_TIMER = 'simfly_aa_afk_timer_last';
+function _afkGetUserTimerDefaults() {
+  try {
+    const raw = localStorage.getItem(_AFK_LS_TIMER);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') return o;
+    }
+  } catch (_) {}
+  return { mode: 'countdown', countdownH: 0, countdownM: 5, countdownS: 0, clockH: 12, clockM: 0 };
+}
+function _afkSaveUserTimerDefaults(p) {
+  try {
+    localStorage.setItem(_AFK_LS_TIMER, JSON.stringify({
+      mode:       (p.timerMode === 'clock') ? 'clock' : 'countdown',
+      countdownH: parseInt(p.countdownH, 10) || 0,
+      countdownM: parseInt(p.countdownM, 10) || 0,
+      countdownS: parseInt(p.countdownS, 10) || 0,
+      clockH:     parseInt(p.clockH, 10) || 0,
+      clockM:     parseInt(p.clockM, 10) || 0,
+    }));
+  } catch (_) {}
+}
+
+// Compute the wall-clock timestamp (ms since epoch) when a timer alarm
+// should fire, based on its params.
+function _afkComputeTimerTarget(params) {
+  if ((params.timerMode || 'countdown') === 'countdown') {
+    const h = parseInt(params.countdownH, 10) || 0;
+    const m = parseInt(params.countdownM, 10) || 0;
+    const s = parseInt(params.countdownS, 10) || 0;
+    const totalSec = h * 3600 + m * 60 + s;
+    if (totalSec <= 0) return null;
+    return Date.now() + totalSec * 1000;
+  }
+  // clock mode — today at H:M, or tomorrow if past.
+  const h = parseInt(params.clockH, 10) || 0;
+  const m = parseInt(params.clockM, 10) || 0;
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(h, m, 0, 0);
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+  return target.getTime();
+}
+
+// Pretty-print a timer alarm's target time + remaining countdown.
+function _afkFmtTimerTarget(alarm) {
+  if (!alarm.state || !alarm.state.targetMs) return '—';
+  const d = new Date(alarm.state.targetMs);
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  const ss = d.getSeconds().toString().padStart(2, '0');
+  const remSec = Math.max(0, Math.round((alarm.state.targetMs - Date.now()) / 1000));
+  const remH = Math.floor(remSec / 3600);
+  const remM = Math.floor((remSec % 3600) / 60);
+  const remS = remSec % 60;
+  let rem;
+  if (remH > 0)      rem = remH + 'h ' + remM + 'm';
+  else if (remM > 0) rem = remM + 'm ' + remS + 's';
+  else               rem = remS + 's';
+  return 'Fires at ' + hh + ':' + mm + ':' + ss + ' (in ' + rem + ')';
+}
+
+// Setup/cancel/fire — uses setTimeout so timers fire even without a
+// live aircraft source. _afkInit re-schedules surviving timers on load.
+const _afkTimerSchedules = {};
+function _afkScheduleTimer(alarm) {
+  if (!alarm) return;
+  _afkCancelTimerSchedule(alarm.id);
+  if (!alarm.enabled || alarm.status === 'tripped') return;
+  if (alarm.state && alarm.state.fired) return;  // dismissed-after-fire; don't re-arm without an edit
+  const target = alarm.state && alarm.state.targetMs;
+  if (!target) return;
+  const delay = target - Date.now();
+  if (delay <= 0) {
+    _afkTimerFire(alarm.id);
+    return;
+  }
+  _afkTimerSchedules[alarm.id] = setTimeout(() => {
+    delete _afkTimerSchedules[alarm.id];
+    _afkTimerFire(alarm.id);
+  }, delay);
+}
+function _afkCancelTimerSchedule(id) {
+  if (_afkTimerSchedules[id]) { clearTimeout(_afkTimerSchedules[id]); delete _afkTimerSchedules[id]; }
+}
+function _afkTimerFire(id) {
+  const a = _afkAlarms.get(id);
+  if (!a || !a.enabled || a.status === 'tripped') return;
+  _afkAlarms.trip(id);
+  _afkOnTripped([a]);
+}
 
 // Get the user's preferred duration-in-seconds value. Returns 10 if they
 // haven't picked one yet. NOTE: this is just the SECONDS DEFAULT — new
@@ -9994,6 +10134,19 @@ function _afkEvalWaypoint(alarm, ac) {
   return true;
 }
 
+function _afkEvalTimer(alarm) {
+  // Belt-and-suspenders evaluator — the primary fire path is the
+  // setTimeout scheduled in _afkScheduleTimer. This is the fallback for
+  // any reason setTimeout drifted (browser throttling, suspended tab) or
+  // the page just reloaded with a past targetMs.
+  if (alarm.status === 'tripped') return false;
+  if (alarm.state && alarm.state.fired) return false;
+  const t = alarm.state && alarm.state.targetMs;
+  if (!t) return false;
+  if (Date.now() >= t) return true;
+  return false;
+}
+
 function _afkEvalCruise(alarm) {
   if (alarm.state.fired) return false;
   if (_afkPhase.get() === 'cruise') { alarm.state.fired = true; return true; }
@@ -10038,6 +10191,7 @@ function _afkEvalAltMin(alarm, ac) {
 function _afkEvaluate(alarm, ac) {
   if (!alarm.enabled || alarm.status === 'tripped') return false;
   switch (alarm.type) {
+    case 'timer':        return _afkEvalTimer(alarm);
     case 'geofence':     return _afkEvalGeofence(alarm, ac);
     case 'waypoint':     return _afkEvalWaypoint(alarm, ac);
     case 'cruise':       return _afkEvalCruise(alarm);
@@ -10143,6 +10297,15 @@ function _afkDismissOne(id) {
   const a = _afkAlarms.get(id);
   if (!a) return;
   _afkClearAlarmTimer(id);
+  // Timer alarms — once dismissed, don't re-fire from the past targetMs.
+  // The card subtitle reflects this; user must toggle off/on or edit
+  // the time to re-arm.
+  if (a.type === 'timer') {
+    _afkCancelTimerSchedule(id);
+    a.state.fired = true;
+    a.state.targetMs = null;
+    _afkAlarms.update(id, { state: a.state });
+  }
   _afkOnDismiss(a);
   // If others remain tripped, swap audio to the next-highest-priority
   // (top-of-list) still-tripped alarm.
@@ -10170,6 +10333,7 @@ function _afkDismissAll() {
 
 function _afkDisableAll() {
   Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
+  Object.keys(_afkTimerSchedules).forEach(id => _afkCancelTimerSchedule(parseInt(id, 10)));
   _afkAlarms.disableAll();
   _afkAudio.stop();
   _afkHideTripOverlay();
@@ -10185,6 +10349,7 @@ function _afkDisableAll() {
 function _afkDeleteAll() {
   if (_afkAlarms.count() === 0) return;
   Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
+  Object.keys(_afkTimerSchedules).forEach(id => _afkCancelTimerSchedule(parseInt(id, 10)));
   _afkAlarms.list().forEach(a => _afkAlarms.remove(a.id));
   _afkAudio.stop();
   _afkHideTripOverlay();
@@ -10279,6 +10444,7 @@ function _afkCloseConfig() {
 
 function _afkAlarmIcon(type) {
   switch (type) {
+    case 'timer':        return '⏰';
     case 'geofence':     return '⊙';
     case 'waypoint':     return '📍';
     case 'cruise':       return '─';
@@ -10290,6 +10456,7 @@ function _afkAlarmIcon(type) {
 
 function _afkAlarmTypeLabel(type) {
   switch (type) {
+    case 'timer':        return 'Timer';
     case 'geofence':     return 'Geofence';
     case 'waypoint':     return 'Waypoint';
     case 'cruise':       return 'Cruise Reached';
@@ -10302,6 +10469,8 @@ function _afkAlarmTypeLabel(type) {
 // Layperson tooltip text — what the alarm does and when it fires.
 function _afkAlarmTooltip(type) {
   switch (type) {
+    case 'timer':
+      return 'Timer — fires after a countdown (hours / minutes / seconds) or at a specific local clock time. Independent of aircraft position — useful for "wake me in 30 minutes" or "alarm me at 14:30".';
     case 'geofence':
       return 'Geofence — fires when your aircraft crosses into (or out of) a circular region you drew on the map. Useful for "wake me when I\'m 10 nm from the destination" or "alert me when I reach the practice area".';
     case 'waypoint':
@@ -10318,6 +10487,10 @@ function _afkAlarmTooltip(type) {
 
 function _afkAlarmShortDescription(a, includeTitle) {
   const title = includeTitle ? '<span style="font-weight:600;">' + _afkAlarmTypeLabel(a.type) + '</span> · ' : '';
+  if (a.type === 'timer') {
+    if (a.state && a.state.fired) return title + '✓ Already fired — toggle off / on to re-arm';
+    return title + _afkFmtTimerTarget(a);
+  }
   if (a.type === 'geofence') {
     const p = a.params;
     const label = p.label ? (p.label + ' — ') : '';
@@ -10362,10 +10535,11 @@ function _afkRenderAlarmList() {
     return;
   }
   list.innerHTML = items.map(a => {
-    const trippedClass = a.status === 'tripped' ? ' tripped' : '';
+    const trippedClass  = a.status === 'tripped' ? ' tripped' : '';
     const disabledClass = a.enabled ? '' : ' disabled';
+    const collapsedCls  = _afkCollapsedCards.has(a.id) ? ' collapsed' : '';
     const tip = _afkAlarmTooltip(a.type).replace(/"/g, '&quot;');
-    return '<div class="afk-card' + trippedClass + disabledClass + '" data-afk-id="' + a.id + '"' +
+    return '<div class="afk-card' + trippedClass + disabledClass + collapsedCls + '" data-afk-id="' + a.id + '"' +
         ' draggable="true"' +
         ' ondragstart="_afkCardDragStart(event,' + a.id + ')"' +
         ' ondragover="_afkCardDragOver(event,' + a.id + ')"' +
@@ -10380,6 +10554,7 @@ function _afkRenderAlarmList() {
           '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
         '</div>' +
         '<div class="afk-card-actions">' +
+          '<button class="afk-card-chevron" onclick="_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">▼</button>' +
           '<label class="afk-toggle" title="Enable / disable this alarm"><input type="checkbox"' + (a.enabled ? ' checked' : '') + ' onchange="_afkToggleAlarm(' + a.id + ', this.checked)"></label>' +
           '<button class="afk-icon-btn danger" onclick="_afkRemoveAlarm(' + a.id + ')" title="Delete this alarm">✕</button>' +
         '</div>' +
@@ -10477,6 +10652,34 @@ function _afkRenderEditor(a) {
       durSecInput +
     '</div>';
   let body = '';
+  if (a.type === 'timer') {
+    const mode    = (a.params && a.params.timerMode) || 'countdown';
+    const ch      = parseInt(a.params.countdownH, 10) || 0;
+    const cm      = parseInt(a.params.countdownM, 10) || 0;
+    const cs      = parseInt(a.params.countdownS, 10) || 0;
+    const clockH  = parseInt(a.params.clockH, 10) || 0;
+    const clockM  = parseInt(a.params.clockM, 10) || 0;
+    const clockStr = String(clockH).padStart(2, '0') + ':' + String(clockM).padStart(2, '0');
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Mode</span>' +
+        '<select class="afk-select" onchange="_afkSetTimerMode(' + a.id + ', this.value)">' +
+          '<option value="countdown"' + (mode === 'countdown' ? ' selected' : '') + '>Countdown</option>' +
+          '<option value="clock"'     + (mode === 'clock'     ? ' selected' : '') + '>At specific time</option>' +
+        '</select>' +
+      '</div>' +
+      (mode === 'countdown'
+        ? '<div class="afk-edit-row"><span class="afk-edit-label">Countdown</span>' +
+            '<input type="number" class="afk-input" style="width:60px;" min="0" step="1" value="' + ch + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownH\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">h</span>' +
+            '<input type="number" class="afk-input" style="width:60px;" min="0" max="59" step="1" value="' + cm + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownM\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">m</span>' +
+            '<input type="number" class="afk-input" style="width:60px;" min="0" max="59" step="1" value="' + cs + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownS\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">s</span>' +
+          '</div>'
+        : '<div class="afk-edit-row"><span class="afk-edit-label">At time</span>' +
+            '<input type="time" class="afk-input" style="width:130px;" value="' + clockStr + '" onchange="_afkSetTimerClock(' + a.id + ', this.value)" title="Local clock time when the alarm should fire — if past today, fires tomorrow at this time">' +
+            '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;font-size:0.85rem;">(local)</span>' +
+          '</div>'
+      ) +
+      '<div class="afk-footer-info" id="afkTimerTgt_' + a.id + '" style="margin-top:0.2rem;font-variant-numeric:tabular-nums;">' + _afkFmtTimerTarget(a) + '</div>';
+  }
   if (a.type === 'geofence') {
     const p = a.params;
     body =
@@ -10532,7 +10735,21 @@ function _afkRenderEditor(a) {
 
 function _afkToggleAlarm(id, on) {
   if (!on) _afkClearAlarmTimer(id);
-  _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
+  const a = _afkAlarms.get(id);
+  // Timer alarms — toggling back ON re-arms: recompute targetMs from
+  // current params (so countdown starts fresh, clock-time uses next
+  // occurrence), clear the fired sentinel, and schedule.
+  if (on && a && a.type === 'timer') {
+    a.state.targetMs = _afkComputeTimerTarget(a.params);
+    a.state.fired = false;
+    _afkAlarms.update(id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
+    _afkScheduleTimer(_afkAlarms.get(id));
+  } else if (!on && a && a.type === 'timer') {
+    _afkCancelTimerSchedule(id);
+    _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null });
+  } else {
+    _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
+  }
   _afkRenderAlarmList();
   _afkUpdateBadge();
   _afkRenderGeofenceVisuals();
@@ -10540,6 +10757,7 @@ function _afkToggleAlarm(id, on) {
 }
 function _afkRemoveAlarm(id) {
   _afkClearAlarmTimer(id);
+  _afkCancelTimerSchedule(id);
   _afkAlarms.remove(id);
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -10611,6 +10829,50 @@ function _afkSetAltMin(id, v) {
   }
 }
 
+function _afkSetTimerMode(id, mode) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.timerMode = (mode === 'clock') ? 'clock' : 'countdown';
+  a.state.targetMs = _afkComputeTimerTarget(a.params);
+  a.state.fired = false;
+  _afkSaveUserTimerDefaults(a.params);
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkScheduleTimer(a);
+  _afkRenderAlarmList();
+}
+function _afkSetTimerCountdown(id, field, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params[field] = Math.max(0, parseInt(v, 10) || 0);
+  a.state.targetMs = _afkComputeTimerTarget(a.params);
+  a.state.fired = false;
+  _afkSaveUserTimerDefaults(a.params);
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkScheduleTimer(a);
+  _afkUpdateTimerCardLive(a);
+}
+function _afkSetTimerClock(id, val) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const parts = (val || '00:00').split(':');
+  a.params.clockH = Math.max(0, Math.min(23, parseInt(parts[0], 10) || 0));
+  a.params.clockM = Math.max(0, Math.min(59, parseInt(parts[1], 10) || 0));
+  a.state.targetMs = _afkComputeTimerTarget(a.params);
+  a.state.fired = false;
+  _afkSaveUserTimerDefaults(a.params);
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkScheduleTimer(a);
+  _afkUpdateTimerCardLive(a);
+}
+// Live-update the visible parts of a timer card without re-rendering the
+// whole alarm list (which would lose focus on the input the user is editing).
+function _afkUpdateTimerCardLive(a) {
+  const tgt = document.getElementById('afkTimerTgt_' + a.id);
+  if (tgt) tgt.textContent = _afkFmtTimerTarget(a);
+  const card = document.querySelector('.afk-card[data-afk-id="' + a.id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
 function _afkSetAltDirection(id, dir) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.direction = (dir === 'climbing') ? 'climbing' : 'descending';
@@ -10663,11 +10925,25 @@ function _afkAddAlarm(type) {
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  if (type === 'timer') {
+    // Pre-fill from the user's last-used values (or sensible defaults if none).
+    const pref = _afkGetUserTimerDefaults();
+    base.params = {
+      timerMode:  pref.mode || 'countdown',
+      countdownH: pref.countdownH || 0,
+      countdownM: pref.countdownM != null ? pref.countdownM : 5,
+      countdownS: pref.countdownS || 0,
+      clockH:     pref.clockH != null ? pref.clockH : 12,
+      clockM:     pref.clockM != null ? pref.clockM : 0,
+    };
+    base.state = { targetMs: _afkComputeTimerTarget(base.params), fired: false };
+  }
   // Duration default — always indefinite for new alarms (the user's saved
   // seconds preference is only applied when they explicitly switch the
   // mode to 'seconds' on a card).
   base.params.durationMode = 'indefinite';
-  _afkAlarms.add(base);
+  const added = _afkAlarms.add(base);
+  if (type === 'timer') _afkScheduleTimer(_afkAlarms.get(added.id));
   _afkRenderAlarmList();
   _afkUpdateBadge();
   _afkRenderWaypointVisuals();
@@ -11178,6 +11454,11 @@ function _afkInit() {
     _afkRenderGeofenceVisuals();
     _afkRenderWaypointVisuals();
   }, 800);
+  // Re-schedule timer alarms that survived a page reload (their targetMs
+  // stayed in localStorage). Past-due timers will fire on the next eval.
+  _afkAlarms.list().forEach(a => {
+    if (a.type === 'timer' && a.enabled) _afkScheduleTimer(a);
+  });
   // 1 Hz heartbeat so elapsed / ETA / countdown fields advance even between
   // live-aircraft updates (or with no live source connected at all).
   setInterval(() => {
@@ -11185,6 +11466,13 @@ function _afkInit() {
       ? { lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng), alt: _liveAcLastData.alt, gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg, gndAlt: _liveAcLastData.gndAlt }
       : { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null, gndAlt: null };
     _afkUpdateDataPanel(ac);
+    // Tick the subtitle of any visible Timer card so its countdown is live.
+    if (document.getElementById('afkConfigModal') &&
+        document.getElementById('afkConfigModal').classList.contains('open')) {
+      _afkAlarms.list().forEach(a => {
+        if (a.type === 'timer') _afkUpdateTimerCardLive(a);
+      });
+    }
   }, 1000);
 }
 document.addEventListener('DOMContentLoaded', _afkInit);
@@ -20836,8 +21124,9 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Alerts</div>
           <div class="help-feature-desc">
             Get notified by a loud, looping alarm when key events happen during long flights while you&rsquo;re away from the keyboard. Click <strong>🔔 Alerts</strong> in the map header to open the configuration modal. The left column lists five independent alarm types you can mix and match for a single flight; each one you add shows up as a card on the right with its own enable toggle, sound selection, and per-type settings. <em>Hover any alarm icon or title in a card for a plain-English description of what it does and when it fires.</em><br/><br/>
-            <strong>The five alarm types:</strong>
+            <strong>The six alarm types:</strong>
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires the first time the aircraft levels off into cruise. The detector is <em>adaptive</em> &mdash; it tracks the peak climb vertical speed for this flight and treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60 seconds. Works for both a Cessna 152 climbing at 700&nbsp;fpm and a Boeing 777 climbing at 3,000&nbsp;fpm without any per-aircraft tuning.</li>
@@ -20848,6 +21137,7 @@ function rgSendToFlightPlanner() {
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the left of any alarm card and drag it up or down to re-rank. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
+            <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
             <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
             <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads. If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
@@ -20910,8 +21200,27 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.73.0</span>
+          <span class="release-version">v2.74.0</span>
           <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New <strong>⏰ Timer</strong> alarm type.</strong> The most obvious alarm we'd been missing all along &mdash; a simple clock / countdown timer with two modes:
+            <ul>
+              <li><strong>Countdown</strong> &mdash; three discrete inputs for hours, minutes, and seconds. The card readout shows the absolute target time AND the live remaining countdown ("Fires at 14:32:18 (in 5m 42s)"). Updates every second while the Alerts modal is open.</li>
+              <li><strong>At specific time</strong> &mdash; native HTML time picker for the local clock. If you pick a time that's already passed today, it fires tomorrow at that time. Useful for "alarm me at the FAF altitude at 14:30 local".</li>
+            </ul>
+            Independent of aircraft position &mdash; timers work without a live aircraft source connected. Uses <code>setTimeout</code> for primary firing (so they fire even with the tab in the background, modulo browser throttling) plus a tick-time evaluator as a belt-and-suspenders fallback. The Timer card is listed at the top of the <em>Add alarm</em> column in the Alerts modal.<br/><br/>
+            Has all the features of the other alarm types: sound picker, sound-duration picker (indefinite / specific seconds), priority via drag-to-reorder, persistence to <code>localStorage</code>. Last-used countdown hours/minutes/seconds AND last-used clock time are remembered between sessions, so creating a new Timer pre-fills with your most recent values. Dismissing a fired timer leaves it in a "spent" state (subtitle reads "✓ Already fired &mdash; toggle off/on to re-arm") so it doesn't re-fire from a past <code>targetMs</code> on the next page reload &mdash; toggling the alarm off then back on, or editing any of the time inputs, recomputes a fresh target.</li>
+          <li><strong>Collapsible alarm cards in the Alerts modal.</strong> Every card now has a small chevron button in its top-right action bar that toggles the editor body (the part with the sound picker, duration, and type-specific inputs). The card header (icon, title, subtitle) stays visible, so you can keep an eye on every alarm's status while hiding the controls you don't need to see. Collapsed state is persisted per-card to <code>localStorage</code> (<code>simfly_aa_afk_collapsed_cards</code>) so it survives reloads. Newly-added alarms default to <em>expanded</em> so you see the configuration options immediately; you collapse them once you're done editing.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.73.0</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -28179,6 +28488,7 @@ function rgSendToFlightPlanner() {
     <div class="modal-body afk-config-body">
       <div class="afk-add-col">
         <div class="afk-add-col-title">Add alarm</div>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('timer')"><span class="afk-add-btn-icon">⏰</span><span>Timer</span></button>
         <button class="afk-add-btn" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
         <button class="afk-add-btn" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
         <button class="afk-add-btn" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
