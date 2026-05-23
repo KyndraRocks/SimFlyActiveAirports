@@ -610,6 +610,41 @@
   /* Region map (#regionModal) sits at z-index 9000 — Flight Plan settings modal
      is opened on top of it, so it needs to clear that. */
   #fpSettingsModal { z-index: 9500; }
+  /* Aircraft-icon picker (Shift-click on Follow A/C) — sits above the
+     region map (z-index 9000) like Flight Plan Settings does. */
+  #liveAcIconModal { z-index: 9500; }
+  .live-ac-icon-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+    gap:0.55rem;
+  }
+  .live-ac-icon-pick {
+    display:flex; flex-direction:column; align-items:center; gap:0.35rem;
+    background:rgba(255,255,255,0.04);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:0.55rem 0.4rem;
+    cursor:pointer;
+    color:var(--text);
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.92rem; font-weight:600;
+    transition:background 0.12s, border-color 0.12s, transform 0.12s;
+  }
+  .live-ac-icon-pick:hover {
+    background:rgba(0,200,255,0.07);
+    border-color:rgba(0,200,255,0.45);
+    transform:translateY(-1px);
+  }
+  .live-ac-icon-pick.active {
+    background:rgba(0,230,118,0.10);
+    border-color:rgba(0,230,118,0.6);
+    box-shadow:0 0 0 1px rgba(0,230,118,0.25) inset;
+  }
+  .live-ac-icon-pick-name { color:var(--muted); }
+  .live-ac-icon-pick.active .live-ac-icon-pick-name { color:#9affc2; }
+  body.light-mode .live-ac-icon-pick { background:rgba(0,0,0,0.04); }
+  body.light-mode .live-ac-icon-pick:hover { background:rgba(0,150,200,0.10); }
+  body.light-mode .live-ac-icon-pick.active { background:rgba(0,170,80,0.10); }
   .fp-settings-grid {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -3022,8 +3057,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* single row without elements colliding. The Measurement label is the */
   /* first to collide with the central Map cat filter, so it drops earliest. */
   @media (max-width: 1700px) {
-    #rgRulerBtn .rg-btn-label, #rgRulerLinesBtn .rg-btn-label { display:none; }
+    #rgRulerBtn .rg-btn-label, #rgRulerLinesBtn .rg-btn-label,
+    #liveAcFollowBtn .rg-btn-label { display:none; }
   }
+  /* Follow A/C button at very narrow widths: keep only the 📍 pin —
+     the trailing space is stripped so the button is a tight square. The
+     wider .rg-btn-label rule at 1500px also hides the label, but this
+     earlier breakpoint matters because the live-aircraft buttons sit in
+     a dense neighbourhood of icon buttons that otherwise overflow first. */
   @media (max-width: 1500px) {
     .rg-modal-hdr { gap:0.4rem; padding:0.45rem 0.8rem; }
     .rg-modal-hdr .rg-btn { padding:0.45rem 0.65rem; font-size:0.92rem; }
@@ -3902,7 +3943,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     transition:transform 0.18s, color 0.12s, border-color 0.12s;
   }
   .afk-card-chevron:hover { color:var(--accent); border-color:var(--accent); }
-  .afk-card.collapsed .afk-card-chevron { transform:rotate(-90deg); }
+  /* Glyph is set in JS (▶ collapsed, ▼ expanded) per the SimFly
+     disclosure-triangle convention — no CSS rotation. */
   .afk-card-grip {
     flex:0 0 14px;
     color:var(--muted);
@@ -4134,12 +4176,37 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     font-size:1.02rem; font-weight:600; color:#dde4f0;
     font-variant-numeric:tabular-nums;
     line-height:1.15;
+    text-align:center;
+    white-space:nowrap;
   }
   body.light-mode .afk-dp-value { color:#1a1f2e; }
   .afk-dp-value.warn { color:#ffaa55; }
   .afk-dp-value.danger { color:#ff5d70; }
   .afk-dp-value.muted { color:#5e6a7a; }
   .afk-dp-value.next-alarm-soon { color:#ff5d70; animation:afkTripPulse 1.1s ease-in-out infinite alternate; }
+  /* Per-field min-widths sized to each field's worst-case value so the layout
+     never shifts as values change. Tabular-nums alone isn't enough — units,
+     direction prefixes (N/S/E/W), arrows, and varying digit counts all push
+     the column width around without these fixed minima. */
+  #afkDpLat       { min-width:7.5em; }
+  #afkDpLon       { min-width:8.0em; }
+  #afkDpHdg       { min-width:3.2em; }
+  #afkDpAlt       { min-width:5.0em; }
+  #afkDpGs,
+  #afkDpIas       { min-width:4.0em; }
+  #afkDpVs        { min-width:6.0em; }
+  #afkDpPhase     { min-width:5.0em; }
+  #afkDpElapsed,
+  #afkDpRemaining { min-width:4.5em; }
+  #afkDpDistRem   { min-width:5.5em; }
+  #afkDpEtaLcl    { min-width:3.5em; }
+  #afkDpEtaUtc    { min-width:4.0em; }
+  #afkDpNextAlarm { min-width:9.5em; max-width:18em; overflow:hidden; text-overflow:ellipsis; }
+  #afkDpNextEta   { min-width:5.0em; }
+  .afk-dp-label   { text-align:center; }
+  /* Clickable next-alarm label */
+  .afk-dp-value.is-link { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; transition:color 0.12s; }
+  .afk-dp-value.is-link:hover { color:var(--accent); }
   .afk-dp-toggle {
     flex-shrink:0;
     background:none; border:1px solid rgba(255,255,255,0.18);
@@ -4537,7 +4604,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.74.0';
+const APP_VERSION = '2.78.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8567,7 +8634,24 @@ function _sbOfpSetPid(pid) {
 
 // Cache the most recent successful OFP fetch so the user can change Flight
 // Plan settings (color, labels) and instantly re-render without a re-fetch.
+// Also persisted to localStorage so a browser reload restores the plotted
+// route AND any waypoint-alarm rings without the user re-fetching SimBrief.
+const _SB_OFP_LS = 'simfly_aa_sb_ofp_last';
 let _sbOfpLastData = null;
+function _sbOfpSaveCache(data) {
+  try { localStorage.setItem(_SB_OFP_LS, JSON.stringify(data)); } catch (_) {}
+}
+function _sbOfpLoadCache() {
+  try {
+    const raw = localStorage.getItem(_SB_OFP_LS);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return (obj && obj.origin && obj.destination) ? obj : null;
+  } catch (_) { return null; }
+}
+function _sbOfpClearCache() {
+  try { localStorage.removeItem(_SB_OFP_LS); } catch (_) {}
+}
 
 // ── Flight Plan settings (localStorage-backed, surfaced via shift-click modal)
 const _FP_DEFAULT_COLOR  = '#ff3da8';
@@ -8678,13 +8762,20 @@ async function _sbOfpPlot() {
     return;
   }
   _sbOfpLastData = data;
+  _sbOfpSaveCache(data);
+  // A new SimBrief plan + on-ground aircraft = new flight starting; clear
+  // the persisted breadcrumb track so the new flight starts with a blank trail.
+  try { _liveAcMaybeClearForNewFlight(data); } catch (_) {}
   _sbOfpRender(data);
 }
 
 // Render or re-render the cached OFP using current Flight Plan settings.
 // Extracted from _sbOfpPlot so the settings-modal "Save" can repaint without
-// a re-fetch.
-function _sbOfpRender(data) {
+// a re-fetch. `opts.silent` skips the success toast (used by reload-restore
+// so the user isn't reminded on every page load). `opts.noFit` skips the
+// fitBounds call so a restore doesn't override the user's last viewport.
+function _sbOfpRender(data, opts) {
+  opts = opts || {};
   if (!_rgMap || !data) return;
   const origLat = parseFloat(data.origin.pos_lat),  origLng = parseFloat(data.origin.pos_long);
   const destLat = parseFloat(data.destination.pos_lat), destLng = parseFloat(data.destination.pos_long);
@@ -8801,10 +8892,13 @@ function _sbOfpRender(data) {
   _sbEndRing(origLat, origLng, `${data.origin.icao_code || ''} · departure`);
   _sbEndRing(destLat, destLng, `${data.destination.icao_code || ''} · destination`);
 
-  // Fit map to the flight-plan extents.
-  try { _rgMap.fitBounds(coords, { padding: [40, 40] }); } catch (_) {}
+  // Fit map to the flight-plan extents — skipped on reload-restore so we
+  // don't override the user's last viewport.
+  if (!opts.noFit) { try { _rgMap.fitBounds(coords, { padding: [40, 40] }); } catch (_) {} }
 
-  _aaRtToast(`✈ SimBrief flight plan plotted — ${data.origin.icao_code || '?'} → ${data.destination.icao_code || '?'}${flt ? ' (' + flt + ')' : ''}${dist ? ' · ' + dist.toLocaleString() + ' nm' : ''} · ${fixes.length} wpt${fixes.length !== 1 ? 's' : ''}`, 'ok');
+  if (!opts.silent) {
+    _aaRtToast(`✈ SimBrief flight plan plotted — ${data.origin.icao_code || '?'} → ${data.destination.icao_code || '?'}${flt ? ' (' + flt + ')' : ''}${dist ? ' · ' + dist.toLocaleString() + ' nm' : ''} · ${fixes.length} wpt${fixes.length !== 1 ? 's' : ''}`, 'ok');
+  }
 
   const btn = document.getElementById('sbOfpBtn');
   if (btn) {
@@ -8822,6 +8916,11 @@ function _sbOfpClearLayers() {
 
 function _sbOfpClear() {
   _sbOfpClearLayers();
+  _sbOfpLastData = null;
+  _sbOfpClearCache();
+  // Waypoint-alarm rings depend on the plan being loaded — re-render so
+  // they're removed alongside the route.
+  try { _afkRenderWaypointVisuals(); } catch (_) {}
   const btn = document.getElementById('sbOfpBtn');
   if (btn) {
     const lbl = btn.querySelector('.rg-btn-label');
@@ -8852,6 +8951,85 @@ let _liveAcStaleTimer = 0;
 let _liveAcSource     = null;      // 'stkp' | 'fsuipc' | null
 let _liveAcCentred    = false;     // true once we've re-centred on first fix
 
+// Follow-aircraft mode — when true, every live update pans the map to keep
+// the aircraft centred. Persists across sessions in localStorage. Disabled
+// automatically when the user drags the map (so manual exploration always
+// wins) or clicks a NEXT-ALARM link.
+const _LIVE_AC_FOLLOW_LS = 'simfly_aa_ac_follow';
+let _liveAcFollow = (() => {
+  try { return localStorage.getItem(_LIVE_AC_FOLLOW_LS) === '1'; } catch (_) { return false; }
+})();
+
+function _liveAcSetFollow(on) {
+  on = !!on;
+  if (_liveAcFollow === on) { _liveAcUpdateFollowBtn(); return; }
+  _liveAcFollow = on;
+  try { localStorage.setItem(_LIVE_AC_FOLLOW_LS, on ? '1' : '0'); } catch (_) {}
+  _liveAcUpdateFollowBtn();
+  // If we just enabled and we already have a fix, snap to it immediately
+  // so the user gets instant feedback.
+  if (on && _liveAcLastData && _rgMap) {
+    const lat = parseFloat(_liveAcLastData.lat), lng = parseFloat(_liveAcLastData.lng);
+    if (isFinite(lat) && isFinite(lng)) {
+      try { _rgMap.panTo([lat, lng], { animate: true, duration: 0.5 }); } catch (_) {}
+    }
+  }
+}
+
+function _liveAcToggleFollow(e) {
+  // Shift-click opens the icon picker modal — mirrors the Flight Plan
+  // settings (✈ Shift-click) pattern so live-aircraft preferences live
+  // adjacent to the live-aircraft toggle.
+  if (e && e.shiftKey) { _liveAcOpenIconPicker(); return; }
+  _liveAcSetFollow(!_liveAcFollow);
+}
+
+function _liveAcOpenIconPicker() {
+  const m = document.getElementById('liveAcIconModal');
+  if (!m) return;
+  m.classList.add('open');
+  _liveAcRenderIconPicker();
+}
+function _liveAcCloseIconPicker() {
+  const m = document.getElementById('liveAcIconModal');
+  if (m) m.classList.remove('open');
+}
+function _liveAcRenderIconPicker() {
+  const grid = document.getElementById('liveAcIconGrid');
+  if (!grid) return;
+  const current = _liveAcGetIconId();
+  grid.innerHTML = Object.keys(_LIVE_AC_ICONS).map(id => {
+    const def    = _LIVE_AC_ICONS[id];
+    // Render a static (non-rotated, accent-coloured) preview of each icon.
+    const body   = def.body.replace(/\{C\}/g, '#00e676');
+    const active = (id === current) ? ' active' : '';
+    return '<button type="button" class="live-ac-icon-pick' + active + '" ' +
+      'data-icon="' + id + '" onclick="_liveAcPickIcon(\'' + id + '\')" ' +
+      'title="Use the ' + def.name + ' icon for the live aircraft marker">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" style="display:block;">' + body + '</svg>' +
+      '<span class="live-ac-icon-pick-name">' + def.name + '</span>' +
+      '</button>';
+  }).join('');
+}
+function _liveAcPickIcon(id) {
+  _liveAcSetIconId(id);
+  _liveAcRenderIconPicker();
+}
+
+function _liveAcUpdateFollowBtn() {
+  const btn = document.getElementById('liveAcFollowBtn');
+  if (!btn) return;
+  // Show the button only while a live source is active.
+  btn.style.display = _liveAcSource ? '' : 'none';
+  btn.classList.toggle('active', _liveAcFollow);
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (lbl) lbl.textContent = _liveAcFollow ? 'Following A/C' : 'Follow A/C';
+  btn.title = (_liveAcFollow
+    ? 'Map is following the aircraft — click to stop following'
+    : 'Keep the map centred on the live aircraft as it moves')
+    + ' — Shift-click to pick a different aircraft icon';
+}
+
 // Aircraft breadcrumb trail — green glow + core polyline of the actual flown
 // path. Independent of the SimBrief plotted route so deviation from plan is
 // always visible. Trail clears on source-stop and on big position jumps.
@@ -8876,6 +9054,28 @@ const _LIVE_AC_TRAIL_FRESH_NM      = 0.05;   // fresh spacing (~300 ft)
 const _LIVE_AC_TRAIL_ARCHIVE_MAX   = 10000;  // archive-tier capacity
 const _LIVE_AC_TRAIL_ARCHIVE_NM    = 1.0;    // archive spacing (~6,000 ft)
 const _LIVE_AC_TRAIL_TELEPORT_NM   = 100;    // clear trail on big position jumps (sim restart)
+const _LIVE_AC_TRAIL_LS            = 'simfly_aa_ac_track';       // persisted trail
+const _LIVE_AC_TRAIL_FP_LS         = 'simfly_aa_ac_track_fp_gen';// SimBrief time_generated last cleared against
+const _LIVE_AC_TRAIL_SAVE_MS       = 5000;   // throttle interval for autosave
+let _liveAcTrailSaveTmr            = 0;
+let _liveAcTrailRenderer           = null;   // cached canvas renderer on liveAcTrailPane
+
+// Shared canvas renderer for both the glow + core trail polylines. Lives on
+// liveAcTrailPane (z-index 670) so the trail draws above the SimBrief route
+// line and waypoint markers. Created lazily on first paint after the pane
+// exists (map init handles pane creation).
+//
+// Padding 0.5 (canvas extends 50% beyond viewport on each axis) eliminates
+// the "phantom copies" Leaflet sometimes leaves on screen during zoom
+// in/out — the renderer's canvas only redraws pixels inside its padded
+// rect, so a too-tight rect can leave the previous frame's contents
+// visible at the edges after a zoom transform.
+function _liveAcGetTrailRenderer() {
+  if (_liveAcTrailRenderer) return _liveAcTrailRenderer;
+  if (!_rgMap || !_rgMap.getPane('liveAcTrailPane')) return undefined;
+  _liveAcTrailRenderer = L.canvas({ pane: 'liveAcTrailPane', padding: 0.5 });
+  return _liveAcTrailRenderer;
+}
 
 function _liveAcStopOthers(thisSource) {
   if (_liveAcSource && _liveAcSource !== thisSource) {
@@ -8884,14 +9084,81 @@ function _liveAcStopOthers(thisSource) {
   }
 }
 
+// Aircraft-icon library — four hand-rolled silhouettes the user can pick
+// between via the Follow A/C shift-click settings modal (v2.77.0+). Each
+// `body` string is the inner SVG markup (paths / circles) drawn over a
+// 24×24 viewBox, with the aircraft pointing UP (heading 0°) and the rotation
+// pivot at (12, 12). Pure SVG (no images) so the icon stays crisp at every
+// zoom and rotates cleanly to the live heading.
+//
+// Helicopter is the visual outlier on purpose — the rotor disc is a circle
+// so it stays visually consistent under any heading rotation, with the body
+// + tail boom carrying the directional cue.
+const _LIVE_AC_ICONS = {
+  airliner: {
+    name: 'Airliner',
+    body: '<path fill="{C}" stroke="#000" stroke-width="0.6" stroke-linejoin="round" d="M12 2 L13.4 9.2 L22 13 L22 15 L13.4 13.2 L13.4 18.5 L16 20 L16 21.5 L12 20.4 L8 21.5 L8 20 L10.6 18.5 L10.6 13.2 L2 15 L2 13 L10.6 9.2 Z"/>',
+  },
+  prop: {
+    name: 'Prop',
+    // Stubbier fuselage, less-swept (straighter) wings, larger tail.
+    // Small prop bar across the nose for the visual cue.
+    body:
+      '<path fill="{C}" stroke="#000" stroke-width="0.6" stroke-linejoin="round" d="M12 4 L12.7 9.6 L21 13.2 L21 14.2 L12.7 13.4 L12.7 17.6 L15.2 19.6 L15.2 20.6 L12 19.8 L8.8 20.6 L8.8 19.6 L11.3 17.6 L11.3 13.4 L3 14.2 L3 13.2 L11.3 9.6 Z"/>' +
+      '<rect x="9.6" y="3" width="4.8" height="1.1" rx="0.55" fill="{C}" stroke="#000" stroke-width="0.5"/>',
+  },
+  heli: {
+    name: 'Helicopter',
+    // Large rotor disc (rotationally invariant), short fuselage at centre,
+    // tail boom extending to the rear with a small tail rotor circle.
+    body:
+      '<circle cx="12" cy="11" r="8.5" fill="rgba(0,0,0,0)" stroke="{C}" stroke-width="1.1" stroke-dasharray="0.8 0.9" opacity="0.85"/>' +
+      '<ellipse cx="12" cy="11" rx="3.2" ry="4.4" fill="{C}" stroke="#000" stroke-width="0.6"/>' +
+      '<rect x="11.2" y="13.5" width="1.6" height="6.5" rx="0.6" fill="{C}" stroke="#000" stroke-width="0.5"/>' +
+      '<circle cx="12" cy="20.5" r="1.5" fill="rgba(0,0,0,0)" stroke="{C}" stroke-width="0.8" opacity="0.85"/>',
+  },
+  bizjet: {
+    name: 'Business Jet',
+    // Slimmer than the airliner, pointier nose, raked wings further aft.
+    // Two small engine pods at the tail end of the fuselage for the cue.
+    body:
+      '<path fill="{C}" stroke="#000" stroke-width="0.6" stroke-linejoin="round" d="M12 2.5 L12.8 10 L20 13.5 L20 14.4 L12.8 13.6 L12.8 17.8 L14.6 19.5 L14.6 20.4 L12 19.7 L9.4 20.4 L9.4 19.5 L11.2 17.8 L11.2 13.6 L4 14.4 L4 13.5 L11.2 10 Z"/>' +
+      '<circle cx="9.9" cy="18"  r="0.9" fill="{C}" stroke="#000" stroke-width="0.4"/>' +
+      '<circle cx="14.1" cy="18" r="0.9" fill="{C}" stroke="#000" stroke-width="0.4"/>',
+  },
+};
+
+const _LIVE_AC_ICON_LS    = 'simfly_aa_ac_icon';
+const _LIVE_AC_ICON_DEF   = 'airliner';
+
+function _liveAcGetIconId() {
+  try {
+    const v = localStorage.getItem(_LIVE_AC_ICON_LS);
+    return (v && _LIVE_AC_ICONS[v]) ? v : _LIVE_AC_ICON_DEF;
+  } catch (_) { return _LIVE_AC_ICON_DEF; }
+}
+function _liveAcSetIconId(id) {
+  if (!_LIVE_AC_ICONS[id]) return;
+  try { localStorage.setItem(_LIVE_AC_ICON_LS, id); } catch (_) {}
+  // Repaint the marker immediately if it's on the map.
+  if (_liveAcMarker && _liveAcLastData) {
+    const hdg = parseFloat(_liveAcLastData.hdg);
+    const stale = _liveAcLastUpdate
+      ? (performance.now() - _liveAcLastUpdate >= _LIVE_AC_STALE_MS)
+      : false;
+    try { _liveAcMarker.setIcon(_liveAcPlaneIcon(isFinite(hdg) ? hdg : 0, stale)); } catch (_) {}
+  }
+}
+
 function _liveAcPlaneIcon(hdgDeg, stale) {
   const color  = stale ? '#888' : '#00e676';
   const shadow = stale ? 'rgba(0,0,0,0.5)' : 'rgba(0,230,118,0.55)';
+  const def    = _LIVE_AC_ICONS[_liveAcGetIconId()] || _LIVE_AC_ICONS[_LIVE_AC_ICON_DEF];
+  const body   = def.body.replace(/\{C\}/g, color);
   const html =
     `<div style="width:34px;height:34px;transform:rotate(${hdgDeg}deg);filter:drop-shadow(0 0 6px ${shadow});">` +
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="34" height="34">` +
-        `<path fill="${color}" stroke="#000" stroke-width="0.6" stroke-linejoin="round" ` +
-              `d="M12 2 L13.4 9.2 L22 13 L22 15 L13.4 13.2 L13.4 18.5 L16 20 L16 21.5 L12 20.4 L8 21.5 L8 20 L10.6 18.5 L10.6 13.2 L2 15 L2 13 L10.6 9.2 Z"/>` +
+        body +
       `</svg>` +
     `</div>`;
   return L.divIcon({ className: 'live-ac-icon', html, iconSize: [34, 34], iconAnchor: [17, 17] });
@@ -8927,6 +9194,12 @@ function _liveAcRenderMarker(d) {
   if (!_liveAcCentred) {
     try { _rgMap.setView([lat, lng], Math.max(_rgMap.getZoom(), 6), { animate: true }); } catch (_) {}
     _liveAcCentred = true;
+  } else if (_liveAcFollow) {
+    // Smooth pan — preserves zoom and uses Leaflet's built-in tween. The
+    // 0.8 s duration bridges the gap between 1 Hz FSUIPC fixes so motion
+    // feels continuous instead of stepping; STKP's 10 s cadence still
+    // animates cleanly within the longer tween envelope.
+    try { _rgMap.panTo([lat, lng], { animate: true, duration: 0.8, easeLinearity: 0.5 }); } catch (_) {}
   }
   _liveAcScheduleStaleCheck();
 }
@@ -8981,7 +9254,8 @@ function _liveAcUpdateTrail(lat, lng) {
     _liveAcTrailGlow.setLatLngs(combined);
   } else {
     _liveAcTrailGlow = L.polyline(combined, {
-      renderer: _rgGetGeomRenderer(),
+      renderer: _liveAcGetTrailRenderer(),
+      pane: 'liveAcTrailPane',
       color: '#00e676', weight: 7, opacity: 0.22,
       lineCap: 'round', lineJoin: 'round', interactive: false,
     }).addTo(_rgMap);
@@ -8990,11 +9264,13 @@ function _liveAcUpdateTrail(lat, lng) {
     _liveAcTrailCore.setLatLngs(combined);
   } else {
     _liveAcTrailCore = L.polyline(combined, {
-      renderer: _rgGetGeomRenderer(),
+      renderer: _liveAcGetTrailRenderer(),
+      pane: 'liveAcTrailPane',
       color: '#00e676', weight: 2.2, opacity: 0.92,
       lineCap: 'round', lineJoin: 'round', interactive: false,
     }).addTo(_rgMap);
   }
+  _liveAcScheduleTrailSave();
 }
 
 function _liveAcClearTrail() {
@@ -9002,6 +9278,105 @@ function _liveAcClearTrail() {
   if (_liveAcTrailCore) { try { _rgMap && _rgMap.removeLayer(_liveAcTrailCore); } catch (_) {} _liveAcTrailCore = null; }
   _liveAcTrailFresh   = [];
   _liveAcTrailArchive = [];
+  try { localStorage.removeItem(_LIVE_AC_TRAIL_LS); } catch (_) {}
+}
+
+// Throttled persistence of the breadcrumb trail so a browser crash or close
+// doesn't lose mid-flight track. Writes the same {fresh, archive} arrays
+// the in-memory tiers use, plus a timestamp for diagnostics. Saving on every
+// point would write ~10 times per second on FSUIPC's 100 ms cadence — once
+// every 5 s is plenty since the user can only lose 5 s of recent breadcrumbs
+// in the worst case.
+function _liveAcScheduleTrailSave() {
+  if (_liveAcTrailSaveTmr) return;
+  _liveAcTrailSaveTmr = setTimeout(() => {
+    _liveAcTrailSaveTmr = 0;
+    _liveAcSaveTrail();
+  }, _LIVE_AC_TRAIL_SAVE_MS);
+}
+
+function _liveAcSaveTrail() {
+  try {
+    if (_liveAcTrailFresh.length === 0 && _liveAcTrailArchive.length === 0) {
+      localStorage.removeItem(_LIVE_AC_TRAIL_LS);
+      return;
+    }
+    localStorage.setItem(_LIVE_AC_TRAIL_LS, JSON.stringify({
+      v: 1,
+      ts: Date.now(),
+      fresh:   _liveAcTrailFresh,
+      archive: _liveAcTrailArchive,
+    }));
+  } catch (_) { /* quota or serialization — silently ignore */ }
+}
+
+// Restore a saved trail at map-init time. Re-renders the glow + core
+// polylines so the user sees their previous flight path immediately on
+// page reload (no need to wait for the next live-aircraft update).
+function _liveAcLoadTrail() {
+  if (!_rgMap) return;
+  let obj;
+  try {
+    const raw = localStorage.getItem(_LIVE_AC_TRAIL_LS);
+    if (!raw) return;
+    obj = JSON.parse(raw);
+  } catch (_) { return; }
+  if (!obj || !Array.isArray(obj.fresh) || !Array.isArray(obj.archive)) return;
+  // Sanity-clamp so a corrupted blob can't overflow capacity.
+  _liveAcTrailFresh   = obj.fresh.slice(-_LIVE_AC_TRAIL_FRESH_MAX);
+  _liveAcTrailArchive = obj.archive.slice(-_LIVE_AC_TRAIL_ARCHIVE_MAX);
+  const combined = _liveAcTrailArchive.concat(_liveAcTrailFresh);
+  if (combined.length < 2) return;
+  const _rend = _liveAcGetTrailRenderer();
+  _liveAcTrailGlow = L.polyline(combined, {
+    renderer: _rend,
+    pane: 'liveAcTrailPane',
+    color: '#00e676', weight: 7, opacity: 0.22,
+    lineCap: 'round', lineJoin: 'round', interactive: false,
+  }).addTo(_rgMap);
+  _liveAcTrailCore = L.polyline(combined, {
+    renderer: _rend,
+    pane: 'liveAcTrailPane',
+    color: '#00e676', weight: 2.2, opacity: 0.92,
+    lineCap: 'round', lineJoin: 'round', interactive: false,
+  }).addTo(_rgMap);
+}
+
+// Called when a fresh SimBrief flight plan is loaded. Clears the persisted
+// track only when we can positively confirm a new flight is starting:
+//   • the SimBrief plan's time_generated differs from the last one we
+//     cleared against (so re-loading the same plan after a reload is a no-op),
+//   • AND either the track is already empty (nothing to lose) or the live
+//     aircraft data confirms the aircraft is on the ground.
+// Mid-flight browser reloads where the user simply re-fetches the same plan
+// preserve the track. Mid-flight reloads where a *different* plan is loaded
+// but the aircraft is airborne also preserve the track (we don't know it's
+// a new flight). Only the unambiguous "new plan + on ground" combination
+// resets the trail.
+function _liveAcMaybeClearForNewFlight(fpData) {
+  if (!fpData) return;
+  const tg = (fpData.params && fpData.params.time_generated) ||
+             (fpData.api_params && fpData.api_params.time_generated) || null;
+  if (!tg) return;
+  let lastGen = null;
+  try { lastGen = localStorage.getItem(_LIVE_AC_TRAIL_FP_LS) || null; } catch (_) {}
+  if (String(tg) === String(lastGen)) return; // same plan as last seen — no-op
+  const trackEmpty = _liveAcTrailFresh.length === 0 && _liveAcTrailArchive.length === 0;
+  const phase = (typeof _afkPhase !== 'undefined' && _afkPhase.get) ? _afkPhase.get() : null;
+  let onGround = phase === 'ground';
+  if (!onGround && _liveAcLastData) {
+    const gs  = parseFloat(_liveAcLastData.gs);
+    const alt = parseFloat(_liveAcLastData.alt);
+    if (isFinite(gs) && gs < 5) onGround = true;
+    else if (isFinite(gs) && gs < 30 && isFinite(alt) && alt < 1000) onGround = true;
+  }
+  if (trackEmpty || onGround) {
+    _liveAcClearTrail();
+    // Wheels-up time is part of "this flight" state — clear it alongside
+    // the breadcrumb so ELAPSED starts fresh for the new flight.
+    if (typeof _afkResetTakeoff === 'function') { try { _afkResetTakeoff(); } catch (_) {} }
+    try { localStorage.setItem(_LIVE_AC_TRAIL_FP_LS, String(tg)); } catch (_) {}
+  }
 }
 
 function _liveAcMarkStale() {
@@ -9021,11 +9396,15 @@ function _liveAcScheduleStaleCheck() {
 function _liveAcClear() {
   if (_liveAcStaleTimer) { clearTimeout(_liveAcStaleTimer); _liveAcStaleTimer = 0; }
   if (_liveAcMarker) { try { _rgMap && _rgMap.removeLayer(_liveAcMarker); } catch (_) {} _liveAcMarker = null; }
-  _liveAcClearTrail();
+  // Intentionally NOT clearing the trail here — the breadcrumb is persisted
+  // so a browser close/crash, or a manual STKP / FSUIPC source-stop, keeps
+  // the path visible. Only new-flight detection ([[project_aa_track_persistence]])
+  // or a sim teleport jump wipes it.
   _liveAcLastData   = null;
   _liveAcLastUpdate = 0;
   _liveAcSource     = null;
   _liveAcCentred    = false;
+  _liveAcUpdateFollowBtn();
 }
 
 function _liveAcTooltipHtml() {
@@ -9106,6 +9485,7 @@ function _stkpUpdateButtonState(active) {
     ? 'Stop SimToolkitPro live-aircraft tracking — Shift-click to change token'
     : 'Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token';
   btn.classList.toggle('active', active);
+  _liveAcUpdateFollowBtn();
 }
 
 async function _stkpFetchOnce() {
@@ -9158,7 +9538,7 @@ async function _stkpFetchOnce() {
 const _FSUIPC_WS_URL    = 'ws://localhost:2048/fsuipc/';
 const _FSUIPC_WS_PROTO  = 'fsuipc';
 const _FSUIPC_GROUP     = 'simflyPos';
-const _FSUIPC_INTERVAL  = 500;        // ms — push cadence; 100 ms with changesOnly suppressed pushes for parked aircraft in v2.67.0, 500 ms works reliably without changesOnly
+const _FSUIPC_INTERVAL  = 1000;       // ms — push cadence; 1 Hz halves the per-second JS work on the render pipeline vs the v2.67–v2.77 default of 500 ms with no visible track-quality degradation (track is decimated by distance, not time). Follow A/C panTo duration was bumped to 0.8 s in lockstep so the tween bridges the longer gap between fixes.
 const _FSUIPC_RECONNECT = 10000;      // ms — retry while button is active
 const _FSUIPC_DEBUG     = true;       // set false to silence the console log on each push
 let _fsuipcWs           = null;
@@ -9202,6 +9582,7 @@ function _fsuipcUpdateButtonState(active) {
     ? 'Stop FSUIPC live-aircraft tracking'
     : 'Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)';
   btn.classList.toggle('active', active);
+  _liveAcUpdateFollowBtn();
 }
 
 function _fsuipcOpenWs() {
@@ -9227,9 +9608,14 @@ function _fsuipcOpenWs() {
         { name: 'hdg', address: 0x0580, type: 'uint', size: 4 },
         { name: 'gs',     address: 0x02B4, type: 'uint', size: 4 },
         { name: 'ias',    address: 0x02BC, type: 'uint', size: 4 },
-        // Ground elevation under aircraft: signed int32, metres × 256.
-        // Used by the AFK aircraft data panel to compute AGL = MSL − ground.
-        { name: 'gndAlt', address: 0x0B4C, type: 'int',  size: 4 },
+        // AGL was previously derived from FSUIPC offset 0x0B4C (Ground
+        // altitude metres × 256), but in MSFS via FSUIPC7 that offset
+        // frequently returns the nearest-airport reference elevation
+        // instead of the actual terrain under the aircraft, so AGL was
+        // off by hundreds-to-thousands of feet over hills, lakes, or
+        // anywhere away from a runway. Field removed in v2.76.1 until
+        // a SimVar-based source (PLANE ALT ABOVE GROUND) can be wired
+        // through Paul Henty's WebSocket.
       ],
     };
     try {
@@ -9265,16 +9651,12 @@ function _fsuipcOpenWs() {
     // IAS offset 0x02BC (uint, knots × 128) → kt
     const iasRaw = parseFloat(d.ias);
     const iasKts = isFinite(iasRaw) ? iasRaw / 128 : null;
-    // Ground altitude 0x0B4C (int32, metres × 256) → ft
-    const gndRaw = parseFloat(d.gndAlt);
-    const gndFt  = isFinite(gndRaw) ? (gndRaw / 256) * 3.28084 : null;
     _liveAcRenderMarker({
       lat, lng,
       hdg:    hdgDeg,
       alt:    altFt,
       gs:     gsKts,
       ias:    iasKts,
-      gndAlt: gndFt,
       ident:  'My Aircraft',
       af:     null,
       phase:  null,
@@ -9616,12 +9998,15 @@ function _afkDistNm(lat1, lon1, lat2, lon2) {
 
 // ---------------------- ETA CALCULATOR ------------------------------------
 const _afkETA = (() => {
+  // Always render H:MM:SS so the "IN" value stays a constant 7-character
+  // width and reads naturally on long-haul countdowns (>1 hour).
   function fmt(seconds) {
     if (!isFinite(seconds) || seconds < 0) return '—';
     if (seconds > 60 * 60 * 24) return '—';
-    const m = Math.floor(seconds / 60);
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    return m + ':' + (s < 10 ? '0' : '') + s;
+    return h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
 
   function _wpForAlarm(alarm) {
@@ -9720,7 +10105,50 @@ const _afkETA = (() => {
         return ((thresh - ac.alt) / vs) * 60;
       }
     }
-    // cruise, descent, phase-change — not ETA-predictable from instantaneous state
+    if (alarm.type === 'cruise') {
+      // ETA-predictable only when the user gave us a target altitude AND
+      // the aircraft is currently climbing below that altitude. Without
+      // a target, the trigger is still the phase detector (no ETA).
+      const thresh = alarm.params && parseFloat(alarm.params.cruiseAltFt);
+      if (!isFinite(thresh) || thresh <= 0) return NaN;
+      if (ac.alt == null || !isFinite(ac.alt)) return NaN;
+      if (ac.alt >= thresh) return NaN; // already at/above target — not predictable from here
+      const vs = _afkPhase.vsFpm();
+      if (vs <= 0) return NaN;          // not climbing
+      return ((thresh - ac.alt) / vs) * 60;
+    }
+    if (alarm.type === 'descent') {
+      // Estimate time-to-TOD using the classic "3× rule": descent distance
+      // in nautical miles ≈ altitude-to-lose (in thousands of feet) × 3.
+      // Equivalent to a ~3° glide, which works well across light singles
+      // through heavy jets without per-aircraft tuning.
+      //
+      // Requires: SimBrief plan loaded (destination position + elevation),
+      // current GS > 50 kt (sensible value), and the aircraft still > 5000 ft
+      // above the destination. Triggered alarm itself remains phase-based —
+      // this just powers the NEXT ALARM "IN" countdown.
+      const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+      if (!fp || !fp.destination) return NaN;
+      const destLat = parseFloat(fp.destination.pos_lat);
+      const destLng = parseFloat(fp.destination.pos_long);
+      const destElev = parseFloat(fp.destination.elevation);
+      if (!isFinite(destLat) || !isFinite(destLng)) return NaN;
+      if (ac.alt == null || !isFinite(ac.alt))      return NaN;
+      const altAGL = ac.alt - (isFinite(destElev) ? destElev : 0);
+      if (altAGL <= 5000)                            return NaN; // too low to predict TOD
+      const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
+      if (gs < 50)                                   return NaN;
+      const distToDest = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
+      if (!isFinite(distToDest))                     return NaN;
+      // 3× rule, with a 1500 ft pattern-altitude buffer that lines up TOD
+      // with a typical level-off for the approach intercept.
+      const altToLose  = Math.max(0, altAGL - 1500);
+      const todDistFromDest = (altToLose / 1000) * 3;
+      const distToTOD       = distToDest - todDistFromDest;
+      if (distToTOD <= 0)                            return NaN; // already past TOD
+      return (distToTOD / gs) * 3600;
+    }
+    // phase-change — not ETA-predictable from instantaneous state
     return NaN;
   }
 
@@ -9731,10 +10159,34 @@ const _afkETA = (() => {
       const e = compute(a, ac);
       if (isFinite(e) && e < bestEta) { bestEta = e; bestAlarm = a; }
     });
-    return bestAlarm ? { alarm: bestAlarm, etaSec: bestEta } : null;
+    if (!bestAlarm) return null;
+    return { alarm: bestAlarm, etaSec: bestEta, location: locationOf(bestAlarm) };
   }
 
-  return { compute, next, fmt };
+  // Resolve a map location for an alarm so the data panel can offer a
+  // "click to recentre" link. Returns null for alarm types with no fixed
+  // map location (timer, altitude, phase-change).
+  function locationOf(alarm) {
+    if (!alarm) return null;
+    if (alarm.type === 'geofence' && alarm.params) {
+      const la = parseFloat(alarm.params.lat), ln = parseFloat(alarm.params.lng);
+      if (isFinite(la) && isFinite(ln)) {
+        return { lat: la, lng: ln, type: 'geofence', radiusNm: parseFloat(alarm.params.radiusNm) };
+      }
+    }
+    if (alarm.type === 'waypoint') {
+      const wp = _wpForAlarm(alarm);
+      if (wp && wp.fix) {
+        const la = parseFloat(wp.fix.pos_lat), ln = parseFloat(wp.fix.pos_long);
+        if (isFinite(la) && isFinite(ln)) {
+          return { lat: la, lng: ln, type: 'waypoint', label: wp.label };
+        }
+      }
+    }
+    return null;
+  }
+
+  return { compute, next, fmt, locationOf };
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
@@ -9742,6 +10194,7 @@ const _AFK_LS_KEY        = 'simfly_aa_afk_alarms';
 const _AFK_LS_DP         = 'simfly_aa_afk_dp_collapsed';
 const _AFK_LS_DUR_SEC    = 'simfly_aa_afk_alarm_duration_sec'; // user's preferred seconds value
 const _AFK_LS_CARDS_COLL = 'simfly_aa_afk_collapsed_cards';    // Array<number> of card ids
+const _AFK_LS_CRUISE_ALT = 'simfly_aa_afk_cruise_alt_text';    // last-entered cruise altitude (v2.76.0+)
 let _afkAlarmIdSeq       = 1;
 
 // Per-alarm collapsed-card state. Default new cards are expanded so the
@@ -9877,6 +10330,22 @@ function _afkSetUserDefaultDurationSec(v) {
   try { localStorage.setItem(_AFK_LS_DUR_SEC, String(v)); } catch (_) {}
 }
 
+// User's last-entered cruise altitude (text form, e.g. "FL350" or "10,000").
+// New Cruise Reached alarms pre-fill with this value so the user doesn't
+// re-type their typical cruise altitude every time. Stored as text so
+// "FL350" round-trips cleanly through display formatting (rather than
+// always rendering 35000 back as plain feet).
+function _afkGetUserDefaultCruiseAltText() {
+  try { return (localStorage.getItem(_AFK_LS_CRUISE_ALT) || '').trim(); }
+  catch (_) { return ''; }
+}
+function _afkSetUserDefaultCruiseAltText(v) {
+  try {
+    if (v) localStorage.setItem(_AFK_LS_CRUISE_ALT, v);
+    else   localStorage.removeItem(_AFK_LS_CRUISE_ALT);
+  } catch (_) {}
+}
+
 // Per-alarm auto-dismiss timers when mode='seconds'. Stored by alarm id.
 const _afkAlarmTimers = {};
 function _afkClearAlarmTimer(id) {
@@ -9968,8 +10437,15 @@ const _afkAlarms = (() => {
     if (a.state) {
       // Per-alarm one-shot reset where appropriate
       if (a.type === 'phase-change') a.state.lastPhaseSeen = _afkPhase.get();
-      if (a.type === 'cruise') a.state.fired = false;
-      if (a.type === 'descent') a.state.fired = false;
+      // NB: cruise + descent are one-shot per flight — do NOT reset
+      // state.fired on dismiss. Resetting it caused an auto-dismiss timer
+      // (durationMode='seconds') to fire after N seconds, only for the
+      // very next tick to see fired=false + phase still 'cruise' and
+      // re-trip immediately. To the user this looked like "the alarm
+      // never turned off after 5 seconds". Re-arming a cruise/descent
+      // alarm now requires either toggling it off/on (which clears
+      // state.fired) or the aircraft returning to the ground phase
+      // (handled in _afkPhase auto-reset below).
     }
     _save();
   }
@@ -9979,6 +10455,10 @@ const _afkAlarms = (() => {
       if (a.status === 'tripped') {
         a.status = 'armed';
         a.trippedAt = null;
+        // v2.76.0 — every fired alarm auto-disables on dismiss (mirrors
+        // _afkDismissOne) so the badge decrements and the alarm needs an
+        // explicit user re-enable to fire again.
+        a.enabled = false;
       }
     });
     _save();
@@ -10147,8 +10627,30 @@ function _afkEvalTimer(alarm) {
   return false;
 }
 
-function _afkEvalCruise(alarm) {
+function _afkEvalCruise(alarm, ac) {
   if (alarm.state.fired) return false;
+  // If the user gave us a target cruise altitude, prefer that as the
+  // trigger — fires when the aircraft climbs THROUGH the target (similar
+  // to alt-min's climbing direction). This matches what the user typed in
+  // the field and ensures the ETA countdown is consistent with the trip.
+  // Without a target, fall back to the adaptive phase detector.
+  const thresh = alarm.params && parseFloat(alarm.params.cruiseAltFt);
+  if (isFinite(thresh) && thresh > 0) {
+    if (!ac || ac.alt == null || !isFinite(ac.alt)) return false;
+    const prev = alarm.state.prevAlt;
+    if (prev == null || !isFinite(prev)) {
+      alarm.state.prevAlt = ac.alt;
+      return false; // seed only on first valid sample
+    }
+    // Was below target, now at-or-above → trip. Symmetric to alt-min climbing.
+    if (prev < thresh && ac.alt >= thresh) {
+      alarm.state.prevAlt = ac.alt;
+      alarm.state.fired = true;
+      return true;
+    }
+    alarm.state.prevAlt = ac.alt;
+    return false;
+  }
   if (_afkPhase.get() === 'cruise') { alarm.state.fired = true; return true; }
   return false;
 }
@@ -10194,7 +10696,7 @@ function _afkEvaluate(alarm, ac) {
     case 'timer':        return _afkEvalTimer(alarm);
     case 'geofence':     return _afkEvalGeofence(alarm, ac);
     case 'waypoint':     return _afkEvalWaypoint(alarm, ac);
-    case 'cruise':       return _afkEvalCruise(alarm);
+    case 'cruise':       return _afkEvalCruise(alarm, ac);
     case 'descent':      return _afkEvalDescent(alarm);
     case 'alt-min':      return _afkEvalAltMin(alarm, ac);
   }
@@ -10224,8 +10726,24 @@ function _afkTick(data) {
     }
     _afkLastSbFingerprint = fpFp;
   }
+  const _prevPhase = _afkPhase.get();
   _afkPhase.update(data);
-  const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg, gndAlt: data.gndAlt };
+  const _curPhase  = _afkPhase.get();
+  // Auto-rearm one-shot cruise/descent alarms when the aircraft returns to
+  // the ground — so the next flight starts with a fresh set of phase
+  // alarms without the user touching anything. Dismiss no longer resets
+  // state.fired (it caused immediate re-trip while still in cruise), so
+  // this ground-transition is now the implicit "next flight begins" hook.
+  if (_curPhase === 'ground' && _prevPhase && _prevPhase !== 'ground') {
+    _afkAlarms.list().forEach(a => {
+      if ((a.type === 'cruise' || a.type === 'descent') && a.state && a.state.fired) {
+        a.state.fired = false;
+        if (a.type === 'cruise') a.state.prevAlt = null;
+        _afkAlarms.update(a.id, { state: a.state });
+      }
+    });
+  }
+  const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg };
   const newTrips = [];
   _afkAlarms.list().forEach(a => {
     if (_afkEvaluate(a, ac)) {
@@ -10242,9 +10760,30 @@ function _afkTick(data) {
 }
 
 // ---------------------- TAKEOFF / LANDING DETECTION ------------------------
-let _afkTakeoffAt = 0;
+// Wheels-up time persists to localStorage (v2.78.0+) so the ELAPSED field
+// on the data panel survives browser reloads mid-flight. It clears when a
+// new flight starts (handled by _liveAcMaybeClearForNewFlight, which calls
+// _afkResetTakeoff) or when a landing is detected (sustained low GS + low
+// altitude after takeoff).
+const _AFK_LS_TAKEOFF = 'simfly_aa_afk_takeoff_at';
+let _afkTakeoffAt = (() => {
+  try { const v = parseInt(localStorage.getItem(_AFK_LS_TAKEOFF), 10); return isFinite(v) && v > 0 ? v : 0; }
+  catch (_) { return 0; }
+})();
 let _afkAirborneSince = 0;
 let _afkLastGsAbove40 = 0;
+function _afkSaveTakeoff() {
+  try {
+    if (_afkTakeoffAt > 0) localStorage.setItem(_AFK_LS_TAKEOFF, String(_afkTakeoffAt));
+    else                   localStorage.removeItem(_AFK_LS_TAKEOFF);
+  } catch (_) {}
+}
+function _afkResetTakeoff() {
+  _afkTakeoffAt = 0;
+  _afkAirborneSince = 0;
+  _afkLastGsAbove40 = 0;
+  _afkSaveTakeoff();
+}
 function _afkTakeoffTrack(ac) {
   const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
   const now = performance.now();
@@ -10253,13 +10792,13 @@ function _afkTakeoffTrack(ac) {
     if (!_afkTakeoffAt && (now - _afkLastGsAbove40) > 10000) {
       _afkTakeoffAt = Date.now();
       _afkAirborneSince = now;
+      _afkSaveTakeoff();
     }
   } else {
     _afkLastGsAbove40 = 0;
     // Landing detection: sustained low GS at low altitude after takeoff
     if (_afkTakeoffAt && gs < 30 && (ac.alt == null || ac.alt < 500)) {
-      _afkTakeoffAt = 0; // reset for next leg
-      _afkAirborneSince = 0;
+      _afkResetTakeoff();
     }
   }
 }
@@ -10306,6 +10845,16 @@ function _afkDismissOne(id) {
     a.state.targetMs = null;
     _afkAlarms.update(id, { state: a.state });
   }
+  // v2.76.0 — every alarm that fires is auto-disabled on dismiss so it
+  // won't re-trip without the user explicitly toggling it back on. The
+  // Alerts badge counts only enabled alarms, so it visibly decrements as
+  // each alarm goes off and is dismissed.
+  _afkAlarms.update(id, { enabled: false });
+  // Refresh visuals + alarm list so the toggle flips off and any map
+  // overlay (geofence ring, waypoint highlight) is removed immediately.
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
   _afkOnDismiss(a);
   // If others remain tripped, swap audio to the next-highest-priority
   // (top-of-list) still-tripped alarm.
@@ -10327,6 +10876,11 @@ function _afkDismissAll() {
   _afkAudio.stop();
   _afkHideTripOverlay();
   _afkStopTabFlash();
+  // dismissAll() also disables every just-tripped alarm (v2.76.0) so the
+  // visible alarm list, map visuals, and badge all need to refresh.
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
   _afkUpdateBtnState();
   _afkUpdateBadge();
 }
@@ -10510,7 +11064,11 @@ function _afkAlarmShortDescription(a, includeTitle) {
     }
     return title + 'Every waypoint in the flight plan';
   }
-  if (a.type === 'cruise')       return title + 'Aircraft levels off into cruise';
+  if (a.type === 'cruise') {
+    const ft = a.params && parseFloat(a.params.cruiseAltFt);
+    if (isFinite(ft) && ft > 0) return title + 'Aircraft reaches ' + _afkFmtAltDisplay(ft);
+    return title + 'Aircraft levels off into cruise';
+  }
   if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
   if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
@@ -10538,9 +11096,24 @@ function _afkRenderAlarmList() {
     const trippedClass  = a.status === 'tripped' ? ' tripped' : '';
     const disabledClass = a.enabled ? '' : ' disabled';
     const collapsedCls  = _afkCollapsedCards.has(a.id) ? ' collapsed' : '';
+    const collapsed     = _afkCollapsedCards.has(a.id);
     const tip = _afkAlarmTooltip(a.type).replace(/"/g, '&quot;');
+    // When the card is collapsed, the editor body is hidden — so attach a
+    // settings-summary tooltip to the whole card so the user can hover to
+    // see the current configuration without expanding. Expanded cards keep
+    // the per-region tooltips (icon = type help text, subtitle = settings).
+    const cardSummary = collapsed
+      ? _afkAlarmCardSummary(a).replace(/"/g, '&quot;')
+      : '';
+    const cardTitleAttr = collapsed ? ' title="' + cardSummary + '"' : '';
+    // Drag handle and expand/collapse chevron live as a unit on the FAR LEFT
+    // of the card row (per v2.76.0 reorder). The drag handle is first so it
+    // remains the visual anchor for reordering; the chevron sits immediately
+    // after as the second column. Sound/toggle/delete continue on the right.
+    const chevronGlyph = collapsed ? '▶' : '▼';
     return '<div class="afk-card' + trippedClass + disabledClass + collapsedCls + '" data-afk-id="' + a.id + '"' +
         ' draggable="true"' +
+        cardTitleAttr +
         ' ondragstart="_afkCardDragStart(event,' + a.id + ')"' +
         ' ondragover="_afkCardDragOver(event,' + a.id + ')"' +
         ' ondragleave="_afkCardDragLeave(event)"' +
@@ -10548,13 +11121,13 @@ function _afkRenderAlarmList() {
         ' ondragend="_afkCardDragEnd(event)">' +
       '<div class="afk-card-row">' +
         '<div class="afk-card-grip" title="Drag to reorder — higher in the list = higher priority. When multiple alarms are tripped, the top one\'s sound plays.">⋮⋮</div>' +
+        '<button class="afk-card-chevron" onclick="_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">' + chevronGlyph + '</button>' +
         '<div class="afk-card-icon" title="' + tip + '">' + _afkAlarmIcon(a.type) + '</div>' +
         '<div class="afk-card-desc">' +
           '<div class="afk-card-desc-title" title="' + tip + '">' + _afkAlarmTypeLabel(a.type) + '</div>' +
           '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
         '</div>' +
         '<div class="afk-card-actions">' +
-          '<button class="afk-card-chevron" onclick="_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">▼</button>' +
           '<label class="afk-toggle" title="Enable / disable this alarm"><input type="checkbox"' + (a.enabled ? ' checked' : '') + ' onchange="_afkToggleAlarm(' + a.id + ', this.checked)"></label>' +
           '<button class="afk-icon-btn danger" onclick="_afkRemoveAlarm(' + a.id + ')" title="Delete this alarm">✕</button>' +
         '</div>' +
@@ -10563,6 +11136,58 @@ function _afkRenderAlarmList() {
     '</div>';
   }).join('');
   _afkUpdateFooterInfo();
+}
+
+// Multi-line settings summary used as a tooltip on COLLAPSED alarm cards.
+// Lists the sound, duration, enabled/disabled state, and any alarm-specific
+// settings (trigger / scope / altitude / cruise altitude / timer values) so
+// the user can hover to see the full config without expanding.
+function _afkAlarmCardSummary(a) {
+  const lines = [];
+  lines.push(_afkAlarmTypeLabel(a.type) + (a.enabled ? '' : ' (disabled)'));
+  // Type-specific settings
+  if (a.type === 'timer') {
+    lines.push(_afkFmtTimerTarget(a));
+  } else if (a.type === 'geofence') {
+    const p = a.params;
+    const tt = p.trigger === 'enter' ? 'on entry'
+             : p.trigger === 'exit'  ? 'on exit'
+             : 'on entry & exit';
+    lines.push((p.label ? p.label + ' — ' : '') + p.radiusNm.toFixed(1) + ' nm circle (' + tt + ')');
+    lines.push('Centre: ' + p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + '°');
+  } else if (a.type === 'waypoint') {
+    const s = a.params.scope;
+    if (s === 'toc')      lines.push('Scope: Top of Climb');
+    else if (s === 'tod') lines.push('Scope: Top of Descent');
+    else if (s === 'specific') {
+      const ids = a.params.fixIdents || [];
+      lines.push('Specific: ' + (ids.length ? ids.slice(0, 6).join(', ') + (ids.length > 6 ? '…' : '') : '(none picked)'));
+    } else {
+      lines.push('Scope: every waypoint');
+    }
+  } else if (a.type === 'cruise') {
+    if (a.params && isFinite(parseFloat(a.params.cruiseAltFt)) && a.params.cruiseAltFt > 0) {
+      lines.push('Target altitude: ' + _afkFmtAltDisplay(a.params.cruiseAltFt));
+    } else {
+      lines.push('Phase-based detection (no specific altitude set)');
+    }
+  } else if (a.type === 'descent') {
+    lines.push('Fires when aircraft begins sustained descent');
+  } else if (a.type === 'alt-min') {
+    const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
+    lines.push(dir + ' ' + _afkFmtAltDisplay(a.params.altFt));
+  }
+  // Common settings
+  const soundName = (_AFK_SOUNDS.find(s => s.id === (a.sound || 'digital-clock')) || {}).name || a.sound;
+  lines.push('Sound: ' + soundName);
+  const durMode = (a.params && a.params.durationMode) || 'indefinite';
+  if (durMode === 'seconds') {
+    const secs = parseInt(a.params.durationSec, 10) || 0;
+    lines.push('Sound for: ' + secs + ' s, then auto-dismiss');
+  } else {
+    lines.push('Sound for: indefinite (until dismissed)');
+  }
+  return lines.join('\n');
 }
 
 function _afkUpdateFooterInfo() {
@@ -10715,6 +11340,18 @@ function _afkRenderEditor(a) {
       body += '<div class="afk-wp-multi">' + rows + '</div>';
     }
   }
+  if (a.type === 'cruise') {
+    // Optional target cruise altitude — primary use is making the NEXT
+    // ALARM "IN" countdown ETA-predictable for cruise alarms. Empty input
+    // = phase-detector only (legacy behaviour).
+    const cAltText = a.params && a.params.cruiseAltText != null ? a.params.cruiseAltText : '';
+    const cAltFt   = a.params && isFinite(parseFloat(a.params.cruiseAltFt)) ? parseFloat(a.params.cruiseAltFt) : 0;
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Cruise altitude</span>' +
+        '<input type="text" class="afk-input" style="width:130px;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" title="Optional. When set, the NEXT ALARM countdown estimates time-to-cruise from current altitude and vertical speed. Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350).">' +
+        '<span class="afk-altmin-hint" id="afkCruiseAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + (cAltFt > 0 ? _afkFmtAltDisplay(cAltFt) : '(optional — uses phase detector if blank)') + '</span>' +
+      '</div>';
+  }
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
     const dir = (a.params && a.params.direction === 'climbing') ? 'climbing' : 'descending';
@@ -10747,6 +11384,16 @@ function _afkToggleAlarm(id, on) {
   } else if (!on && a && a.type === 'timer') {
     _afkCancelTimerSchedule(id);
     _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null });
+  } else if (on && a && (a.type === 'cruise' || a.type === 'descent')) {
+    // Toggling cruise/descent back ON acts as a manual re-arm — clear the
+    // fired sentinel so the next phase transition can fire again. (The
+    // dismiss path no longer resets fired; see _afkAlarms.dismiss.) Also
+    // reset prevAlt so the cruise crossing-detector reseeds from current
+    // altitude instead of inheriting whatever was there at last fire.
+    a.state = a.state || {};
+    a.state.fired = false;
+    if (a.type === 'cruise') a.state.prevAlt = null;
+    _afkAlarms.update(id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
   } else {
     _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
   }
@@ -10826,6 +11473,31 @@ function _afkSetAltMin(id, v) {
   if (card) {
     const sub = card.querySelector('.afk-card-desc-sub');
     if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
+// Cruise Reached alarm — optional target altitude that powers the NEXT
+// ALARM "IN" ETA. Saves the text form to localStorage so the next Cruise
+// alarm pre-fills with the user's typical cruise altitude.
+function _afkSetCruiseAlt(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const parsed = _afkParseAlt(v);
+  a.params.cruiseAltText = v || '';
+  a.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
+  // Reset the crossing-detection seed so a changed threshold re-arms cleanly
+  // instead of inheriting a stale prevAlt that might trip on the next tick.
+  a.state = a.state || {};
+  a.state.prevAlt = null;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  // Persist as the user's default so the next NEW Cruise alarm pre-fills
+  // with this value (empty input clears the saved default too).
+  _afkSetUserDefaultCruiseAltText(v || '');
+  const hint = document.getElementById('afkCruiseAltHint_' + id);
+  if (hint) {
+    hint.textContent = (a.params.cruiseAltFt > 0)
+      ? _afkFmtAltDisplay(a.params.cruiseAltFt)
+      : '(optional — uses phase detector if blank)';
   }
 }
 
@@ -10925,6 +11597,12 @@ function _afkAddAlarm(type) {
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  if (type === 'cruise') {
+    const pref = _afkGetUserDefaultCruiseAltText();
+    const parsed = pref ? _afkParseAlt(pref) : NaN;
+    base.params.cruiseAltText = pref || '';
+    base.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
+  }
   if (type === 'timer') {
     // Pre-fill from the user's last-used values (or sensible defaults if none).
     const pref = _afkGetUserTimerDefaults();
@@ -11327,17 +12005,6 @@ function _afkUpdateDataPanel(ac) {
   const hdgEl = document.getElementById('afkDpHdg');
   hdgEl.textContent = (ac.hdg != null && isFinite(ac.hdg)) ? Math.round(ac.hdg).toString().padStart(3, '0') + '°' : '—';
   document.getElementById('afkDpAlt').textContent = _afkFmtInt(ac.alt, 'ft');
-  const aglEl = document.getElementById('afkDpAgl');
-  if (aglEl) {
-    if (ac.gndAlt != null && isFinite(ac.gndAlt) && ac.alt != null && isFinite(ac.alt)) {
-      const agl = Math.max(0, ac.alt - ac.gndAlt);
-      aglEl.textContent = Math.round(agl).toLocaleString() + ' ft';
-      aglEl.className = 'afk-dp-value' + (agl < 1000 ? ' warn' : '');
-    } else {
-      aglEl.textContent = '—';
-      aglEl.className = 'afk-dp-value muted';
-    }
-  }
   document.getElementById('afkDpGs').textContent  = _afkFmtInt(ac.gs, 'kt');
   document.getElementById('afkDpIas').textContent = (ac.ias != null && isFinite(ac.ias)) ? Math.round(ac.ias) + ' kt' : '—';
   const vs = _afkPhase.vsFpm();
@@ -11394,17 +12061,60 @@ function _afkUpdateDataPanel(ac) {
   const nextEtaEl = document.getElementById('afkDpNextEta');
   const nx = _afkETA.next(ac);
   if (nx) {
-    nextEl.textContent = _afkAlarmTypeLabel(nx.alarm.type) +
-      (nx.alarm.type === 'geofence' && nx.alarm.params.label ? ' (' + nx.alarm.params.label + ')' : '');
-    nextEl.className = 'afk-dp-value';
+    const label = _afkAlarmTypeLabel(nx.alarm.type) +
+      (nx.alarm.type === 'geofence' && nx.alarm.params.label ? ' (' + nx.alarm.params.label + ')' : '') +
+      (nx.alarm.type === 'waypoint' && nx.location && nx.location.label ? ' (' + nx.location.label + ')' : '');
+    nextEl.textContent = label;
+    // Geofence + waypoint alarms have a fixed map location — make the label
+    // a click target that recentres the map on the alarm and disables the
+    // follow-aircraft mode (per [[feedback_disclosure_triangle_direction]]
+    // and the v2.75.0 follow-aircraft work).
+    if (nx.location) {
+      nextEl.className = 'afk-dp-value is-link';
+      nextEl.title = 'Click to centre the map on this alarm';
+      nextEl.onclick = () => _afkRecentreOnAlarm(nx.location);
+    } else {
+      nextEl.className = 'afk-dp-value';
+      nextEl.title = '';
+      nextEl.onclick = null;
+    }
     nextEtaEl.textContent = _afkETA.fmt(nx.etaSec);
     nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : '');
   } else {
     const armed = _afkAlarms.armedCount();
     nextEl.textContent = armed > 0 ? '(' + armed + ' armed, none ETA-predictable)' : '—';
     nextEl.className = 'afk-dp-value' + (armed > 0 ? '' : ' muted');
+    nextEl.title = '';
+    nextEl.onclick = null;
     nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted';
   }
+}
+
+// Recentre the map on a geofence/waypoint alarm. First turns off follow-A/C
+// (so the next live update doesn't snap the view back), then flies to the
+// alarm location with a smooth animation. For geofences, zooms out enough
+// to keep the ring visible alongside the centre.
+function _afkRecentreOnAlarm(loc) {
+  if (!loc || !_rgMap) return;
+  if (typeof _liveAcSetFollow === 'function') _liveAcSetFollow(false);
+  try {
+    const cur = _rgMap.getZoom();
+    let target = cur;
+    if (loc.type === 'geofence' && isFinite(loc.radiusNm) && loc.radiusNm > 0) {
+      // Approximate zoom that keeps a circle of radiusNm visible — clamped
+      // to a reasonable range so tiny fences don't punch in to street level.
+      const r = loc.radiusNm;
+      if (r > 200) target = 5;
+      else if (r > 50) target = 7;
+      else if (r > 10) target = 9;
+      else if (r > 2) target = 11;
+      else target = 12;
+      target = Math.min(target, Math.max(cur, 12));
+    } else {
+      target = Math.max(cur, 9);
+    }
+    _rgMap.flyTo([loc.lat, loc.lng], target, { animate: true, duration: 0.7 });
+  } catch (_) {}
 }
 
 function _afkToggleDataPanel() {
@@ -11463,8 +12173,8 @@ function _afkInit() {
   // live-aircraft updates (or with no live source connected at all).
   setInterval(() => {
     const ac = _liveAcLastData
-      ? { lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng), alt: _liveAcLastData.alt, gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg, gndAlt: _liveAcLastData.gndAlt }
-      : { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null, gndAlt: null };
+      ? { lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng), alt: _liveAcLastData.alt, gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg }
+      : { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null };
     _afkUpdateDataPanel(ac);
     // Tick the subtitle of any visible Timer card so its countdown is live.
     if (document.getElementById('afkConfigModal') &&
@@ -14914,7 +15624,8 @@ let _rgRadLine    = null;   // radius line during drag
 let _rgRulerLine  = null;   // measuring line during ruler phase
 let _rgHeroLayers = [];     // center-to-center hero line + midpoint label
 let _rgTileLayer  = null;   // current base tile layer
-let _rgMapSat     = false;  // false = street (default), true = satellite
+const _RG_MAP_LAYER_LS = 'simfly_aa_map_layer'; // 'sat' | 'street'
+let _rgMapSat     = false;  // false = street (default), true = satellite — restored from LS at map init
 
 // Measurement ring color is tile-mode aware: purple reads well on street tiles
 // but disappears against satellite imagery, so satellite gets a bright yellow.
@@ -15582,12 +16293,26 @@ async function _rgInitMap() {
     gp.style.zIndex = 420;
     gp.style.pointerEvents = 'none';
   }
+  // Dedicated high-z-index pane for the live-aircraft breadcrumb trail so
+  // it draws ABOVE the SimBrief route line (routeLinePane 450), waypoint
+  // markers (default markerPane 600), and route labels (routeLabelPane 650).
+  // Geofence labels (afkLabelPane 680) still float above the trail since
+  // the trail is decorative path data, not an annotation.
+  if (!_rgMap.getPane('liveAcTrailPane')) {
+    const tp = _rgMap.createPane('liveAcTrailPane');
+    tp.style.zIndex = 670;
+    tp.style.pointerEvents = 'none';
+  }
 
-  // Start on street/chart tiles (better for regional planning than satellite)
-  _rgMapSat   = false;
-  const t     = _DM_TILES.street;
+  // Restore the user's last-picked tile layer (v2.78.0+). Default street.
+  try { _rgMapSat = (localStorage.getItem(_RG_MAP_LAYER_LS) === 'sat'); }
+  catch (_) { _rgMapSat = false; }
+  const t     = _rgMapSat ? _DM_TILES.satellite : _DM_TILES.street;
   _rgTileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19, ...(t.sub ? { subdomains: t.sub } : {}) })
     .addTo(_rgMap);
+  // Sync the layer-toggle button label to whichever layer we restored.
+  const _rgLayerBtnInit = document.getElementById('rgLayerBtn');
+  if (_rgLayerBtnInit) _rgLayerBtnInit.textContent = t.label;
 
   // Attach map event handlers
   _rgMap.on('mousedown',   _rgMapMouseDown);
@@ -15596,6 +16321,36 @@ async function _rgInitMap() {
   _rgMap.on('contextmenu', _rgMapContextMenu);
   _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); if (!_rgDblClickActive) { _rgZoomedToIcao = null; _rgPreZoomState = null; } });
   _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
+  // Manual drag always wins over follow-aircraft mode — if the user grabs
+  // the map, stop chasing the plane. Programmatic panTo / setView calls do
+  // NOT fire dragstart, so the follow loop itself doesn't disable itself.
+  _rgMap.on('dragstart', () => { if (_liveAcFollow) _liveAcSetFollow(false); });
+  // Force-redraw the aircraft breadcrumb polylines on every zoomend so any
+  // phantom remnants from the canvas transform get wiped at the new zoom
+  // level. Combined with the 0.5 padding on the trail renderer, this kills
+  // the "ghost copies" the user reported on zoom in/out.
+  _rgMap.on('zoomend', () => {
+    if (_liveAcTrailGlow) { try { _liveAcTrailGlow.redraw(); } catch (_) {} }
+    if (_liveAcTrailCore) { try { _liveAcTrailCore.redraw(); } catch (_) {} }
+  });
+  // Restore any persisted breadcrumb trail (browser close / crash recovery).
+  try { _liveAcLoadTrail(); } catch (_) {}
+  // Restore the most recently plotted SimBrief flight plan from localStorage
+  // BEFORE rendering alarm visuals — waypoint-alarm rings anchor onto plan
+  // fixes, so the plan must be in memory + on the map first.
+  try {
+    const cached = _sbOfpLoadCache();
+    if (cached) {
+      _sbOfpLastData = cached;
+      _sbOfpRender(cached, { silent: true, noFit: true });
+    }
+  } catch (_) {}
+  // Restore alarm visuals — geofence rings + labels, and waypoint highlight
+  // rings. Alarms persist via _afkAlarms' _load() at DOMContentLoaded time,
+  // but the map didn't exist then, so _afkRenderGeofenceVisuals() returned
+  // early. Now that _rgMap is live, render them.
+  try { _afkRenderGeofenceVisuals(); } catch (_) {}
+  try { _afkRenderWaypointVisuals(); } catch (_) {}
 
   // Render all airport dots asynchronously so the map appears first
   setTimeout(() => {
@@ -15629,6 +16384,7 @@ function _rgCheckCategoryWarning() {
 function _rgToggleLayer() {
   if (!_rgMap || !_rgTileLayer) return;
   _rgMapSat = !_rgMapSat;
+  try { localStorage.setItem(_RG_MAP_LAYER_LS, _rgMapSat ? 'sat' : 'street'); } catch (_) {}
   const t = _rgMapSat ? _DM_TILES.satellite : _DM_TILES.street;
   _rgMap.removeLayer(_rgTileLayer);
   _rgTileLayer = L.tileLayer(t.url, {
@@ -20857,6 +21613,25 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- Live-aircraft icon picker (Shift-click on 📍 Follow A/C) — v2.77.0 -->
+<div class="modal-overlay" id="liveAcIconModal" onclick="if(event.target===this)_liveAcCloseIconPicker()">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <span class="modal-title">📍 &nbsp;Aircraft Marker Icon</span>
+      <button class="modal-close" onclick="_liveAcCloseIconPicker()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="fp-settings-hint" style="margin-bottom:0.85rem;">
+        Pick the silhouette used for the live-aircraft marker on the map. Your choice is saved locally and applies the moment you click — no Save button needed.
+      </div>
+      <div class="live-ac-icon-grid" id="liveAcIconGrid"></div>
+      <div class="fp-settings-btns" style="margin-top:1rem;">
+        <button class="npc-btn npc-btn-save" onclick="_liveAcCloseIconPicker()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="helpModal" onclick="closeHelp(event)">
   <div class="modal" style="max-width:clamp(680px,35vw,1400px);">
     <div class="modal-header">
@@ -20924,7 +21699,17 @@ function rgSendToFlightPlanner() {
             <br/>
             Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 10 seconds while the button stays active — so MSFS restarts don't require re-clicking.<br/><br/>
 
-            <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.
+            <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.<br/><br/>
+
+            <strong>📍 Follow A/C button</strong> &mdash; while a live source (FSUIPC or STKP) is active, a <strong>📍 Follow A/C</strong> button appears next to the source button. Click it to lock the map onto the aircraft &mdash; every position update smooth-pans the view (Leaflet's animated <code>panTo</code>, 400&nbsp;ms tween) so the plane stays centred without jitter on either FSUIPC's 100&nbsp;ms cadence or STKP's 10&nbsp;s polling. Zoom is preserved; only the centre changes. Manually dragging the map turns Follow off automatically, so panning around to look at something never fights the auto-centre. State persists across sessions.<br/><br/>
+
+            <strong>📍 Shift-click to pick an aircraft icon</strong> (v2.77.0+) &mdash; Shift-clicking the Follow A/C button opens a small picker with four silhouettes: <em>Airliner</em>, <em>Prop</em>, <em>Helicopter</em>, and <em>Business Jet</em>. Click any tile to switch the live-aircraft marker icon instantly &mdash; the change applies the moment you click and persists across sessions. All four icons are hand-rolled inline SVG so they stay crisp at every zoom and rotate cleanly to the live heading; the Helicopter uses a rotor-disc circle so it reads correctly at any heading.<br/><br/>
+
+            <strong>Persistent breadcrumb trail</strong> &mdash; the green flight trail (fresh + archive tiers, up to ~10,000&nbsp;nm coverage) autosaves to <code>localStorage</code> every 5&nbsp;seconds while flying, so a browser close or crash mid-flight no longer loses your flown path. On the next page load the trail is re-rendered at map-init time. Manually stopping a live source also preserves the trail (it used to wipe on every stop) so switching FSUIPC&nbsp;&rarr;&nbsp;STKP, idle gaps, and reloads all keep the same flight's track visible. As of v2.75.1 the trail draws on its own dedicated map pane (z-index 670) so it sits above the SimBrief route line and waypoint markers &mdash; you can always see where the aircraft has actually been versus the planned route. <strong>The track auto-resets when a new flight starts</strong> &mdash; defined as a fresh SimBrief flight plan being loaded (a <em>different</em> <code>time_generated</code> than the last one we cleared against) AND the aircraft being on the ground (phase = <em>ground</em>, or GS&nbsp;&lt;&nbsp;5&nbsp;kt, or GS&nbsp;&lt;&nbsp;30&nbsp;kt and ALT&nbsp;&lt;&nbsp;1000&nbsp;ft). Re-fetching the same SimBrief plan after a reload is a no-op, and loading a new plan mid-flight (e.g.&nbsp;diverting) also preserves the trail &mdash; only the unambiguous "new plan + on ground" combination wipes the breadcrumb.<br/><br/>
+
+            <strong>SimBrief flight plan persists across reload</strong> &mdash; the most recently plotted plan is saved to <code>localStorage</code> on every successful fetch (v2.75.1+). On the next page load it re-renders silently at map-init time &mdash; the route line, origin/destination rings, waypoint markers, and any waypoint-alarm rings all reappear without re-clicking <em>SimBrief Flight Plan</em>. The reload-restore path skips the success toast and the auto-fit reframe so it doesn't override your last viewport. Clicking <em>✕ Clear Flight Plan</em> wipes the cache.<br/><br/>
+
+            <strong>Active alarm visuals persist across reload</strong> &mdash; geofence rings + labels and waypoint highlight rings now reappear automatically on the next page load (v2.75.1+). Alarms themselves already survived reloads in <code>localStorage</code>, but their map visuals didn't render because the map wasn't initialised when <code>_afkInit</code> ran; the visuals are now restored at map-init time as well.
           </div>
         </div>
       </div>
@@ -21129,14 +21914,18 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires the first time the aircraft levels off into cruise. The detector is <em>adaptive</em> &mdash; it tracks the peak climb vertical speed for this flight and treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60 seconds. Works for both a Cessna 152 climbing at 700&nbsp;fpm and a Boeing 777 climbing at 3,000&nbsp;fpm without any per-aircraft tuning.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. <strong>Optional target altitude</strong> (v2.76.0+): leave the <em>Cruise altitude</em> field blank to use the original adaptive phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). Fill it in (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>) and the alarm switches to a climbing-through-target trigger AND the NEXT ALARM "IN" countdown shows live time-to-cruise computed from current altitude and vertical speed. The value persists to <code>localStorage</code> so the next new Cruise alarm pre-fills with your typical cruise altitude.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
-            <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the left of any alarm card and drag it up or down to re-rank. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
+            <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
+
+            <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
+
+            <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
             <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
@@ -21168,10 +21957,10 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Aircraft Data Panel</div>
           <div class="help-feature-desc">
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
-            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, <strong>AGL</strong>, GS, IAS, VS, PHASE. ALT MSL is altitude above mean sea level. AGL is altitude above ground level, computed as <code>MSL − ground elevation</code> using FSUIPC offset <code>0x0B4C</code> (signed int32, metres &times; 256) &mdash; STKP&rsquo;s public payload doesn&rsquo;t expose ground elevation, so AGL shows &mdash; under that source. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
-            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing), REMAINING (great-circle distance to destination &divide; current GS), DIST TO GO (great-circle nm to destination), ETA LOCAL, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
-            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (MM:SS), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude Minimum alarms are ETA-predictable; Cruise, Descent, and Phase Change alarms are not (those depend on future events that can&rsquo;t be reliably extrapolated from instantaneous state). The countdown pulses red when under 60 seconds.<br/><br/>
-            Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, so column widths stay rock-steady even as values change.<br/><br/>
+            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE. ALT MSL is altitude above mean sea level. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. A SimVar-based replacement may return in a future release. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
+            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. REMAINING (great-circle distance to destination &divide; current GS), DIST TO GO (great-circle nm to destination), ETA LOCAL, ETA UTC. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
+            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.<br/><br/>
+            Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
             <strong>FSUIPC offset note</strong> &mdash; IAS reads FSUIPC offset <code>0x02BC</code> (uint, knots&nbsp;&times;&nbsp;128). STKP doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; when STKP is the active source.
           </div>
         </div>
@@ -21198,10 +21987,110 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.78.1</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>FSUIPC live-aircraft push cadence relaxed from 2&nbsp;Hz to 1&nbsp;Hz.</strong> <code>_FSUIPC_INTERVAL</code> bumped from 500&nbsp;ms to 1000&nbsp;ms, halving the per-second JS work on the position-render pipeline (JSON parse, marker reposition, breadcrumb-trail update with distance check, phase + alarm evaluation, data-panel rebuild). Real but small CPU saving on busy machines and lighter GC pressure; track quality unchanged because the breadcrumb is decimated by distance (0.05&nbsp;nm fresh / 1.0&nbsp;nm archive), not time. STKP's 10&nbsp;s polling is untouched.</li>
+          <li><strong>Follow A/C pan tween bumped from 0.4&nbsp;s to 0.8&nbsp;s</strong> to bridge the longer gap between 1 Hz fixes so the map glides continuously instead of stepping. STKP still animates cleanly inside the wider envelope.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.78.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Wheels-up time persists across browser reloads.</strong> The ELAPSED data-panel field now survives a browser close, crash, or refresh mid-flight &mdash; the takeoff timestamp is saved to <code>localStorage</code> (<code>simfly_aa_afk_takeoff_at</code>) the moment the detector confirms takeoff (GS&nbsp;&gt;&nbsp;40&nbsp;kt sustained 10&nbsp;s) and restored at page-load. The wheels-up timestamp resets cleanly when a <strong>new flight</strong> starts &mdash; reusing the existing detector (a SimBrief plan with a different <code>time_generated</code> loaded while the aircraft is on the ground) so mid-flight reloads preserve the timer and only the unambiguous "new plan + on-ground" combination zeroes it. Landing also clears it automatically (sustained low GS + low altitude after takeoff), so the next leg of a multi-leg session starts fresh.</li>
+          <li><strong>Map layer (Satellite vs Street) persists across sessions.</strong> Toggling <strong>🛰&nbsp;Satellite</strong> / <strong>🗺&nbsp;Street</strong> in the map header now writes the choice to <code>localStorage</code> (<code>simfly_aa_map_layer</code>) and the map opens at the saved layer on every subsequent visit. Defaults to street on first use, matching prior behaviour.</li>
+          <li><strong>Descent Started alarm now has a rough ETA-to-TOD estimate.</strong> The NEXT ALARM &ldquo;IN&rdquo; countdown for a Descent alarm fills in when a SimBrief flight plan is loaded and the aircraft is well above the destination, using the classic <em>3&times; rule</em>: descent distance in nautical miles &asymp; altitude-to-lose in thousands of feet &times; 3 (equivalent to a ~3&deg; glide, with a 1,500&nbsp;ft pattern-altitude buffer baked in). Works across light singles through heavy jets without per-aircraft tuning. The alarm itself still trips on the adaptive phase detector when sustained descent actually begins &mdash; the ETA is a heads-up, not a trigger.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.77.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live-aircraft marker can now be one of four silhouettes.</strong> Pick between <strong>Airliner</strong>, <strong>Prop</strong>, <strong>Helicopter</strong>, or <strong>Business Jet</strong> &mdash; each is a hand-rolled inline SVG so it stays crisp at every zoom and rotates cleanly to the live heading. The Helicopter silhouette uses a rotor-disc circle (rotationally invariant) plus a tail boom for the heading cue, so it reads correctly at every angle. Open the picker by <strong>Shift-clicking the 📍 Follow A/C button</strong> &mdash; mirrors the existing Shift-click pattern on ✈ SimBrief Flight Plan. The grid shows a static preview of each icon; click to apply instantly (no Save button needed). Your choice persists to <code>localStorage</code> (<code>simfly_aa_ac_icon</code>) so the next session restores it automatically. Default remains the Airliner shape from prior versions.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.76.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>AGL field removed from the Aircraft Data Panel.</strong> The FSUIPC offset it relied on (<code>0x0B4C</code> &mdash; "Ground altitude metres &times; 256") frequently returns the elevation of the nearest airport reference point rather than the actual terrain directly under the aircraft, so AGL readings were off by hundreds-to-thousands of feet over hills, lakes, ridges, or anywhere away from a runway. Cleanly removed the DOM field, FSUIPC offset declaration, <code>gndAlt</code> plumbing through the live-aircraft pipeline, CSS column rule, and help text. The remaining ALT MSL stays accurate. A SimVar-based replacement (SimConnect <code>PLANE ALT ABOVE GROUND</code>, plumbed through Paul Henty's WebSocket as a named SimVar rather than a numeric offset) is a likely future direction but needs verification against your sim setup before shipping.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.76.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Cruise Reached alarm now accepts a target cruise altitude.</strong> New optional <em>Cruise altitude</em> input on the Cruise Reached card &mdash; accepts feet (<code>35000</code> or <code>35,000</code>) or flight levels (<code>FL350</code>, <code>FL&nbsp;200</code>), same parser as the Altitude alarm. When set, the alarm fires on the climbing-through crossing (so an FL280 step-climb pause won't trip an FL350 alarm) AND the NEXT ALARM "IN" countdown shows live time-to-cruise computed from current altitude and vertical speed. The value persists to <code>localStorage</code> (<code>simfly_aa_afk_cruise_alt_text</code>) so the next new Cruise alarm pre-fills with your usual cruise altitude. Leave blank to keep the legacy adaptive phase detector.</li>
+          <li><strong>Every alarm that fires is now auto-disabled on dismiss.</strong> Once an alarm sounds and you dismiss it (manually or via the seconds-mode auto-dismiss), its enable toggle flips off &mdash; re-enabling for the next use is now an explicit user action. Geofence rings + waypoint highlights disappear from the map alongside the toggle flip so you can see at a glance which alarms are still armed. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off.</li>
+          <li><strong>Collapsed alarm cards now show a settings-summary tooltip on hover.</strong> When a card is collapsed (chevron pointing right), the editor body is hidden, so hovering the card reveals a multi-line summary of every setting: type, alarm-specific params (trigger / scope / altitude / cruise altitude / waypoints), sound, and sound duration. Expanded cards keep the existing per-region tooltips.</li>
+          <li><strong>Alarm card action layout reorganised.</strong> Drag handle <code>⋮⋮</code> stays first, but the <strong>expand/collapse chevron</strong> now sits immediately after it on the FAR LEFT of the card. The enable toggle and delete button stay on the right. The chevron also uses explicit <code>▶</code> (collapsed) / <code>▼</code> (expanded) glyphs per the SimFly disclosure-triangle convention instead of CSS rotation.</li>
+          <li><strong>Aircraft track no longer leaves phantom copies on zoom.</strong> The breadcrumb canvas renderer's padding was bumped from the default 0.1 to 0.5 (canvas extends 50% beyond viewport on each axis) and the map's <code>zoomend</code> event now triggers <code>polyline.redraw()</code> on both the glow and core layers &mdash; together these wipe the ghost remnants Leaflet otherwise leaves when zooming a transformed canvas pane.</li>
+          <li><strong>📍 Follow A/C button collapses to just the pin at narrow widths.</strong> Added an early breakpoint at 1700&nbsp;px so the <em>Follow A/C</em> label drops alongside <em>Measurement</em> &mdash; both buttons sit in a dense neighbourhood of icon-heavy controls and were the first to push the toolbar onto a second row on smaller monitors.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.75.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Cruise &amp; Descent alarms now auto-dismiss correctly when <em>Sound for</em> is set to a specific time.</strong> Previously the 5&nbsp;s (or any seconds-mode) auto-dismiss fired on schedule, but the very next tick saw <code>state.fired = false</code> + phase still <em>cruise</em> and re-tripped immediately &mdash; so the alarm appeared to never turn off. Root cause: <code>_afkAlarms.dismiss()</code> reset <code>state.fired</code> for cruise/descent alarms, which broke their one-shot-per-flight contract. The reset is gone. Cruise/descent are now genuinely one-shot per flight; the next flight rearms them automatically when the aircraft returns to the <em>ground</em> phase (or you can manually rearm by toggling the alarm off/on, which now clears <code>state.fired</code>).</li>
+          <li><strong>Aircraft breadcrumb trail now draws above the SimBrief route line and waypoint markers.</strong> New dedicated map pane <code>liveAcTrailPane</code> at z-index 670 &mdash; above <code>routeLinePane</code> (450), the default <code>markerPane</code> (600), and <code>routeLabelPane</code> (650). Geofence labels (<code>afkLabelPane</code> 680) still float above the trail since they're annotations. Both the glow and core polylines now use a dedicated canvas renderer (<code>_liveAcGetTrailRenderer()</code>) pinned to that pane.</li>
+          <li><strong>Active geofences and waypoint-alarm rings re-appear automatically after a browser reload.</strong> Alarms themselves always persisted, but their map visuals (geofence rings + labels, waypoint highlight rings) didn't render on reload because the map wasn't initialised yet when <code>_afkInit</code> ran. Map init now explicitly calls <code>_afkRenderGeofenceVisuals()</code> and <code>_afkRenderWaypointVisuals()</code> right after the trail-restore step. Geofence rings appear immediately; waypoint rings restore as soon as the SimBrief flight plan is in memory (see next item).</li>
+          <li><strong>SimBrief flight plan persists across browser reload.</strong> The most recently plotted plan is saved to <code>localStorage</code> (<code>simfly_aa_sb_ofp_last</code>) on every successful fetch. On the next page load the plan re-renders silently at map-init time &mdash; route line, end-rings, waypoint markers, AND waypoint-alarm rings all reappear without re-clicking <em>SimBrief Flight Plan</em>. The reload-restore path skips the success toast and the <code>fitBounds</code> reframe so it doesn't override your last viewport. Clicking <em>✕ Clear Flight Plan</em> wipes the cache.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.75.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Follow A/C toolbar button &mdash; keep the map centred on the live aircraft.</strong> New <strong>📍 Follow A/C</strong> button appears next to <em>STKP Live</em> / <em>FSUIPC Live</em> while either source is active. Click to lock the map onto the aircraft; every position update smooth-pans (Leaflet's animated <code>panTo</code>, 400 ms tween) so the plane stays centred without jitter on either FSUIPC's 100 ms cadence or STKP's 10 s polling. The map keeps its current zoom &mdash; only the centre changes. Manually dragging the map automatically turns Follow off, so panning around to look at something never fights the auto-centre. State persists across sessions in <code>localStorage</code>.</li>
+          <li><strong>Aircraft Data Panel layout is now rock-stationary.</strong> Every field has a per-id <code>min-width</code> sized to its worst-case value (lat / lon prefixes, "fpm" arrows, ETA hours, etc.), so values centre under their label and adjacent columns never shift as readings update. The <code>NEXT ALARM</code> field also has a sensible max-width with ellipsis so a long geofence label can't push everything else off-screen.</li>
+          <li><strong>NEXT ALARM "IN" countdown now shows <code>H:MM:SS</code>.</strong> Previously formatted as <code>M:SS</code> (so a two-hour countdown read as "120:42"). Now reads as <code>2:00:42</code> &mdash; hours, minutes, and seconds, always padded.</li>
+          <li><strong>Clickable NEXT ALARM &mdash; jump straight to a geofence or waypoint alarm on the map.</strong> When the next-firing alarm is a Geofence or Waypoint, the alarm name in the Data Panel becomes a clickable link (dotted underline, accent-colour on hover). Clicking it smooth-flies the map to that alarm's location and turns Follow A/C off first so the recentre actually sticks (otherwise the next live update would snap the view back to the plane). Geofence clicks pick a zoom level that keeps the ring visible. Timer / altitude / phase-change alarms have no map location and remain plain text.</li>
+          <li><strong>Aircraft breadcrumb track persists to <code>localStorage</code>.</strong> The green flight trail (fresh + archive tiers, up to ~10,000 nm coverage) now autosaves every 5 s while flying, so a browser close or crash mid-flight no longer loses the path. On reload, the trail polyline is rendered immediately at map-init time &mdash; no need to wait for the next live-aircraft update. Manually stopping STKP / FSUIPC no longer wipes the trail either (it used to clear on every source-stop); the trail survives source-switches and idle gaps for the same flight.</li>
+          <li><strong>Track auto-resets when a new flight starts.</strong> "New flight" = a fresh SimBrief flight plan is loaded (<code>time_generated</code> differs from the last one we cleared against) AND the aircraft is on the ground (phase = <code>ground</code>, or live data shows GS &lt; 5 kt, or GS &lt; 30 kt with altitude &lt; 1000 ft). The same plan re-fetched after a browser reload is a no-op &mdash; the trail is preserved. Loading a new plan mid-flight (e.g., diverting) also preserves the trail. Only the unambiguous "new plan + on-ground" combination wipes the breadcrumb.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.74.0</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -28611,6 +29500,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="sbOfpBtn" onclick="_sbOfpButtonClick(event)" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
         <button class="rg-btn" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event)" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
         <button class="rg-btn" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event)" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
+        <button class="rg-btn" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event)" title="Keep the map centred on the live aircraft as it moves — Shift-click to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
         <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" style="display:none" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
@@ -28742,7 +29632,6 @@ function rgSendToFlightPlanner() {
           <div class="afk-dp-field"><div class="afk-dp-label">LON</div><div class="afk-dp-value" id="afkDpLon">—</div></div>
           <div class="afk-dp-field"><div class="afk-dp-label">HDG</div><div class="afk-dp-value" id="afkDpHdg">—</div></div>
           <div class="afk-dp-field" title="Altitude above mean sea level"><div class="afk-dp-label">ALT MSL</div><div class="afk-dp-value" id="afkDpAlt">—</div></div>
-          <div class="afk-dp-field" title="Altitude above ground level — requires FSUIPC (STKP source does not expose ground elevation)"><div class="afk-dp-label">AGL</div><div class="afk-dp-value" id="afkDpAgl">—</div></div>
           <div class="afk-dp-field"><div class="afk-dp-label">GS</div><div class="afk-dp-value" id="afkDpGs">—</div></div>
           <div class="afk-dp-field"><div class="afk-dp-label">IAS</div><div class="afk-dp-value" id="afkDpIas">—</div></div>
           <div class="afk-dp-field"><div class="afk-dp-label">VS</div><div class="afk-dp-value" id="afkDpVs">—</div></div>
