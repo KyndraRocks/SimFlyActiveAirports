@@ -3101,6 +3101,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     white-space:nowrap;
   }
   .rg-pulldown-row .rg-btn-label { margin-left:0.4em; }
+  /* Visual divider between functional groups inside a pulldown
+     (e.g. between "FSUIPC / Follow / Icon" and the destructive
+     "Clear Flight Plan / Clear Aircraft Track" rows). v2.84.1+. */
+  .rg-pulldown-sep { height:1px; background:rgba(255,255,255,0.12); margin:0.25rem 0.15rem; }
+  body.light-mode .rg-pulldown-sep { background:rgba(0,0,0,0.12); }
   /* Pulldown rows always show their label, even at narrow widths where
      the inline .rg-btn-label rule would otherwise hide it. */
   .rg-pulldown-row .rg-btn-label,
@@ -4018,6 +4023,135 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   .afk-card.disabled { opacity:0.55; }
   .afk-card.tripped { border-color:#ff3d5a; background:rgba(255,61,90,0.10); }
+  /* Multi-select highlight — Shift-click an alarm to add it to the
+     selection set; the "Group selected" footer button fires when ≥2 are
+     selected. v2.83.0+. */
+  .afk-card.selected { box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(0,200,255,0.35); }
+  /* Drop-onto indicator — drag one alarm onto the middle of another to
+     form a group. v2.83.0+. */
+  .afk-card.drop-onto {
+    box-shadow:inset 0 0 0 2px #00e676;
+    background:rgba(0,230,118,0.10);
+  }
+  .afk-card.drop-onto::after {
+    content:'+ Group';
+    position:absolute;
+    top:50%; left:50%; transform:translate(-50%, -50%);
+    background:rgba(0,230,118,0.92); color:#0a1822;
+    padding:0.2rem 0.55rem; border-radius:4px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:0.95rem;
+    pointer-events:none;
+    z-index:5;
+  }
+  .afk-card { position:relative; }
+  /* Group container (v2.83.0+) — wraps consecutive same-group members. */
+  .afk-group {
+    border:1px solid rgba(0,200,255,0.45);
+    background:rgba(0,200,255,0.05);
+    border-radius:8px;
+    padding:0.35rem 0.45rem 0.45rem;
+    margin:0.35rem 0;
+  }
+  body.light-mode .afk-group { background:rgba(0,150,200,0.06); border-color:rgba(0,150,200,0.55); }
+  .afk-group.tripped { border-color:#ff3d5a; background:rgba(255,61,90,0.08); }
+  .afk-group-header {
+    display:flex; align-items:center; gap:0.5rem;
+    padding-bottom:0.4rem;
+    border-bottom:1px dashed rgba(0,200,255,0.25);
+    margin-bottom:0.4rem;
+  }
+  .afk-group.tripped .afk-group-header { border-bottom-color:rgba(255,61,90,0.45); }
+  body.light-mode .afk-group-header { border-bottom-color:rgba(0,150,200,0.35); }
+  .afk-group-collapse {
+    flex:0 0 22px;
+    background:none; border:1px solid var(--border);
+    color:var(--muted); cursor:pointer;
+    width:22px; height:22px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.7rem; padding:0; line-height:1;
+  }
+  .afk-group-collapse:hover { color:var(--accent); border-color:var(--accent); }
+  .afk-group-icon { font-size:1.1rem; color:var(--accent); }
+  /* Group master-toggle (v2.83.1+) — visually identical to the per-card
+     enable toggle. The .mixed modifier paints a small amber accent so
+     mixed-state groups read as "partially armed" at a glance even when
+     `indeterminate` rendering is browser-specific. */
+  .afk-group-toggle { flex:0 0 auto; }
+  .afk-group-toggle.mixed input { accent-color:#ffaa55; }
+  .afk-group-name {
+    flex:1 1 auto;
+    font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600;
+    color:var(--text);
+    padding:0.18rem 0.4rem;
+    border-radius:4px;
+    min-width:6em; min-height:1.3em;
+    outline:none;
+  }
+  .afk-group-name:empty::before {
+    content:attr(data-placeholder);
+    color:var(--muted); font-style:italic; font-weight:500;
+  }
+  .afk-group-name:hover, .afk-group-name:focus {
+    background:rgba(0,200,255,0.08);
+    box-shadow:inset 0 0 0 1px rgba(0,200,255,0.3);
+  }
+  .afk-group-count {
+    font-family:'Rajdhani',sans-serif; font-size:0.8rem; font-weight:600;
+    color:var(--muted); letter-spacing:0.05em;
+    background:rgba(255,255,255,0.06); padding:0.12rem 0.5rem; border-radius:10px;
+  }
+  body.light-mode .afk-group-count { background:rgba(0,0,0,0.06); }
+  .afk-group-ungroup {
+    background:rgba(255,140,40,0.10);
+    border:1px solid rgba(255,140,40,0.45);
+    color:#ffaa55;
+    font-family:'Rajdhani',sans-serif; font-size:0.85rem; font-weight:600;
+    padding:0.22rem 0.55rem; border-radius:4px;
+    cursor:pointer;
+  }
+  .afk-group-ungroup:hover { background:rgba(255,140,40,0.22); color:#ffd0a0; }
+  .afk-group-body { display:flex; flex-direction:column; gap:0.35rem; }
+  .afk-group.collapsed .afk-group-body { display:none; }
+  .afk-card.grouped {
+    border-left:3px solid rgba(0,200,255,0.55);
+  }
+  .afk-card.grouped.tripped { border-left-color:#ff3d5a; }
+  /* Right-click context menu (v2.83.0+) */
+  .afk-ctx-menu {
+    position:fixed;
+    background:rgba(10,14,26,0.98);
+    border:1px solid rgba(0,200,255,0.4);
+    border-radius:6px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.55);
+    padding:0.35rem;
+    min-width:220px; max-width:340px;
+    z-index:9700;
+    font-family:'Rajdhani',sans-serif;
+    color:var(--text);
+  }
+  body.light-mode .afk-ctx-menu {
+    background:rgba(248,246,236,0.99);
+    border-color:rgba(0,150,200,0.55);
+    color:#1a1f2e;
+    box-shadow:0 8px 24px rgba(0,0,0,0.2);
+  }
+  .afk-ctx-menu-item {
+    display:block; width:100%;
+    background:none; border:none; color:inherit; text-align:left;
+    padding:0.4rem 0.65rem; border-radius:4px;
+    font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:500;
+    cursor:pointer;
+  }
+  .afk-ctx-menu-item:hover { background:rgba(0,200,255,0.15); color:var(--accent); }
+  .afk-ctx-menu-item:disabled { color:var(--muted); cursor:not-allowed; }
+  .afk-ctx-menu-item:disabled:hover { background:none; color:var(--muted); }
+  .afk-ctx-menu-sep { height:1px; background:rgba(255,255,255,0.10); margin:0.18rem 0.3rem; }
+  body.light-mode .afk-ctx-menu-sep { background:rgba(0,0,0,0.10); }
+  .afk-ctx-menu-header {
+    padding:0.3rem 0.65rem 0.15rem;
+    font-size:0.72rem; letter-spacing:0.10em; text-transform:uppercase;
+    color:var(--muted); font-weight:700;
+  }
   .afk-card-row { display:flex; align-items:center; gap:0.55rem; }
   .afk-card[draggable="true"] { cursor:default; }
   .afk-card.dragging { opacity:0.35; }
@@ -4877,7 +5011,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.82.0';
+const APP_VERSION = '2.84.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9205,6 +9339,33 @@ function _sbOfpClear() {
   if (typeof _rgUpdateToolsActive === 'function') _rgUpdateToolsActive();
 }
 
+// v2.84.1 — toast-wrapping helpers for the 🔌 Live menu's destructive
+// "Clear Flight Plan" + "Clear Aircraft Track" rows. The underlying
+// _sbOfpClear / _liveAcClearTrail functions already do the right thing;
+// these wrappers just no-op (with a soft warn toast) when there's
+// nothing to clear so the user knows the click registered.
+function _sbOfpClearUI() {
+  const hasPlot   = Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0;
+  const hasCache  = !!_sbOfpLastData;
+  if (!hasPlot && !hasCache) {
+    _aaRtToast('No SimBrief flight plan to clear.', 'warn');
+    return;
+  }
+  _sbOfpClear();
+  _aaRtToast('SimBrief flight plan cleared.', 'ok');
+}
+function _liveAcClearTrailUI() {
+  const empty = _liveAcTrailUltra.length === 0 &&
+                _liveAcTrailFresh.length === 0 &&
+                _liveAcTrailArchive.length === 0;
+  if (empty) {
+    _aaRtToast('No aircraft track to clear.', 'warn');
+    return;
+  }
+  _liveAcClearTrail();
+  _aaRtToast('Aircraft track cleared.', 'ok');
+}
+
 // ── Live aircraft — shared marker manager + per-source modules ────────────────
 // Two sources supported as of v2.67.0:
 //   (A) SimToolkitPro public API — cloud-based, 10 s polling, requires STKP
@@ -10373,7 +10534,10 @@ const _afkETA = (() => {
     const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
     if (alarm.type === 'geofence') {
       const p = alarm.params;
-      const d = _afkDistNm(ac.lat, ac.lng, p.lat, p.lng);
+      // v2.84.0 — resolve the live centre (handles dep/arr anchors).
+      const c = (typeof _afkGeofenceCenter === 'function') ? _afkGeofenceCenter(p) : { lat: p.lat, lng: p.lng };
+      if (!c) return NaN;
+      const d = _afkDistNm(ac.lat, ac.lng, c.lat, c.lng);
       if (!isFinite(d)) return NaN;
       const inside = d < p.radiusNm;
       if (p.trigger === 'enter') {
@@ -10478,9 +10642,12 @@ const _afkETA = (() => {
   function locationOf(alarm) {
     if (!alarm) return null;
     if (alarm.type === 'geofence' && alarm.params) {
-      const la = parseFloat(alarm.params.lat), ln = parseFloat(alarm.params.lng);
-      if (isFinite(la) && isFinite(ln)) {
-        return { lat: la, lng: ln, type: 'geofence', radiusNm: parseFloat(alarm.params.radiusNm) };
+      // v2.84.0 — anchor-aware. Dep/arr-anchored fences only have a
+      // location while a SimBrief plan is loaded; coords-anchored ones
+      // always do.
+      const c = (typeof _afkGeofenceCenter === 'function') ? _afkGeofenceCenter(alarm.params) : null;
+      if (c) {
+        return { lat: c.lat, lng: c.lng, type: 'geofence', radiusNm: parseFloat(alarm.params.radiusNm) };
       }
     }
     if (alarm.type === 'waypoint') {
@@ -10504,7 +10671,9 @@ const _AFK_LS_DP         = 'simfly_aa_afk_dp_collapsed';
 const _AFK_LS_DUR_SEC    = 'simfly_aa_afk_alarm_duration_sec'; // user's preferred seconds value
 const _AFK_LS_CARDS_COLL = 'simfly_aa_afk_collapsed_cards';    // Array<number> of card ids
 const _AFK_LS_CRUISE_ALT = 'simfly_aa_afk_cruise_alt_text';    // last-entered cruise altitude (v2.76.0+)
+const _AFK_LS_GROUPS     = 'simfly_aa_afk_groups';             // alarm groups (v2.83.0+)
 let _afkAlarmIdSeq       = 1;
+let _afkGroupIdSeq       = 1;
 
 // Per-alarm collapsed-card state. Default new cards are expanded so the
 // user sees options immediately; user-collapsed state is persisted by id.
@@ -10827,10 +10996,206 @@ const _afkAlarms = (() => {
   return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, reorder, flightPlanChanged };
 })();
 
+// ---------------------- ALARM GROUPS (v2.83.0+) --------------------------
+// An "alarm group" is a logical bundle of 2+ alarms that the user wants to
+// treat as one. Each alarm carries an optional `groupId` (string). The
+// group registry below stores per-group metadata — optional `name` and
+// `collapsed` state. When any single member of a group is dismissed (by
+// user click or by the seconds-mode auto-dismiss timer), the cascade
+// disables, dismisses, and stops audio for EVERY member at once — that
+// matches the user's "dismiss all + disable all" decision.
+//
+// Groups don't persist alarm ordering themselves — the render path keeps
+// members adjacent in `_afkAlarms.list()` because group containers wrap
+// consecutive same-group alarms.
+const _afkGroups = (() => {
+  // id (string) → { id, name, collapsed }
+  let groups = {};
+
+  function _load() {
+    try {
+      const raw = localStorage.getItem(_AFK_LS_GROUPS);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== 'object') return;
+      groups = {};
+      Object.keys(obj).forEach(k => {
+        const g = obj[k];
+        if (!g || !g.id) return;
+        groups[g.id] = { id: g.id, name: g.name || '', collapsed: !!g.collapsed };
+        // Keep the id sequence ahead of any persisted id ("g7" → seq 8).
+        const m = String(g.id).match(/^g(\d+)$/);
+        if (m) { const n = parseInt(m[1], 10); if (n >= _afkGroupIdSeq) _afkGroupIdSeq = n + 1; }
+      });
+    } catch (_) {}
+  }
+  function _save() {
+    try { localStorage.setItem(_AFK_LS_GROUPS, JSON.stringify(groups)); } catch (_) {}
+  }
+
+  function list()        { return Object.values(groups); }
+  function get(id)       { return groups[id] || null; }
+  function nextId()      { return 'g' + (_afkGroupIdSeq++); }
+
+  // Create a new group with the given member alarm ids. Stamps `groupId`
+  // onto each member alarm and moves them adjacent in the alarm list so
+  // the render path can wrap them in one container.
+  function create(memberIds, name) {
+    if (!Array.isArray(memberIds) || memberIds.length < 2) return null;
+    // Filter out any members already in OTHER groups — they need to leave
+    // their existing group before joining a new one (auto-dissolve any
+    // single-member leftovers).
+    const ids = memberIds.filter(id => {
+      const a = _afkAlarms.get(id);
+      return a && !a.groupId;
+    });
+    if (ids.length < 2) return null;
+    const gid = nextId();
+    groups[gid] = { id: gid, name: name || '', collapsed: false };
+    ids.forEach(id => _afkAlarms.update(id, { groupId: gid }));
+    _adjacenitise(gid);
+    _save();
+    return groups[gid];
+  }
+
+  function rename(id, name) {
+    const g = groups[id]; if (!g) return;
+    g.name = name || '';
+    _save();
+  }
+  function setCollapsed(id, on) {
+    const g = groups[id]; if (!g) return;
+    g.collapsed = !!on;
+    _save();
+  }
+
+  // Add an existing ungrouped alarm to an existing group.
+  function addMember(gid, alarmId) {
+    if (!groups[gid]) return;
+    const a = _afkAlarms.get(alarmId); if (!a) return;
+    if (a.groupId === gid) return;
+    if (a.groupId) removeMember(alarmId); // moves it out cleanly; may dissolve
+    _afkAlarms.update(alarmId, { groupId: gid });
+    _adjacenitise(gid);
+    _save();
+  }
+
+  // Remove an alarm from its current group. If the group drops to one
+  // remaining member, auto-dissolve (clear the lone member's groupId).
+  function removeMember(alarmId) {
+    const a = _afkAlarms.get(alarmId); if (!a || !a.groupId) return;
+    const gid = a.groupId;
+    _afkAlarms.update(alarmId, { groupId: null });
+    const remaining = _afkAlarms.list().filter(x => x.groupId === gid);
+    if (remaining.length <= 1) {
+      remaining.forEach(x => _afkAlarms.update(x.id, { groupId: null }));
+      delete groups[gid];
+    }
+    _save();
+  }
+
+  // Remove an entire group (ungroup) — every member becomes standalone.
+  function ungroup(gid) {
+    if (!groups[gid]) return;
+    _afkAlarms.list().forEach(a => {
+      if (a.groupId === gid) _afkAlarms.update(a.id, { groupId: null });
+    });
+    delete groups[gid];
+    _save();
+  }
+
+  // Member ids in current list order.
+  function membersOf(gid) {
+    return _afkAlarms.list().filter(a => a.groupId === gid).map(a => a.id);
+  }
+
+  // Sweep the alarm list and move every member of `gid` to be adjacent —
+  // keeping the FIRST member in place and gathering the rest immediately
+  // after. Maintains user-chosen priority ordering as much as possible.
+  function _adjacenitise(gid) {
+    const all = _afkAlarms.list();
+    const members = all.filter(a => a.groupId === gid).map(a => a.id);
+    if (members.length < 2) return;
+    const anchorId = members[0];
+    // Bring each subsequent member to just-after the running tail.
+    let tailId = anchorId;
+    for (let i = 1; i < members.length; i++) {
+      _afkAlarms.reorder(members[i], tailId, 'after');
+      tailId = members[i];
+    }
+  }
+
+  // Drop persisted groups that no longer have ≥ 2 members (e.g. saved
+  // alarms got deleted while the modal was closed). Called at init.
+  function _gc() {
+    Object.keys(groups).forEach(gid => {
+      const mems = _afkAlarms.list().filter(a => a.groupId === gid);
+      if (mems.length <= 1) {
+        mems.forEach(a => _afkAlarms.update(a.id, { groupId: null }));
+        delete groups[gid];
+      }
+    });
+    _save();
+  }
+
+  // Insert a group record directly with a pre-chosen id — used by the
+  // import path to restore a group whose members were re-added with
+  // their original (remapped) `groupId` already in place. Skips the
+  // normal "create needs ≥ 2 members" gate because membership is
+  // already linked through the imported alarms.
+  function _injectFromImport(gid, meta) {
+    groups[gid] = {
+      id: gid,
+      name: (meta && meta.name) || '',
+      collapsed: !!(meta && meta.collapsed),
+    };
+    _save();
+  }
+
+  _load();
+  // GC runs after _afkAlarms has loaded — _afkInit handles ordering.
+  return { list, get, create, rename, setCollapsed, addMember, removeMember, ungroup, membersOf, _gc, nextId, _injectFromImport };
+})();
+
 // ---------------------- EVALUATORS ----------------------------------------
+
+// v2.84.0 — geofences can be anchored to the active SimBrief flight plan
+// rather than a fixed lat/lng. anchor='coords' (default; uses params.lat
+// /lng), 'dep' (live origin from _sbOfpLastData), or 'arr' (live destination).
+// Returns null when the anchor can't currently be resolved (no plan loaded
+// for a dep/arr-anchored fence) — callers treat that as "skip / suppress".
+function _afkGeofenceCenter(p) {
+  if (!p) return null;
+  const a = p.anchor || 'coords';
+  if (a === 'dep' || a === 'arr') {
+    const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    if (!fp) return null;
+    const node = (a === 'dep') ? fp.origin : fp.destination;
+    if (!node) return null;
+    const lat = parseFloat(node.pos_lat);
+    const lng = parseFloat(node.pos_long);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    return { lat, lng, icao: (node.icao_code || '') };
+  }
+  const lat = parseFloat(p.lat);
+  const lng = parseFloat(p.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  return { lat, lng };
+}
+function _afkGeofenceAnchorLabel(p) {
+  const a = p && p.anchor;
+  if (a === 'dep') return 'Departure airport';
+  if (a === 'arr') return 'Arrival airport';
+  return 'Drawn on map';
+}
+
 function _afkEvalGeofence(alarm, ac) {
   const p = alarm.params;
-  const d = _afkDistNm(ac.lat, ac.lng, p.lat, p.lng);
+  const c = _afkGeofenceCenter(p);
+  // Dep/arr-anchored fence with no plan loaded: nothing to evaluate, and
+  // don't poison wasInside — wait for the plan to appear and re-anchor.
+  if (!c) { if (alarm.state) alarm.state.wasInside = null; return false; }
+  const d = _afkDistNm(ac.lat, ac.lng, c.lat, c.lng);
   if (!isFinite(d)) return false;
   const inside = d < p.radiusNm;
   const s = alarm.state;
@@ -11041,6 +11406,16 @@ function _afkTick(data) {
       }
       _afkRenderWaypointVisuals();
     }
+    // v2.84.0 — any plan change (or plan first appearing / disappearing)
+    // can shift dep/arr-anchored geofences. Reset their wasInside flag so
+    // a "moved underneath the aircraft" anchor change doesn't immediately
+    // trip an enter event, then re-render.
+    _afkAlarms.list().forEach(a => {
+      if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) {
+        if (a.state) a.state.wasInside = null;
+      }
+    });
+    _afkRenderGeofenceVisuals();
     _afkLastSbFingerprint = fpFp;
   }
   const _prevPhase = _afkPhase.get();
@@ -11152,30 +11527,36 @@ function _afkOnDismiss(alarm) {
 function _afkDismissOne(id) {
   const a = _afkAlarms.get(id);
   if (!a) return;
-  _afkClearAlarmTimer(id);
-  // Timer alarms — once dismissed, don't re-fire from the past targetMs.
-  // The card subtitle reflects this; user must toggle off/on or edit
-  // the time to re-arm.
-  if (a.type === 'timer') {
-    _afkCancelTimerSchedule(id);
-    a.state.fired = true;
-    a.state.targetMs = null;
-    _afkAlarms.update(id, { state: a.state });
-  }
-  // v2.76.0 — every alarm that fires is auto-disabled on dismiss so it
-  // won't re-trip without the user explicitly toggling it back on. The
-  // Alerts badge counts only enabled alarms, so it visibly decrements as
-  // each alarm goes off and is dismissed.
-  _afkAlarms.update(id, { enabled: false });
-  // Refresh visuals + alarm list so the toggle flips off and any map
-  // overlay (geofence ring, waypoint highlight) is removed immediately.
+  // v2.83.0 — if the dismissed alarm is part of a GROUP, dismiss-and-
+  // disable EVERY member at once. Matches the "aggressive cascade" rule
+  // the user picked: one fires, the whole group is treated as done.
+  const cascadeIds = a.groupId
+    ? _afkAlarms.list().filter(x => x.groupId === a.groupId).map(x => x.id)
+    : [id];
+  cascadeIds.forEach(cid => {
+    const ca = _afkAlarms.get(cid);
+    if (!ca) return;
+    _afkClearAlarmTimer(cid);
+    if (ca.type === 'timer') {
+      _afkCancelTimerSchedule(cid);
+      ca.state = ca.state || {};
+      ca.state.fired    = true;
+      ca.state.targetMs = null;
+      _afkAlarms.update(cid, { state: ca.state });
+    }
+    // Dismiss the tripped status (so the overlay row clears) THEN disable
+    // so the alarm doesn't immediately re-trip on the next tick.
+    if (ca.status === 'tripped') _afkOnDismiss(ca);
+    _afkAlarms.update(cid, { enabled: false });
+  });
+  // Refresh visuals + alarm list so toggles flip off and any map overlays
+  // (geofence rings, waypoint highlights) for cascaded members disappear.
   _afkRenderAlarmList();
   _afkRenderGeofenceVisuals();
   _afkRenderWaypointVisuals();
-  _afkOnDismiss(a);
-  // If others remain tripped, swap audio to the next-highest-priority
-  // (top-of-list) still-tripped alarm.
-  const remaining = _afkAlarms.tripped(); // list order
+  // If others remain tripped (different group / standalone), swap audio
+  // to the next-highest-priority still-tripped alarm.
+  const remaining = _afkAlarms.tripped();
   if (remaining.length > 0) {
     _afkAudio.play(remaining[0].sound || 'digital-clock');
   } else {
@@ -11226,12 +11607,19 @@ function _afkExportAlarms() {
     _aaRtToast('🔔 No alarms to save.', 'warn');
     return;
   }
+  // Build a { id → group } map of just the groups that have ≥ 2 current
+  // members. Alarms keep their `groupId` strings so the import path can
+  // remap them onto fresh local group ids.
+  const usedGroupIds = new Set(alarms.filter(a => a.groupId).map(a => a.groupId));
+  const groups = {};
+  _afkGroups.list().forEach(g => { if (usedGroupIds.has(g.id)) groups[g.id] = g; });
   const payload = {
     app:     'SimFly Active Airports',
     section: 'alarms',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     alarms:  alarms,
+    groups:  groups,  // v2 (v2.83.0+) — alarm groups bundled alongside
   };
   try {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -11287,8 +11675,14 @@ function _afkImportAlarms(input) {
     _afkAudio.stop();
     _afkHideTripOverlay();
     _afkStopTabFlash();
+    // v2.83.0 — alarm-group remap. Each imported `groupId` gets a fresh
+    // local id so group records from the file never collide with ones
+    // already in our `_afkGroups` registry.
+    const groupRemap = {};
+    const fileGroups = (payload.groups && typeof payload.groups === 'object') ? payload.groups : {};
     // Insert the imported alarms one at a time so each gets a fresh id
     // assignment + immediate persistence + sound-pre-load via _afkAlarms.add.
+    const importedIds = [];
     incoming.forEach(raw => {
       // Strip transient state — every imported alarm starts armed, not
       // tripped, with no fired/auto-dismiss state from the previous setup.
@@ -11305,10 +11699,25 @@ function _afkImportAlarms(input) {
         a.state = Object.assign({}, a.state);
         a.state.tripped = false;
       }
+      // Remap group id (if any) before insertion so the alarm record
+      // points at the fresh local group we'll create below.
+      if (a.groupId) {
+        if (!groupRemap[a.groupId]) groupRemap[a.groupId] = _afkGroups.nextId();
+        a.groupId = groupRemap[a.groupId];
+      }
       const added = _afkAlarms.add(a);
+      importedIds.push(added.id);
       if (a.type === 'timer' && added && added.enabled) {
         _afkScheduleTimer(_afkAlarms.get(added.id));
       }
+    });
+    // Rebuild the groups for the remapped ids using metadata from the file.
+    Object.keys(groupRemap).forEach(origGid => {
+      const newGid = groupRemap[origGid];
+      const meta = fileGroups[origGid] || {};
+      // Re-use the existing internal create path by setting a known record
+      // directly (members are already linked via their `groupId`).
+      _afkGroups._injectFromImport(newGid, { id: newGid, name: meta.name || '', collapsed: !!meta.collapsed });
     });
     _afkRenderAlarmList();
     _afkRenderGeofenceVisuals();
@@ -11476,8 +11885,20 @@ function _afkAlarmShortDescription(a, includeTitle) {
     const tt = p.trigger === 'enter' ? 'Alert on Entry'
              : p.trigger === 'exit'  ? 'Alert on Exit'
              : 'Alert on Entry & Exit';
+    // v2.84.0 — anchor-aware summary. Plan-relative fences show the
+    // anchor + live ICAO instead of (possibly meaningless) lat/lng.
+    if (p.anchor === 'dep' || p.anchor === 'arr') {
+      const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+      const node = fp ? (p.anchor === 'dep' ? fp.origin : fp.destination) : null;
+      const icao = node && node.icao_code ? node.icao_code : '—';
+      const tag  = p.anchor === 'dep' ? '@DEP' : '@ARR';
+      return title + label + p.radiusNm.toFixed(1) + ' nm circle around ' + tag + ' ' + icao + ' — ' + tt;
+    }
+    if (!isFinite(parseFloat(p.lat)) || !isFinite(parseFloat(p.lng))) {
+      return title + label + p.radiusNm.toFixed(1) + ' nm circle — ' + tt;
+    }
     return title + label + p.radiusNm.toFixed(1) + ' nm circle at ' +
-      p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + ' — ' + tt;
+      parseFloat(p.lat).toFixed(3) + '°, ' + parseFloat(p.lng).toFixed(3) + ' — ' + tt;
   }
   if (a.type === 'waypoint') {
     const s = a.params.scope;
@@ -11508,6 +11929,104 @@ function _afkSoundOptionsHtml(selectedId) {
   ).join('');
 }
 
+// Build the HTML for a single alarm card. Extracted from _afkRenderAlarmList
+// in v2.83.0 so group containers can reuse the exact same per-card markup
+// for grouped members.
+function _afkRenderCardHtml(a) {
+  const trippedClass  = a.status === 'tripped' ? ' tripped' : '';
+  const disabledClass = a.enabled ? '' : ' disabled';
+  const collapsedCls  = _afkCollapsedCards.has(a.id) ? ' collapsed' : '';
+  const collapsed     = _afkCollapsedCards.has(a.id);
+  const selectedCls   = (typeof _afkSelectedIds !== 'undefined' && _afkSelectedIds.has(a.id)) ? ' selected' : '';
+  const groupedCls    = a.groupId ? ' grouped' : '';
+  const tip = _afkAlarmTooltip(a.type).replace(/"/g, '&quot;');
+  const cardSummary = collapsed ? _afkAlarmCardSummary(a).replace(/"/g, '&quot;') : '';
+  const cardTitleAttr = collapsed ? ' title="' + cardSummary + '"' : '';
+  const chevronGlyph = collapsed ? '▶' : '▼';
+  return '<div class="afk-card' + trippedClass + disabledClass + collapsedCls + selectedCls + groupedCls + '" data-afk-id="' + a.id + '"' +
+      ' draggable="true"' +
+      cardTitleAttr +
+      ' onclick="_afkCardOnClick(event,' + a.id + ')"' +
+      ' oncontextmenu="_afkCardContextMenu(event,' + a.id + ')"' +
+      ' ondragstart="_afkCardDragStart(event,' + a.id + ')"' +
+      ' ondragover="_afkCardDragOver(event,' + a.id + ')"' +
+      ' ondragleave="_afkCardDragLeave(event)"' +
+      ' ondrop="_afkCardDrop(event,' + a.id + ')"' +
+      ' ondragend="_afkCardDragEnd(event)">' +
+    '<div class="afk-card-row">' +
+      '<div class="afk-card-grip" title="Drag to reorder — higher in the list = higher priority. When multiple alarms are tripped, the top one\'s sound plays. Drop one alarm onto another to form a GROUP — group members fire together and dismissing any one dismisses + disables all.">⋮⋮</div>' +
+      '<button class="afk-card-chevron" onclick="event.stopPropagation();_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">' + chevronGlyph + '</button>' +
+      '<div class="afk-card-icon" title="' + tip + '">' + _afkAlarmIcon(a.type) + '</div>' +
+      '<div class="afk-card-desc">' +
+        '<div class="afk-card-desc-title" title="' + tip + '">' + _afkAlarmTypeLabel(a.type) + '</div>' +
+        '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
+      '</div>' +
+      '<div class="afk-card-actions">' +
+        '<label class="afk-toggle" title="Enable / disable this alarm" onclick="event.stopPropagation()"><input type="checkbox"' + (a.enabled ? ' checked' : '') + ' onchange="_afkToggleAlarm(' + a.id + ', this.checked)"></label>' +
+        '<button class="afk-icon-btn danger" onclick="event.stopPropagation();_afkRemoveAlarm(' + a.id + ')" title="Delete this alarm">✕</button>' +
+      '</div>' +
+    '</div>' +
+    _afkRenderEditor(a) +
+  '</div>';
+}
+
+// Build the HTML for a group container wrapping `members` (the member
+// alarms in current list order). v2.83.0+. The container has a header
+// with: optional name (click to rename), collapse triangle, member-count
+// chip, and an ungroup button. Members are rendered as normal cards
+// inside the container's body.
+function _afkRenderGroupHtml(gid, members) {
+  const g = _afkGroups.get(gid);
+  if (!g) return members.map(_afkRenderCardHtml).join('');
+  const collapsedCls = g.collapsed ? ' collapsed' : '';
+  const trippedAny   = members.some(m => m.status === 'tripped');
+  const trippedCls   = trippedAny ? ' tripped' : '';
+  const name         = (g.name || '').replace(/"/g, '&quot;');
+  const placeholder  = 'Group of ' + members.length + ' alarms…';
+  // Master toggle reflects the COMBINED enabled state of every member:
+  //   • all on  → checked
+  //   • all off → unchecked
+  //   • mixed   → indeterminate (set via JS post-render in _afkApplyGroupCheckboxStates)
+  // Click cascades to every member: if any are off, enable all; else disable all.
+  const enabledCount = members.filter(m => m.enabled).length;
+  const allEnabled   = enabledCount === members.length;
+  const mixedClass   = (enabledCount > 0 && enabledCount < members.length) ? ' mixed' : '';
+  return '<div class="afk-group' + collapsedCls + trippedCls + '" data-group-id="' + gid + '">' +
+    '<div class="afk-group-header">' +
+      '<button class="afk-group-collapse" onclick="event.stopPropagation();_afkGroupToggleCollapse(\'' + gid + '\')" title="Expand / collapse the whole group">' + (g.collapsed ? '▶' : '▼') + '</button>' +
+      '<label class="afk-toggle afk-group-toggle' + mixedClass + '" title="Enable / disable every alarm in this group at once. A mixed state (some on, some off) toggles to ALL enabled on click." onclick="event.stopPropagation()">' +
+        '<input type="checkbox" id="afkGrpTog_' + gid + '" data-group-toggle="' + gid + '"' + (allEnabled ? ' checked' : '') + ' onchange="_afkGroupToggleAll(\'' + gid + '\', this.checked)">' +
+      '</label>' +
+      '<span class="afk-group-icon" title="Group of ' + members.length + ' alarms — they fire together; dismissing any one dismisses + disables all">⛓</span>' +
+      '<span class="afk-group-name" contenteditable="true" spellcheck="false" ' +
+            'data-placeholder="' + placeholder + '" ' +
+            'onblur="_afkGroupRenameBlur(event,\'' + gid + '\')" ' +
+            'onkeydown="_afkGroupRenameKey(event,\'' + gid + '\')" ' +
+            'title="Click to rename the group">' + name + '</span>' +
+      '<span class="afk-group-count">' + members.length + ' member' + (members.length === 1 ? '' : 's') + '</span>' +
+      '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
+    '</div>' +
+    '<div class="afk-group-body">' +
+      members.map(_afkRenderCardHtml).join('') +
+    '</div>' +
+  '</div>';
+}
+
+// Post-render pass: apply the JS-only `indeterminate` property to any
+// group master checkbox whose members are in a mixed enabled state. The
+// HTML `checked` attribute can't express indeterminate, so we set it on
+// the live DOM nodes after _afkRenderAlarmList stamps them out.
+function _afkApplyGroupCheckboxStates() {
+  document.querySelectorAll('input[data-group-toggle]').forEach(box => {
+    const gid     = box.getAttribute('data-group-toggle');
+    const members = _afkAlarms.list().filter(a => a.groupId === gid);
+    if (members.length === 0) return;
+    const on  = members.filter(m => m.enabled).length;
+    const off = members.length - on;
+    box.indeterminate = (on > 0 && off > 0);
+  });
+}
+
 function _afkRenderAlarmList() {
   const list = document.getElementById('afkAlarmList');
   if (!list) return;
@@ -11517,56 +12036,32 @@ function _afkRenderAlarmList() {
     _afkUpdateFooterInfo();
     return;
   }
-  // v2.82.0 — dedicated top-of-list drop target so reordering an alarm to
-  // position 0 no longer needs precise placement on the first card's top
-  // half. The bottom-of-list zone gives the same affordance for moving to
-  // last. Both zones expand visibly while a drag is in progress.
+  // v2.82.0 — dedicated top/bottom-of-list drop targets so reordering to
+  // position 0 / last no longer needs precise placement on a card's top
+  // or bottom half.
   const topZone    = '<div class="afk-list-drop-zone afk-list-drop-zone-top" ondragover="_afkListZoneOver(event,\'top\')" ondragleave="_afkListZoneLeave(event)" ondrop="_afkListZoneDrop(event,\'top\')"></div>';
   const bottomZone = '<div class="afk-list-drop-zone afk-list-drop-zone-bottom" ondragover="_afkListZoneOver(event,\'bottom\')" ondragleave="_afkListZoneLeave(event)" ondrop="_afkListZoneDrop(event,\'bottom\')"></div>';
-  list.innerHTML = topZone + items.map(a => {
-    const trippedClass  = a.status === 'tripped' ? ' tripped' : '';
-    const disabledClass = a.enabled ? '' : ' disabled';
-    const collapsedCls  = _afkCollapsedCards.has(a.id) ? ' collapsed' : '';
-    const collapsed     = _afkCollapsedCards.has(a.id);
-    const tip = _afkAlarmTooltip(a.type).replace(/"/g, '&quot;');
-    // When the card is collapsed, the editor body is hidden — so attach a
-    // settings-summary tooltip to the whole card so the user can hover to
-    // see the current configuration without expanding. Expanded cards keep
-    // the per-region tooltips (icon = type help text, subtitle = settings).
-    const cardSummary = collapsed
-      ? _afkAlarmCardSummary(a).replace(/"/g, '&quot;')
-      : '';
-    const cardTitleAttr = collapsed ? ' title="' + cardSummary + '"' : '';
-    // Drag handle and expand/collapse chevron live as a unit on the FAR LEFT
-    // of the card row (per v2.76.0 reorder). The drag handle is first so it
-    // remains the visual anchor for reordering; the chevron sits immediately
-    // after as the second column. Sound/toggle/delete continue on the right.
-    const chevronGlyph = collapsed ? '▶' : '▼';
-    return '<div class="afk-card' + trippedClass + disabledClass + collapsedCls + '" data-afk-id="' + a.id + '"' +
-        ' draggable="true"' +
-        cardTitleAttr +
-        ' ondragstart="_afkCardDragStart(event,' + a.id + ')"' +
-        ' ondragover="_afkCardDragOver(event,' + a.id + ')"' +
-        ' ondragleave="_afkCardDragLeave(event)"' +
-        ' ondrop="_afkCardDrop(event,' + a.id + ')"' +
-        ' ondragend="_afkCardDragEnd(event)">' +
-      '<div class="afk-card-row">' +
-        '<div class="afk-card-grip" title="Drag to reorder — higher in the list = higher priority. When multiple alarms are tripped, the top one\'s sound plays.">⋮⋮</div>' +
-        '<button class="afk-card-chevron" onclick="_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">' + chevronGlyph + '</button>' +
-        '<div class="afk-card-icon" title="' + tip + '">' + _afkAlarmIcon(a.type) + '</div>' +
-        '<div class="afk-card-desc">' +
-          '<div class="afk-card-desc-title" title="' + tip + '">' + _afkAlarmTypeLabel(a.type) + '</div>' +
-          '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
-        '</div>' +
-        '<div class="afk-card-actions">' +
-          '<label class="afk-toggle" title="Enable / disable this alarm"><input type="checkbox"' + (a.enabled ? ' checked' : '') + ' onchange="_afkToggleAlarm(' + a.id + ', this.checked)"></label>' +
-          '<button class="afk-icon-btn danger" onclick="_afkRemoveAlarm(' + a.id + ')" title="Delete this alarm">✕</button>' +
-        '</div>' +
-      '</div>' +
-      _afkRenderEditor(a) +
-    '</div>';
-  }).join('') + bottomZone;
+  // v2.83.0 — walk the alarm list and wrap consecutive same-group members
+  // in a group container. Non-grouped alarms render as plain cards.
+  // Groups render at the position of their FIRST member; subsequent
+  // same-group members are skipped (they're already inside the container).
+  const renderedGroups = new Set();
+  const parts = [];
+  for (let i = 0; i < items.length; i++) {
+    const a = items[i];
+    if (a.groupId) {
+      if (renderedGroups.has(a.groupId)) continue;
+      const members = items.filter(x => x.groupId === a.groupId);
+      parts.push(_afkRenderGroupHtml(a.groupId, members));
+      renderedGroups.add(a.groupId);
+    } else {
+      parts.push(_afkRenderCardHtml(a));
+    }
+  }
+  list.innerHTML = topZone + parts.join('') + bottomZone;
   _afkUpdateFooterInfo();
+  _afkUpdateGroupSelectedBtn();
+  _afkApplyGroupCheckboxStates();
 }
 
 // Drop-zone handlers for the top/bottom of the alarm list (v2.82.0+).
@@ -11584,6 +12079,11 @@ function _afkListZoneDrop(ev, where) {
   ev.preventDefault();
   const items = _afkAlarms.list();
   if (items.length === 0) return;
+  // v2.83.0 — dragging a grouped alarm to the very top or bottom of the
+  // list pulls it OUT of its group first (so the group renders cleanly
+  // without a member that's no longer adjacent).
+  const src = _afkAlarms.get(_afkDragFromId);
+  if (src && src.groupId) _afkGroups.removeMember(_afkDragFromId);
   const targetId  = (where === 'top') ? items[0].id : items[items.length - 1].id;
   const position  = (where === 'top') ? 'before'   : 'after';
   _afkAlarms.reorder(_afkDragFromId, targetId, position);
@@ -11613,7 +12113,16 @@ function _afkAlarmCardSummary(a) {
              : p.trigger === 'exit'  ? 'on exit'
              : 'on entry & exit';
     lines.push((p.label ? p.label + ' — ' : '') + p.radiusNm.toFixed(1) + ' nm circle (' + tt + ')');
-    lines.push('Centre: ' + p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + '°');
+    // v2.84.0 — show the anchor (and live ICAO when available) for
+    // plan-relative fences; coords-anchored fences keep their lat/lng.
+    if (p.anchor === 'dep' || p.anchor === 'arr') {
+      const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+      const node = fp ? (p.anchor === 'dep' ? fp.origin : fp.destination) : null;
+      const icao = node && node.icao_code ? node.icao_code : '(no plan loaded)';
+      lines.push('Anchor: ' + (p.anchor === 'dep' ? 'Departure' : 'Arrival') + ' airport — ' + icao);
+    } else if (isFinite(parseFloat(p.lat)) && isFinite(parseFloat(p.lng))) {
+      lines.push('Centre: ' + parseFloat(p.lat).toFixed(3) + '°, ' + parseFloat(p.lng).toFixed(3) + '°');
+    }
   } else if (a.type === 'waypoint') {
     const s = a.params.scope;
     if (s === 'toc')      lines.push('Scope: Top of Climb');
@@ -11671,49 +12180,331 @@ function _afkCardDragStart(ev, id) {
   const list = document.getElementById('afkAlarmList');
   if (list) list.classList.add('dragging-alarm');
 }
+// v2.83.0 — three drop zones per card: top 30% = drop-before (reorder
+// above), bottom 30% = drop-after (reorder below), middle 40% = drop-onto
+// (form / extend a group with the source alarm). The middle zone gets a
+// distinct accent highlight + "+ Group" label so the user can see they're
+// about to group rather than reorder.
+function _afkCardDragZone(ev, card) {
+  const r = card.getBoundingClientRect();
+  const y = ev.clientY - r.top;
+  const h = r.height;
+  if (y < h * 0.30) return 'before';
+  if (y > h * 0.70) return 'after';
+  return 'onto';
+}
 function _afkCardDragOver(ev, id) {
   if (_afkDragFromId == null || id === _afkDragFromId) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
   const card = ev.currentTarget;
-  const r = card.getBoundingClientRect();
-  // v2.82.0 — favour "drop-before" with a 60/40 split so dragging to the
-  // upper portion of a card consistently lands above it (was the 50/50
-  // split was the source of the "super-precise placement" complaint).
-  const cutoff = r.top + r.height * 0.6;
-  card.classList.toggle('drop-before', ev.clientY < cutoff);
-  card.classList.toggle('drop-after',  ev.clientY >= cutoff);
+  const zone = _afkCardDragZone(ev, card);
+  card.classList.toggle('drop-before', zone === 'before');
+  card.classList.toggle('drop-after',  zone === 'after');
+  card.classList.toggle('drop-onto',   zone === 'onto');
 }
 function _afkCardDragLeave(ev) {
   const card = ev.currentTarget;
-  if (card) { card.classList.remove('drop-before'); card.classList.remove('drop-after'); }
+  if (card) {
+    card.classList.remove('drop-before');
+    card.classList.remove('drop-after');
+    card.classList.remove('drop-onto');
+  }
 }
 function _afkCardDrop(ev, toId) {
   if (_afkDragFromId == null || toId === _afkDragFromId) return;
   ev.preventDefault();
   const card = ev.currentTarget;
-  const r = card.getBoundingClientRect();
-  const cutoff = r.top + r.height * 0.6;
-  const position = ev.clientY < cutoff ? 'before' : 'after';
-  _afkAlarms.reorder(_afkDragFromId, toId, position);
+  const zone = _afkCardDragZone(ev, card);
+  const fromId = _afkDragFromId;
   _afkDragFromId = null;
+  if (zone === 'onto') {
+    // Form a group (or extend an existing one) from the two alarms.
+    _afkGroupFormFromDrop(fromId, toId);
+  } else {
+    // v2.83.0 — if the source is in a group and the destination is NOT
+    // in the same group, the user is dragging the source OUT of its
+    // group. Remove it before reordering so the group renders cleanly.
+    const src = _afkAlarms.get(fromId);
+    const dst = _afkAlarms.get(toId);
+    if (src && src.groupId && (!dst || dst.groupId !== src.groupId)) {
+      _afkGroups.removeMember(fromId);
+    }
+    _afkAlarms.reorder(fromId, toId, zone);
+  }
   _afkRenderAlarmList();
   _afkRenderGeofenceVisuals();
   _afkRenderWaypointVisuals();
-  // If a sound is currently playing, swap to the new highest-priority
-  // tripped alarm (list order changed).
   const tripped = _afkAlarms.tripped();
   if (tripped.length > 0 && _afkAudio.currentId() !== (tripped[0].sound || 'digital-clock')) {
     _afkAudio.play(tripped[0].sound || 'digital-clock');
   }
 }
+
+// Reconcile two alarms into a single group. Handles all four combinations
+// of (source grouped / ungrouped) × (target grouped / ungrouped):
+//   - both ungrouped → new group with both
+//   - source ungrouped, target grouped → source joins target's group
+//   - source grouped, target ungrouped → target joins source's group
+//   - both grouped, same → no-op
+//   - both grouped, different → merge source's group's members INTO
+//                                target's group, dissolve source's group
+function _afkGroupFormFromDrop(fromId, toId) {
+  const src = _afkAlarms.get(fromId);
+  const dst = _afkAlarms.get(toId);
+  if (!src || !dst) return;
+  if (src.groupId && dst.groupId && src.groupId === dst.groupId) return;
+  if (!src.groupId && !dst.groupId) {
+    _afkGroups.create([dst.id, src.id]);
+    return;
+  }
+  if (!src.groupId && dst.groupId) {
+    _afkGroups.addMember(dst.groupId, src.id);
+    return;
+  }
+  if (src.groupId && !dst.groupId) {
+    _afkGroups.addMember(src.groupId, dst.id);
+    return;
+  }
+  // Both grouped, different: move every member of src's group into dst's.
+  const srcGid = src.groupId;
+  const dstGid = dst.groupId;
+  _afkAlarms.list()
+    .filter(a => a.groupId === srcGid)
+    .forEach(a => _afkGroups.addMember(dstGid, a.id));
+  // _afkGroups.addMember removes from the old group and auto-dissolves
+  // when membership drops below 2, so srcGid cleans up on its own.
+}
 function _afkCardDragEnd(ev) {
   _afkDragFromId = null;
   document.querySelectorAll('.afk-card.dragging').forEach(el => el.classList.remove('dragging'));
-  document.querySelectorAll('.afk-card.drop-before, .afk-card.drop-after').forEach(el => { el.classList.remove('drop-before'); el.classList.remove('drop-after'); });
+  document.querySelectorAll('.afk-card.drop-before, .afk-card.drop-after, .afk-card.drop-onto')
+    .forEach(el => { el.classList.remove('drop-before'); el.classList.remove('drop-after'); el.classList.remove('drop-onto'); });
   const list = document.getElementById('afkAlarmList');
   if (list) list.classList.remove('dragging-alarm');
   document.querySelectorAll('.afk-list-drop-zone.drop-active').forEach(el => el.classList.remove('drop-active'));
+}
+
+// ---------------------- MULTI-SELECT + GROUP HANDLERS (v2.83.0+) ----------
+// Shift+click an alarm to toggle it in the selection set. When ≥ 2 are
+// selected, the footer "Group Selected" button activates. Plain clicks
+// (without Shift) clear the selection.
+const _afkSelectedIds = new Set();
+function _afkCardOnClick(ev, id) {
+  // Ignore clicks that originated on an interactive sub-element (toggle,
+  // delete, chevron, action buttons) — those have their own event handlers
+  // and we don't want them to also flip the selection state.
+  const tgt = ev.target;
+  if (tgt && (tgt.closest('input,button,select,label,[contenteditable="true"]'))) return;
+  if (ev.shiftKey) {
+    if (_afkSelectedIds.has(id)) _afkSelectedIds.delete(id);
+    else _afkSelectedIds.add(id);
+  } else {
+    // Plain click — clear the selection unless they clicked an already-
+    // selected card (treat that as a single-card focus).
+    _afkSelectedIds.clear();
+  }
+  // Update affected card highlights + the footer button without a full re-render
+  document.querySelectorAll('.afk-card').forEach(el => {
+    const cid = parseInt(el.getAttribute('data-afk-id'), 10);
+    el.classList.toggle('selected', _afkSelectedIds.has(cid));
+  });
+  _afkUpdateGroupSelectedBtn();
+}
+function _afkClearSelection() {
+  _afkSelectedIds.clear();
+  document.querySelectorAll('.afk-card.selected').forEach(el => el.classList.remove('selected'));
+  _afkUpdateGroupSelectedBtn();
+}
+function _afkUpdateGroupSelectedBtn() {
+  const btn = document.getElementById('afkGroupSelectedBtn');
+  if (!btn) return;
+  const n = _afkSelectedIds.size;
+  btn.style.display = n >= 2 ? '' : 'none';
+  btn.textContent = '⛓ Group ' + n + ' Selected';
+}
+function _afkGroupSelected() {
+  if (_afkSelectedIds.size < 2) return;
+  const ids = Array.from(_afkSelectedIds);
+  _afkGroups.create(ids);
+  _afkClearSelection();
+  _afkRenderAlarmList();
+}
+
+// ---------------------- GROUP UI HANDLERS --------------------------------
+function _afkGroupToggleCollapse(gid) {
+  const g = _afkGroups.get(gid); if (!g) return;
+  _afkGroups.setCollapsed(gid, !g.collapsed);
+  _afkRenderAlarmList();
+}
+function _afkGroupUngroup(gid) {
+  _afkGroups.ungroup(gid);
+  _afkRenderAlarmList();
+}
+
+// Master-toggle handler — drives every member's enabled state at once.
+// Mirrors _afkToggleAlarm's per-type re-arm semantics (timer reschedule,
+// cruise/descent prevAlt/fired clear) so toggling the group ON leaves
+// every member in the same just-armed state a fresh click would.
+//
+// When users click an indeterminate (mixed) checkbox the browser sets
+// `.checked = true`, so the natural behaviour is "any off → make all on";
+// "all on → make all off" follows from clicking again.
+function _afkGroupToggleAll(gid, on) {
+  const members = _afkAlarms.list().filter(a => a.groupId === gid);
+  if (members.length === 0) return;
+  members.forEach(a => {
+    if (!on) _afkClearAlarmTimer(a.id);
+    if (on && a.type === 'timer') {
+      a.state = a.state || {};
+      a.state.targetMs = _afkComputeTimerTarget(a.params);
+      a.state.fired = false;
+      _afkAlarms.update(a.id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
+      _afkScheduleTimer(_afkAlarms.get(a.id));
+    } else if (!on && a.type === 'timer') {
+      _afkCancelTimerSchedule(a.id);
+      _afkAlarms.update(a.id, { enabled: false, status: 'armed', trippedAt: null });
+    } else if (on && (a.type === 'cruise' || a.type === 'descent')) {
+      a.state = a.state || {};
+      a.state.fired = false;
+      if (a.type === 'cruise') a.state.prevAlt = null;
+      _afkAlarms.update(a.id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
+    } else {
+      _afkAlarms.update(a.id, { enabled: !!on, status: 'armed', trippedAt: null });
+    }
+  });
+  _afkRenderAlarmList();
+  _afkUpdateBadge();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+}
+function _afkGroupRenameBlur(ev, gid) {
+  const el = ev.currentTarget;
+  const name = (el.textContent || '').trim();
+  _afkGroups.rename(gid, name);
+}
+function _afkGroupRenameKey(ev, gid) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    ev.currentTarget.blur();
+  } else if (ev.key === 'Escape') {
+    ev.preventDefault();
+    const g = _afkGroups.get(gid);
+    if (g) ev.currentTarget.textContent = g.name || '';
+    ev.currentTarget.blur();
+  }
+}
+
+// ---------------------- RIGHT-CLICK CONTEXT MENU (v2.83.0+) --------------
+// Opens a small popover with group-related actions tailored to the
+// clicked alarm's current state (grouped vs ungrouped).
+let _afkCtxOpen = false;
+function _afkCardContextMenu(ev, id) {
+  // Don't override the browser menu on sub-elements (toggle, delete, etc.).
+  if (ev.target && ev.target.closest('input,select,[contenteditable="true"]')) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  _afkCloseCtxMenu();
+  const a = _afkAlarms.get(id); if (!a) return;
+  const menu = document.createElement('div');
+  menu.className = 'afk-ctx-menu';
+  menu.id = 'afkCtxMenu';
+  const allAlarms = _afkAlarms.list();
+  const allGroups = _afkGroups.list();
+  const otherUngrouped = allAlarms.filter(x => x.id !== id && !x.groupId);
+  const otherGroups    = allGroups.filter(g => g.id !== a.groupId);
+  const parts = [];
+  parts.push('<div class="afk-ctx-menu-header">' + _afkAlarmTypeLabel(a.type) +
+             (a.groupId ? ' &middot; in group' : '') + '</div>');
+
+  if (!a.groupId) {
+    if (otherUngrouped.length > 0) {
+      parts.push('<div class="afk-ctx-menu-header">New group with…</div>');
+      otherUngrouped.slice(0, 8).forEach(o => {
+        const label = _afkAlarmTypeLabel(o.type) +
+          ' &mdash; ' + _afkAlarmShortDescription(o, false).replace(/<[^>]+>/g, '').slice(0, 40);
+        parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxCreateGroup(' + id + ',' + o.id + ')">' + label + '</button>');
+      });
+    } else {
+      parts.push('<button class="afk-ctx-menu-item" disabled>New group with… (no other ungrouped alarms)</button>');
+    }
+    if (otherGroups.length > 0) {
+      parts.push('<div class="afk-ctx-menu-sep"></div>');
+      parts.push('<div class="afk-ctx-menu-header">Add to existing group…</div>');
+      otherGroups.forEach(g => {
+        const label = (g.name || ('Group ' + g.id)) + ' (' + _afkGroups.membersOf(g.id).length + ')';
+        parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxAddToGroup(' + id + ',\'' + g.id + '\')">' + label + '</button>');
+      });
+    }
+  } else {
+    parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxRemoveFromGroup(' + id + ')">Remove from group</button>');
+    parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxFocusRename(\'' + a.groupId + '\')">Rename group…</button>');
+    parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxUngroup(\'' + a.groupId + '\')">Ungroup (dissolve)</button>');
+    if (otherGroups.length > 0) {
+      parts.push('<div class="afk-ctx-menu-sep"></div>');
+      parts.push('<div class="afk-ctx-menu-header">Move to group…</div>');
+      otherGroups.forEach(g => {
+        const label = (g.name || ('Group ' + g.id)) + ' (' + _afkGroups.membersOf(g.id).length + ')';
+        parts.push('<button class="afk-ctx-menu-item" onclick="_afkCtxAddToGroup(' + id + ',\'' + g.id + '\')">' + label + '</button>');
+      });
+    }
+  }
+  menu.innerHTML = parts.join('');
+  document.body.appendChild(menu);
+  // Position the menu so it fits within the viewport.
+  const mw = Math.min(menu.offsetWidth || 240, 340);
+  const mh = menu.offsetHeight || 100;
+  let x = ev.clientX, y = ev.clientY;
+  if (x + mw + 8 > window.innerWidth)  x = window.innerWidth  - mw - 8;
+  if (y + mh + 8 > window.innerHeight) y = window.innerHeight - mh - 8;
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+  _afkCtxOpen = true;
+  setTimeout(() => {
+    const onDocClick = (e) => {
+      if (menu.contains(e.target)) return;
+      _afkCloseCtxMenu();
+      document.removeEventListener('mousedown', onDocClick, true);
+    };
+    document.addEventListener('mousedown', onDocClick, true);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { _afkCloseCtxMenu(); document.removeEventListener('keydown', onKey, true); }
+    };
+    document.addEventListener('keydown', onKey, true);
+  }, 0);
+}
+function _afkCloseCtxMenu() {
+  const m = document.getElementById('afkCtxMenu');
+  if (m) m.remove();
+  _afkCtxOpen = false;
+}
+function _afkCtxCreateGroup(aId, bId) {
+  _afkCloseCtxMenu();
+  _afkGroups.create([aId, bId]);
+  _afkRenderAlarmList();
+}
+function _afkCtxAddToGroup(alarmId, gid) {
+  _afkCloseCtxMenu();
+  _afkGroups.addMember(gid, alarmId);
+  _afkRenderAlarmList();
+}
+function _afkCtxRemoveFromGroup(alarmId) {
+  _afkCloseCtxMenu();
+  _afkGroups.removeMember(alarmId);
+  _afkRenderAlarmList();
+}
+function _afkCtxUngroup(gid) {
+  _afkCloseCtxMenu();
+  _afkGroups.ungroup(gid);
+  _afkRenderAlarmList();
+}
+function _afkCtxFocusRename(gid) {
+  _afkCloseCtxMenu();
+  // Find the rendered group's name span and focus it.
+  setTimeout(() => {
+    const g = document.querySelector('.afk-group[data-group-id="' + gid + '"] .afk-group-name');
+    if (g) { g.focus(); document.execCommand && document.execCommand('selectAll', false, null); }
+  }, 0);
 }
 
 function _afkRenderEditor(a) {
@@ -11776,12 +12567,40 @@ function _afkRenderEditor(a) {
   }
   if (a.type === 'geofence') {
     const p = a.params;
+    const anchor = p.anchor || 'coords';
+    // v2.84.0 — Anchor selector + always-editable radius. Coords-anchored
+    // fences also show their captured lat/lng read-only so the user
+    // remembers what they drew.
+    const radiusVal = (isFinite(parseFloat(p.radiusNm)) ? parseFloat(p.radiusNm) : 5).toString();
+    const anchorRow =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Anchor</span>' +
+        '<select class="afk-select" onchange="_afkSetGeofenceAnchor(' + a.id + ', this.value)" title="Coords = fixed lat/lng. Departure/Arrival = follow the active SimBrief flight plan.">' +
+          '<option value="coords"' + (anchor === 'coords' ? ' selected' : '') + '>Fixed coords (drawn on map)</option>' +
+          '<option value="dep"'    + (anchor === 'dep'    ? ' selected' : '') + '>Departure airport (SimBrief)</option>' +
+          '<option value="arr"'    + (anchor === 'arr'    ? ' selected' : '') + '>Arrival airport (SimBrief)</option>' +
+        '</select>' +
+      '</div>';
+    const radiusRow =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Radius</span>' +
+        '<input type="number" class="afk-input" style="width:90px;" min="0.1" step="0.1" value="' + radiusVal + '" oninput="_afkSetGeofenceRadius(' + a.id + ', this.value)">' +
+        '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>' +
+      '</div>';
     body =
+      anchorRow +
+      radiusRow +
       '<div class="afk-edit-row"><span class="afk-edit-label">Trigger</span>' +
         '<select class="afk-select" onchange="_afkSetGeofenceTrigger(' + a.id + ', this.value)">' +
           ['enter', 'exit', 'both'].map(t => '<option value="' + t + '"' + (p.trigger === t ? ' selected' : '') + '>On ' + t.toUpperCase() + '</option>').join('') +
         '</select>' +
       '</div>';
+    if (anchor === 'coords' && isFinite(parseFloat(p.lat)) && isFinite(parseFloat(p.lng))) {
+      body += '<div class="afk-footer-info" style="color:var(--muted);">Centre: ' + parseFloat(p.lat).toFixed(4) + '°, ' + parseFloat(p.lng).toFixed(4) + '°</div>';
+    } else if (anchor !== 'coords') {
+      const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+      const node = fp ? (anchor === 'dep' ? fp.origin : fp.destination) : null;
+      const icao = node && node.icao_code ? node.icao_code : '(no plan loaded)';
+      body += '<div class="afk-footer-info" style="color:var(--muted);">Following ' + (anchor === 'dep' ? 'DEP' : 'ARR') + ' = ' + icao + ' — auto-relocates each time a SimBrief plan loads.</div>';
+    }
   }
   if (a.type === 'waypoint') {
     const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
@@ -11874,7 +12693,14 @@ function _afkToggleAlarm(id, on) {
 function _afkRemoveAlarm(id) {
   _afkClearAlarmTimer(id);
   _afkCancelTimerSchedule(id);
+  const a = _afkAlarms.get(id);
+  // If the removed alarm was in a group, the group might drop below the
+  // 2-member threshold and need to auto-dissolve. _afkGroups._gc handles
+  // the leftover-lone-member cleanup.
+  const hadGroup = a && a.groupId;
   _afkAlarms.remove(id);
+  if (hadGroup) { try { _afkGroups._gc(); } catch (_) {} }
+  if (_afkSelectedIds.has(id)) _afkSelectedIds.delete(id);
   _afkRenderAlarmList();
   _afkUpdateBadge();
   _afkRenderGeofenceVisuals();
@@ -11886,6 +12712,29 @@ function _afkSetGeofenceTrigger(id, t) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.trigger = t; a.state.wasInside = null;
   _afkAlarms.update(id, { params: a.params, state: a.state });
+}
+// v2.84.0 — switch a geofence's anchor between coords/dep/arr at any time.
+// Resetting wasInside avoids a false trip when the centre moves to a
+// completely different location underneath the aircraft.
+function _afkSetGeofenceAnchor(id, anchor) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const next = (anchor === 'dep' || anchor === 'arr') ? anchor : 'coords';
+  a.params.anchor = next;
+  a.state = a.state || {};
+  a.state.wasInside = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+}
+function _afkSetGeofenceRadius(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const r = parseFloat(v);
+  if (!isFinite(r) || r <= 0) return;
+  a.params.radiusNm = r;
+  a.state = a.state || {};
+  a.state.wasInside = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderGeofenceVisuals();
 }
 function _afkSetWaypointScope(id, s) {
   const a = _afkAlarms.get(id); if (!a) return;
@@ -12058,8 +12907,10 @@ function _afkSetDurationSec(id, v) {
 function _afkAddAlarm(type) {
   _afkAudio.unlock();
   if (type === 'geofence') {
-    _afkCloseConfig();
-    _afkGeofenceDrawStart();
+    // v2.84.0 — present the anchor picker first so the user can choose
+    // a plan-relative anchor (Departure / Arrival) instead of always
+    // dropping into the draw-on-map flow.
+    _afkOpenGeofenceAnchorPicker();
     return;
   }
   const base = { type, sound: 'digital-clock', params: {}, state: {} };
@@ -12233,10 +13084,72 @@ function _afkOpenGeofenceModal() {
   document.getElementById('afkGfLabel').value = '';
   document.getElementById('afkGfTrigger').value = 'enter';
   document.getElementById('afkGfSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
-  document.getElementById('afkGfCoords').textContent =
-    'Center ' + r.lat.toFixed(4) + '°, ' + r.lng.toFixed(4) + '°   ·   Radius ' + r.radiusNm.toFixed(2) + ' nm';
+  // v2.84.0 — anchor-aware. Coords-anchored fences (drawn on map) show
+  // the captured centre + radius read-only. Dep/arr-anchored fences show
+  // the resolved airport ICAO + an editable radius input.
+  const isPlan = (r.anchor === 'dep' || r.anchor === 'arr');
+  const coordsEl = document.getElementById('afkGfCoords');
+  const radiusRow = document.getElementById('afkGfRadiusRow');
+  if (isPlan) {
+    const label = r.anchor === 'dep' ? 'Departure airport' : 'Arrival airport';
+    const icao  = r.icao ? ' (' + r.icao + ')' : '';
+    if (coordsEl) coordsEl.textContent = '⚓ Anchor: ' + label + icao + ' — auto-relocates to wherever this airport is for the active SimBrief flight plan.';
+    if (radiusRow) radiusRow.style.display = '';
+    const radIn = document.getElementById('afkGfRadius');
+    if (radIn) radIn.value = (r.radiusNm || 5).toString();
+  } else {
+    if (coordsEl) coordsEl.textContent =
+      'Center ' + r.lat.toFixed(4) + '°, ' + r.lng.toFixed(4) + '°   ·   Radius ' + r.radiusNm.toFixed(2) + ' nm';
+    if (radiusRow) radiusRow.style.display = 'none';
+  }
   _afkSeedModalDuration('Gf');
   m.classList.add('open');
+}
+
+// v2.84.0 — small picker shown before the geofence create flow. Lets the
+// user pick a plan-relative anchor (Departure / Arrival airport) so the
+// fence auto-relocates each time a new SimBrief plan is loaded.
+function _afkOpenGeofenceAnchorPicker() {
+  const m = document.getElementById('afkGfAnchorModal');
+  if (!m) return;
+  // Update the dep/arr radio labels with the live SimBrief ICAOs when
+  // a plan is loaded — gives the user a concrete preview of where the
+  // fence will land.
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  const depIcao = fp && fp.origin && fp.origin.icao_code ? fp.origin.icao_code : '';
+  const arrIcao = fp && fp.destination && fp.destination.icao_code ? fp.destination.icao_code : '';
+  const depHint = document.getElementById('afkGfAnchorDepHint');
+  const arrHint = document.getElementById('afkGfAnchorArrHint');
+  if (depHint) depHint.textContent = depIcao ? '(' + depIcao + ')' : '(no plan loaded — will resolve at flight time)';
+  if (arrHint) arrHint.textContent = arrIcao ? '(' + arrIcao + ')' : '(no plan loaded — will resolve at flight time)';
+  // Default selection: coords (preserves the v2.69+ behaviour).
+  const def = document.getElementById('afkGfAnchorCoords');
+  if (def) def.checked = true;
+  m.classList.add('open');
+}
+function _afkGeofenceAnchorPickerClose() {
+  const m = document.getElementById('afkGfAnchorModal');
+  if (m) m.classList.remove('open');
+}
+function _afkGeofenceAnchorPickerContinue() {
+  const radios = document.querySelectorAll('input[name="afkGfAnchorRadio"]');
+  let chosen = 'coords';
+  radios.forEach(r => { if (r.checked) chosen = r.value; });
+  _afkGeofenceAnchorPickerClose();
+  if (chosen === 'coords') {
+    // Existing flow — close the Alerts modal, drop user into draw mode.
+    _afkCloseConfig();
+    _afkGeofenceDrawStart();
+    return;
+  }
+  // dep / arr — skip the draw step. Seed a default 5 nm radius and
+  // open the existing config sub-modal in plan-anchored mode.
+  _afkGfPendingResult = { anchor: chosen, radiusNm: 5 };
+  // Try to surface the resolved ICAO for the modal title hint.
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  const node = fp ? (chosen === 'dep' ? fp.origin : fp.destination) : null;
+  if (node && node.icao_code) _afkGfPendingResult.icao = node.icao_code;
+  _afkOpenGeofenceModal();
 }
 
 function _afkGeofenceModalCancel() {
@@ -12302,10 +13215,27 @@ function _afkGeofenceModalSave() {
   const trigger = document.getElementById('afkGfTrigger').value;
   const sound   = document.getElementById('afkGfSound').value;
   const dur     = _afkReadModalDuration('Gf');
+  // v2.84.0 — anchor-aware. For dep/arr-anchored fences the user types
+  // the radius into the modal (the draw step is skipped); for coords
+  // anchors the radius was captured during the on-map draw.
+  const anchor = (r.anchor === 'dep' || r.anchor === 'arr') ? r.anchor : 'coords';
+  let radiusNm = parseFloat(r.radiusNm);
+  if (anchor !== 'coords') {
+    const radIn = document.getElementById('afkGfRadius');
+    const v = radIn ? parseFloat(radIn.value) : NaN;
+    if (isFinite(v) && v > 0) radiusNm = v;
+  }
+  const params = { anchor, radiusNm, trigger, label, durationMode: dur.durationMode, durationSec: dur.durationSec };
+  // For coords anchors keep the captured lat/lng. For dep/arr we don't
+  // need them — the runtime resolves the centre from the active plan.
+  if (anchor === 'coords') {
+    params.lat = r.lat;
+    params.lng = r.lng;
+  }
   _afkAlarms.add({
     type: 'geofence',
     sound,
-    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label, durationMode: dur.durationMode, durationSec: dur.durationSec },
+    params,
     state: { wasInside: null },
   });
   // Remove preview layers; the persistent visual will re-render below
@@ -12357,32 +13287,41 @@ function _afkRenderGeofenceVisuals() {
     if (a.type !== 'geofence' || !a.enabled) return;
     const p = a.params;
     const existing = _afkGeofenceLayers[a.id];
+    // v2.84.0 — anchor-aware. A dep/arr-anchored fence has no map
+    // visuals until the SimBrief plan loads.
+    const centre = _afkGeofenceCenter(p);
     if (existing && existing.label) { try { _rgMap.removeLayer(existing.label); } catch (_) {} }
+    if (!centre) {
+      // Drop any stale circle so a previously-rendered fence doesn't
+      // linger at the wrong location after the plan is cleared.
+      if (existing && existing.circle) { try { _rgMap.removeLayer(existing.circle); } catch (_) {} }
+      delete _afkGeofenceLayers[a.id];
+      return;
+    }
     const color = a.status === 'tripped' ? '#ff3d5a' : _AFK_GF_COLOR;
     const style = { color, weight: 2, opacity: 0.85, fillColor: color, fillOpacity: 0.08 };
     let circle = null, label = null;
     try {
       // First arg is the EXISTING layer (or null) — _rgGeoCircle will update
       // in place when possible, else remove + recreate. Never pass _rgMap.
-      circle = _rgGeoCircle(existing && existing.circle ? existing.circle : null, p.lat, p.lng, p.radiusNm, style);
+      circle = _rgGeoCircle(existing && existing.circle ? existing.circle : null, centre.lat, centre.lng, p.radiusNm, style);
     } catch (_) {}
     const triggerText = p.trigger === 'enter' ? 'Alert on Entry'
                       : p.trigger === 'exit'  ? 'Alert on Exit'
                       : 'Alert on Entry & Exit';
-    const text = (p.label ? p.label + ' · ' : '') + p.radiusNm.toFixed(1) + ' nm — ' + triggerText;
+    // Show the anchor in the label when the fence follows a plan node —
+    // makes it obvious which fence is plan-relative vs. drawn-on-map.
+    let anchorTag = '';
+    if (p.anchor === 'dep') anchorTag = '@DEP' + (centre.icao ? ' ' + centre.icao : '') + ' · ';
+    else if (p.anchor === 'arr') anchorTag = '@ARR' + (centre.icao ? ' ' + centre.icao : '') + ' · ';
+    const text = (p.label ? p.label + ' · ' : '') + anchorTag + p.radiusNm.toFixed(1) + ' nm — ' + triggerText;
     const ic = L.divIcon({
       className: 'afk-gf-label',
-      // display:inline-block so the background sizes to the text content. Without
-      // it the inner <div> renders block-level inside a 0×0 Leaflet wrapper, so
-      // the background paints at 0 width while the text overflows visibly — the
-      // misaligned-rectangle bug reported in v2.69.0 development.
       html: '<div style="display:inline-block;background:rgba(20,10,5,0.92);color:' + color + ';padding:2px 8px;border-radius:4px;font-family:Rajdhani,sans-serif;font-size:0.92rem;font-weight:600;border:1px solid ' + color + ';white-space:nowrap;font-variant-numeric:tabular-nums;line-height:1.2;">🔔 ' + text + '</div>',
       iconSize: [0, 0], iconAnchor: [0, -8],
     });
     try {
-      // Use the custom afkLabelPane (z-index 680, above the default tooltipPane
-      // at 650) so the geofence label floats above SimBrief waypoint labels.
-      label = L.marker([p.lat, p.lng], { icon: ic, interactive: false, pane: 'afkLabelPane', zIndexOffset: 1200 }).addTo(_rgMap);
+      label = L.marker([centre.lat, centre.lng], { icon: ic, interactive: false, pane: 'afkLabelPane', zIndexOffset: 1200 }).addTo(_rgMap);
     } catch (_) {}
     _afkGeofenceLayers[a.id] = { circle, label };
   });
@@ -12972,6 +13911,9 @@ function _afkInit() {
   // Build the data panel from the saved (or default) field configuration.
   // Has to happen before anything tries to write into afkDpXxx ids.
   try { _afkDpRender(); } catch (_) {}
+  // Sweep saved alarm groups — drops any that have < 2 members (e.g.
+  // alarms got deleted while the modal was closed). v2.83.0+.
+  try { _afkGroups._gc(); } catch (_) {}
   // Restore data panel collapsed state
   try {
     if (localStorage.getItem(_AFK_LS_DP) === '1') {
@@ -22824,6 +23766,8 @@ function rgSendToFlightPlanner() {
 
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
+            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so dismissing any one cascades to all of them. Every member's audio stops, the trip overlay clears for the whole group, and every member auto-disables. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
+
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
@@ -22888,10 +23832,85 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.84.1</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Two new rows on the 🔌 Live menu &mdash; one-click clearing for SimBrief plan and aircraft track.</strong> Below the existing FSUIPC / STKP / Follow A/C / Aircraft Icon rows, a thin separator now precedes:
+            <ul>
+              <li><strong>✕ Clear Flight Plan</strong> &mdash; removes the plotted SimBrief route from the map, wipes the local-storage cache so it won't restore on next page load, and re-renders any waypoint-alarm rings to drop alongside the route.</li>
+              <li><strong>✕ Clear Aircraft Track</strong> &mdash; erases the green breadcrumb trail (all three tiers) and wipes the local-storage track so the path stays gone after reload.</li>
+            </ul>
+            Both rows toast a confirmation on success and a soft <em>"nothing to clear"</em> warning when the click hits an already-empty state. The same underlying handlers the existing toolbar buttons use are invoked, so nothing diverges from the established behaviour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.84.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Geofences can now anchor to <em>Departure</em> or <em>Arrival</em> airport.</strong> Plan-relative geofences auto-relocate to wherever DEP / ARR sits in the currently-loaded SimBrief flight plan, so a single fence works across every route &mdash; no more re-drawing per flight.
+            <ul>
+              <li><strong>Anchor picker on create</strong> &mdash; clicking <em>Add &rarr; ⊙ Geofence</em> now opens a small chooser first: <strong>Departure airport</strong>, <strong>Arrival airport</strong>, or <strong>Draw on map</strong> (the v2.69 click-and-drag flow). Dep / Arr picks skip the map-draw step entirely &mdash; you go straight to a config dialog that already knows the anchor and asks for radius + trigger + label + sound + duration.</li>
+              <li><strong>Existing fences can switch anchors any time</strong> &mdash; the geofence alarm card editor gains an <em>Anchor</em> dropdown and an always-editable <em>Radius</em> input. Coords-anchored fences still display their captured lat/lng read-only; plan-relative fences show the live <em>DEP / ARR ICAO</em> the fence is currently following.</li>
+              <li><strong>Auto re-anchor on plan change</strong> &mdash; whenever a new SimBrief plan loads, every dep / arr-anchored fence relocates and re-renders on the map, and its <em>wasInside</em> state resets so a "moved underneath the aircraft" centre swap doesn't immediately trip a false enter event.</li>
+              <li><strong>Map label tag</strong> &mdash; plan-relative fences show <code>@DEP KJFK</code> / <code>@ARR EGLL</code> in the persistent map label so you can tell them apart at a glance from drawn-on-map fences.</li>
+            </ul>
+            Data-model detail: alarm <code>params</code> gains an optional <code>anchor</code> field (<code>'coords'</code> | <code>'dep'</code> | <code>'arr'</code>); <code>'coords'</code> is the default, preserving every v2.69 → v2.83 geofence with no migration. The runtime resolves the live centre through a new <code>_afkGeofenceCenter(params)</code> helper that's now the single source of truth for the eval path, the ETA computation, the NEXT ALARM click target, and the persistent map visuals.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.83.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert groups get a master enable/disable checkbox.</strong> Each group's header now has a checkbox right next to the collapse chevron that drives every member's enable state at once: checked = all members on, unchecked = all off, indeterminate (browser-native style + amber accent) = mixed. Clicking the box does the natural thing &mdash; if any member is off, it enables all; if every member is on, it disables all. Re-enabling honours each alarm's per-type re-arm semantics (timer recomputes <code>targetMs</code>, cruise/descent clear <code>state.fired</code> + <code>prevAlt</code>) so each member arrives in the same just-armed state a single-card toggle click would produce. Useful with the v2.83.0 aggressive cascade: dismiss one member → group auto-disables → flip the master back on next flight to re-arm the whole bundle in one click.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.83.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert Groups &mdash; bundle related alarms so they fire and dismiss as one.</strong> A group is 2 or more alarms that logically belong together (e.g. <em>TOD warning</em> + <em>FL250 crossing</em> + <em>30-min-to-arrival timer</em>). Dismissing ANY member of a group cascades to ALL members: every member's audio stops, the trip overlay rows clear, and every member is auto-disabled. One acknowledgement covers the whole bundle.
+            <ul>
+              <li><strong>Three ways to create a group:</strong>
+                <ul>
+                  <li><strong>Drag-and-drop:</strong> drop one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target). The 60/40 top/bottom of each card still reorders as before &mdash; only the middle 40% triggers grouping.</li>
+                  <li><strong>Right-click any alarm:</strong> a context menu offers <em>New group with&hellip;</em> (pick any other ungrouped alarm), <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, and <em>Ungroup</em>.</li>
+                  <li><strong>Shift-click multi-select:</strong> click cards while holding Shift to highlight them, then click the <strong>⛓ Group N Selected</strong> button that appears in the modal footer.</li>
+                </ul>
+              </li>
+              <li><strong>Optional name</strong> &mdash; click the group's name label at the top to type one inline (placeholder reads <em>"Group of N alarms&hellip;"</em>). Enter or click-away to commit; Escape to cancel.</li>
+              <li><strong>Collapse the whole group</strong> with the chevron next to the name &mdash; all members fold into one stripe. Each card's own chevron still toggles just that card's editor body.</li>
+              <li><strong>Auto-dissolve</strong> &mdash; if a group ever drops below 2 members (you remove a member, ungroup, or delete a member), the leftover lone alarm becomes a standalone alarm again automatically.</li>
+              <li><strong>Drag out</strong> &mdash; drag a grouped alarm to a position outside its group (or to the top/bottom drop zones) and it leaves the group cleanly; the group dissolves if only one member remains.</li>
+              <li><strong>Save/Load extended</strong> &mdash; the alarm JSON file format bumped to <code>v: 2</code> and now bundles the group records too. Imports remap group ids onto fresh local ones so they never collide with existing groups in your queue.</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.82.0</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -23229,7 +24248,7 @@ function rgSendToFlightPlanner() {
         <ul class="release-notes">
           <li><strong>Alerts &mdash; configurable cockpit alarms for long flights.</strong> New <strong>🔔 Alerts</strong> button in the map header opens a configuration modal where five independent alarm types can be armed in any combination for a single flight:
             <ul>
-              <li><strong>⊙ Geofence</strong> &mdash; click and drag on the map to draw a circular region (radius shown live in nm); choose <em>ENTER</em>, <em>EXIT</em>, or <em>both</em> as the trigger. Orange ring persists on the map.</li>
+              <li><strong>⊙ Geofence</strong> &mdash; pick an anchor first: <strong>Departure airport</strong> or <strong>Arrival airport</strong> (the fence auto-relocates to wherever DEP/ARR sits in the loaded SimBrief plan — reusable across every flight), or <strong>Draw on map</strong> for a fixed-coords circle (click-and-drag, radius shown live in nm). Choose <em>ENTER</em>, <em>EXIT</em>, or <em>both</em> as the trigger. Plan-relative fences re-anchor automatically whenever a new SimBrief plan loads; their map label shows <code>@DEP KJFK</code> / <code>@ARR EGLL</code> so they're obvious at a glance. Switch any existing fence between Coords / DEP / ARR via the <em>Anchor</em> dropdown on its alarm card.</li>
               <li><strong>📍 Waypoint</strong> &mdash; alerts when the aircraft passes a SimBrief flight-plan waypoint, using <em>closest-point-of-approach (CPA)</em> detection so it fires even when your track is a few nm off the planned line. Skips on the ground, resets on sim restart, cascades tight clusters, and falls back to a "near-miss" check for STKP's coarse 10&nbsp;s polling. Pick <em>Every waypoint</em>, <em>TOC</em>, <em>TOD</em>, or a specific multi-select. Selected fixes get a cyan ring overlay on the route plot.</li>
               <li><strong>─ Cruise Reached</strong> and <strong>↘ Descent Started</strong> &mdash; one-shot alarms using an <em>adaptive</em> detector that tracks the peak climb VS for this flight and treats cruise / descent thresholds as a fraction of it. Works for both a Cessna 152 and a Boeing 777 without per-aircraft tuning.</li>
               <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a configurable threshold. Input accepts both <em>plain feet</em> (<code>10000</code>) and <em>flight levels</em> (<code>FL350</code>, <code>FL 200</code>); the hint next to the input echoes the parsed value as you type.</li>
@@ -30437,6 +31456,7 @@ function rgSendToFlightPlanner() {
     <div class="afk-modal-footer">
       <span class="afk-footer-info" id="afkFooterInfo">No alarms armed</span>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
         <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft.">⤓ Save to File</button>
         <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
@@ -30483,6 +31503,51 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- AFK Geofence Anchor Picker (v2.84.0+) — shown before the draw / config
+     step. Lets the user choose between a fixed-coords fence (drawn on map)
+     and a plan-relative fence anchored to Departure or Arrival airport. -->
+<div class="modal-overlay" id="afkGfAnchorModal" onclick="if(event.target===this)_afkGeofenceAnchorPickerClose()">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <span class="modal-title">⊙ &nbsp;New Geofence — where should it live?</span>
+      <button class="modal-close" onclick="_afkGeofenceAnchorPickerClose()">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:1.0rem 1.2rem;">
+      <div class="fp-settings-hint" style="margin-bottom:0.85rem;">
+        Pick how the fence should anchor. A <strong>Departure</strong> or <strong>Arrival</strong> anchor auto-follows the active SimBrief flight plan, so the fence works across every route without re-drawing. <strong>Draw on map</strong> pins the fence to a fixed lat/lng (the v2.69 behaviour).
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.55rem;">
+        <label style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.55rem 0.65rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="afkGfAnchorRadio" id="afkGfAnchorDep" value="dep" style="margin-top:0.2rem;">
+          <span>
+            <strong>Departure airport</strong> <span id="afkGfAnchorDepHint" style="color:var(--muted);font-weight:500;"></span><br>
+            <span style="color:var(--muted);font-size:0.92rem;">Centre relocates to wherever DEP is for the currently-loaded SimBrief plan. Perfect for "alert me when I leave the airport area".</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.55rem 0.65rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="afkGfAnchorRadio" id="afkGfAnchorArr" value="arr" style="margin-top:0.2rem;">
+          <span>
+            <strong>Arrival airport</strong> <span id="afkGfAnchorArrHint" style="color:var(--muted);font-weight:500;"></span><br>
+            <span style="color:var(--muted);font-size:0.92rem;">Centre relocates to wherever ARR is for the currently-loaded SimBrief plan. Perfect for "alert me when I'm 10 nm out".</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.55rem 0.65rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+          <input type="radio" name="afkGfAnchorRadio" id="afkGfAnchorCoords" value="coords" checked style="margin-top:0.2rem;">
+          <span>
+            <strong>Draw on map</strong><br>
+            <span style="color:var(--muted);font-size:0.92rem;">Click-and-drag a circle anywhere on the map. The centre is a fixed lat/lng and won't move when you load a different SimBrief plan.</span>
+          </span>
+        </label>
+      </div>
+    </div>
+    <div class="afk-modal-footer">
+      <button class="rg-btn" onclick="_afkGeofenceAnchorPickerClose()">Cancel</button>
+      <button class="rg-btn" style="background:rgba(0,200,255,0.18);border-color:var(--accent);color:var(--accent);" onclick="_afkGeofenceAnchorPickerContinue()">Continue →</button>
+    </div>
+  </div>
+</div>
+<style>#afkGfAnchorModal { z-index:9560; } #afkGfAnchorModal .modal label:hover { border-color:var(--accent); background:rgba(0,200,255,0.06); }</style>
+
 <!-- AFK Per-Geofence Sub-Modal (opened after drawing) -->
 <div class="modal-overlay" id="afkGeofenceModal" onclick="if(event.target===this)_afkGeofenceModalCancel()">
   <div class="modal">
@@ -30502,6 +31567,15 @@ function rgSendToFlightPlanner() {
           <option value="exit">On EXIT</option>
           <option value="both">On either ENTER or EXIT</option>
         </select>
+      </div>
+      <!-- v2.84.0 — radius input shown only for dep/arr-anchored fences
+           (the draw step is skipped for those, so the user types the
+           radius here). Coords-anchored fences carry the radius they
+           drew on the map and keep this row hidden. -->
+      <div class="afk-edit-row" id="afkGfRadiusRow" style="margin-bottom:0.7rem;display:none;">
+        <span class="afk-edit-label">Radius</span>
+        <input type="number" id="afkGfRadius" class="afk-input" style="width:90px;" min="0.1" step="0.1" value="5">
+        <span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>
       </div>
       <div class="afk-edit-row" style="margin-bottom:0.7rem;">
         <span class="afk-edit-label">Sound</span>
@@ -30563,6 +31637,9 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <button class="rg-btn rg-pulldown-row" onclick="_sbOfpClearUI();_rgCloseAnyPulldown()" title="Remove the plotted SimBrief flight plan from the map. Local-storage cache is also cleared, so the plan won't restore on next page load.">✕ <span class="rg-btn-label">Clear Flight Plan</span></button>
+            <button class="rg-btn rg-pulldown-row" onclick="_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
           </div>
         </div>
 
