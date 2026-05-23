@@ -4524,7 +4524,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.72.0';
+const APP_VERSION = '2.73.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9407,6 +9407,48 @@ function _afkPreviewSelectedSound(selectId) {
   if (sel && sel.value) _afkAudio.preview(sel.value);
 }
 
+// Shared helper for the duration picker that appears in both the Geofence
+// and Waypoint quick-add modals. `which` is 'Gf' or 'Wp' — both modals
+// share the same control layout, just under different element-id prefixes.
+function _afkModalDurationModeChange(which) {
+  const mode = document.getElementById('afk' + which + 'DurationMode').value;
+  const showSec = (mode === 'seconds');
+  document.getElementById('afk' + which + 'DurationSec').style.display     = showSec ? '' : 'none';
+  document.getElementById('afk' + which + 'DurationSecUnit').style.display = showSec ? '' : 'none';
+}
+function _afkModalDurationSecChange() {
+  // Both modals' seconds inputs save the user's preferred default the
+  // moment they change a value. Reading whichever is currently visible:
+  ['Gf', 'Wp'].forEach((w) => {
+    const el = document.getElementById('afk' + w + 'DurationSec');
+    if (el && el.style.display !== 'none') {
+      const v = parseInt(el.value, 10);
+      if (isFinite(v) && v > 0) _afkSetUserDefaultDurationSec(v);
+    }
+  });
+}
+// Seed both inputs to the user's saved preferred default — called from
+// the modal-open functions. Mode is reset to 'indefinite' each open so the
+// user explicitly picks seconds mode if they want it.
+function _afkSeedModalDuration(which) {
+  const modeEl = document.getElementById('afk' + which + 'DurationMode');
+  const secEl  = document.getElementById('afk' + which + 'DurationSec');
+  const unitEl = document.getElementById('afk' + which + 'DurationSecUnit');
+  if (modeEl) modeEl.value = 'indefinite';
+  if (secEl)  secEl.value  = _afkGetUserDefaultDurationSec();
+  if (secEl)  secEl.style.display  = 'none';
+  if (unitEl) unitEl.style.display = 'none';
+}
+// Read the chosen mode + sec back out — used by the modal save functions.
+function _afkReadModalDuration(which) {
+  const mode = document.getElementById('afk' + which + 'DurationMode').value;
+  const secV = parseInt(document.getElementById('afk' + which + 'DurationSec').value, 10);
+  return {
+    durationMode: (mode === 'seconds') ? 'seconds' : 'indefinite',
+    durationSec:  (isFinite(secV) && secV > 0) ? secV : _afkGetUserDefaultDurationSec(),
+  };
+}
+
 // ---------------------- PHASE TRACKER + ALTITUDE BUFFER -------------------
 const _afkPhase = (() => {
   const MAX_SAMPLES = 240;          // rolling buffer length (~2 min @ 500ms or 40 min @ 10s)
@@ -10770,6 +10812,7 @@ function _afkOpenGeofenceModal() {
   document.getElementById('afkGfSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
   document.getElementById('afkGfCoords').textContent =
     'Center ' + r.lat.toFixed(4) + '°, ' + r.lng.toFixed(4) + '°   ·   Radius ' + r.radiusNm.toFixed(2) + ' nm';
+  _afkSeedModalDuration('Gf');
   m.classList.add('open');
 }
 
@@ -10795,6 +10838,7 @@ function _afkOpenWpAlarmModal(ident, lat, lng) {
   const lngS = isFinite(_afkWpAlarmPending.lng) ? Math.abs(_afkWpAlarmPending.lng).toFixed(4) + '°' + (_afkWpAlarmPending.lng >= 0 ? 'E' : 'W') : '—';
   document.getElementById('afkWpAlarmPos').textContent = 'Position: ' + latS + ' / ' + lngS;
   document.getElementById('afkWpAlarmSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
+  _afkSeedModalDuration('Wp');
   // Warn if a specific-waypoint alarm already covers this ident.
   const dup = _afkAlarms.list().some(a =>
     a.type === 'waypoint' &&
@@ -10814,10 +10858,11 @@ function _afkWpAlarmModalSave() {
   if (!_afkWpAlarmPending) { _afkWpAlarmModalCancel(); return; }
   const ident = _afkWpAlarmPending.ident;
   const sound = document.getElementById('afkWpAlarmSound').value || 'digital-clock';
+  const dur   = _afkReadModalDuration('Wp');
   _afkAlarms.add({
     type: 'waypoint',
     sound,
-    params: { scope: 'specific', fixIdents: [ident], durationMode: 'indefinite' },
+    params: { scope: 'specific', fixIdents: [ident], durationMode: dur.durationMode, durationSec: dur.durationSec },
     state: {},
   });
   _afkWpAlarmPending = null;
@@ -10833,10 +10878,11 @@ function _afkGeofenceModalSave() {
   const label   = document.getElementById('afkGfLabel').value.trim();
   const trigger = document.getElementById('afkGfTrigger').value;
   const sound   = document.getElementById('afkGfSound').value;
+  const dur     = _afkReadModalDuration('Gf');
   _afkAlarms.add({
     type: 'geofence',
     sound,
-    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label, durationMode: 'indefinite' },
+    params: { lat: r.lat, lng: r.lng, radiusNm: r.radiusNm, trigger, label, durationMode: dur.durationMode, durationSec: dur.durationSec },
     state: { wasInside: null },
   });
   // Remove preview layers; the persistent visual will re-render below
@@ -20799,7 +20845,7 @@ function rgSendToFlightPlanner() {
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
-            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference.<br/><br/>
+            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the left of any alarm card and drag it up or down to re-rank. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
@@ -20864,8 +20910,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.72.0</span>
+          <span class="release-version">v2.73.0</span>
           <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Set sound duration directly from the Geofence and Waypoint quick-add modals.</strong> Both modals now have a <em>Sound for</em> row matching the one on the alarm cards &mdash; pick <em>Indefinite (until dismissed)</em> or <em>Specific time…</em> with a seconds input. Previously the duration could only be set after committing the alarm by opening the main Alerts modal and finding the card; now you can pick the duration once during the initial draw / right-click and never have to revisit. The seconds value seeds from your saved preference (or 10 if you haven't picked one yet); changing it writes back to <code>localStorage</code> as the new default, same as on the main cards. Mode always opens at <em>Indefinite</em> so you must explicitly opt-in to seconds &mdash; preserves the existing "new alarms default to indefinite" contract.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.72.0</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -28159,6 +28217,15 @@ function rgSendToFlightPlanner() {
         <select id="afkWpAlarmSound" class="afk-select"></select>
         <button class="afk-icon-btn" onclick="_afkPreviewSelectedSound('afkWpAlarmSound')" title="Preview sound">▶</button>
       </div>
+      <div class="afk-edit-row" style="margin-bottom:0.5rem;">
+        <span class="afk-edit-label">Sound for</span>
+        <select id="afkWpDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Wp')">
+          <option value="indefinite">Indefinite (until dismissed)</option>
+          <option value="seconds">Specific time…</option>
+        </select>
+        <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
+        <span id="afkWpDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
+      </div>
       <div class="afk-footer-info" id="afkWpAlarmDupHint" style="margin-top:0.4rem;color:#ffaa55;display:none;">⚠ A specific-waypoint alarm already covers this fix. Adding another will create a duplicate.</div>
     </div>
     <div class="afk-modal-footer">
@@ -28192,6 +28259,15 @@ function rgSendToFlightPlanner() {
         <span class="afk-edit-label">Sound</span>
         <select id="afkGfSound" class="afk-select"></select>
         <button class="afk-icon-btn" onclick="_afkPreviewSelectedSound('afkGfSound')" title="Preview sound">▶</button>
+      </div>
+      <div class="afk-edit-row" style="margin-bottom:0.7rem;">
+        <span class="afk-edit-label">Sound for</span>
+        <select id="afkGfDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Gf')">
+          <option value="indefinite">Indefinite (until dismissed)</option>
+          <option value="seconds">Specific time…</option>
+        </select>
+        <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
+        <span id="afkGfDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
       </div>
       <div class="afk-footer-info" id="afkGfCoords" style="margin-top:0.3rem;"></div>
     </div>
