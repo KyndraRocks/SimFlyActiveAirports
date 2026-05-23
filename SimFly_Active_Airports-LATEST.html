@@ -697,7 +697,11 @@
      Uses a neutral white pill with dark text instead of the user's chosen
      route color — guarantees high contrast on any map background (street,
      satellite, light mode, dark mode) regardless of what route color the
-     user picks for the polyline. */
+     user picks for the polyline.
+     pointer-events:auto so the label itself accepts right-click → opens the
+     waypoint-alarm quick-add modal. The wired-in JS handler lives in
+     _sbOfpRender. cursor:context-menu hints to the user that the pill is
+     interactive on right-click. */
   .leaflet-tooltip.sb-ofp-wpt-label {
     background: #ffffff;
     color: #0a1224;
@@ -711,6 +715,8 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.55) inset;
     white-space: nowrap;
     opacity: 0.96;
+    pointer-events: auto;
+    cursor: context-menu;
   }
   .leaflet-tooltip.sb-ofp-wpt-label::before { display: none; }   /* hide tooltip pointer arrow on permanent labels */
   /* Label colour is fixed (always white pill + dark text) — no light-mode override needed. */
@@ -4518,7 +4524,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.70.0';
+const APP_VERSION = '2.70.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8724,7 +8730,9 @@ function _sbOfpRender(data) {
     const ident = (f.ident || '').toString();
     if (!ident) return;
     const m = L.circleMarker([lat, lng], {
-      radius: 3.5, color, weight: 2, fillColor: '#0a1224', fillOpacity: 1,
+      // Radius bumped 3.5 → 5 so the right-click hit target is easier to land
+      // (3.5 px = 8×8 px bounding box, awkward to right-click precisely).
+      radius: 5, color, weight: 2, fillColor: '#0a1224', fillOpacity: 1,
     }).addTo(_rgMap);
     if (showLabel) {
       // Label colour is fixed in CSS (.sb-ofp-wpt-label — white pill, dark
@@ -8733,6 +8741,18 @@ function _sbOfpRender(data) {
       m.bindTooltip(ident, {
         permanent: true, direction: 'right', offset: [6, 0], className: 'sb-ofp-wpt-label',
       });
+      // The permanent tooltip element has pointer-events:auto (see CSS) so the
+      // white pill itself accepts right-click → quick-add waypoint alarm.
+      // Without this only the tiny circle dot could receive the contextmenu,
+      // which made the feature feel broken to users.
+      const tipEl = m.getTooltip && m.getTooltip() && m.getTooltip()._container;
+      if (tipEl) {
+        tipEl.addEventListener('contextmenu', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (typeof _afkOpenWpAlarmModal === 'function') _afkOpenWpAlarmModal(ident, lat, lng);
+        });
+      }
     } else {
       const altFt  = parseFloat(f.altitude_feet);
       const altLbl = isFinite(altFt) && altFt > 0
@@ -10189,8 +10209,11 @@ function _afkAlarmShortDescription(a, includeTitle) {
   if (a.type === 'geofence') {
     const p = a.params;
     const label = p.label ? (p.label + ' — ') : '';
+    const tt = p.trigger === 'enter' ? 'Alert on Entry'
+             : p.trigger === 'exit'  ? 'Alert on Exit'
+             : 'Alert on Entry & Exit';
     return title + label + p.radiusNm.toFixed(1) + ' nm circle at ' +
-      p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + '° (on ' + p.trigger.toUpperCase() + ')';
+      p.lat.toFixed(3) + '°, ' + p.lng.toFixed(3) + ' — ' + tt;
   }
   if (a.type === 'waypoint') {
     const s = a.params.scope;
@@ -10544,11 +10567,11 @@ function _afkGfRenderPreview(centerLatLng, radiusNm) {
     iconAnchor: [0, 0],
   });
   try {
-    // High zIndexOffset so the live radius readout floats above all other
-    // map content during a draw (waypoint labels, geofence labels, live
-    // aircraft icon). Persistent post-commit labels stay at the lower 1200
-    // offset so they layer alongside the rest of the AA overlays.
-    _afkGfDrawState.labelLayer = L.marker(centerLatLng, { icon: label, interactive: false, zIndexOffset: 10000 }).addTo(_rgMap);
+    // Use the custom afkLabelPane (z-index 680) AND a high zIndexOffset so the
+    // live radius readout floats above all other map content during a draw —
+    // including waypoint pill labels in the tooltipPane (z-index 650).
+    _afkEnsureLabelPane();
+    _afkGfDrawState.labelLayer = L.marker(centerLatLng, { icon: label, interactive: false, pane: 'afkLabelPane', zIndexOffset: 10000 }).addTo(_rgMap);
   } catch (_) {}
 }
 
@@ -10686,8 +10709,24 @@ function _afkGeofenceModalSave() {
 
 // ---------------------- PERSISTENT MAP VISUALS ----------------------------
 const _afkGeofenceLayers = {}; // id → { circle, label }
+
+// Ensure a Leaflet pane exists with z-index higher than the default
+// tooltipPane (650). Geofence labels go here so they render above any
+// permanent SimBrief waypoint label pills, which are tooltips and would
+// otherwise sit on top.
+function _afkEnsureLabelPane() {
+  if (!_rgMap) return null;
+  if (!_rgMap.getPane('afkLabelPane')) {
+    _rgMap.createPane('afkLabelPane');
+    const p = _rgMap.getPane('afkLabelPane');
+    if (p) { p.style.zIndex = '680'; p.style.pointerEvents = 'none'; }
+  }
+  return 'afkLabelPane';
+}
+
 function _afkRenderGeofenceVisuals() {
   if (!_rgMap) return;
+  _afkEnsureLabelPane();
   // Remove layers for alarms that no longer exist or are disabled
   const validIds = new Set(_afkAlarms.list().filter(a => a.type === 'geofence' && a.enabled).map(a => a.id));
   Object.keys(_afkGeofenceLayers).forEach(idStr => {
@@ -10713,7 +10752,10 @@ function _afkRenderGeofenceVisuals() {
       // in place when possible, else remove + recreate. Never pass _rgMap.
       circle = _rgGeoCircle(existing && existing.circle ? existing.circle : null, p.lat, p.lng, p.radiusNm, style);
     } catch (_) {}
-    const text = (p.label ? p.label + ' · ' : '') + p.radiusNm.toFixed(1) + ' nm · ' + p.trigger.toUpperCase();
+    const triggerText = p.trigger === 'enter' ? 'Alert on Entry'
+                      : p.trigger === 'exit'  ? 'Alert on Exit'
+                      : 'Alert on Entry & Exit';
+    const text = (p.label ? p.label + ' · ' : '') + p.radiusNm.toFixed(1) + ' nm — ' + triggerText;
     const ic = L.divIcon({
       className: 'afk-gf-label',
       // display:inline-block so the background sizes to the text content. Without
@@ -10724,7 +10766,9 @@ function _afkRenderGeofenceVisuals() {
       iconSize: [0, 0], iconAnchor: [0, -8],
     });
     try {
-      label = L.marker([p.lat, p.lng], { icon: ic, interactive: false, zIndexOffset: 1200 }).addTo(_rgMap);
+      // Use the custom afkLabelPane (z-index 680, above the default tooltipPane
+      // at 650) so the geofence label floats above SimBrief waypoint labels.
+      label = L.marker([p.lat, p.lng], { icon: ic, interactive: false, pane: 'afkLabelPane', zIndexOffset: 1200 }).addTo(_rgMap);
     } catch (_) {}
     _afkGeofenceLayers[a.id] = { circle, label };
   });
@@ -20649,10 +20693,24 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.70.1</span>
+          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Geofence map label wording updated.</strong> The persistent label hovering above each armed geofence now reads "Practice · 5.0 nm &mdash; <em>Alert on Entry</em>" instead of "Practice · 5.0 nm · ENTER". For exit-trigger fences it reads "Alert on Exit"; for both-direction fences it reads "Alert on Entry &amp; Exit". The alarm-card subtitle in the Alerts modal got the same wording for consistency.</li>
+          <li><strong>Geofence labels now float above SimBrief waypoint labels.</strong> Previously the geofence label marker lived in Leaflet's default <code>markerPane</code> (z-index 600), while SimBrief waypoint pill labels lived in the <code>tooltipPane</code> (z-index 650) — so the waypoint pills rendered <em>over</em> any geofence label that happened to fall behind them. New custom <code>afkLabelPane</code> at z-index 680 hosts both the persistent geofence labels and the live radius readout during a draw. Result: geofence labels are always visible regardless of waypoint label placement.</li>
+          <li><strong>Right-click on a SimBrief waypoint now actually opens the quick-add modal.</strong> v2.70.0 wired the contextmenu handler on the waypoint marker (a tiny 8&times;8 px SVG circle), but users naturally right-click the much larger white pill label &mdash; and Leaflet tooltips ship with <code>pointer-events: none</code>, so right-clicks on the pill fell through to whatever was behind it. Three fixes: (1) the <code>.sb-ofp-wpt-label</code> pill now has <code>pointer-events: auto</code> plus a <code>cursor: context-menu</code> hint; (2) a contextmenu listener is attached directly to the tooltip's DOM element, so right-clicking the pill opens the quick-add modal for that fix; (3) the underlying waypoint dot radius bumped from 3.5 → 5 (visual difference is negligible, hit target is meaningfully easier).</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.70.0</span>
-          <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
