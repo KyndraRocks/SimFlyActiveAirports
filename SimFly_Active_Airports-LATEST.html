@@ -4524,7 +4524,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.71.0';
+const APP_VERSION = '2.72.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9645,9 +9645,17 @@ const _afkETA = (() => {
       const vs = _afkPhase.vsFpm();
       const thresh = parseFloat(alarm.params.altFt);
       if (ac.alt == null || !isFinite(ac.alt) || !isFinite(thresh)) return NaN;
-      if (ac.alt <= thresh) return 0;
-      if (vs >= 0) return NaN; // not descending
-      return ((ac.alt - thresh) / Math.abs(vs)) * 60;
+      const direction = (alarm.params && alarm.params.direction === 'climbing') ? 'climbing' : 'descending';
+      if (direction === 'descending') {
+        // Need to be ABOVE threshold and DESCENDING to predict a crossing.
+        if (ac.alt <= thresh) return NaN; // already on the wrong side; can't predict crossing
+        if (vs >= 0) return NaN;          // not descending
+        return ((ac.alt - thresh) / Math.abs(vs)) * 60;
+      } else { // climbing
+        if (ac.alt >= thresh) return NaN; // already on the wrong side
+        if (vs <= 0) return NaN;          // not climbing
+        return ((thresh - ac.alt) / vs) * 60;
+      }
     }
     // cruise, descent, phase-change — not ETA-predictable from instantaneous state
     return NaN;
@@ -9957,10 +9965,31 @@ function _afkEvalDescent(alarm) {
 }
 
 function _afkEvalAltMin(alarm, ac) {
+  // Crossing-only detection (v2.72.0+): tracks prev-tick altitude and fires
+  // ONLY when the aircraft actually crosses the threshold in the chosen
+  // direction. Won't fire if the alarm is armed when the aircraft is
+  // already on the wrong side of the threshold — must observe an actual
+  // crossing event. First tick after arming just seeds prevAlt.
   if (alarm.state.fired) return false;
   const t = parseFloat(alarm.params.altFt);
   if (ac.alt == null || !isFinite(ac.alt) || !isFinite(t)) return false;
-  if (ac.alt < t) { alarm.state.fired = true; return true; }
+  const direction = (alarm.params && alarm.params.direction === 'climbing') ? 'climbing' : 'descending';
+  const prev = alarm.state.prevAlt;
+  // Seed prev-alt on first valid sample — no firing.
+  if (prev == null || !isFinite(prev)) {
+    alarm.state.prevAlt = ac.alt;
+    return false;
+  }
+  let crossed = false;
+  if (direction === 'descending') {
+    // Was at-or-above threshold AND is now below.
+    if (prev >= t && ac.alt < t) crossed = true;
+  } else { // climbing
+    // Was at-or-below threshold AND is now above.
+    if (prev <= t && ac.alt > t) crossed = true;
+  }
+  alarm.state.prevAlt = ac.alt;
+  if (crossed) { alarm.state.fired = true; return true; }
   return false;
 }
 
@@ -10212,7 +10241,7 @@ function _afkAlarmIcon(type) {
     case 'waypoint':     return '📍';
     case 'cruise':       return '─';
     case 'descent':      return '↘';
-    case 'alt-min':      return '▼';
+    case 'alt-min':      return '↕';
   }
   return '🔔';
 }
@@ -10223,7 +10252,7 @@ function _afkAlarmTypeLabel(type) {
     case 'waypoint':     return 'Waypoint';
     case 'cruise':       return 'Cruise Reached';
     case 'descent':      return 'Descent Started';
-    case 'alt-min':      return 'Altitude Minimum';
+    case 'alt-min':      return 'Altitude';
   }
   return 'Alarm';
 }
@@ -10240,7 +10269,7 @@ function _afkAlarmTooltip(type) {
     case 'descent':
       return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise. Useful as the "wake me up before TOD" backstop.';
     case 'alt-min':
-      return 'Altitude Minimum — fires when your aircraft\'s altitude drops below a threshold you set. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
+      return 'Altitude — fires when your aircraft CROSSES through a specified altitude. Pick "descending through" or "climbing through". Only fires on an actual crossing — if you arm the alarm already on the wrong side of the threshold, it waits until you cross. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
   }
   return '';
 }
@@ -10268,7 +10297,10 @@ function _afkAlarmShortDescription(a, includeTitle) {
   }
   if (a.type === 'cruise')       return title + 'Aircraft levels off into cruise';
   if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
-  if (a.type === 'alt-min')      return title + 'Altitude descends below ' + _afkFmtAltDisplay(a.params.altFt);
+  if (a.type === 'alt-min') {
+    const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
+    return title + dir + ' ' + _afkFmtAltDisplay(a.params.altFt);
+  }
   return title;
 }
 
@@ -10440,8 +10472,15 @@ function _afkRenderEditor(a) {
   }
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
+    const dir = (a.params && a.params.direction === 'climbing') ? 'climbing' : 'descending';
     body =
-      '<div class="afk-edit-row"><span class="afk-edit-label">Below</span>' +
+      '<div class="afk-edit-row"><span class="afk-edit-label">Direction</span>' +
+        '<select class="afk-select" onchange="_afkSetAltDirection(' + a.id + ', this.value)" title="Only fires on an actual crossing — won\'t trip if you arm the alarm already on the wrong side of the threshold.">' +
+          '<option value="descending"' + (dir === 'descending' ? ' selected' : '') + '>Descending through</option>' +
+          '<option value="climbing"'   + (dir === 'climbing'   ? ' selected' : '') + '>Climbing through</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
         '<input type="text" class="afk-input" style="width:130px;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200)">' +
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
       '</div>';
@@ -10530,6 +10569,22 @@ function _afkSetAltMin(id, v) {
   }
 }
 
+function _afkSetAltDirection(id, dir) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.direction = (dir === 'climbing') ? 'climbing' : 'descending';
+  // Reset the crossing-detection state so the alarm needs a fresh prev-alt
+  // sample before it can fire — won't trigger on whatever side the aircraft
+  // happens to be on at the moment of the direction switch.
+  a.state.fired = false;
+  a.state.prevAlt = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
 function _afkSetDurationMode(id, mode) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.durationMode = (mode === 'seconds') ? 'seconds' : 'indefinite';
@@ -10564,7 +10619,7 @@ function _afkAddAlarm(type) {
   }
   const base = { type, sound: 'digital-clock', params: {}, state: {} };
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
-  if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000' };
+  if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
   // Duration default — always indefinite for new alarms (the user's saved
   // seconds preference is only applied when they explicitly switch the
@@ -20741,7 +20796,7 @@ function rgSendToFlightPlanner() {
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires the first time the aircraft levels off into cruise. The detector is <em>adaptive</em> &mdash; it tracks the peak climb vertical speed for this flight and treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60 seconds. Works for both a Cessna 152 climbing at 700&nbsp;fpm and a Boeing 777 climbing at 3,000&nbsp;fpm without any per-aircraft tuning.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise.</li>
-              <li><strong>▼ Altitude Minimum</strong> &mdash; trips when MSL altitude drops below a threshold you set. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
+              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference.<br/><br/>
@@ -20809,8 +20864,21 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.71.0</span>
+          <span class="release-version">v2.72.0</span>
           <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>"Altitude Minimum" alarm renamed to "Altitude" &mdash; now works in both directions.</strong> The alarm type formerly known as <em>Altitude Minimum</em> (which only fired when altitude dropped below a threshold) is now called simply <strong>Altitude</strong> and has a new <strong>Direction</strong> picker on the card: choose <em>Descending through</em> or <em>Climbing through</em>. Use cases this enables: "wake me when I climb through FL100" for tracking departures, "alarm me at the FAF altitude on approach", etc. Icon updated from ▼ to ↕ to convey bidirectional. Internal alarm type id stayed <code>'alt-min'</code> so existing localStorage alarms migrate transparently &mdash; legacy alarms default to <em>Descending through</em> (their original behaviour).</li>
+          <li><strong>Altitude alarm now requires an actual CROSSING &mdash; won't fire if armed on the wrong side of the threshold.</strong> Previously, arming a <em>"trip below FL100"</em> alarm while already at FL080 would fire immediately. This was the wrong behaviour &mdash; the user expectation is that an altitude alarm should fire when you <em>break through</em> the altitude in the chosen direction, not just because you happen to currently be on the alert side. The evaluator now tracks the previous-tick altitude (<code>alarm.state.prevAlt</code>) and fires ONLY when <code>prev</code> was on the start side AND <code>current</code> is on the other side &mdash; an actual crossing event. First tick after arming just seeds the prev-alt sample without firing. Switching the direction picker resets the crossing-detection state so the alarm needs fresh samples before it can fire. ETA calculator updated to honour direction (predicts climbing-through ETAs too).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.71.0</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -28057,7 +28125,7 @@ function rgSendToFlightPlanner() {
         <button class="afk-add-btn" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
         <button class="afk-add-btn" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
         <button class="afk-add-btn" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">▼</span><span>Altitude Minimum</span></button>
+        <button class="afk-add-btn" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">↕</span><span>Altitude</span></button>
       </div>
       <div class="afk-list-col" id="afkAlarmList">
         <div class="afk-list-empty">No alarms configured. Pick a type on the left to add one.</div>

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.71.0**
+**Current version: v2.72.0**
 
 ---
 
@@ -191,7 +191,7 @@ Click **🔔 Alerts** in the map header to open the configuration modal. Five in
 - **📍 Waypoint** — fires when your aircraft passes a SimBrief flight-plan waypoint. Uses **closest-point-of-approach (CPA) detection**, so it fires correctly even when your track is a few nm off the planned line. Pick *Every waypoint*, *TOC* (top of climb), *TOD* (top of descent), or a specific multi-select. **Shortcut:** right-click any waypoint dot on the plotted route to open a quick-add modal pre-populated with that fix's ident and a sound picker.
 - **─ Cruise Reached** — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an *adaptive detector* — it tracks the peak climb vertical speed for this flight and treats cruise/descent thresholds as a fraction of it. Works for both a Cessna 152 climbing at 700 fpm and a Boeing 777 climbing at 3,000 fpm without per-aircraft tuning.
 - **↘ Descent Started** — one-shot alarm that fires when sustained descent begins from cruise. Same adaptive approach as Cruise.
-- **▼ Altitude Minimum** — fires when MSL altitude drops below a threshold you set. Accepts both **plain feet** (`10000`, `10,000`) and **flight levels** (`FL350`, `FL 200`). The hint next to the input echoes the parsed value as you type.
+- **↕ Altitude** — fires when your aircraft **crosses through** an altitude you set. Pick **Descending through** or **Climbing through**; the alarm only fires when you actually cross the threshold in the chosen direction. **It will NOT fire if you arm the alarm already on the wrong side** — e.g. if you arm a *Descending through FL100* alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. Accepts both **plain feet** (`10000`, `10,000`) and **flight levels** (`FL350`, `FL 200`).
 
 Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell; ▶ preview without arming), **sound duration** (*Indefinite (until dismissed)* — the default — or *Specific time…* with a configurable number of seconds; your seconds value is remembered as the default for the next alarm you switch to seconds mode), and a **⋮⋮ drag handle**. **Drag cards up/down to reorder them** — list order is *priority order*, so the highest-priority tripped alarm's sound plays. Hovering any alarm icon or title shows a plain-English description of what it does and when it fires. **Keyboard shortcut:** on the geofence and waypoint quick-add modals, press **Enter** to commit the alarm without reaching for the Add Alarm button.
 
