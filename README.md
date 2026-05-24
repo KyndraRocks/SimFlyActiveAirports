@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.85.2**
+**Current version: v2.86.0**
 
 ---
 
@@ -147,8 +147,8 @@ Airports not in your Scenery Library, or in the library with no rating set, are 
 
 Click the **✕** in the panel's top-right corner to close it — same as clicking **⭐ Rating** in the toolbar.
 
-### Distance Map
-An interactive map renders all departure and arrival airports with colour-coded markers. Click any marker to zoom to fit all airports in view. Overlays weather flight category rings when weather data is loaded. When a route is highlighted on the map, the departure and arrival info cards display a **Weather** section with the same decoded breakdown as the badge-hover tooltip (METAR, flight category, wind, visibility, sky, temp/dew, altimeter).
+### Departure / Arrival Info Panel
+As soon as a departure or arrival airport is set — by typing an ICAO, clicking a matrix row / column / cell, or selecting a dot on the interactive map — a panel beneath the matrix shows the full airport details for that endpoint. Each card renders independently: the departure card on the left, arrival on the right, and either card hides on its own when its own ICAO is cleared. Cards include city, owner, SimFly category, elevation, full runway list, aircraft-suitability verdict, and the cached METAR / weather summary when available — matching the matrix header tooltips so the information is in one persistent place instead of behind a hover. Replaces the v2.85 collapsible Route Map below the matrix — the interactive-map workflow is fully covered by the **⊙ Map** button, which is faster, drag-resizable, and integrates with Region Mode, the Scenery Library, METAR overlays, measurement tools, and SimBrief plotting.
 
 ### Weather & Flight Conditions
 The departure and arrival airports auto-fetch a METAR the moment you set or change either ICAO, and again whenever you return to the tab if their cached data is older than 30 minutes — the route endpoints are always current without you doing anything. Click **⛅ Get Weather** to additionally fetch live METARs for every other airport currently in view in one batch. Flight category dots (VFR / MVFR / IFR / LIFR) appear on every matrix header and inline on the departure/arrival name lines. Hovering any dot shows a decoded weather breakdown: conditions, wind, visibility, ceiling, altimeter, and raw METAR. **Hovering the big departure or arrival ICAO / name text** on the main screen also includes the full decoded weather section in the tooltip — flight category pill, raw METAR, wind, visibility, sky, temperature / dewpoint, altimeter, observed time — alongside the existing airport details (owner, runways, etc.). If you hover before the METAR arrives, the tooltip refreshes itself in place the moment the data lands. Data is cached for 30 minutes and invalidates automatically when you change owners.
