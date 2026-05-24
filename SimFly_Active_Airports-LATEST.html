@@ -1529,7 +1529,8 @@
     padding: 0.75rem 1rem;
     background: var(--panel);
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9rem;
+    /* v2.87.16 — Courier body text +35% (0.9rem → 1.215rem). */
+    font-size: 1.215rem;
     color: var(--text);
     line-height: 1.6;
     min-width: 0;
@@ -1538,16 +1539,24 @@
   .dist-map-info-card + .dist-map-info-card { border-left: 1px solid var(--border); }
   .dist-map-info-card-lbl {
     font-family: 'Orbitron', monospace;
-    font-size: 0.6rem;
+    /* v2.87.14 — final size 1.44rem (v2.87.13 bumped 0.6rem → 2.4rem at
+       +300%, then dialled back -40% per visual review). Still ~2.4× the
+       original 0.6rem so the section header reads as a header, just not
+       overpoweringly so. Per-card colour overrides live just below. */
+    font-size: 1.44rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--muted);
     margin-bottom: 0.5rem;
+    line-height: 1.0;
   }
+  #distInfoDepCard .dist-map-info-card-lbl { color: #00c8ff; }
+  #distInfoArrCard .dist-map-info-card-lbl { color: #ff6a00; }
   .dist-map-info-card strong {
     display: block;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 1rem;
+    /* v2.87.16 — Airport-name Courier text +35% (1rem → 1.35rem). */
+    font-size: 1.35rem;
     font-weight: 700;
     color: var(--accent);
     letter-spacing: 0.02em;
@@ -2736,12 +2745,55 @@
     display: block;
     font-size: 0.81rem;
     color: var(--muted);
-    opacity: 0.55;
+    /* v2.87.7 — opacity:0.55 removed so the inline cyan/orange dep-arr
+       convention colours render at full brightness, matching their usage
+       elsewhere on the screen (owner labels, Dep/Arr filter labels). */
     text-align: center;
     white-space: nowrap;
     line-height: 1.2;
     letter-spacing: 0.04em;
   }
+  /* v2.87.9 — Diagonal-split corner cell for the dep/arr orientation hint.
+     Shared between the main matrix (.dist-corner-cell) and the Region Mode
+     matrix (.rg-corner). A linear-gradient draws the thin diagonal line
+     from bottom-left to top-right; the two labels are absolutely positioned
+     in opposite triangles with the dep/arr convention colours.
+       - Top-right triangle  → ARR in orange (#ff6a00)
+       - Bottom-left triangle → DEP in cyan   (#00c8ff)
+     The position itself conveys row/column orientation, so the explicit
+     `→` / `↓` arrows from the previous design are dropped. */
+  .matrix-corner-diag {
+    position: relative;
+    /* Fills the cell so the diagonal spans corner-to-corner regardless
+       of how table-layout sized the column. Sensible minimums prevent
+       collapse when the column is unusually narrow. */
+    width: 100%;
+    height: 100%;
+    min-width: 56px;
+    min-height: 36px;
+    /* v2.87.10 — diagonal line uses var(--border) so it matches the
+       matrix's other cell borders exactly. */
+    background: linear-gradient(
+      to top right,
+      transparent calc(50% - 0.6px),
+      var(--border) calc(50% - 0.6px),
+      var(--border) calc(50% + 0.6px),
+      transparent calc(50% + 0.6px)
+    );
+  }
+  .matrix-corner-diag-arr,
+  .matrix-corner-diag-dep {
+    position: absolute;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 700;
+    /* v2.87.10 — font bumped 40% from 0.78rem to 1.09rem for legibility. */
+    font-size: 1.09rem;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .matrix-corner-diag-arr { top: 4px;    right: 6px; color: #ff6a00; }
+  .matrix-corner-diag-dep { bottom: 4px; left:  6px; color: #00c8ff; }
   /* Inline SWAP button between owner dropdowns */
   .dist-owner-swap-btn:disabled {
     opacity: 0.28;
@@ -2927,7 +2979,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .dist-matrix .wx-dot,
   .dist-names-line .wx-dot { position:relative; top:-2px; }
 
-  .tip-wx-raw              { font-family:'Courier New',Courier,monospace; font-size:0.71rem;
+  /* v2.87.17 — METAR raw string font +50% (0.71rem → 1.065rem). The
+     pre-v2.87.17 size was inherited from the matrix-tooltip pop-up where
+     space is tight; here in the info card the METAR has its own row and
+     can stand to be readable. */
+  .tip-wx-raw              { font-family:'Courier New',Courier,monospace; font-size:1.065rem;
                              word-break:break-all; padding-bottom:0.4rem; margin-bottom:0.4rem;
                              border-bottom:1px solid var(--border); }
   .tip-wx-cat              { font-size:0.82rem; font-weight:bold; margin-bottom:0.3rem; }
@@ -3182,7 +3238,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-col-resize:hover, .rg-col-resize.rg-drag-active { background:rgba(0,200,255,0.3); }
   .rg-row-resize { position:absolute; left:0; right:0; bottom:-1px; height:6px; cursor:row-resize; z-index:6; background:transparent; }
   .rg-row-resize:hover, .rg-row-resize.rg-drag-active { background:rgba(0,200,255,0.3); }
-  .rg-nm-label { position:absolute; top:0; left:0; pointer-events:none; z-index:1000; background:var(--panel); border:1px solid var(--accent); border-radius:4px; padding:0.15rem 0.45rem; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:600; color:var(--accent); white-space:nowrap; display:none; transform:translate(14px,12px); }
+  /* v2.87.11 — Map distance labels standardised on Rajdhani 0.94rem
+     semibold with tabular-nums for consistent digit column widths.
+     Previously this label was Courier New / 0.88rem while the sibling
+     .rg-ring-lbl measurement / range labels were Rajdhani / 0.82rem
+     (or 0.94rem inline). All map distance labels now share the same
+     font configuration; only colour and border differentiate them. */
+  .rg-nm-label { position:absolute; top:0; left:0; pointer-events:none; z-index:1000; background:var(--panel); border:1px solid var(--accent); border-radius:4px; padding:0.15rem 0.45rem; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:0.02em; color:var(--accent); white-space:nowrap; display:none; transform:translate(14px,12px); }
   .rg-nm-label.arr { border-color:var(--accent2); color:var(--accent2); }
   .rg-hero-lbl { background:rgba(0,8,18,0.88); color:#00c8ff; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:700; padding:0.22rem 0.65rem; border-radius:5px; border:1px solid rgba(0,200,255,0.45); white-space:nowrap; letter-spacing:0.04em; pointer-events:none; box-shadow:0 0 10px 2px rgba(0,200,255,0.25); display:inline-block; }
   /* "Crosses antimeridian" 2nd-row chip — solid dark pill with amber border so it's legible against both street and satellite map backgrounds. Used by the live + saved measurement labels, the dot-click route info label, and the dep→arr hero label. */
@@ -3298,14 +3360,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-swatch { width:0.9rem; height:0.9rem; border-radius:50%; flex-shrink:0; }
   .rg-owner-name { font-family:'Rajdhani',sans-serif; font-size:1.5rem; color:var(--text); }
   /* Range ring border label + hover tooltip */
-  .rg-ring-lbl { background:rgba(0,8,18,0.82); border:1px solid rgba(255,209,102,0.55); color:#ffd166; font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:600; padding:0.1rem 0.38rem; border-radius:3px; white-space:nowrap; pointer-events:none; }
+  /* v2.87.11 — Font size bumped from 0.82rem to 0.94rem (matches the inline
+     overrides previously used by the measurement-label rendering) and
+     tabular-nums + letter-spacing added so every map distance label
+     shares the same font configuration. */
+  .rg-ring-lbl { background:rgba(0,8,18,0.82); border:1px solid rgba(255,209,102,0.55); color:#ffd166; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:0.02em; padding:0.1rem 0.38rem; border-radius:3px; white-space:nowrap; pointer-events:none; }
   /* ✕ close badge on the measurement distance label (border color set inline) */
   .rg-meas-close { position:absolute; top:-10px; right:-10px; width:18px; height:18px; box-sizing:border-box; border-radius:50%; border:1.5px solid; background:rgba(5,0,12,0.97); color:#fff; font-size:0.66rem; font-weight:700; line-height:15px; text-align:center; box-shadow:0 1px 5px rgba(0,0,0,0.6); }
   /* Route-total chip — distinct from the per-leg .rg-ring-lbl chips: thicker
      accent border, soft glow, two-line layout. Background stays dark in both
      tile modes so the text reads cleanly over street and satellite imagery.
      border-color, glow and the main-line color are set inline (tile-aware). */
-  .rg-route-total { display:inline-flex; flex-direction:column; align-items:center; background:rgba(5,0,12,0.96); border:2px solid; border-radius:6px; padding:0.2rem 0.66rem; font-family:'Rajdhani',sans-serif; line-height:1.15; pointer-events:none; }
+  /* v2.87.11 — tabular-nums added so the route-total digits line up
+     with the per-leg labels and the region distance label. */
+  .rg-route-total { display:inline-flex; flex-direction:column; align-items:center; background:rgba(5,0,12,0.96); border:2px solid; border-radius:6px; padding:0.2rem 0.66rem; font-family:'Rajdhani',sans-serif; font-variant-numeric:tabular-nums; line-height:1.15; pointer-events:none; }
   .rg-route-total-main { font-size:1rem; font-weight:700; letter-spacing:0.03em; }
   .rg-route-total-sub  { font-size:0.72rem; font-weight:600; letter-spacing:0.02em; color:rgba(255,255,255,0.78); margin-top:1px; }
   .leaflet-tooltip.rg-ring-tip { background:rgba(0,8,18,0.9); border:1px solid rgba(255,209,102,0.5); color:#ffd166; padding:0.2rem 0.55rem; border-radius:4px; font-family:'Rajdhani',sans-serif; white-space:nowrap; pointer-events:none; }
@@ -3911,6 +3979,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 
   /* Config modal */
   #afkConfigModal { z-index:9500; }
+  /* v2.87.5 — Alert History modal must sit at the same high z-index as the
+     Alerts modal (and above map-layer elements at 9000-9700) or it gets
+     covered by them even when the Alerts modal itself is closed. The
+     pre-v2.87.5 default was z-index:1000 inherited from .modal-overlay,
+     which was below the breadcrumbs / phase overlay / scenery / region
+     modal layers. Bumping above #afkConfigModal so the natural stacking
+     also covers any future scenario where both are technically open. */
+  #afkHistoryModal { z-index:9510; }
   #afkConfigModal .modal { max-width:clamp(720px,52vw,1080px); }
   .afk-config-body { display:flex; gap:1.1rem; min-height:62vh; max-height:82vh; }
   .afk-add-col {
@@ -3956,7 +4032,43 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     padding:0.7rem 0.85rem;
     margin-bottom:0.65rem;
   }
-  .afk-card.disabled { opacity:0.55; }
+  /* v2.87.4 — Disabled card styling. Heavy fade applied per-child so the
+     enable checkbox and delete ✕ can stay at full visibility (the user
+     still needs to find those controls to re-enable / delete a disabled
+     alarm; CSS opacity/filter on the parent cascades to children and
+     can't be "lifted" back on a descendant). The card itself keeps
+     only the background stripe pattern + dashed muted border. Children
+     that should fade (grip, chevron, icon, description, editor body)
+     get heavy opacity + grayscale applied directly; .afk-card-actions
+     (the toggle + delete ✕ cluster) is deliberately omitted from the
+     fade selectors. */
+  .afk-card.disabled {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        rgba(255,255,255,0.035) 0,
+        rgba(255,255,255,0.035) 6px,
+        transparent 6px,
+        transparent 14px
+      ),
+      rgba(255,255,255,0.02);
+    border-color:rgba(255,255,255,0.10);
+    border-style:dashed;
+  }
+  .afk-card.disabled .afk-card-grip,
+  .afk-card.disabled .afk-card-chevron,
+  .afk-card.disabled .afk-card-icon,
+  .afk-card.disabled .afk-card-desc,
+  .afk-card.disabled .afk-card-editor {
+    opacity:0.28;
+    filter:grayscale(0.85);
+  }
+  .afk-card.disabled .afk-card-desc-title,
+  .afk-card.disabled .afk-card-desc-sub {
+    text-decoration:line-through;
+    text-decoration-color:rgba(255,255,255,0.5);
+    text-decoration-thickness:1px;
+  }
   .afk-card.tripped { border-color:#ff3d5a; background:rgba(255,61,90,0.10); }
   /* Multi-select highlight — Shift-click an alarm to add it to the
      selection set; the "Group selected" footer button fires when ≥2 are
@@ -4253,6 +4365,124 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     cursor:pointer;
   }
   .afk-btn-secondary:hover { background:rgba(0,200,255,0.18); color:#9adfff; }
+
+  /* Alert History modal (v2.87.0) */
+  #afkHistoryModal .modal {
+    max-width:min(880px, 96vw);
+    width:880px;
+    max-height:88vh;
+    display:flex; flex-direction:column;
+  }
+  #afkHistoryModal .modal-body { padding:0; overflow:hidden; display:flex; flex-direction:column; flex:1; min-height:0; }
+  .afk-hist-toolbar {
+    display:flex; justify-content:space-between; align-items:center; gap:0.6rem;
+    padding:0.85rem 1.2rem; border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  .afk-hist-meta {
+    font-family:'Rajdhani',sans-serif; font-size:0.92rem; color:var(--muted);
+  }
+  .afk-hist-list-wrap {
+    flex:1; overflow-y:auto; padding:0.6rem 1.2rem 1rem 1.2rem;
+  }
+  .afk-hist-empty {
+    font-family:'Rajdhani',sans-serif; font-size:1.0rem; color:var(--muted);
+    padding:2rem 0.4rem; text-align:center;
+  }
+  .afk-hist-row {
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:6px;
+    padding:0.65rem 0.85rem;
+    margin-bottom:0.65rem;
+    font-family:'Rajdhani',sans-serif;
+  }
+  .afk-hist-row-head {
+    display:flex; justify-content:space-between; align-items:flex-start; gap:0.8rem;
+    margin-bottom:0.35rem;
+  }
+  .afk-hist-row-title { font-size:1.1rem; color:#e8f4fb; }
+  .afk-hist-type { font-weight:700; color:var(--accent); }
+  .afk-hist-row-actions { display:flex; gap:0.4rem; flex-shrink:0; }
+  .afk-hist-pin, .afk-hist-del {
+    background:rgba(0,200,255,0.08);
+    border:1px solid rgba(0,200,255,0.4);
+    color:var(--accent);
+    padding:0.25rem 0.55rem;
+    font-family:'Rajdhani',sans-serif; font-size:0.88rem; font-weight:600;
+    border-radius:4px; cursor:pointer;
+  }
+  .afk-hist-pin:hover { background:rgba(0,200,255,0.18); color:#9adfff; }
+  .afk-hist-pin.active {
+    background:rgba(255,170,0,0.18);
+    border-color:rgba(255,170,0,0.6);
+    color:#ffd070;
+  }
+  .afk-hist-del {
+    background:rgba(255,61,90,0.10);
+    border-color:rgba(255,61,90,0.5);
+    color:#ff8090;
+  }
+  .afk-hist-del:hover { background:rgba(255,61,90,0.22); color:#ffb0bd; }
+  .afk-hist-row-meta {
+    display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;
+    font-size:0.88rem; color:var(--muted);
+    margin-bottom:0.45rem;
+  }
+  .afk-hist-time { color:#cfe6f3; }
+  .afk-hist-time-utc { color:var(--muted); }
+  .afk-hist-pill {
+    display:inline-block;
+    padding:0.08rem 0.5rem;
+    border-radius:10px;
+    font-size:0.78rem; font-weight:600;
+    border:1px solid currentColor;
+    background:rgba(255,255,255,0.04);
+  }
+  .afk-hist-pill-armed   { color:#9bb6c4; }
+  .afk-hist-pill-user    { color:#ffb95a; }
+  .afk-hist-pill-timer   { color:#7ad7b6; }
+  .afk-hist-pill-cascade { color:#c79bff; }
+  .afk-hist-pill-group   { color:#7adfff; }
+  .afk-hist-row-section { margin-top:0.35rem; }
+  .afk-hist-section-label {
+    font-size:0.78rem; letter-spacing:0.08em;
+    color:var(--muted); text-transform:uppercase;
+    margin-bottom:0.18rem;
+  }
+  .afk-hist-section-body { font-size:0.95rem; color:#dbe9f1; }
+  .afk-hist-param { display:inline-block; margin-right:0.7rem; }
+  .afk-hist-param-k { color:var(--muted); }
+  .afk-hist-param-v { color:#dbe9f1; font-weight:600; }
+  .afk-hist-tele {
+    display:flex; flex-wrap:wrap; gap:0.6rem 1.0rem;
+  }
+  .afk-hist-tele-pair { display:inline-flex; gap:0.35rem; align-items:baseline; }
+  .afk-hist-tele-k { color:var(--muted); font-size:0.8rem; }
+  .afk-hist-tele-v { color:#dbe9f1; font-weight:600; font-size:0.95rem; }
+  .afk-hist-footer {
+    display:flex; justify-content:space-between; align-items:center; gap:0.6rem;
+    padding:0.75rem 1.2rem;
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+  /* Map markers for plotted history entries */
+  .afk-hist-marker { pointer-events:none; }
+  .afk-hist-marker-dot {
+    position:absolute; left:-7px; top:-7px;
+    width:14px; height:14px;
+    background:#ffaa00; border:2px solid #1a1a22;
+    border-radius:50%;
+    box-shadow:0 0 0 1px #ffaa00, 0 0 10px rgba(255,170,0,0.65);
+  }
+  .afk-hist-marker-label {
+    position:absolute; left:12px; top:-12px;
+    background:rgba(20,20,28,0.92); color:#ffd070;
+    border:1px solid rgba(255,170,0,0.7);
+    border-radius:3px;
+    padding:1px 6px;
+    font-family:'Rajdhani',sans-serif; font-size:0.82rem;
+    white-space:nowrap;
+    pointer-events:none;
+  }
 
   /* Trip overlay — full-screen */
   #afkTripOverlay {
@@ -4650,14 +4880,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         <div style="display:flex;align-items:flex-end;gap:0.45rem;flex-wrap:wrap;min-width:0;">
           <div style="display:grid;grid-template-columns:110px auto 110px;column-gap:0.45rem;row-gap:0.3rem;flex-shrink:0;align-items:center;">
             <div class="dist-label-row">
-              <span class="dist-label dist-label--dep-arr">Departure</span>
+              <span class="dist-label dist-label--dep-arr" style="color:#00c8ff">Departure</span>
               <button class="dist-lookup-btn" id="distDepLookup" disabled tabindex="-1"
                       title="Use this airport as the sole departure — ignore the owner dropdown"
                       onclick="_distLookupOwner('dep')" aria-label="Look up departure airport owner">🔍</button>
             </div>
             <div></div>
             <div class="dist-label-row">
-              <span class="dist-label dist-label--dep-arr">Arrival</span>
+              <span class="dist-label dist-label--dep-arr" style="color:#ff6a00">Arrival</span>
               <button class="dist-lookup-btn" id="distArrLookup" disabled tabindex="-1"
                       title="Use this airport as the sole arrival — ignore the owner dropdown"
                       onclick="_distLookupOwner('arr')" aria-label="Look up arrival airport owner">🔍</button>
@@ -4808,7 +5038,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       <!-- Owner-to-owner matrix section -->
       <div class="dist-owner-row" id="distOwnerRow">
         <div class="dist-owner-field">
-          <span class="dist-label dist-label--owner" id="distDepOwnerLabel">Departure Airport Owner</span>
+          <span class="dist-label dist-label--owner" id="distDepOwnerLabel" style="color:#00c8ff">Departure Airport Owner</span>
           <select style="display:none" class="dist-select" id="distDepOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Departure airport owner">
             <option value="">— select owner —</option>
           </select>
@@ -4823,7 +5053,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         </div>
         <button class="dist-owner-swap-btn" id="distOwnerSwapBtn" onclick="_distSwapOwners()" title="Swap Departure and Arrival owners" tabindex="-1">⇄</button>
         <div class="dist-owner-field">
-          <span class="dist-label dist-label--owner" id="distArrOwnerLabel">Arrival Airport Owner</span>
+          <span class="dist-label dist-label--owner" id="distArrOwnerLabel" style="color:#ff6a00">Arrival Airport Owner</span>
           <select style="display:none" class="dist-select" id="distArrOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Arrival airport owner">
             <option value="">— select owner —</option>
           </select>
@@ -4859,7 +5089,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       <div class="dist-cat-filter-row" id="distCatFilterRow">
         <div class="dist-cat-dual-row">
           <div class="dist-cat-pills-row" id="distCatDepRow">
-            <span class="dist-cat-filter-label">Dep</span>
+            <span class="dist-cat-filter-label" style="color:#00c8ff" title="Filter departure airports by SimFly category">Dep</span>
             <button class="dist-cat-btn active" data-cat="1" data-side="dep" style="--rg-cat-color:#FF4040" onclick="_distToggleCat(this)" title="Category 1: Small unpaved airstrips and local grass fields" tabindex="-1">1</button>
             <button class="dist-cat-btn active" data-cat="2" data-side="dep" style="--rg-cat-color:#FF8800" onclick="_distToggleCat(this)" title="Category 2: Minor rural airfields and flight school bases" tabindex="-1">2</button>
             <button class="dist-cat-btn active" data-cat="3" data-side="dep" style="--rg-cat-color:#FFEE00" onclick="_distToggleCat(this)" title="Category 3: Small regional and small domestic airports" tabindex="-1">3</button>
@@ -4870,7 +5100,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             <button class="dist-cat-invert-btn" onclick="_distInvertCat('dep')" title="Invert departure category selection" tabindex="-1">Inv</button>
           </div>
           <div class="dist-cat-pills-row" id="distCatArrRow">
-            <span class="dist-cat-filter-label">Arr</span>
+            <span class="dist-cat-filter-label" style="color:#ff6a00" title="Filter arrival airports by SimFly category">Arr</span>
             <button class="dist-cat-btn active" data-cat="1" data-side="arr" style="--rg-cat-color:#FF4040" onclick="_distToggleCat(this)" title="Category 1: Small unpaved airstrips and local grass fields" tabindex="-1">1</button>
             <button class="dist-cat-btn active" data-cat="2" data-side="arr" style="--rg-cat-color:#FF8800" onclick="_distToggleCat(this)" title="Category 2: Minor rural airfields and flight school bases" tabindex="-1">2</button>
             <button class="dist-cat-btn active" data-cat="3" data-side="arr" style="--rg-cat-color:#FFEE00" onclick="_distToggleCat(this)" title="Category 3: Small regional and small domestic airports" tabindex="-1">3</button>
@@ -4893,11 +5123,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       <div class="dist-info-panel" id="distInfoPanel" style="display:none;">
         <div class="dist-map-info-row">
           <div class="dist-map-info-card" id="distInfoDepCard">
-            <div class="dist-map-info-card-lbl">▶ Departure</div>
+            <div class="dist-map-info-card-lbl">Departure ▶</div>
             <div id="distMapInfoDepContent"></div>
           </div>
           <div class="dist-map-info-card" id="distInfoArrCard">
-            <div class="dist-map-info-card-lbl">Arrival ▶</div>
+            <div class="dist-map-info-card-lbl">▶ Arrival</div>
             <div id="distMapInfoArrContent"></div>
           </div>
         </div>
@@ -4918,7 +5148,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.86.0';
+const APP_VERSION = '2.87.18';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -7834,7 +8064,12 @@ function refreshOwnerDropdowns() {
   ['dep', 'arr'].forEach(side => {
     const listEl = document.getElementById(side === 'dep' ? 'distDepOwnerDdList' : 'distArrOwnerDdList');
     if (!listEl) return;
-    const blankRow = `<div class="dist-owner-dd-blank" data-owner="" onclick="_distOwnerDdClick(this,'${side}')">— select owner —</div>`;
+    // v2.87.8 — colour the placeholder row to match the dep/arr convention
+    // (cyan for departure, orange for arrival) so the dropdown matches the
+    // label above it. Inline style keeps the colour locally scoped without
+    // adding new CSS rules.
+    const blankColor = side === 'arr' ? '#ff6a00' : '#00c8ff';
+    const blankRow = `<div class="dist-owner-dd-blank" data-owner="" onclick="_distOwnerDdClick(this,'${side}')" style="color:${blankColor}">— select owner —</div>`;
     const rows = owners.map(o => {
       const safe = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       const disp = o.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -8398,7 +8633,11 @@ function renderDistMatrix() {
     ? `<span class="dist-corner-same-badge" title="${cornerTitle}">same owner</span>`
     : '';
 
-  let html = `<thead><tr><th class="dist-corner-cell"><div class="dist-corner-inner"><span class="dist-corner-label">ARR&nbsp;&rarr;<br/>DEP&nbsp;&darr;</span></div></th>`;
+  // v2.87.9 — Diagonal-split corner cell. The two labels sit in opposite
+  // triangles of the cell (ARR top-right, DEP bottom-left) with a thin
+  // diagonal divider drawn by the CSS background gradient on
+  // .matrix-corner-diag. Position conveys orientation; arrows dropped.
+  let html = `<thead><tr><th class="dist-corner-cell" title="${cornerTitle}"><div class="matrix-corner-diag"><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>`;
   for (let c = 0; c < arrAirports.length; c++) {
     const a        = arrAirports[c];
     const tipHtml_c = _buildTooltipHtml(a.icao, a.rec, false, colSortHint(), resolvedArr.name, 'arr');
@@ -10120,6 +10359,406 @@ function _afkPreviewSelectedSound(selectId) {
   if (sel && sel.value) _afkAudio.preview(sel.value);
 }
 
+// v2.87.0 — Footer "TEST SOUND" button. Iterates through every sound in
+// _AFK_SOUNDS on successive clicks so the user can audition the full
+// library without leaving the Alerts modal. Wraps back to the first sound
+// after the last. Re-uses _afkAudio.preview so an actively-tripped alarm
+// resumes after the 2.5 s preview ends.
+let _afkTestSoundIdx = 0;
+function _afkTestSound() {
+  if (!_AFK_SOUNDS.length) return;
+  const sound = _AFK_SOUNDS[_afkTestSoundIdx % _AFK_SOUNDS.length];
+  _afkTestSoundIdx = (_afkTestSoundIdx + 1) % _AFK_SOUNDS.length;
+  _afkAudio.preview(sound.id);
+  _aaRtToast('🔊 Testing sound — ' + sound.name + ' (click again for next)', 'ok');
+}
+
+// ===========================================================================
+// ALERT HISTORY (v2.87.0)
+// ---------------------------------------------------------------------------
+// Persistent FIFO log of the last 100 alert events. Captures full telemetry
+// at trip-time, the alarm's configured parameters, group context, and the
+// eventual dismissal reason (user vs. duration timer vs. group cascade).
+// Each entry can be plotted on the map as a labelled pin so the pilot can
+// review where each alert fired during the flight.
+// ===========================================================================
+const _AFK_HIST_LS_KEY = 'simfly_aa_afk_alert_history';
+const _AFK_HIST_MAX    = 100;
+let _afkHistoryIdSeq   = 1;
+const _afkHistoryPlots = {}; // entryId → Leaflet marker
+
+const _afkHistory = (() => {
+  let entries = [];
+
+  function _load() {
+    try {
+      const raw = localStorage.getItem(_AFK_HIST_LS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      entries = parsed;
+      entries.forEach(e => {
+        if (e && typeof e.id === 'number' && e.id >= _afkHistoryIdSeq) {
+          _afkHistoryIdSeq = e.id + 1;
+        }
+        // Plotted state is transient — markers are recreated only on
+        // explicit pin click, never auto-restored on page reload.
+        if (e) e.plotted = false;
+      });
+    } catch (_) {}
+  }
+  function _save() {
+    try { localStorage.setItem(_AFK_HIST_LS_KEY, JSON.stringify(entries)); } catch (_) {}
+  }
+  function _trim() {
+    if (entries.length > _AFK_HIST_MAX) {
+      const removed = entries.splice(0, entries.length - _AFK_HIST_MAX);
+      // Clean up any map markers attached to evicted entries.
+      removed.forEach(e => _afkHistoryUnplot(e.id, { silent: true }));
+    }
+  }
+
+  function list() { return entries.slice().reverse(); } // newest first
+  function getById(id) { return entries.find(e => e.id === id) || null; }
+  function add(entry) {
+    entry.id = _afkHistoryIdSeq++;
+    entries.push(entry);
+    _trim();
+    _save();
+    return entry;
+  }
+  function update(id, patch) {
+    const e = getById(id);
+    if (!e) return null;
+    Object.assign(e, patch);
+    _save();
+    return e;
+  }
+  function remove(id) {
+    _afkHistoryUnplot(id, { silent: true });
+    entries = entries.filter(e => e.id !== id);
+    _save();
+  }
+  function clear() {
+    Object.keys(_afkHistoryPlots).forEach(k => _afkHistoryUnplot(parseInt(k, 10), { silent: true }));
+    entries = [];
+    _save();
+  }
+  function latestForAlarm(alarmId) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].alarmId === alarmId) return entries[i];
+    }
+    return null;
+  }
+
+  _load();
+  return { list, getById, add, update, remove, clear, latestForAlarm };
+})();
+
+// Capture a telemetry snapshot suitable for the history log.
+function _afkHistorySnapshotTelemetry() {
+  const d = (typeof _liveAcLastData !== 'undefined') ? _liveAcLastData : null;
+  let vs = null;
+  try { vs = _afkPhase.vsFpm(); } catch (_) {}
+  const phase = (() => { try { return _afkPhase.get(); } catch (_) { return null; } })();
+  if (!d) return { lat: null, lng: null, alt: null, gs: null, ias: null, hdg: null, vs: vs, phase: phase, source: null, ident: null };
+  const num = v => (v != null && isFinite(parseFloat(v))) ? parseFloat(v) : null;
+  return {
+    lat:    num(d.lat),
+    lng:    num(d.lng),
+    alt:    num(d.alt),
+    gs:     num(d.gs),
+    ias:    num(d.ias),
+    hdg:    num(d.hdg),
+    vs:     (vs != null && isFinite(vs)) ? Math.round(vs) : null,
+    phase:  (d.phase || phase || null),
+    source: d.source || null,
+    ident:  d.ident  || null,
+  };
+}
+
+// Called from _afkOnTripped for each freshly-tripped alarm.
+function _afkHistoryRecordTrip(alarm) {
+  if (!alarm) return null;
+  const telemetry = _afkHistorySnapshotTelemetry();
+  let groupCtx = null;
+  if (alarm.groupId) {
+    let gName = '';
+    try {
+      const g = _afkGroups.list().find(x => x.id === alarm.groupId);
+      gName = (g && g.name) || '';
+    } catch (_) {}
+    groupCtx = { groupId: alarm.groupId, groupName: gName, role: 'fired' };
+  }
+  let summary = '';
+  try { summary = _afkAlarmShortDescription(alarm, false).replace(/<[^>]+>/g, '').trim(); } catch (_) {}
+  return _afkHistory.add({
+    firedAt:      Date.now(),
+    alarmId:      alarm.id,
+    type:         alarm.type,
+    typeLabel:    _afkAlarmTypeLabel(alarm.type),
+    label:        (alarm.params && alarm.params.label) || '',
+    paramsSummary: summary,
+    params:       alarm.params ? JSON.parse(JSON.stringify(alarm.params)) : {},
+    sound:        alarm.sound || null,
+    mobileAlert:  !!alarm.mobileAlert,
+    telemetry:    telemetry,
+    group:        groupCtx,
+    dismissal:    null,
+    plotted:      false,
+  });
+}
+
+// Mark the latest history entry for `alarmId` as dismissed. Reason is one
+// of 'user', 'timer', 'group-cascade'. If no entry exists (alarm never
+// tripped or its entry was evicted), do nothing.
+function _afkHistoryMarkDismissed(alarmId, reason) {
+  const e = _afkHistory.latestForAlarm(alarmId);
+  if (!e || e.dismissal) return;
+  _afkHistory.update(e.id, { dismissal: { at: Date.now(), reason: reason || 'user' } });
+}
+
+// For an armed (never-tripped) group sibling that's being cascade-disabled,
+// record a synthetic entry explaining why so the user has a complete record
+// of what the group cascade did.
+function _afkHistoryRecordCascadedSibling(alarm, groupCtxFromFired) {
+  if (!alarm) return null;
+  const telemetry = _afkHistorySnapshotTelemetry();
+  let groupCtx = null;
+  if (alarm.groupId) {
+    let gName = '';
+    try {
+      const g = _afkGroups.list().find(x => x.id === alarm.groupId);
+      gName = (g && g.name) || (groupCtxFromFired && groupCtxFromFired.groupName) || '';
+    } catch (_) {}
+    groupCtx = { groupId: alarm.groupId, groupName: gName, role: 'cascaded' };
+  }
+  let summary = '';
+  try { summary = _afkAlarmShortDescription(alarm, false).replace(/<[^>]+>/g, '').trim(); } catch (_) {}
+  return _afkHistory.add({
+    firedAt:      Date.now(),
+    alarmId:      alarm.id,
+    type:         alarm.type,
+    typeLabel:    _afkAlarmTypeLabel(alarm.type),
+    label:        (alarm.params && alarm.params.label) || '',
+    paramsSummary: summary,
+    params:       alarm.params ? JSON.parse(JSON.stringify(alarm.params)) : {},
+    sound:        alarm.sound || null,
+    mobileAlert:  !!alarm.mobileAlert,
+    telemetry:    telemetry,
+    group:        groupCtx,
+    dismissal:    { at: Date.now(), reason: 'group-cascade' },
+    plotted:      false,
+  });
+}
+
+// ----- Map plotting ---------------------------------------------------------
+function _afkHistoryPlot(entryId) {
+  const e = _afkHistory.getById(entryId);
+  if (!e) return;
+  if (!e.telemetry || e.telemetry.lat == null || e.telemetry.lng == null) {
+    _aaRtToast('📍 No position recorded for that alert — cannot plot.', 'warn');
+    return;
+  }
+  if (typeof _rgMap === 'undefined' || !_rgMap) {
+    _aaRtToast('📍 Map not ready.', 'warn');
+    return;
+  }
+  if (_afkHistoryPlots[entryId]) return; // already plotted
+  const d = new Date(e.firedAt);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const lbl = (e.label || e.typeLabel || 'Alert').replace(/</g, '&lt;');
+  const role = e.group && e.group.role === 'cascaded' ? ' (cascade)' : '';
+  const html =
+    '<div class="afk-hist-marker-dot"></div>' +
+    '<div class="afk-hist-marker-label">' + hh + ':' + mm + ' · ' + e.typeLabel + role + (e.label ? ' — ' + lbl : '') + '</div>';
+  const icon = L.divIcon({
+    className: 'afk-hist-marker',
+    html: html,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  const m = L.marker([e.telemetry.lat, e.telemetry.lng], {
+    icon: icon,
+    interactive: false,
+    zIndexOffset: 1500,
+  }).addTo(_rgMap);
+  _afkHistoryPlots[entryId] = m;
+  _afkHistory.update(entryId, { plotted: true });
+}
+
+function _afkHistoryUnplot(entryId, opts) {
+  opts = opts || {};
+  const m = _afkHistoryPlots[entryId];
+  if (m) {
+    try { _rgMap.removeLayer(m); } catch (_) {}
+    delete _afkHistoryPlots[entryId];
+  }
+  if (!opts.silent) _afkHistory.update(entryId, { plotted: false });
+}
+
+function _afkHistoryToggleMapPin(entryId) {
+  if (_afkHistoryPlots[entryId]) {
+    _afkHistoryUnplot(entryId);
+  } else {
+    _afkHistoryPlot(entryId);
+  }
+  _afkRenderHistoryList();
+}
+
+// ----- Modal --------------------------------------------------------------
+// Track whether the Alerts modal was open when we navigated to History, so
+// closing History returns the user to wherever they were. Two modal-overlays
+// at the same z-index don't stack cleanly (the backdrop-filter creates
+// independent stacking contexts that depend on DOM order in ways that
+// surprised the user), so the safer UX is: clicking the Alert History
+// button on the Alerts modal navigates AWAY from Alerts and INTO History,
+// then closing History navigates back.
+let _afkHistoryReturnToConfig = false;
+function _afkOpenHistory() {
+  const m = document.getElementById('afkHistoryModal');
+  if (!m) return;
+  const cfg = document.getElementById('afkConfigModal');
+  _afkHistoryReturnToConfig = !!(cfg && cfg.classList.contains('open'));
+  if (_afkHistoryReturnToConfig && cfg) cfg.classList.remove('open');
+  m.classList.add('open');
+  _afkRenderHistoryList();
+}
+function _afkCloseHistory() {
+  const m = document.getElementById('afkHistoryModal');
+  if (m) m.classList.remove('open');
+  if (_afkHistoryReturnToConfig) {
+    const cfg = document.getElementById('afkConfigModal');
+    if (cfg) cfg.classList.add('open');
+    _afkHistoryReturnToConfig = false;
+  }
+}
+function _afkHistoryDeleteEntry(entryId) {
+  _afkHistory.remove(entryId);
+  _afkRenderHistoryList();
+}
+function _afkHistoryClearAll() {
+  _afkHistory.clear();
+  _afkRenderHistoryList();
+  _aaRtToast('📜 Alert history cleared.', 'ok');
+}
+
+function _afkHistoryFmtLocal(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+         ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+function _afkHistoryFmtUtc(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+         ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()) + 'Z';
+}
+function _afkHistoryFmtTelemetry(t) {
+  if (!t) return '<span style="color:var(--muted);">No telemetry available.</span>';
+  const fmt = (v, suffix, decimals) => (v == null || !isFinite(v))
+    ? '—'
+    : (decimals != null ? v.toFixed(decimals) : v) + (suffix || '');
+  const rows = [];
+  rows.push(['Pos',  (t.lat != null && t.lng != null) ? (t.lat.toFixed(5) + '°, ' + t.lng.toFixed(5) + '°') : '—']);
+  rows.push(['Alt',  fmt(t.alt, ' ft', 0)]);
+  rows.push(['GS',   fmt(t.gs,  ' kt', 0)]);
+  rows.push(['IAS',  fmt(t.ias, ' kt', 0)]);
+  rows.push(['Hdg',  fmt(t.hdg, '°',   0)]);
+  rows.push(['VS',   (t.vs == null ? '—' : (t.vs > 0 ? '+' : '') + t.vs + ' fpm')]);
+  rows.push(['Phase', t.phase || '—']);
+  rows.push(['Src',   t.source || '—']);
+  if (t.ident) rows.push(['A/C', t.ident]);
+  return rows.map(r =>
+    '<span class="afk-hist-tele-pair"><span class="afk-hist-tele-k">' + r[0] + '</span>' +
+    '<span class="afk-hist-tele-v">' + r[1] + '</span></span>'
+  ).join('');
+}
+function _afkHistoryFmtParams(entry) {
+  if (!entry.params || Object.keys(entry.params).length === 0) return '<span style="color:var(--muted);">—</span>';
+  // Strip noisy/duplicate keys; everything else is rendered as k=v.
+  const skip = { label: 1 }; // label is shown on the row title
+  const parts = [];
+  Object.keys(entry.params).forEach(k => {
+    if (skip[k]) return;
+    let v = entry.params[k];
+    if (Array.isArray(v)) v = v.length ? v.join(', ') : '—';
+    else if (v === true)  v = 'yes';
+    else if (v === false) v = 'no';
+    else if (v === null || v === '') v = '—';
+    parts.push('<span class="afk-hist-param"><span class="afk-hist-param-k">' + k + '</span>=' +
+               '<span class="afk-hist-param-v">' + String(v) + '</span></span>');
+  });
+  return parts.length ? parts.join(' ') : '<span style="color:var(--muted);">—</span>';
+}
+
+function _afkHistoryFmtDismissal(entry) {
+  if (!entry.dismissal) return '<span class="afk-hist-pill afk-hist-pill-armed">awaiting dismissal</span>';
+  const r = entry.dismissal.reason;
+  const tag = r === 'timer'         ? 'duration timer'
+            : r === 'group-cascade' ? 'group cascade'
+            : r === 'user'          ? 'user dismissed'
+            : (r || 'dismissed');
+  const cls = r === 'timer' ? 'afk-hist-pill-timer'
+            : r === 'group-cascade' ? 'afk-hist-pill-cascade'
+            : 'afk-hist-pill-user';
+  const when = entry.dismissal.at ? (' · ' + _afkHistoryFmtLocal(entry.dismissal.at).slice(11)) : '';
+  return '<span class="afk-hist-pill ' + cls + '">' + tag + when + '</span>';
+}
+
+function _afkRenderHistoryList() {
+  const host = document.getElementById('afkHistoryList');
+  const meta = document.getElementById('afkHistoryMeta');
+  if (!host) return;
+  const list = _afkHistory.list();
+  if (meta) meta.textContent = list.length === 0 ? 'No alert events logged yet.' :
+    (list.length + ' event' + (list.length === 1 ? '' : 's') + ' · max ' + _AFK_HIST_MAX + ' (FIFO)');
+  if (list.length === 0) {
+    host.innerHTML = '<div class="afk-hist-empty">No alerts have fired yet on this device. Once they do, the most recent ' + _AFK_HIST_MAX + ' events will appear here.</div>';
+    return;
+  }
+  host.innerHTML = list.map(e => {
+    const pinActive = !!_afkHistoryPlots[e.id];
+    const pinLabel  = pinActive ? '📍 Unpin' : '📍 Pin to Map';
+    const groupHtml = e.group
+      ? '<span class="afk-hist-pill afk-hist-pill-' + (e.group.role === 'cascaded' ? 'cascade' : 'group') + '">' +
+        (e.group.role === 'cascaded' ? '⛓ auto-dismissed (group cascade)' : '⛓ group fired') +
+        (e.group.groupName ? ' · ' + e.group.groupName.replace(/</g, '&lt;') : '') +
+        '</span>'
+      : '';
+    const titleLabel = e.label ? (' — ' + e.label.replace(/</g, '&lt;')) : '';
+    return '' +
+      '<div class="afk-hist-row" data-eid="' + e.id + '">' +
+        '<div class="afk-hist-row-head">' +
+          '<div class="afk-hist-row-title">' +
+            '<span class="afk-hist-type">' + e.typeLabel + '</span>' + titleLabel +
+          '</div>' +
+          '<div class="afk-hist-row-actions">' +
+            '<button class="afk-hist-pin' + (pinActive ? ' active' : '') + '" onclick="_afkHistoryToggleMapPin(' + e.id + ')" title="Plot this alert\'s location on the map as a labelled pin. Click again to remove the pin.">' + pinLabel + '</button>' +
+            '<button class="afk-hist-del" onclick="_afkHistoryDeleteEntry(' + e.id + ')" title="Permanently delete this entry from the log.">✕</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="afk-hist-row-meta">' +
+          '<span class="afk-hist-time">' + _afkHistoryFmtLocal(e.firedAt) + ' local</span>' +
+          '<span class="afk-hist-time-utc">' + _afkHistoryFmtUtc(e.firedAt) + '</span>' +
+          _afkHistoryFmtDismissal(e) +
+          groupHtml +
+        '</div>' +
+        '<div class="afk-hist-row-section">' +
+          '<div class="afk-hist-section-label">Parameters</div>' +
+          '<div class="afk-hist-section-body">' + _afkHistoryFmtParams(e) + '</div>' +
+        '</div>' +
+        '<div class="afk-hist-row-section">' +
+          '<div class="afk-hist-section-label">Telemetry at trip</div>' +
+          '<div class="afk-hist-section-body afk-hist-tele">' + _afkHistoryFmtTelemetry(e.telemetry) + '</div>' +
+        '</div>' +
+      '</div>';
+  }).join('');
+}
+
+
 // Shared helper for the duration picker that appears in both the Geofence
 // and Waypoint quick-add modals. `which` is 'Gf' or 'Wp' — both modals
 // share the same control layout, just under different element-id prefixes.
@@ -10213,8 +10852,20 @@ const _afkPhase = (() => {
     if (vs > peakClimbVS) peakClimbVS = vs;
     const cruiseDeadband = Math.max(200, peakClimbVS * 0.10);   // |VS| < this → "level"
     const descentTrigger = -Math.max(300, peakClimbVS * 0.10);  // VS < this → "descending"
-    const onGround = (gsKts != null && gsKts < 30 && altFt != null && altFt < 1000) ||
-                     (gsKts != null && gsKts < 5);
+    // v2.87.0 — Ground detection no longer references MSL altitude. The
+    // pre-v2.87 check required `alt < 1000`, which silently misclassified
+    // taxi at high-elevation airports (e.g. MMAS at 6,112 ft, La Paz at
+    // 13,300 ft) as airborne. After ~60 s of taxi the phase detector then
+    // drifted to 'cruise' and the Cruise Reached alert tripped on the
+    // ground. New rule:
+    //   - gs < 5                       → ground (near-stationary)
+    //   - gs < 55  AND |VS| < 200 fpm  → ground (covers normal + fast taxi)
+    // 55 kt accommodates fields that allow rapid taxi. Slow flight at
+    // <55 kt level will also be tagged ground; this is rare in normal ops
+    // and the cruise/descent alerts are independently gated on
+    // _afkTakeoffAt > 0 (sustained gs > 40 for 10 s = wheels-up).
+    const onGround = (gsKts != null && gsKts < 5) ||
+                     (gsKts != null && gsKts < 55 && Math.abs(vs) < 200);
     const now = performance.now();
     const prev = lastEmittedPhase;
     let next = prev;
@@ -10228,7 +10879,19 @@ const _afkPhase = (() => {
     } else if (prev === 'climb') {
       if (Math.abs(vs) < cruiseDeadband) {
         if (!cruiseCandidateSince) cruiseCandidateSince = now;
-        if (now - cruiseCandidateSince >= 60000) { next = 'cruise'; cruiseCandidateSince = 0; }
+        // v2.87.1 — peakClimbVS evidence gate. Even if "level VS sustained
+        // 60 s" is satisfied, the cruise transition requires we've actually
+        // seen the aircraft climbing at some point in this session. Without
+        // it, a long sustained-level ground operation (taxi at any field
+        // elevation, holding short on a runway, etc.) could in principle
+        // promote the phase to 'cruise' and let Cruise Reached fire on the
+        // ground. The 200 fpm threshold is well below any real climb rate
+        // (a Cessna 152 holds ~700 fpm; a heavy jet at MTOW holds ~500 fpm)
+        // and well above ground-VS noise / gear compression.
+        if (now - cruiseCandidateSince >= 60000 && peakClimbVS > 200) {
+          next = 'cruise';
+          cruiseCandidateSince = 0;
+        }
       } else {
         cruiseCandidateSince = 0;
       }
@@ -10619,6 +11282,62 @@ function _afkFmtTimerTarget(alarm) {
   return 'Fires at ' + hh + ':' + mm + ':' + ss + ' (in ' + rem + ')';
 }
 
+// v2.87.1 — Single sanctioned per-type state-reset helper. Returns the
+// transient state object an alarm should have to be considered "freshly
+// armed and ready to fire on the next qualifying event." Centralising
+// this in one switch means every code path that flips enabled → true
+// (toggle, group toggle, file import, fresh add) goes through the same
+// logic; if a new alarm type is added later, only this function changes.
+function _afkFreshState(alarm) {
+  if (!alarm || !alarm.type) return {};
+  switch (alarm.type) {
+    case 'timer':
+      // Recompute target so countdown re-arms cleanly relative to "now"
+      // rather than carrying a stale absolute timestamp from a previous
+      // arming.
+      return { targetMs: _afkComputeTimerTarget(alarm.params || {}), fired: false };
+    case 'cruise':
+    case 'alt-min':
+      return { fired: false, prevAlt: null };
+    case 'descent':
+      return { fired: false };
+    case 'geofence':
+      // wasInside = null seeds on first valid sample after arming, so a
+      // freshly-armed fence never trips ENTER on the very next tick.
+      return { wasInside: null };
+    case 'waypoint':
+      return { trippedFixes: {}, wpTrack: {}, _lastFiredFix: null };
+    default:
+      return {};
+  }
+}
+// Mutate an alarm in-place to the "freshly armed" state — fresh per-type
+// transient state plus status/trippedAt cleared. Used wherever an alarm
+// transitions enabled false → true (or is freshly created/imported).
+function _afkResetTransientState(alarm) {
+  if (!alarm) return alarm;
+  alarm.state     = _afkFreshState(alarm);
+  alarm.status    = 'armed';
+  alarm.trippedAt = null;
+  return alarm;
+}
+// v2.87.1 — Used by the airborne-import warning to detect whether the
+// aircraft is currently in flight (or rolling fast). Returns true when
+// a live source has provided a recent sample AND any of: groundspeed
+// over 30 kt, |VS| over 100 fpm, or wheels-up confirmed via the
+// _afkTakeoffAt timestamp. A quiet aircraft sitting at the gate returns
+// false so the typical pre-pushback workflow stays friction-free.
+function _afkLiveTelemetryActive() {
+  if (!_liveAcLastData || !_liveAcLastUpdate) return false;
+  if ((performance.now() - _liveAcLastUpdate) >= _LIVE_AC_STALE_MS) return false;
+  const gs = parseFloat(_liveAcLastData.gs);
+  if (isFinite(gs) && gs > 30) return true;
+  let vs = null; try { vs = _afkPhase.vsFpm(); } catch (_) {}
+  if (vs != null && isFinite(vs) && Math.abs(vs) > 100) return true;
+  if (_afkTakeoffAt && _afkTakeoffAt > 0) return true;
+  return false;
+}
+
 // Setup/cancel/fire — uses setTimeout so timers fire even without a
 // live aircraft source. _afkInit re-schedules surviving timers on load.
 const _afkTimerSchedules = {};
@@ -10692,7 +11411,9 @@ function _afkScheduleAutoDismiss(alarm) {
   _afkClearAlarmTimer(alarm.id);
   _afkAlarmTimers[alarm.id] = setTimeout(() => {
     delete _afkAlarmTimers[alarm.id];
-    if (typeof _afkDismissOne === 'function') _afkDismissOne(alarm.id);
+    // v2.87.0 — pass 'timer' as the dismissal reason so the Alert History
+    // log records "duration timer" instead of "user dismissed" for these.
+    if (typeof _afkDismissOne === 'function') _afkDismissOne(alarm.id, 'timer');
   }, sec * 1000);
 }
 
@@ -11159,6 +11880,11 @@ function _afkEvalTimer(alarm) {
 
 function _afkEvalCruise(alarm, ac) {
   if (alarm.state.fired) return false;
+  // v2.87.0 — Defense-in-depth against high-elevation-airport false trips:
+  // require confirmed wheels-up (gs > 40 sustained 10 s = _afkTakeoffAt set)
+  // before this alarm can fire. Pairs with the GS-based phase ground check;
+  // if either guard catches the aircraft still on the ground, no false trip.
+  if (!_afkTakeoffAt) return false;
   // If the user gave us a target cruise altitude, prefer that as the
   // trigger — fires when the aircraft climbs THROUGH the target (similar
   // to alt-min's climbing direction). This matches what the user typed in
@@ -11187,6 +11913,8 @@ function _afkEvalCruise(alarm, ac) {
 
 function _afkEvalDescent(alarm) {
   if (alarm.state.fired) return false;
+  // v2.87.0 — same wheels-up gate as cruise (see _afkEvalCruise).
+  if (!_afkTakeoffAt) return false;
   if (_afkPhase.get() === 'descent') { alarm.state.fired = true; return true; }
   return false;
 }
@@ -11222,6 +11950,26 @@ function _afkEvalAltMin(alarm, ac) {
 
 function _afkEvaluate(alarm, ac) {
   if (!alarm.enabled || alarm.status === 'tripped') return false;
+  // v2.87.1 — Group cascade enforcement at evaluation time. The
+  // pre-v2.87.1 cascade lived entirely in the dismiss path, so between
+  // the first alarm tripping and the user dismissing it, sibling
+  // alarms in the same group could still satisfy their own conditions
+  // and fire independently — defeating the documented "one fires,
+  // rest disable" contract. Checking sibling status here closes that
+  // window: any time a sibling is already tripped, this alarm cannot
+  // fire. Handles both same-tick races (the trip loop calls trip()
+  // before the next eval, so the second member sees the first tripped
+  // when its eval runs) and different-tick races (sibling tripped on
+  // a prior tick).
+  if (alarm.groupId) {
+    const siblings = _afkAlarms.list();
+    for (let i = 0; i < siblings.length; i++) {
+      const s = siblings[i];
+      if (s.groupId === alarm.groupId && s.id !== alarm.id && s.status === 'tripped') {
+        return false;
+      }
+    }
+  }
   switch (alarm.type) {
     case 'timer':        return _afkEvalTimer(alarm);
     case 'geofence':     return _afkEvalGeofence(alarm, ac);
@@ -11325,16 +12073,19 @@ function _afkTick(data) {
   const _prevPhase = _afkPhase.get();
   _afkPhase.update(data);
   const _curPhase  = _afkPhase.get();
-  // Auto-rearm one-shot cruise/descent alarms when the aircraft returns to
-  // the ground — so the next flight starts with a fresh set of phase
-  // alarms without the user touching anything. Dismiss no longer resets
-  // state.fired (it caused immediate re-trip while still in cruise), so
-  // this ground-transition is now the implicit "next flight begins" hook.
+  // Auto-rearm one-shot cruise/descent/alt-min alarms when the aircraft
+  // returns to the ground — so the next flight starts with a fresh set of
+  // phase alarms without the user touching anything. Dismiss no longer
+  // resets state.fired (it caused immediate re-trip while still in cruise),
+  // so this ground-transition is now the implicit "next flight begins" hook.
+  // v2.87.0 — alt-min added: previously its state.fired persisted across
+  // flights, so an altitude alarm that tripped on flight A silently never
+  // fired on flight B unless the user manually toggled enabled off/on.
   if (_curPhase === 'ground' && _prevPhase && _prevPhase !== 'ground') {
     _afkAlarms.list().forEach(a => {
-      if ((a.type === 'cruise' || a.type === 'descent') && a.state && a.state.fired) {
+      if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min') && a.state && a.state.fired) {
         a.state.fired = false;
-        if (a.type === 'cruise') a.state.prevAlt = null;
+        if (a.type === 'cruise' || a.type === 'alt-min') a.state.prevAlt = null;
         _afkAlarms.update(a.id, { state: a.state });
       }
     });
@@ -11368,6 +12119,7 @@ let _afkTakeoffAt = (() => {
 })();
 let _afkAirborneSince = 0;
 let _afkLastGsAbove40 = 0;
+let _afkLandingCandidateSince = 0;
 function _afkSaveTakeoff() {
   try {
     if (_afkTakeoffAt > 0) localStorage.setItem(_AFK_LS_TAKEOFF, String(_afkTakeoffAt));
@@ -11378,10 +12130,12 @@ function _afkResetTakeoff() {
   _afkTakeoffAt = 0;
   _afkAirborneSince = 0;
   _afkLastGsAbove40 = 0;
+  _afkLandingCandidateSince = 0;
   _afkSaveTakeoff();
 }
 function _afkTakeoffTrack(ac) {
-  const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
+  const hasValidGs = (ac.gs != null && isFinite(ac.gs));
+  const gs = hasValidGs ? ac.gs : 0;
   const now = performance.now();
   if (gs > 40) {
     if (!_afkLastGsAbove40) _afkLastGsAbove40 = now;
@@ -11390,11 +12144,22 @@ function _afkTakeoffTrack(ac) {
       _afkAirborneSince = now;
       _afkSaveTakeoff();
     }
+    _afkLandingCandidateSince = 0;
   } else {
     _afkLastGsAbove40 = 0;
-    // Landing detection: sustained low GS at low altitude after takeoff
-    if (_afkTakeoffAt && gs < 30 && (ac.alt == null || ac.alt < 500)) {
-      _afkResetTakeoff();
+    // v2.87.0 — Landing detection no longer references MSL altitude (it
+    // never satisfied `alt < 500` at high-elevation airports, leaving
+    // _afkTakeoffAt set into the next flight). Require sustained low GS
+    // (60 s of valid gs < 30) so a transient telemetry dropout — which
+    // would have a null/missing gs that we now ignore rather than treat
+    // as 0 — can't reset the in-flight takeoff timestamp.
+    if (_afkTakeoffAt && hasValidGs && gs < 30) {
+      if (!_afkLandingCandidateSince) _afkLandingCandidateSince = now;
+      if (now - _afkLandingCandidateSince >= 60000) {
+        _afkResetTakeoff();
+      }
+    } else {
+      _afkLandingCandidateSince = 0;
     }
   }
 }
@@ -11415,6 +12180,31 @@ function _afkOnTripped(newTrips) {
   // Schedule auto-dismiss timers for any newly-tripped alarms with a
   // duration cap. Indefinite alarms get no timer (current behaviour).
   if (newTrips && newTrips.length) {
+    // v2.87.0 — capture each fresh trip in the Alert History log along
+    // with full telemetry, params, and group context. Done before the
+    // auto-dismiss schedule so the entry exists when the timer fires.
+    newTrips.forEach(a => { try { _afkHistoryRecordTrip(a); } catch (_) {} });
+    // v2.87.1 — Proactively disable armed siblings in every freshly-
+    // tripped alarm's group so the badge / alarm list / map visuals
+    // reflect the "one fires, rest disable" contract immediately
+    // instead of waiting for the user to dismiss. The eval-time guard
+    // in _afkEvaluate already prevents the siblings from firing while
+    // the parent is tripped — this step is the UI / state mirror of
+    // that guarantee. Tripped siblings (rare: two members satisfied on
+    // the same tick before the eval guard caught one) are left alone;
+    // they'll be cascade-dismissed via _afkDismissOne on user action.
+    newTrips.forEach(a => {
+      if (!a.groupId) return;
+      _afkAlarms.list().forEach(sib => {
+        if (sib.groupId !== a.groupId) return;
+        if (sib.id === a.id) return;
+        if (sib.status === 'tripped') return;
+        if (!sib.enabled) return;
+        _afkClearAlarmTimer(sib.id);
+        if (sib.type === 'timer') { try { _afkCancelTimerSchedule(sib.id); } catch (_) {} }
+        _afkAlarms.update(sib.id, { enabled: false });
+      });
+    });
     newTrips.forEach(a => _afkScheduleAutoDismiss(a));
     // v2.85.0 — forward to phone any newly-tripped alarms that opted into
     // Mobile alerts AND the user still has a configured provider. Fire-and-
@@ -11443,15 +12233,30 @@ function _afkOnDismiss(alarm) {
   _afkSyncTripOverlay();
 }
 
-function _afkDismissOne(id) {
+function _afkDismissOne(id, reason) {
   const a = _afkAlarms.get(id);
   if (!a) return;
+  // Default reason for the directly-targeted alarm is 'user'; the auto-
+  // dismiss timer path passes 'timer' explicitly (see _afkScheduleAutoDismiss).
+  const primaryReason = reason || 'user';
   // v2.83.0 — if the dismissed alarm is part of a GROUP, dismiss-and-
   // disable EVERY member at once. Matches the "aggressive cascade" rule
   // the user picked: one fires, the whole group is treated as done.
   const cascadeIds = a.groupId
     ? _afkAlarms.list().filter(x => x.groupId === a.groupId).map(x => x.id)
     : [id];
+  // v2.87.0 — capture group context once (for both tripped and armed
+  // siblings) so the synthetic history entries on armed siblings name
+  // the same group consistently.
+  let groupCtx = null;
+  if (a.groupId) {
+    let gName = '';
+    try {
+      const g = _afkGroups.list().find(x => x.id === a.groupId);
+      gName = (g && g.name) || '';
+    } catch (_) {}
+    groupCtx = { groupId: a.groupId, groupName: gName };
+  }
   cascadeIds.forEach(cid => {
     const ca = _afkAlarms.get(cid);
     if (!ca) return;
@@ -11463,6 +12268,21 @@ function _afkDismissOne(id) {
       ca.state.targetMs = null;
       _afkAlarms.update(cid, { state: ca.state });
     }
+    // v2.87.0 — Alert History bookkeeping for this cascade member:
+    //   - primary alarm (the one dismissed): use the caller-supplied reason
+    //   - sibling that ALSO tripped: dismissal reason = 'group-cascade'
+    //   - sibling that was armed (never tripped): synthetic entry showing
+    //     it was auto-dismissed by group cascade so the user sees what the
+    //     cascade affected.
+    try {
+      if (cid === id) {
+        _afkHistoryMarkDismissed(cid, primaryReason);
+      } else if (ca.status === 'tripped') {
+        _afkHistoryMarkDismissed(cid, 'group-cascade');
+      } else if (ca.enabled) {
+        _afkHistoryRecordCascadedSibling(ca, groupCtx);
+      }
+    } catch (_) {}
     // Dismiss the tripped status (so the overlay row clears) THEN disable
     // so the alarm doesn't immediately re-trip on the next tick.
     if (ca.status === 'tripped') _afkOnDismiss(ca);
@@ -11488,6 +12308,11 @@ function _afkDismissOne(id) {
 }
 
 function _afkDismissAll() {
+  // v2.87.0 — mark each currently-tripped alarm as user-dismissed in the
+  // Alert History log BEFORE the dismissAll() wipes their tripped state.
+  try {
+    _afkAlarms.tripped().forEach(a => _afkHistoryMarkDismissed(a.id, 'user'));
+  } catch (_) {}
   Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
   _afkAlarms.dismissAll();
   _afkAudio.stop();
@@ -11553,7 +12378,9 @@ function _afkExportAlarms() {
     const a    = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     a.href     = url;
-    a.download = 'simfly-alarms-' + stamp + '.json';
+    // v2.87.18 — file name uses "alerts" (matching the UI's user-facing
+    // "Alerts" terminology); was "alarms" historically.
+    a.download = 'simfly-alerts-' + stamp + '.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -11606,6 +12433,21 @@ function _afkImportAlarms(input) {
     const promptParts = [];
     if (current) promptParts.push('Replace the current ' + current + ' alarm(s) with ' + incoming.length + ' from this file? The current alarms will be removed.');
     if (maDiffers && currentMa) promptParts.push('This file also contains Mobile Alerts settings (provider: ' + fileMa.provider + ') that differ from your current configuration. Applying the file will overwrite your existing Mobile Alerts settings.');
+    // v2.87.1 — Airborne-import warning. Loading a fresh alarm set while
+    // the aircraft is actually flying can fire some alarms immediately if
+    // current state already satisfies their conditions (e.g., a Cruise
+    // Reached alarm with a target altitude below current FL, a Geofence
+    // around the destination the aircraft is already near, an Altitude
+    // alarm whose threshold sits between current alt and any near-term
+    // future alt). We warn the user and let them decide. Quiet otherwise
+    // (cold-start gate workflow stays friction-free).
+    if (_afkLiveTelemetryActive()) {
+      promptParts.push(
+        '⚠ The aircraft is currently airborne (active live telemetry detected).\n\n' +
+        'Loading a new alert configuration in flight may cause some alarms to fire immediately if your current position, altitude, or flight phase already satisfies their conditions — for example, a Cruise Reached alarm with a target altitude below your current FL, or a Geofence around your destination.\n\n' +
+        'Tip: if you are loading the alerts intended for THIS flight, you probably want to continue. If you are switching to a configuration meant for a different flight, you probably want to cancel.'
+      );
+    }
     const ok = promptParts.length === 0 || window.confirm(promptParts.join('\n\n'));
     if (!ok) { input.value = ''; return; }
     // Wipe live state first (timers, sounds, map visuals) then drop the
@@ -11637,21 +12479,17 @@ function _afkImportAlarms(input) {
     // assignment + immediate persistence + sound-pre-load via _afkAlarms.add.
     const importedIds = [];
     incoming.forEach(raw => {
-      // Strip transient state — every imported alarm starts armed, not
-      // tripped, with no fired/auto-dismiss state from the previous setup.
+      // v2.87.1 — Every imported alarm comes back armed AND enabled. This
+      // matches the user expectation that "Load from File" produces a
+      // ready-to-fire configuration regardless of whatever enabled/state
+      // values were captured in the saved file. The shared
+      // _afkResetTransientState helper produces the correct freshly-armed
+      // per-type state for every alarm type, closing the previous import
+      // leak where alt-min / geofence / waypoint kept stale state.fired,
+      // wasInside, and trippedFixes from the file.
       const a = Object.assign({}, raw);
-      a.status    = 'armed';
-      a.trippedAt = null;
-      if (a.state && (a.type === 'cruise' || a.type === 'descent')) {
-        a.state = { fired:false, prevAlt:null };
-      } else if (a.state && a.type === 'timer') {
-        // Recompute target from the imported params so the time refers
-        // to "now" in the user's current session, not the export moment.
-        a.state = { targetMs: _afkComputeTimerTarget(a.params || {}), fired:false };
-      } else if (a.state) {
-        a.state = Object.assign({}, a.state);
-        a.state.tripped = false;
-      }
+      a.enabled = true;
+      _afkResetTransientState(a);
       // Remap group id (if any) before insertion so the alarm record
       // points at the fresh local group we'll create below.
       if (a.groupId) {
@@ -12327,22 +13165,16 @@ function _afkGroupToggleAll(gid, on) {
   if (members.length === 0) return;
   members.forEach(a => {
     if (!on) _afkClearAlarmTimer(a.id);
-    if (on && a.type === 'timer') {
-      a.state = a.state || {};
-      a.state.targetMs = _afkComputeTimerTarget(a.params);
-      a.state.fired = false;
-      _afkAlarms.update(a.id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
-      _afkScheduleTimer(_afkAlarms.get(a.id));
-    } else if (!on && a.type === 'timer') {
-      _afkCancelTimerSchedule(a.id);
-      _afkAlarms.update(a.id, { enabled: false, status: 'armed', trippedAt: null });
-    } else if (on && (a.type === 'cruise' || a.type === 'descent')) {
-      a.state = a.state || {};
-      a.state.fired = false;
-      if (a.type === 'cruise') a.state.prevAlt = null;
-      _afkAlarms.update(a.id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
+    if (on) {
+      // v2.87.1 — same single-helper reset path as _afkToggleAlarm so the
+      // master-group checkbox produces exactly the per-type freshly-armed
+      // state a per-card click would.
+      _afkResetTransientState(a);
+      _afkAlarms.update(a.id, { enabled: true, status: a.status, trippedAt: a.trippedAt, state: a.state });
+      if (a.type === 'timer') _afkScheduleTimer(_afkAlarms.get(a.id));
     } else {
-      _afkAlarms.update(a.id, { enabled: !!on, status: 'armed', trippedAt: null });
+      if (a.type === 'timer') _afkCancelTimerSchedule(a.id);
+      _afkAlarms.update(a.id, { enabled: false, status: 'armed', trippedAt: null });
     }
   });
   _afkRenderAlarmList();
@@ -12651,29 +13483,19 @@ function _afkSetAlarmMobileAlert(id, on) { _afkAlarms.update(id, { mobileAlert: 
 function _afkToggleAlarm(id, on) {
   if (!on) _afkClearAlarmTimer(id);
   const a = _afkAlarms.get(id);
-  // Timer alarms — toggling back ON re-arms: recompute targetMs from
-  // current params (so countdown starts fresh, clock-time uses next
-  // occurrence), clear the fired sentinel, and schedule.
-  if (on && a && a.type === 'timer') {
-    a.state.targetMs = _afkComputeTimerTarget(a.params);
-    a.state.fired = false;
-    _afkAlarms.update(id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
-    _afkScheduleTimer(_afkAlarms.get(id));
-  } else if (!on && a && a.type === 'timer') {
-    _afkCancelTimerSchedule(id);
-    _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null });
-  } else if (on && a && (a.type === 'cruise' || a.type === 'descent')) {
-    // Toggling cruise/descent back ON acts as a manual re-arm — clear the
-    // fired sentinel so the next phase transition can fire again. (The
-    // dismiss path no longer resets fired; see _afkAlarms.dismiss.) Also
-    // reset prevAlt so the cruise crossing-detector reseeds from current
-    // altitude instead of inheriting whatever was there at last fire.
-    a.state = a.state || {};
-    a.state.fired = false;
-    if (a.type === 'cruise') a.state.prevAlt = null;
-    _afkAlarms.update(id, { enabled: true, status: 'armed', trippedAt: null, state: a.state });
+  if (!a) return;
+  if (on) {
+    // v2.87.1 — Single per-type state reset path. Every false → true
+    // transition restores the alarm to "ready to fire on next qualifying
+    // event" regardless of type. Previously this branch only handled
+    // timer / cruise / descent; alt-min, geofence, and waypoint silently
+    // kept their post-fire state and could fail to re-arm.
+    _afkResetTransientState(a);
+    _afkAlarms.update(id, { enabled: true, status: a.status, trippedAt: a.trippedAt, state: a.state });
+    if (a.type === 'timer') _afkScheduleTimer(_afkAlarms.get(id));
   } else {
-    _afkAlarms.update(id, { enabled: !!on, status: 'armed', trippedAt: null });
+    if (a.type === 'timer') _afkCancelTimerSchedule(id);
+    _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null });
   }
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -18218,7 +19040,12 @@ function _rgUpdateRangeRing() {
   _rgRangeLabel = L.marker(eastLL, {
     icon: L.divIcon({
       className: '',
-      html: `<div style="position:absolute;transform:translate(5px,-50%);white-space:nowrap"><div class="rg-ring-lbl">✈ ${Math.round(nm).toLocaleString()} nm</div></div>`,
+      // v2.87.12 — aircraft range label adopts the arrival-orange convention
+      // colour (#ff6a00) since the ring boundary represents the maximum
+      // arrival reach from the departure airport. Border colour is muted
+      // by 55% so the chip doesn't compete with the matrix-driven dep/arr
+      // markers for attention.
+      html: `<div style="position:absolute;transform:translate(5px,-50%);white-space:nowrap"><div class="rg-ring-lbl" style="color:#ff6a00;border-color:rgba(255,106,0,0.55)">✈ ${Math.round(nm).toLocaleString()} nm</div></div>`,
       iconSize: [0, 0],
       iconAnchor: [0, 0],
     }),
@@ -21365,7 +22192,8 @@ function _rgRenderMatrix() {
   const rows = [];
 
   // Header row (arrival airports = columns)
-  let hdr = '<tr><th class="rg-col-hdr rg-corner"><span style="color:#00c8ff">DEP</span> \\ <span style="color:#ff6a00">ARR</span></th>';
+  // v2.87.9 — Diagonal-split corner cell (same design as main matrix).
+  let hdr = '<tr><th class="rg-col-hdr rg-corner"><div class="matrix-corner-diag"><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>';
   for (const a of sortedArr) {
     const oi  = ownerOf(a.icao);
     const col = oi ? oi.color : 'rgba(255,255,255,0.1)';
@@ -23664,9 +24492,9 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. <strong>Optional target altitude</strong> (v2.76.0+): leave the <em>Cruise altitude</em> field blank to use the original adaptive phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). Fill it in (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>) and the alarm switches to a climbing-through-target trigger AND the NEXT ALARM "IN" countdown shows live time-to-cruise computed from current altitude and vertical speed. The value persists to <code>localStorage</code> so the next new Cruise alarm pre-fills with your typical cruise altitude.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise.</li>
-              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. <strong>Optional target altitude</strong> (v2.76.0+): leave the <em>Cruise altitude</em> field blank to use the original adaptive phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). Fill it in (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>) and the alarm switches to a climbing-through-target trigger AND the NEXT ALARM "IN" countdown shows live time-to-cruise computed from current altitude and vertical speed. The value persists to <code>localStorage</code> so the next new Cruise alarm pre-fills with your typical cruise altitude. <strong>v2.87.0:</strong> additionally gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s); it cannot fire while still on the ground, even at high-elevation airports where the adaptive phase detector previously could drift to "cruise" during a long taxi. <strong>v2.87.1:</strong> a second structural gate now requires we have actually observed <code>peakClimbVS &gt; +200&nbsp;fpm</code> during this session before the climb &rarr; cruise transition can happen. Sustained-level ground operations keep <code>peakClimbVS</code> at 0, so cruise simply cannot be declared without evidence of a real climb &mdash; independent of the ground-detector's accuracy.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
+              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -23675,13 +24503,21 @@ function rgSendToFlightPlanner() {
 
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
-            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so dismissing any one cascades to all of them. Every member's audio stops, the trip overlay clears for the whole group, and every member auto-disables. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
+            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
 
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
             <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
-            <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads. If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
+            <strong>Load from File behaviour</strong> (v2.87.1+) &mdash; importing an alarm file always produces a ready-to-fire configuration: every imported alarm is set to <em>enabled</em> regardless of whatever <em>enabled</em> state was saved in the file, and per-type transient state (cruise / descent / alt-min <em>fired</em> sentinels, geofence <em>wasInside</em>, waypoint <em>trippedFixes</em>) is freshly seeded so the next live tick treats each alarm as just-armed. <strong>Airborne import warning</strong>: if the aircraft is actively flying (live source connected and groundspeed &gt; 30&nbsp;kt, or |VS| &gt; 100&nbsp;fpm, or wheels-up confirmed) AA shows a confirmation dialog before applying the import &mdash; some alarm types can fire on the first tick post-load if the current flight state already satisfies their conditions (e.g., a Cruise alarm with a target altitude below your current FL). You can Cancel or Load Anyway.<br/><br/>
+
+            <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads (with their <em>enabled</em> state preserved &mdash; that's distinct from file import, which always re-enables everything). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
+            <strong>🔊 Test Sound</strong> (v2.87.0) &mdash; a button at the bottom of the Alerts modal that previews one of the five built-in sounds for ~2.5 seconds so you can verify audio is working without arming an alarm. Each successive click cycles to the next sound in the library, with a toast showing which one is playing. If an alarm is actively tripped and sounding when you click, the preview takes over briefly and the original alarm sound resumes automatically afterwards.<br/><br/>
+
+            <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>Clear History</strong> in the footer wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
+
+            <strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
+
             <strong>Sources required</strong> &mdash; Alerts need a live aircraft source (FSUIPC Live or STKP Live) to evaluate. Waypoint, TOC, and TOD alarms additionally need a SimBrief flight plan loaded.
           </div>
         </div>
@@ -23773,8 +24609,253 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.86.0</span>
+          <span class="release-version">v2.87.18</span>
           <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>"Save to File" filename now uses "alerts" for UI consistency.</strong> Downloaded file naming changed from <code>simfly-alarms-YYYY-MM-DD-...json</code> to <code>simfly-alerts-YYYY-MM-DD-...json</code>. The user-facing modal title, button labels, help-modal section, and release notes have all called this system "Alerts" for some time; only the export filename still used the legacy "alarms" wording. Internal identifiers (localStorage keys like <code>simfly_aa_afk_alarms</code>, internal variable names) are unchanged to avoid breaking saved data &mdash; this is purely the user-visible download filename.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.17</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>METAR string font +50%.</strong> <code>.tip-wx-raw</code> font-size 0.71rem → <strong>1.065rem</strong>. The microscopic size was inherited from the compact matrix-tooltip pop-up where vertical space is tight; in the dep/arr info cards the METAR has its own row and benefits from being properly readable. Other weather metadata (flight-category pill, nearest-station note) unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.16</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Info-card Courier text +35% for readability.</strong> Two CSS rules touched: <code>.dist-map-info-card</code> (the body lines — ICAO codes, owner, payout, category, elevation) <strong>0.9rem → 1.215rem</strong>, and <code>.dist-map-info-card strong</code> (the airport name at the top of each card) <strong>1rem → 1.35rem</strong>. The Orbitron section labels (DEPARTURE / ARRIVAL, and the aircraft-suitability sub-section label) were unchanged — only the Courier-family text scaled.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.15</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Info-card title arrows swapped to point semantically.</strong> Was "▶ Departure" / "Arrival ▶" — the arrows pointed inward toward the card body. Now "DEPARTURE ▶" / "▶ ARRIVAL" — the arrows point in the direction implied by the word itself: departing from the card (out the right side), arriving at the card (in from the left). Tiny tweak, just the two literal triangle characters reordered in the HTML.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.14</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Info-card titles dialled back 40%.</strong> v2.87.13's 2.4rem was overpowering relative to the body text below it. <code>.dist-map-info-card-lbl</code> font-size reduced to <strong>1.44rem</strong> (-40%), still ~2.4× the pre-v2.87.13 baseline so the dep/arr headers still read as proper section labels — just no longer dominating the card.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.13</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dep / Arr info card titles enlarged 300% and re-coloured.</strong> The "DEPARTURE ▶" / "ARRIVAL ▶" labels at the top of the two airport info cards (below the matrix) were a barely-visible 0.6rem muted-grey. <code>.dist-map-info-card-lbl</code> font-size bumped to <strong>2.4rem</strong> (300% increase) for proper section-header prominence. Per-card colour overrides via the existing <code>#distInfoDepCard</code> / <code>#distInfoArrCard</code> IDs: DEPARTURE turns cyan (<code>#00c8ff</code>), ARRIVAL turns orange (<code>#ff6a00</code>). Matches the dep/arr convention used everywhere else on the screen. Also added <code>line-height:1.0</code> so the larger glyphs don't over-pad the card header.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.12</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>"Departure" and "Arrival" labels now follow the convention colours.</strong> The two ICAO-field labels at the top of the main screen previously rendered in the muted default colour. They now inherit the cross-app dep/arr convention: <em>Departure</em> turns cyan (<code>#00c8ff</code>), <em>Arrival</em> turns orange (<code>#ff6a00</code>). Matches the same colours already applied to the <em>Departure Airport Owner</em> / <em>Arrival Airport Owner</em> labels, the <em>Dep</em> / <em>Arr</em> category filter labels, and the matrix 1:1 corner cell.</li>
+          <li><strong>Aircraft range label re-coloured to the arrival convention.</strong> The <code>✈ X nm</code> label at the east edge of the aircraft-range ring was rendered in the default gold of <code>.rg-ring-lbl</code>. Now uses the arrival-orange convention colour (<code>#ff6a00</code>) with the matching border tint &mdash; the ring's boundary represents how far the aircraft can reach from the departure, so it sits naturally with the rest of the arrival-side UI.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.11</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map distance labels unified on a single font configuration.</strong> The various on-map distance tags had drifted apart: the region-line label (`.rg-nm-label`, the cyan "1,522 nm · 2,819 km" tag) was Courier New / 0.88rem, while the measurement labels and range-circle labels (`.rg-ring-lbl`, the yellow / orange chips) were Rajdhani / 0.82rem class default — but with inline 0.94rem overrides on the measurement label rendering. All map distance labels now share the same configuration: <strong>Rajdhani 0.94rem semibold + <code>font-variant-numeric:tabular-nums</code> + 0.02em letter-spacing</strong>. Tabular-nums forces every digit to occupy the same width slot, so values like 1,331 and 2,464 don't jitter relative to each other across redraws. Rajdhani matches the established convention for numbered labels across all SimFly apps (memory note: "use Rajdhani for any label containing digits"). The route-total badge (`.rg-route-total`) also picks up <code>tabular-nums</code> so its Σ figures line up with the per-leg chips.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.10</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Diagonal corner cell: line colour matches matrix cell borders.</strong> The diagonal divider was drawn at <code>rgba(255,255,255,0.32)</code>; now uses <code>var(--border)</code> in the gradient so the line is visually continuous with the rest of the matrix's grid lines.</li>
+          <li><strong>DEP / ARR labels increased 40%.</strong> Font size bumped from 0.78rem to 1.09rem on both <code>.matrix-corner-diag-arr</code> and <code>.matrix-corner-diag-dep</code>. Corner-offsets nudged from 3px/4px to 4px/6px so the bigger glyphs sit comfortably in their triangles. Applies to both the main matrix and Region Mode matrix via the shared CSS class.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.9</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Matrix 1:1 corner cells now use a diagonal-split design.</strong> Both the main distance matrix and the Region Mode matrix had a stacked two-line label (ARR → / DEP ↓) in cell 1:1. The new design divides the cell with a thin diagonal line drawn via a CSS <code>linear-gradient</code> background; <em>ARR</em> sits in the top-right triangle (orange <code>#ff6a00</code>) and <em>DEP</em> sits in the bottom-left triangle (cyan <code>#00c8ff</code>). The position itself conveys row/column orientation, so the explicit arrows were dropped &mdash; the diagonal does the same job more elegantly. New shared CSS class <code>.matrix-corner-diag</code> + two child label classes are reused by both matrices so future corner-cell tweaks happen in one place.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.8</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Owner-dropdown placeholder rows now use the dep/arr colour convention.</strong> Opening either the Departure or Arrival Airport Owner dropdown shows a first row labelled "— select owner —". That placeholder is now coloured: the departure dropdown's placeholder turns cyan (<code>#00c8ff</code>) and the arrival dropdown's turns orange (<code>#ff6a00</code>), matching the labels above each control. The render path branches on the existing `side` variable in the dropdown's population loop so the two placeholders pick up the right colour automatically.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.7</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Matrix corner cell now uses the dep/arr colour convention.</strong> The top-left <code>ARR →</code> / <code>DEP ↓</code> label in cell 1:1 of the distance matrix had the row text and arrows wrapped in a single muted span. Each line is now split into its own coloured span: <code>ARR →</code> turns orange (<code>#ff6a00</code>) and <code>DEP ↓</code> turns cyan (<code>#00c8ff</code>), matching the v2.87.6 changes to the Departure / Arrival owner labels and the Dep / Arr category-filter labels. Also removed the parent <code>opacity:0.55</code> on <code>.dist-corner-label</code> &mdash; that was muting both lines and would have continued to mute the new convention colours; without it the colours now read at full brightness, identical to their usage elsewhere on the screen.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.6</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Departure / Arrival labels coloured to match the rest of the app.</strong> Recip Tracker and AA Region Mode both use cyan (<code>#00c8ff</code>) for departure and orange (<code>#ff6a00</code>) for arrival. Four main-screen labels now follow the same convention: <em>Departure Airport Owner</em> turns cyan, <em>Arrival Airport Owner</em> turns orange, and the <em>Dep</em> / <em>Arr</em> text next to the category-filter circles is recoloured accordingly. The category circles themselves keep their existing per-category colours &mdash; only the side-label changes. No layout / structural changes; pure colour pass.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.87.5</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bug fix &mdash; Alert History modal really does open now (z-index root cause).</strong> v2.87.2 added a "navigate Alerts → History" flow because the History modal wasn't showing on top of the Alerts modal; that diagnosis was wrong. The actual root cause: the Alerts modal carries a one-off <code>#afkConfigModal { z-index:9500 }</code> rule (set so it can sit above the map-layer elements at 9000–9700), but the History modal was using the default <code>.modal-overlay { z-index:1000 }</code> inherited from the base modal rule. With the Alerts modal closed, the History modal was opening AT z-index 1000 underneath the map's breadcrumbs / phase overlay / Region Mode infrastructure at 9000+, so the user saw "nothing but the map." Fixed by adding <code>#afkHistoryModal { z-index:9510 }</code> &mdash; slightly above the Alerts modal so the natural stacking is correct even in any future scenario where both are technically open. The v2.87.2 navigate-not-stack flow stays as-is because it's still cleaner UX (only one modal visible at a time, no half-faded background modal cluttering the view).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.4</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Disabled alarm cards faded further while keeping their controls usable.</strong> v2.87.3 applied <code>opacity</code> and <code>filter:grayscale</code> at the card level, which fades the enable checkbox and delete ✕ along with everything else (CSS opacity/filter on a parent cascades to descendants and can't be lifted back). v2.87.4 applies the fade per-child instead &mdash; grip handle, chevron, icon, description text, and editor body each get <code>opacity:0.28 + grayscale(0.85)</code>, while the <code>.afk-card-actions</code> cluster (toggle + delete ✕) is deliberately excluded from the fade selectors and stays at full visibility. The disabled card now reads even more obviously as off, and the two controls a user actually needs to act on a disabled card (re-enable, delete) remain bright and clickable.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.87.3</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Disabled alarm cards now read unmistakably as inactive.</strong> Previously a disabled card was only <code>opacity:0.55</code>, which left the cyan accent, icon, and toggle bright enough that an off alarm could be mistaken for armed at a glance. Four cues now stack: opacity dropped to 0.50, a <code>grayscale(0.75)</code> filter drains the accent colour to muted grey, a 135° diagonal stripe pattern overlays the background (the classic "inactive" web convention), the border switches to a dashed muted grey, and the alarm's title + summary text get a thin strike-through line. The visual gap between "armed" and "off" is now obvious even from across the modal.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.87.2</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bug fix &mdash; Alert History button now opens the history modal.</strong> v2.87.0 introduced both modals at the same z-index (1000), each with its own <code>backdrop-filter</code>. Each modal's blur creates an independent stacking context, and on real browsers the Alerts modal's filter ended up rendering over the History modal even though History came later in the DOM. Result: clicking <em>📜 Alert History</em> appeared to do nothing &mdash; the History modal was open underneath. Fixed by treating the button as <strong>navigation</strong> rather than stacking: clicking <em>📜 Alert History</em> closes the Alerts modal and opens History; closing History (X or backdrop click) returns you to the Alerts modal. The transition is instant and the user always sees what they expect.</li>
+          <li><strong>Second divider in the Alerts modal footer.</strong> The footer was grouped <em>[Test Sound][Alert History] | [Save][Load][Disable All][Delete All]</em> with one divider; the destructive Disable All / Delete All buttons now sit in their own visually-separated cluster: <em>[Test Sound][Alert History] | [Save][Load] | [Disable All][Delete All]</em>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.87.1</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bug fix &mdash; same-group alarms could both fire.</strong> Reported: a Geofence and a Descent Started alarm sharing the same Alert Group both tripped during one flight. The cascade contract is "one member fires, every sibling auto-disables", but the cascade only ran on user dismiss &mdash; so between the first trip and the dismissal, an enabled sibling whose own conditions later satisfied would fire independently. Cascade enforcement moved into <code>_afkEvaluate</code>: any alarm with a tripped sibling in its group returns false at evaluation time, blocking the second fire before it can happen. Also covers the same-tick race (two members satisfy on the same <code>_afkTick</code> &mdash; the trip loop calls <code>trip()</code> on the first one in list order, the second's eval then sees a tripped sibling and returns false). Mobile Alerts side-effect: duplicate push notifications for sibling group members can no longer occur.</li>
+          <li><strong>Bug fix &mdash; Cruise Reached can no longer fire on the ground at any airport.</strong> v2.87.0 fixed the high-elevation-airport regression with a GS-based ground detector + wheels-up gate, but the protection was heuristic (could in principle be defeated by fast-taxi at gs &gt; 55 sustained). v2.87.1 adds a structural gate: the climb &rarr; cruise phase transition now requires that we have actually observed <code>peakClimbVS &gt; +200 fpm</code> at some point in this session. Sitting on the ground with sustained-level VS keeps <code>peakClimbVS</code> at 0, so the cruise transition is blocked regardless of how the rest of the phase detector behaves. Threshold is well below any real aircraft's initial climb (heavy jet at MTOW holds ~500 fpm, Cessna 152 holds ~700 fpm) and well above ground VS noise.</li>
+          <li><strong>Bug fix &mdash; checking an enable box now always rearms the alarm.</strong> v2.87.0 fixed the alt-min auto-rearm via the ground-transition path, but the user-toggle path (clicking the enable checkbox after dismissing an alarm) only reset <code>state.fired</code> for cruise / descent / timer alarm types &mdash; alt-min, geofence, and waypoint silently kept their post-fire state. Re-enabling them produced a checked box that wouldn't actually fire on the next qualifying event. A single new <code>_afkResetTransientState(alarm)</code> helper is now the only sanctioned way to flip <code>enabled</code> from false to true; it lives next to <code>_afkFreshState(alarm)</code> which produces correct freshly-armed transient state for every alarm type. All four call sites (per-card toggle, group master toggle, file import, fresh alarm creation) go through the helper. The invariant is now: <em>any time a visual checkbox is on, the alarm is genuinely ready to fire on the next qualifying event</em>.</li>
+          <li><strong>Load from File now activates every imported alarm.</strong> Previously an alarm's <code>enabled</code> state was taken from the saved file as-is, so loading a file produced disabled alarms if you'd saved them that way. v2.87.1 forces <code>enabled = true</code> on every imported alarm, runs the per-type state-reset helper so each one is freshly armed, and the alarm-history log is left untouched (it spans configurations).</li>
+          <li><strong>Load from File while airborne now prompts a warning.</strong> Loading a fresh alarm configuration mid-flight can fire some alarms on the first or second tick if your current state already satisfies their conditions &mdash; e.g., a Cruise Reached with a target altitude below your current FL, or a Geofence centred on a destination you're already near. A warning modal now appears in this case (live source connected and aircraft moving / climbing / descending / wheels-up) explaining the risk and offering Cancel or Load Anyway. Quiet at the gate &mdash; the typical pre-pushback configuration workflow is unaffected.</li>
+          <li><strong>Group cascade now visually disables siblings immediately.</strong> When one member of a group trips, every other enabled sibling is now flipped <code>enabled = false</code> in the same tick (in addition to being prevented from firing by the eval-time guard). The Alerts badge, alarm list, and any per-card visuals reflect the cascade state immediately rather than waiting for the user to dismiss the firing alarm.</li>
+          <li><strong>Help modal updated</strong> &mdash; Alert Groups, Altitude alarm, Load from File, and Cruise Reached sections all clarified to match the v2.87.1 behaviour. The cascade contract paragraph now reads as a guarantee rather than an aspiration.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.87.0</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🔊 Test Sound button</strong> &mdash; new button at the bottom of the Alerts modal lets you preview alarm sounds without arming an alarm. Each click cycles to the next of the five built-in sounds (Digital Clock &rarr; Klaxon &rarr; Soft Chime &rarr; Urgent Beeper &rarr; Gentle Bell, then wraps) with a toast naming the one currently playing. If an alarm is actively tripped, the preview takes over briefly and the original sound resumes after the 2.5-second preview ends.</li>
+          <li><strong>📜 Alert History &mdash; persistent log of the last 100 alert events.</strong> New button at the bottom of the Alerts modal opens a dedicated history modal. Each row captures the local <em>and</em> UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter, the eventual dismissal reason (<em>user</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (lat / lng, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). Per-row <strong>📍 Pin to Map</strong> drops a labelled gold pin at the captured position so you can review where each alert fired; per-row <strong>✕</strong> deletes that single entry; <strong>Clear History</strong> in the footer wipes the whole log. Storage is FIFO at 100 events under <code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>.</li>
+          <li><strong>Group cascades are fully recorded in Alert History.</strong> When one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did. The group name (if set) is shown on every related entry.</li>
+          <li><strong>Visual divider in the Alerts modal footer.</strong> A thin vertical separator sits between the new Test Sound / Alert History buttons and the existing Save / Load / Disable / Delete buttons so the two functional groups read distinctly.</li>
+          <li><strong>Bug fix &mdash; Cruise Reached no longer trips during taxi at high-elevation airports.</strong> The ground detector in the phase-state machine used to require <code>MSL altitude &lt; 1,000&nbsp;ft</code> for ground; at airports like MMAS (Aguascalientes, 6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) this was never satisfied, so taxi looked airborne and after ~60&nbsp;seconds the phase detector drifted to <em>cruise</em> and the Cruise Reached alarm fired on the ground. Ground detection now uses GS + VS instead: <em>GS &lt; 5&nbsp;kt</em> (near-stationary) OR <em>GS &lt; 55&nbsp;kt AND |VS| &lt; 200&nbsp;fpm</em>. The 55-kt ceiling accommodates fields that allow rapid taxi.</li>
+          <li><strong>Defence-in-depth: Cruise Reached and Descent Started are now gated on confirmed wheels-up</strong> (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s, the same threshold that drives the ELAPSED timer). Even if the phase detector misclassifies something on the ground, these alarms cannot fire until takeoff actually happens.</li>
+          <li><strong>Bug fix &mdash; Altitude alarms now auto-rearm between flights.</strong> The ground-transition rearm block previously only reset <code>state.fired</code> for Cruise Reached and Descent Started, so an Altitude alarm that fired on one flight silently never fired on the next unless the user manually toggled enabled off and on. Altitude is now included in that rearm sweep alongside cruise and descent.</li>
+          <li><strong>Bug fix &mdash; landing detection no longer references MSL altitude.</strong> The old detector required <code>alt &lt; 500&nbsp;ft</code> alongside <code>GS &lt; 30&nbsp;kt</code>, which never fired at high-elevation airports and could leave <code>_afkTakeoffAt</code> set into the next flight. New rule: sustained <em>valid</em> <code>GS &lt; 30&nbsp;kt</code> for 60 seconds, with a guard against transient telemetry dropouts (null GS no longer collapses to zero for landing purposes).</li>
+          <li><strong>Help modal updated.</strong> The Alerts help section now covers the new Test Sound and Alert History buttons, the wheels-up gate on Cruise / Descent, the Altitude auto-rearm, and the new high-elevation-airport ground guards.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.86.0</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -31629,13 +32710,38 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="afk-modal-footer">
       <span class="afk-footer-info" id="afkFooterInfo">No alarms armed</span>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+        <button class="afk-btn-secondary" onclick="_afkTestSound()" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; any active alarm sound resumes after the preview.">🔊 Test Sound</button>
+        <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
+        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
         <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save to File</button>
         <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
+        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alarm, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
         <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alarm from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AFK Alert History Modal (v2.87.0) — log of the last 100 alert events -->
+<div class="modal-overlay" id="afkHistoryModal" onclick="if(event.target===this)_afkCloseHistory()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">📜 &nbsp;Alert History</span>
+      <button class="modal-close" onclick="_afkCloseHistory()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="afk-hist-toolbar">
+        <span class="afk-hist-meta" id="afkHistoryMeta">—</span>
+        <button class="afk-btn-secondary" onclick="_afkRenderHistoryList()" title="Re-read the log from storage. Useful if events fired in the background while this modal was open on another tab.">↻ Refresh</button>
+      </div>
+      <div class="afk-hist-list-wrap" id="afkHistoryList"></div>
+      <div class="afk-hist-footer">
+        <span class="afk-footer-info">Log holds the most-recent 100 events on this device; oldest are removed first.</span>
+        <button class="afk-btn-delete-all" onclick="_afkHistoryClearAll()" title="Permanently delete every entry in the Alert History log. Pinned map markers are also cleared. This cannot be undone.">Clear History</button>
       </div>
     </div>
   </div>
