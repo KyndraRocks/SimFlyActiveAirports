@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.84.1**
+**Current version: v2.85.2**
 
 ---
 
@@ -222,6 +222,18 @@ Alarms persist to `localStorage` and survive page reloads. **Active geofence rin
 **Drag/drop reorder is forgiving** (v2.82.0+) — the per-card before/after split is 60/40 (upper 60% of any card consistently drops above), and dedicated drop-at-top and drop-at-bottom zones appear above the first and below the last card while a drag is in progress, so reordering to position 0 or to the end is a single forgiving click.
 
 **⛓ Alert Groups** (v2.83.0+) — bundle 2 or more related alarms so they fire and dismiss as one. **Aggressive cascade**: dismissing ANY member dismisses + disables ALL members and stops every member's audio at once. One acknowledgement covers the whole bundle. **Three ways to form a group**: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target — top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with *New group with…*, *Add to existing group…*, *Remove from group*, *Rename group*, *Ungroup*; (3) Shift-click cards to multi-select, then click **⛓ Group N Selected** in the modal footer. Each group has a clickable **inline name** (placeholder *"Group of N alarms…"*) and a **master enable/disable checkbox** in the header — checked = all members on, unchecked = all off, indeterminate (amber tint) = mixed. Click cascades to every member with the same per-type re-arm semantics a single-card toggle uses. Groups can be **collapsed as a unit** via the chevron next to the name; members can be **dragged in or out** at any time; groups **auto-dissolve** when membership drops below 2. The Save/Load JSON format includes the group records — imports remap group ids onto fresh local ones so they never collide.
+
+**📱 Mobile Alerts** (v2.85.0+) — push alarm trips to your phone in addition to the in-tab sound + overlay. Useful when you've stepped away from the computer mid-flight and need to know an alarm fired. Open the configuration via a new **📱 Mobile Alerts…** row at the bottom of the **🔌 Live** pulldown. Pick from six provider presets:
+- **ntfy.sh** — free, no account; install the ntfy app, subscribe to a topic name you pick (make it long and unguessable), and you're live in under a minute.
+- **Pushover** — one-time US$5 license; polished delivery with priorities, custom sounds, and emergency re-alerting via the Pushover app.
+- **Discord webhook** — paste a channel webhook URL; alerts land as messages in that channel.
+- **Telegram bot** — create a bot via @BotFather, grab your numeric Chat ID, Telegram delivers the alert.
+- **Slack webhook** — paste an Incoming Webhook URL; alerts land in the configured channel.
+- **Custom webhook** — any HTTP-POST endpoint with a configurable Content-Type and body template (use `{{message}}` as the placeholder). Covers self-hosted ntfy, Gotify, ifttt webhooks, Home Assistant, anything that accepts a POST.
+
+The modal validates required fields, includes a **▶ Test** button that fires a sample notification using the draft settings (so you find out if the topic / token / URL is wrong while you're still in the dialog), and has a **Clear** button to remove the config entirely. Tokens are stored locally in your browser and never sent to SimFly. **Per-alarm opt-in**: once a provider is configured, each alarm card grows a **Mobile alert** toggle row at the bottom of its editor — pick exactly which alarms warrant a phone buzz (e.g. *Descent Started* yes, *Timer* no). The send happens **after** the in-tab sound + overlay, never instead. If the HTTP POST fails (offline, bad token, CORS), AA toasts a single soft warning naming the alarm and the error reason — the alarm itself still trips normally. Save to File / Load from File bundle the provider config (export format v3 with a new `mobileAlerts` block); imports validate, ask before overwriting an existing config, and leave the current setting alone when the file has no `mobileAlerts` field.
+
+**🔔 Smart Load** (v2.85.1+) — when a SimBrief flight plan plots, every plan-dependent alarm in your queue (DEP/ARR-anchored geofences, waypoint alarms) arms and draws **immediately** instead of waiting for the next live-aircraft tick. AA emits a summary toast like *"🔔 Smart load: 2 DEP/ARR geofences + 3 waypoint alerts active for this flight"* so you know which pre-configured alerts went live for this flight. The same sweep also runs when alarms are **loaded from disk** if a SimBrief plan is already on the map — imported plan-relative alerts arm against the active plan straight away.
 
 ### Aircraft Data Panel
 A persistent strip at the bottom of the map that streams live flight parameters in real time. As of v2.80.0 the panel is **fully customisable** — every field can be shown, hidden, reordered, or surrounded by vertical-bar spacers entirely under your control.

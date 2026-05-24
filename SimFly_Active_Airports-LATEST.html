@@ -5011,7 +5011,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.84.1';
+const APP_VERSION = '2.85.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9315,6 +9315,13 @@ function _sbOfpRender(data, opts) {
     btn.title = 'Remove the plotted SimBrief flight plan — Shift-click to open Flight Plan settings';
   }
   if (typeof _rgUpdateToolsActive === 'function') _rgUpdateToolsActive();
+  // v2.84.2 — Smart Load: drag plan-dependent alarms immediately into a
+  // visible / armed state instead of waiting for the next _afkTick. The
+  // silent restore path passes opts.silent through to suppress the
+  // summary toast on page reload.
+  if (typeof _afkOnSbPlanLoaded === 'function') {
+    try { _afkOnSbPlanLoaded({ silent: !!opts.silent }); } catch (_) {}
+  }
 }
 
 function _sbOfpClearLayers() {
@@ -9326,9 +9333,22 @@ function _sbOfpClear() {
   _sbOfpClearLayers();
   _sbOfpLastData = null;
   _sbOfpClearCache();
-  // Waypoint-alarm rings depend on the plan being loaded — re-render so
-  // they're removed alongside the route.
+  // Waypoint-alarm rings + plan-relative geofence circles depend on the
+  // plan being loaded — re-render both so they disappear alongside the
+  // route polyline.
   try { _afkRenderWaypointVisuals(); } catch (_) {}
+  try { _afkRenderGeofenceVisuals(); } catch (_) {}
+  // Reset wasInside on dep/arr fences so the next plan re-anchors cleanly.
+  if (typeof _afkAlarms !== 'undefined') {
+    _afkAlarms.list().forEach(a => {
+      if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) {
+        if (a.state) a.state.wasInside = null;
+      }
+    });
+  }
+  // Sync the tick fingerprint so the next _afkTick doesn't think the
+  // plan "just changed" and toast a duplicate cleanup message.
+  try { _afkLastSbFingerprint = (typeof _afkSbFingerprint === 'function') ? _afkSbFingerprint() : null; } catch (_) {}
   const btn = document.getElementById('sbOfpBtn');
   if (btn) {
     const lbl = btn.querySelector('.rg-btn-label');
@@ -10150,6 +10170,214 @@ function _fsuipcOpenWs() {
       if (_fsuipcUserActive) _fsuipcOpenWs();
     }, _FSUIPC_RECONNECT);
   };
+}
+
+/* ===========================================================================
+   Mobile Alerts  (v2.85.0)
+   ---------------------------------------------------------------------------
+   User-configurable push-to-phone for the AFK Alerts system. The user picks
+   ONE provider preset, fills in the fields it needs, and from then on every
+   alarm card gains a "Mobile alert" toggle. When an alarm with that toggle
+   on trips, _afkOnTripped fires an HTTP POST to the provider — phone buzzes.
+
+   Six provider presets: ntfy.sh, Pushover, Discord webhook, Telegram bot,
+   Slack webhook, and a Custom preset for any "POST a body to a URL" service.
+
+   Each provider exposes:
+     id      — stable storage key
+     label   — UI label
+     fields  — [{key, label, type, placeholder, hint}] — rendered into the
+               modal as a dynamic form
+     build   — (cfg, msg) => { url, method, headers, body } — describes the
+               HTTP request to send `msg` to the user's account / channel
+
+   Storage: localStorage key 'aa_mobile_alerts_v1' holds { provider, fields }.
+   Public surface:
+     _maGetConfig() / _maSetConfig(cfg) / _maClearConfig()
+     _maIsConfigured()
+     _maSend(message)             — fire-and-forget POST, surfaces errors via toast
+     _maOpenModal / _maCloseModal — Live → Mobile Alerts… settings UI
+     _maTestSend                   — Test button handler
+   =========================================================================== */
+const _MA_LS_KEY = 'aa_mobile_alerts_v1';
+
+const _MA_PROVIDERS = [
+  {
+    id: 'ntfy',
+    label: 'ntfy.sh',
+    blurb: 'Free, no account. Install the ntfy app on your phone, subscribe to your topic name, and you\'re done. Pick a long random topic — anyone who guesses it can read your alerts.',
+    fields: [
+      { key: 'topic', label: 'Topic',  type: 'text', placeholder: 'simfly-alerts-9f3xq2', hint: 'Anything unguessable. This IS your channel — keep it secret.' },
+      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Shown as the notification title on your phone.' },
+      { key: 'priority', label: 'Priority', type: 'select', options: ['max (sound + bypass Do Not Disturb)', 'high (sound + heads-up)', 'default (silent notification)', 'low', 'min'], hint: 'Android plays the notification sound on max or high — default and below stay silent. Max also bypasses Do Not Disturb so it wakes you.' }
+    ],
+    build(cfg, msg) {
+      // Topic tolerance — strip whitespace, and if the user pasted a full
+      // URL (e.g. "https://ntfy.sh/mytopic") extract just the topic name.
+      // ntfy 404s on URL-encoded `/`, percent escapes, leading/trailing
+      // spaces, etc., so normalising here turns the most common copy-paste
+      // mistakes into a working request instead of an opaque HTTP 404.
+      let topic = String(cfg.topic || '').trim();
+      const m = topic.match(/^https?:\/\/[^/]+\/(.+)$/i);
+      if (m) topic = m[1];
+      topic = topic.replace(/^\/+|\/+$/g, '');  // strip leading/trailing slashes
+      const headers = { 'Content-Type': 'text/plain' };
+      if (cfg.title) headers['Title'] = String(cfg.title).trim();
+      headers['Tags'] = 'airplane';
+      // ntfy Priority header (1=min, 2=low, 3=default, 4=high, 5=max). Map
+      // the human-readable dropdown selection back to its numeric code.
+      // Without this, ntfy's default (3) shows a silent notification on
+      // Android — fine for "FYI" services but wrong for an alarm forwarder.
+      const prioMap = { 'max':5, 'high':4, 'default':3, 'low':2, 'min':1 };
+      const prioSel = String(cfg.priority || 'max').split(' ')[0].toLowerCase();
+      const prio = prioMap[prioSel] != null ? prioMap[prioSel] : 5;
+      headers['Priority'] = String(prio);
+      return { url: 'https://ntfy.sh/' + topic, method: 'POST', headers, body: msg };
+    },
+    validate(cfg) {
+      let topic = String(cfg.topic || '').trim();
+      const m = topic.match(/^https?:\/\/[^/]+\/(.+)$/i);
+      if (m) topic = m[1];
+      topic = topic.replace(/^\/+|\/+$/g, '');
+      if (!topic) return 'Topic is required.';
+      if (!/^[A-Za-z0-9._\-]+$/.test(topic)) return 'Topic name can only contain letters, numbers, dashes, underscores, and dots — no spaces or slashes.';
+      return null;
+    }
+  },
+  {
+    id: 'pushover',
+    label: 'Pushover',
+    blurb: 'One-time US$5 per platform. Install the Pushover app, log in, copy your User Key. Then create an application at pushover.net/apps to get an API Token.',
+    fields: [
+      { key: 'token', label: 'API Token',  type: 'text', placeholder: 'azGDORePK8gMaC0QOYAMyEEuzJnyUi', hint: 'From pushover.net → Your Applications.' },
+      { key: 'user',  label: 'User Key',   type: 'text', placeholder: 'uQiRzpo4DXghDmr9QzzfQu27cmVRsG', hint: 'Shown on your Pushover dashboard after login.' },
+      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Notification title shown on phone.' }
+    ],
+    build(cfg, msg) {
+      const body = new URLSearchParams();
+      body.append('token', cfg.token || '');
+      body.append('user',  cfg.user  || '');
+      body.append('message', msg);
+      if (cfg.title) body.append('title', cfg.title);
+      return { url: 'https://api.pushover.net/1/messages.json', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() };
+    },
+    validate(cfg) {
+      if (!cfg.token || !cfg.token.trim()) return 'API Token is required.';
+      if (!cfg.user  || !cfg.user.trim())  return 'User Key is required.';
+      return null;
+    }
+  },
+  {
+    id: 'discord',
+    label: 'Discord webhook',
+    blurb: 'Create a webhook in any Discord channel (Edit Channel → Integrations → Webhooks → New Webhook → Copy URL). Anyone in that channel will see the alert; enable Discord mobile notifications on the channel to get a phone buzz.',
+    fields: [
+      { key: 'url',      label: 'Webhook URL', type: 'text', placeholder: 'https://discord.com/api/webhooks/…', hint: 'The full Copy Webhook URL value from Discord.' },
+      { key: 'username', label: 'Username (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Display name for the message; defaults to the webhook\'s configured name.' }
+    ],
+    build(cfg, msg) {
+      const payload = { content: msg };
+      if (cfg.username) payload.username = cfg.username;
+      return { url: cfg.url || '', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) };
+    },
+    validate(cfg) { return (cfg.url && /^https:\/\/discord(app)?\.com\/api\/webhooks\//.test(cfg.url.trim())) ? null : 'Webhook URL must start with https://discord.com/api/webhooks/'; }
+  },
+  {
+    id: 'telegram',
+    label: 'Telegram bot',
+    blurb: 'Create a bot via @BotFather in Telegram (/newbot) to get a Bot Token. Then message your bot and visit api.telegram.org/bot<TOKEN>/getUpdates to find your numeric Chat ID. Bots can only send to chats they\'ve been added to.',
+    fields: [
+      { key: 'token', label: 'Bot Token', type: 'text', placeholder: '123456:ABC-DEF…', hint: 'From @BotFather in Telegram.' },
+      { key: 'chat',  label: 'Chat ID',   type: 'text', placeholder: '987654321', hint: 'Your numeric Telegram user/chat ID.' }
+    ],
+    build(cfg, msg) {
+      const body = new URLSearchParams();
+      body.append('chat_id', cfg.chat || '');
+      body.append('text', msg);
+      return { url: 'https://api.telegram.org/bot' + encodeURIComponent(cfg.token || '') + '/sendMessage', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() };
+    },
+    validate(cfg) {
+      if (!cfg.token || !cfg.token.trim()) return 'Bot Token is required.';
+      if (!cfg.chat  || !cfg.chat.trim())  return 'Chat ID is required.';
+      return null;
+    }
+  },
+  {
+    id: 'slack',
+    label: 'Slack webhook',
+    blurb: 'Create an Incoming Webhook in your Slack workspace (api.slack.com/apps → Your App → Incoming Webhooks → Add New Webhook to Workspace). Enable Slack mobile notifications on the destination channel.',
+    fields: [
+      { key: 'url', label: 'Webhook URL', type: 'text', placeholder: 'https://hooks.slack.com/services/…', hint: 'Full Slack webhook URL.' }
+    ],
+    build(cfg, msg) {
+      return { url: cfg.url || '', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: msg }) };
+    },
+    validate(cfg) { return (cfg.url && /^https:\/\/hooks\.slack\.com\//.test(cfg.url.trim())) ? null : 'Webhook URL must start with https://hooks.slack.com/'; }
+  },
+  {
+    id: 'custom',
+    label: 'Custom webhook',
+    blurb: 'Any service that accepts an HTTP POST. Pick a Content-Type and a body template — use {{message}} where the alert text should go. CORS must be allowed on the receiving service.',
+    fields: [
+      { key: 'url',          label: 'URL',          type: 'text', placeholder: 'https://example.com/webhook', hint: 'Endpoint that will receive the POST.' },
+      { key: 'contentType',  label: 'Content-Type', type: 'select', options: ['application/json', 'application/x-www-form-urlencoded', 'text/plain'], hint: 'How the body is encoded.' },
+      { key: 'bodyTemplate', label: 'Body template', type: 'textarea', placeholder: '{"text":"{{message}}"}', hint: 'Use {{message}} as the placeholder for the alert text.' }
+    ],
+    build(cfg, msg) {
+      const tpl = cfg.bodyTemplate || '{{message}}';
+      const safe = (cfg.contentType === 'application/json') ? msg.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') : msg;
+      const body = tpl.replace(/\{\{message\}\}/g, safe);
+      return { url: cfg.url || '', method: 'POST', headers: { 'Content-Type': cfg.contentType || 'text/plain' }, body };
+    },
+    validate(cfg) {
+      if (!cfg.url || !/^https?:\/\//.test(cfg.url.trim())) return 'URL must start with http:// or https://';
+      if (!cfg.bodyTemplate || !cfg.bodyTemplate.trim())     return 'Body template is required.';
+      return null;
+    }
+  }
+];
+
+function _maProviderById(id) { return _MA_PROVIDERS.find(p => p.id === id) || null; }
+
+function _maGetConfig() {
+  try {
+    const raw = localStorage.getItem(_MA_LS_KEY);
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    if (!cfg || !cfg.provider) return null;
+    return cfg;
+  } catch (_) { return null; }
+}
+function _maSetConfig(cfg)   { try { localStorage.setItem(_MA_LS_KEY, JSON.stringify(cfg)); } catch (_) {} }
+function _maClearConfig()    { try { localStorage.removeItem(_MA_LS_KEY); } catch (_) {} }
+function _maIsConfigured() {
+  const cfg = _maGetConfig();
+  if (!cfg) return false;
+  const p = _maProviderById(cfg.provider);
+  if (!p) return false;
+  return p.validate(cfg.fields || {}) === null;
+}
+
+function _maSend(message) {
+  const cfg = _maGetConfig();
+  if (!cfg) return Promise.reject(new Error('Mobile Alerts not configured'));
+  const p = _maProviderById(cfg.provider);
+  if (!p) return Promise.reject(new Error('Unknown provider: ' + cfg.provider));
+  const err = p.validate(cfg.fields || {});
+  if (err) return Promise.reject(new Error(err));
+  const req = p.build(cfg.fields || {}, String(message || ''));
+  return fetch(req.url, { method: req.method, headers: req.headers, body: req.body, mode: 'cors' })
+    .then(r => {
+      if (r.ok) return r;
+      // On non-2xx, read the response body so the user sees the provider's
+      // own diagnostic ("topic name is invalid", "Invalid token", etc.)
+      // alongside the status code instead of a bare "HTTP 404".
+      return r.text().catch(() => '').then(body => {
+        const snippet = (body || '').trim().slice(0, 180);
+        const detail  = snippet ? ' — ' + snippet : '';
+        throw new Error('HTTP ' + r.status + detail);
+      });
+    });
 }
 
 /* ===========================================================================
@@ -11394,6 +11622,62 @@ function _afkSbFingerprint() {
   return (fp.origin && fp.origin.icao_code || '?') + '→' + (fp.destination && fp.destination.icao_code || '?') + '·' + fixes.length;
 }
 
+// Smart Load (v2.84.2+) — called from _sbOfpRender right after a SimBrief
+// plan is plotted on the map. Sweeps every plan-dependent alarm so its
+// visuals + state come up immediately, instead of waiting for the next
+// _afkTick (which only fires when a live source is connected). Surfaces
+// a summary toast so the pilot knows their pre-configured alerts armed
+// themselves automatically for this flight.
+//
+// opts.silent — set true on the localStorage-restore path so a page
+// reload doesn't re-toast the user.
+function _afkOnSbPlanLoaded(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  // 1. Drop specific-waypoint picks that no longer match the loaded plan
+  //    (different origin/destination/fix-count). Existing _afkTick logic
+  //    does this on fingerprint change too, but doing it here means the
+  //    user sees the cleanup the instant the plan plots, not on next tick.
+  let dropped = 0;
+  try { dropped = _afkAlarms.flightPlanChanged(); } catch (_) {}
+  if (dropped > 0 && !silent) {
+    _aaRtToast('⚠ Flight plan changed — cleared specific-waypoint picks on ' + dropped + ' alarm(s).', 'warn');
+  }
+  // 2. Reset wasInside on every plan-anchored geofence so the resolved
+  //    centre seeds cleanly from current position instead of carrying
+  //    stale state from the previous plan (which would otherwise risk
+  //    a false ENTER trip when the centre moves).
+  _afkAlarms.list().forEach(a => {
+    if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) {
+      if (a.state) a.state.wasInside = null;
+    }
+  });
+  // 3. Re-render plan-dependent visuals immediately. Both calls are
+  //    idempotent (they remove + redraw layers).
+  try { _afkRenderGeofenceVisuals(); } catch (_) {}
+  try { _afkRenderWaypointVisuals(); } catch (_) {}
+  // 4. Sync the tick fingerprint so the next _afkTick doesn't repeat
+  //    step 1 and emit a duplicate toast.
+  try { _afkLastSbFingerprint = _afkSbFingerprint(); } catch (_) {}
+  // 5. Smart-load summary — count plan-relevant active alerts and tell
+  //    the user how many will fire for this flight. Skipped on the
+  //    silent restore path.
+  if (silent) return;
+  const planAlerts = _afkAlarms.list().filter(a => {
+    if (!a.enabled) return false;
+    if (a.type === 'waypoint') return true;
+    if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) return true;
+    return false;
+  });
+  if (planAlerts.length === 0) return;
+  const geo = planAlerts.filter(a => a.type === 'geofence').length;
+  const wp  = planAlerts.filter(a => a.type === 'waypoint').length;
+  const parts = [];
+  if (geo > 0) parts.push(geo + ' DEP/ARR geofence' + (geo === 1 ? '' : 's'));
+  if (wp  > 0) parts.push(wp  + ' waypoint alert'   + (wp  === 1 ? '' : 's'));
+  _aaRtToast('🔔 Smart load: ' + parts.join(' + ') + ' active for this flight.', 'ok');
+}
+
 function _afkTick(data) {
   if (!data) return;
   // Detect flight-plan changes (drop specific-waypoint picks if route differs)
@@ -11512,6 +11796,21 @@ function _afkOnTripped(newTrips) {
   // duration cap. Indefinite alarms get no timer (current behaviour).
   if (newTrips && newTrips.length) {
     newTrips.forEach(a => _afkScheduleAutoDismiss(a));
+    // v2.85.0 — forward to phone any newly-tripped alarms that opted into
+    // Mobile alerts AND the user still has a configured provider. Fire-and-
+    // forget; failures surface as a toast but don't disrupt the alarm flow.
+    if (typeof _maIsConfigured === 'function' && _maIsConfigured()) {
+      newTrips.forEach(a => {
+        if (!a.mobileAlert) return;
+        const typeLabel = _afkAlarmTypeLabel(a.type);
+        let detail = '';
+        try { detail = _afkAlarmShortDescription(a, false).replace(/<[^>]+>/g, '').trim(); } catch (_) {}
+        const msg = '🔔 ' + typeLabel + (detail ? ' — ' + detail : '') + ' tripped.';
+        _maSend(msg).catch(e => {
+          _aaRtToast('📱 Mobile alert failed (' + typeLabel + '): ' + (e && e.message ? e.message : 'send error'), 'warn');
+        });
+      });
+    }
   }
   _afkShowTripOverlay();
   _afkStartTabFlash();
@@ -11613,13 +11912,20 @@ function _afkExportAlarms() {
   const usedGroupIds = new Set(alarms.filter(a => a.groupId).map(a => a.groupId));
   const groups = {};
   _afkGroups.list().forEach(g => { if (usedGroupIds.has(g.id)) groups[g.id] = g; });
+  // v2.85.0 (v3) — bundle the Mobile Alerts provider config alongside so a
+  // saved alarm set is fully portable. NB: the file will contain whatever
+  // tokens / webhook URLs / topic names the user has configured, which is
+  // fine for personal backup but a reason to be careful where the file is
+  // shared. The export toast calls this out.
+  const mobileAlerts = (typeof _maGetConfig === 'function') ? _maGetConfig() : null;
   const payload = {
     app:     'SimFly Active Airports',
     section: 'alarms',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     alarms:  alarms,
-    groups:  groups,  // v2 (v2.83.0+) — alarm groups bundled alongside
+    groups:  groups,         // v2 (v2.83.0+) — alarm groups bundled alongside
+    mobileAlerts: mobileAlerts, // v3 (v2.85.0+) — provider + fields (or null)
   };
   try {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -11632,7 +11938,8 @@ function _afkExportAlarms() {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    _aaRtToast('💾 Saved ' + alarms.length + ' alarm(s) to disk.', 'ok');
+    const maSuffix = mobileAlerts ? ' + Mobile Alerts settings' : '';
+    _aaRtToast('💾 Saved ' + alarms.length + ' alarm(s)' + maSuffix + ' to disk.', 'ok');
   } catch (err) {
     _aaRtToast('✕ Save failed: ' + (err && err.message ? err.message : err), 'err');
   }
@@ -11664,14 +11971,40 @@ function _afkImportAlarms(input) {
       input.value = '';
       return;
     }
+    // v2.85.0 — pull the Mobile Alerts payload (v3+ files). If the file's
+    // provider config validates, we'll apply it after the alarm import; if
+    // the user already has a different provider configured we ask first so
+    // saved tokens don't get clobbered silently.
+    const fileMa = (payload.mobileAlerts && typeof payload.mobileAlerts === 'object') ? payload.mobileAlerts : null;
+    const fileMaValid = !!(fileMa && fileMa.provider && (typeof _maProviderById === 'function') && (function () {
+      const p = _maProviderById(fileMa.provider);
+      return p && p.validate(fileMa.fields || {}) === null;
+    })());
+    const currentMa = (typeof _maGetConfig === 'function') ? _maGetConfig() : null;
+    const maDiffers = fileMaValid && JSON.stringify(fileMa) !== JSON.stringify(currentMa);
     const current = _afkAlarms.count();
-    const ok = !current || window.confirm('Replace the current ' + current + ' alarm(s) with ' + incoming.length + ' from this file? The current alarms will be removed.');
+    const promptParts = [];
+    if (current) promptParts.push('Replace the current ' + current + ' alarm(s) with ' + incoming.length + ' from this file? The current alarms will be removed.');
+    if (maDiffers && currentMa) promptParts.push('This file also contains Mobile Alerts settings (provider: ' + fileMa.provider + ') that differ from your current configuration. Applying the file will overwrite your existing Mobile Alerts settings.');
+    const ok = promptParts.length === 0 || window.confirm(promptParts.join('\n\n'));
     if (!ok) { input.value = ''; return; }
     // Wipe live state first (timers, sounds, map visuals) then drop the
     // existing alarms so the imported set lands cleanly.
     Object.keys(_afkAlarmTimers).forEach(id => _afkClearAlarmTimer(parseInt(id, 10)));
     Object.keys(_afkTimerSchedules).forEach(id => _afkCancelTimerSchedule(parseInt(id, 10)));
     _afkAlarms.list().forEach(a => _afkAlarms.remove(a.id));
+    // v2.85.2 — the alarm-remove loop doesn't touch the group registry,
+    // so groups linger with zero members after a wipe. _gc walks every
+    // group and removes ones with fewer than 2 members, which after the
+    // mass-remove means every previously-existing group goes away. That
+    // keeps the registry consistent with the empty alarm list and avoids
+    // ghost groups colliding with imported group ids after the remap.
+    try { _afkGroups._gc(); } catch (_) {}
+    // Map visuals tied to the now-removed alarms (geofence rings,
+    // waypoint highlight markers) — re-render once so they clear before
+    // the imports start landing.
+    try { _afkRenderGeofenceVisuals(); } catch (_) {}
+    try { _afkRenderWaypointVisuals(); } catch (_) {}
     _afkAudio.stop();
     _afkHideTripOverlay();
     _afkStopTabFlash();
@@ -11719,12 +12052,31 @@ function _afkImportAlarms(input) {
       // directly (members are already linked via their `groupId`).
       _afkGroups._injectFromImport(newGid, { id: newGid, name: meta.name || '', collapsed: !!meta.collapsed });
     });
+    // v2.85.0 — apply the file's Mobile Alerts config (if any & valid) BEFORE
+    // re-rendering the alarm list so the per-alarm Mobile alert toggle rows
+    // appear in the right state on first paint. If the file carried no
+    // mobileAlerts block, leave the user's current provider config alone.
+    let maApplied = false;
+    if (fileMaValid && typeof _maSetConfig === 'function') {
+      _maSetConfig(fileMa);
+      maApplied = true;
+    }
     _afkRenderAlarmList();
     _afkRenderGeofenceVisuals();
     _afkRenderWaypointVisuals();
     _afkUpdateBtnState();
     _afkUpdateBadge();
-    _aaRtToast('📂 Loaded ' + incoming.length + ' alarm(s) from disk.', 'ok');
+    const maSuffix = maApplied ? ' + Mobile Alerts settings' : '';
+    _aaRtToast('📂 Loaded ' + incoming.length + ' alarm(s)' + maSuffix + ' from disk.', 'ok');
+    // v2.85.2 — if a SimBrief plan is already loaded when the import
+    // lands, run the same Smart-Load sweep that fires on plan plot so
+    // plan-relative imports (DEP/ARR geofences, waypoint alarms) arm +
+    // draw immediately instead of waiting for the next _afkTick. Emits
+    // the same "🔔 Smart load: …" summary so the user sees confirmation
+    // their imported alerts are live for this flight.
+    if (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && typeof _afkOnSbPlanLoaded === 'function') {
+      try { _afkOnSbPlanLoaded({ silent: false }); } catch (_) {}
+    }
     input.value = '';
   };
   reader.onerror = () => {
@@ -12655,8 +13007,26 @@ function _afkRenderEditor(a) {
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
       '</div>';
   }
-  return '<div class="afk-card-editor">' + body + soundRow + durationRow + '</div>';
+  // Per-alarm Mobile Alerts toggle (v2.85.0) — only rendered when the user has
+  // a configured provider under Live → Mobile Alerts. If they later clear the
+  // provider, this row disappears on the next render and the on-trip hook
+  // short-circuits, so no need to also clear a.mobileAlert.
+  let mobileRow = '';
+  if (typeof _maIsConfigured === 'function' && _maIsConfigured()) {
+    const checked = a.mobileAlert ? ' checked' : '';
+    mobileRow =
+      '<div class="afk-edit-row">' +
+        '<span class="afk-edit-label">Mobile alert</span>' +
+        '<label class="afk-toggle" title="Send a push notification to your phone when this alarm trips, using the provider configured under Live → Mobile Alerts." onclick="event.stopPropagation()">' +
+          '<input type="checkbox"' + checked + ' onchange="_afkSetAlarmMobileAlert(' + a.id + ', this.checked)">' +
+        '</label>' +
+        '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;font-size:0.88rem;">Forward to phone when tripped</span>' +
+      '</div>';
+  }
+  return '<div class="afk-card-editor">' + body + soundRow + durationRow + mobileRow + '</div>';
 }
+
+function _afkSetAlarmMobileAlert(id, on) { _afkAlarms.update(id, { mobileAlert: !!on }); }
 
 function _afkToggleAlarm(id, on) {
   if (!on) _afkClearAlarmTimer(id);
@@ -23779,6 +24149,36 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">📱</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Mobile Alerts</div>
+          <div class="help-feature-desc">
+            Send AA alarm trips straight to your phone so you can step away from the sim and still know when something fires. Open <strong>🔌 Live &rarr; 📱 Mobile Alerts&hellip;</strong> in the map header, pick a provider, fill in the fields, click <strong>▶ Test</strong> to confirm delivery, then <strong>Save</strong>. From that point on, every alarm card in 🔔 Alerts gains a <strong>Mobile alert</strong> toggle &mdash; flip it on for any alarm you want forwarded to your phone.<br/><br/>
+
+            <strong>Provider presets</strong> (pick one):
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something long and random (the app suggests <code>simfly-alerts-9f3xq2</code>-style strings). Best for getting going in under a minute with zero setup cost.</li>
+              <li><strong>Pushover</strong> &mdash; one-time US$5 per platform (iOS / Android / desktop). Install Pushover, copy your <em>User Key</em>, create an application at <em>pushover.net/apps</em> for an <em>API Token</em>, paste both in. Most polished delivery of the bunch &mdash; per-message priorities, custom alert sounds, and emergency re-alerting until acknowledged.</li>
+              <li><strong>Discord webhook</strong> &mdash; in any Discord channel: <em>Edit Channel &rarr; Integrations &rarr; Webhooks &rarr; New Webhook &rarr; Copy URL</em>. Paste the URL. Alerts land as messages in that channel, and Discord&rsquo;s mobile app handles the push notification &mdash; enable channel notifications on your phone. Optionally override the webhook&rsquo;s display name with a <em>Username</em> field.</li>
+              <li><strong>Telegram bot</strong> &mdash; chat with <em>@BotFather</em> in Telegram and run <code>/newbot</code> to get a <em>Bot Token</em>. Then message your bot once and visit <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser to find your numeric <em>Chat ID</em>. Telegram bots can only send to chats they&rsquo;ve been added to.</li>
+              <li><strong>Slack webhook</strong> &mdash; create an <em>Incoming Webhook</em> at <em>api.slack.com/apps</em> for your workspace and paste the resulting URL. Alerts land in the configured channel; the Slack mobile app pushes them as long as you have channel notifications enabled.</li>
+              <li><strong>Custom webhook</strong> &mdash; any service that accepts an HTTP POST. Pick a Content-Type (<em>application/json</em>, <em>x-www-form-urlencoded</em>, or <em>text/plain</em>) and write a <em>body template</em> using <code>{{message}}</code> as the placeholder for the alert text. Covers self-hosted ntfy, Gotify, Home Assistant webhooks, IFTTT webhooks, and anything else. The receiving service must allow browser-origin POSTs (CORS).</li>
+            </ul>
+
+            <strong>Test before you trust it.</strong> The modal&rsquo;s <strong>▶ Test</strong> button sends a real notification using the values currently in the form (without saving them), and the status line below confirms <em>"✓ Test sent. Check your phone."</em> on success or shows the HTTP error on failure. Run this before relying on the setup &mdash; it&rsquo;s much better to discover a wrong topic / token / URL while still in the dialog than during a 7-hour cruise.<br/><br/>
+
+            <strong>Per-alarm opt-in.</strong> The Mobile alert toggle on each alarm card is independent &mdash; you might want <em>Descent Started</em> and <em>Geofence (Arrival)</em> forwarded to your phone but skip a frequent <em>Timer</em> alarm. Every newly-tripped alarm with the toggle on fires its own notification, so you get one buzz per event &mdash; even within a group.<br/><br/>
+
+            <strong>Mobile Alerts adds to, never replaces.</strong> The in-tab alarm sound, full-screen overlay, and tab-title flash all behave exactly as before. The phone push is fire-and-forget on top &mdash; if the POST fails (offline, bad token, CORS), AA toasts a soft warning naming the alarm and the error, but the alarm itself still trips normally.<br/><br/>
+
+            <strong>Storage and privacy.</strong> Provider settings are stored locally in <code>localStorage</code> under the key <code>aa_mobile_alerts_v1</code>. Tokens, webhook URLs, and topic names never leave your browser except as the body of the HTTPS POST to the provider you configured. Click <strong>Clear</strong> in the modal to wipe the settings entirely &mdash; the per-alarm Mobile alert toggles also disappear from every alarm card, since the row only renders when a provider is configured.<br/><br/>
+
+            <strong>Travel with your alarms.</strong> The 🔔 Alerts modal's <strong>⤓ Save to File</strong> button bundles your Mobile Alerts provider configuration alongside the alarm queue in the exported JSON, and <strong>⤒ Load from File</strong> applies it on the way back in. One file is enough to recreate the whole setup on another machine. If the file's Mobile Alerts settings would overwrite a different existing configuration on load, AA asks first &mdash; you can choose to keep your current settings. Older save files that predate v2.85.0 still import cleanly and leave the current Mobile Alerts config alone. <em>Note that exported files contain whatever tokens / webhook URLs / topic names you have configured</em>, so they&rsquo;re fine for personal backup but worth being careful with when shared.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">〰️</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Aircraft Track / Trail</div>
@@ -23834,8 +24234,68 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.84.1</span>
+          <span class="release-version">v2.85.2</span>
           <span class="release-date">May 23, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Loading alarms from disk now runs the full Smart Load sweep.</strong> Two tightenings on <em>⤒ Load from File</em>:
+            <ul>
+              <li><strong>Clears every group before the import lands.</strong> The pre-import alarm wipe didn't touch the group registry, so ghost groups (zero members after the wipe) could linger and risk colliding with imported group ids during the remap step. Added <code>_afkGroups._gc()</code> right after the alarm-remove loop &mdash; every old group goes away with the alarms that filled it. Map visuals tied to the now-removed alarms (geofence rings + waypoint highlights) are also re-rendered once before the imports start landing so the canvas reads clean during the swap.</li>
+              <li><strong>Smart Load fires automatically when a plan is already loaded.</strong> After the import toast, if <code>_sbOfpLastData</code> is set, <code>_afkOnSbPlanLoaded()</code> runs &mdash; same sweep that fires when a SimBrief plan plots. Plan-relative geofences and waypoint alarms in the imported set arm + draw immediately on the active plan instead of waiting for the next <code>_afkTick</code> (which never fires when no live source is connected). Confirms with the usual <em>"🔔 Smart load: N DEP/ARR geofences + M waypoint alerts active"</em> toast so you can see at a glance which imports went live.</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.85.1</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Smart Load &mdash; plan-dependent alerts arm + draw the instant the SimBrief plan plots.</strong> Previously a dep/arr-anchored geofence or a waypoint alert only got its on-map visuals after the next <code>_afkTick</code> &mdash; which never fires when no live source is connected, so the rings stayed invisible until you started FSUIPC. v2.85.1 wires <code>_sbOfpRender</code> to a new <code>_afkOnSbPlanLoaded()</code> sweep that runs the moment the plan finishes plotting:
+            <ul>
+              <li><strong>Drops stale Specific-waypoint picks</strong> when the new plan's origin/destination/fix-count differs from the previous plan (with a soft warn toast). Same logic as the existing tick path, just runs immediately.</li>
+              <li><strong>Re-seeds dep/arr-anchored geofence state</strong> &mdash; <code>wasInside</code> is reset on every plan-anchored fence so the freshly-resolved centre doesn't risk a false ENTER trip on the very next tick.</li>
+              <li><strong>Re-renders geofence + waypoint visuals immediately</strong> so all the rings, labels, and highlight markers appear in sync with the route polyline &mdash; no waiting for live aircraft data.</li>
+              <li><strong>Smart-load summary toast</strong> &mdash; counts enabled plan-relevant alerts and reports <em>"🔔 Smart load: 2 DEP/ARR geofences + 3 waypoint alerts active for this flight"</em> so you know your pre-configured alerts armed themselves automatically.</li>
+            </ul>
+            Also tightened <code>_sbOfpClear</code> &mdash; clearing the flight plan now removes plan-relative geofence circles + waypoint rings cleanly, resets <code>wasInside</code> on dep/arr fences so the next plan re-anchors them without stale state, and syncs <code>_afkLastSbFingerprint</code> so the next <code>_afkTick</code> doesn't think the plan "just changed" and re-toast. The localStorage-restore path passes <code>silent:true</code> so a page reload doesn't re-toast every load.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.85.0</span>
+          <span class="release-date">May 23, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Mobile Alerts &mdash; push alarms to your phone.</strong> When an alarm trips while you&rsquo;re away from the computer, the AA tab can now send a notification straight to your phone in addition to the in-tab sound + overlay. New <strong>📱 Mobile Alerts&hellip;</strong> row at the bottom of the 🔌 Live pulldown opens a settings modal with six provider presets:
+            <ul>
+              <li><strong>ntfy.sh</strong> &mdash; free, no account; install the ntfy app on your phone, subscribe to a topic name you pick (use something long and unguessable), and you&rsquo;re live in under a minute.</li>
+              <li><strong>Pushover</strong> &mdash; one-time US$5; more polished delivery with priorities, custom sounds, and emergency re-alerting via the Pushover app.</li>
+              <li><strong>Discord webhook</strong> &mdash; paste any channel webhook URL; the alert lands as a message in that channel and the Discord mobile app handles the push.</li>
+              <li><strong>Telegram bot</strong> &mdash; create a bot via @BotFather, grab your numeric Chat ID, and Telegram delivers the alert.</li>
+              <li><strong>Slack webhook</strong> &mdash; paste an Incoming Webhook URL; alerts land in the configured channel and the Slack mobile app pushes them.</li>
+              <li><strong>Custom webhook</strong> &mdash; any HTTP-POST endpoint with a configurable Content-Type and body template (use <code>{{message}}</code> as the placeholder). Covers self-hosted ntfy, Gotify, ifttt webhooks, Home Assistant, and anything else that accepts a POST.</li>
+            </ul>
+            The modal shows a per-provider blurb explaining setup, validates required fields, and includes a <strong>▶ Test</strong> button that fires a sample notification using the draft settings before you save &mdash; so you find out if the topic / token / URL is wrong while you&rsquo;re still in the dialog, not on the next flight. <strong>Clear</strong> removes the settings entirely. Configuration is stored locally in <code>localStorage</code> under the key <code>aa_mobile_alerts_v1</code> &mdash; tokens never leave your browser.</li>
+          <li><strong>Per-alarm opt-in.</strong> Each alarm card in the 🔔 Alerts modal gains a <strong>Mobile alert</strong> row at the bottom of its editor with a toggle and the hint <em>"Forward to phone when tripped"</em>. The row only appears when Mobile Alerts is configured &mdash; with no provider set, the alarm cards look exactly as they did in v2.84.x. Toggle is per-alarm so you can pick exactly which alarms warrant a phone buzz (e.g. <em>Descent Started</em> yes, <em>Timer</em> no). The toggle state persists with the alarm and travels through Save to File / Load from File. Clearing the provider doesn&rsquo;t reset the per-alarm flags &mdash; they just go dormant until you configure a provider again.</li>
+          <li><strong>Send happens after sound, never instead of it.</strong> The in-tab alarm sound, full-screen overlay, and tab-title flash all work exactly as before; the mobile alert is fire-and-forget on top. If the HTTP POST fails (offline, bad token, CORS), AA toasts a single soft warning containing the alarm name and the error reason &mdash; the alarm itself still trips normally. Each newly-tripped alarm fires its own notification, so dismissing one alarm doesn&rsquo;t suppress later ones, and grouped alarms produce a buzz per member (matching the per-card opt-in granularity).</li>
+          <li><strong>Save to File / Load from File now includes Mobile Alerts settings.</strong> The 🔔 Alerts modal's ⤓ Save to File and ⤒ Load from File buttons now bundle your Mobile Alerts provider configuration alongside the alarm queue, so a single JSON file carries everything needed to recreate the setup on another machine (or restore after clearing state). Export format bumped from v2 to v3 with a new <code>mobileAlerts</code> field containing the same <code>{ provider, fields }</code> blob as <code>localStorage</code>. On import, if the file has a valid provider config that differs from your current one, a confirmation prompt warns before overwriting; files without a <code>mobileAlerts</code> field (older v2 saves, or files saved while Mobile Alerts was unconfigured) leave your existing settings untouched. <em>Heads-up:</em> exported files contain whatever tokens / webhook URLs / topic names you have configured &mdash; fine for personal backup, worth being careful when sharing the file.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.84.1</span>
+          <span class="release-date">May 23, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -31432,6 +31892,166 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- Mobile Alerts Configuration Modal (v2.85.0) -->
+<style>
+  #maModal { z-index:9540; }
+  #maModal .modal { max-width:clamp(560px,42vw,820px); }
+  .ma-body { padding:0.9rem 1.1rem 0.4rem 1.1rem; font-family:'Rajdhani',sans-serif; }
+  .ma-intro { color:var(--muted); font-size:0.96rem; line-height:1.45; margin-bottom:0.9rem; }
+  .ma-row { display:flex; align-items:center; gap:0.6rem; margin-bottom:0.7rem; flex-wrap:wrap; }
+  .ma-label { min-width:140px; color:var(--muted); font-size:0.96rem; }
+  .ma-input, .ma-select, .ma-textarea {
+    flex:1 1 240px; min-width:200px;
+    background:var(--input-bg); color:var(--text); border:1px solid var(--border);
+    border-radius:5px; padding:0.42rem 0.55rem; font-family:'Rajdhani',sans-serif; font-size:0.98rem;
+  }
+  .ma-textarea { font-family:'Consolas','Menlo',monospace; font-size:0.88rem; min-height:64px; resize:vertical; }
+  .ma-input:focus, .ma-select:focus, .ma-textarea:focus { outline:none; border-color:var(--accent); }
+  /* Explicit option styling — without this, the native dropdown popup uses
+     the browser's default low-contrast cyan-on-translucent in dark mode,
+     which makes unselected options nearly unreadable. Mirrors .afk-select. */
+  .ma-select option { background:#101826; color:#f0f4fa; font-weight:600; padding:6px 8px; }
+  body.light-mode .ma-select option { background:#ffffff; color:#1a1f2e; }
+  .ma-hint { width:100%; color:var(--muted); font-size:0.83rem; margin-top:-0.35rem; margin-left:140px; line-height:1.35; }
+  .ma-blurb {
+    background:rgba(0,200,255,0.06); border:1px solid rgba(0,200,255,0.30);
+    border-radius:6px; padding:0.55rem 0.7rem; margin-bottom:0.85rem;
+    color:var(--text); font-size:0.92rem; line-height:1.45;
+  }
+  .ma-status { font-family:'Rajdhani',sans-serif; font-size:0.92rem; min-height:1.2em; flex:1; }
+  .ma-status.ok   { color:#5ad27a; }
+  .ma-status.err  { color:#ff8090; }
+  .ma-status.info { color:var(--muted); }
+  body.light-mode .ma-blurb { background:rgba(0,150,200,0.07); border-color:rgba(0,150,200,0.45); }
+</style>
+<div class="modal-overlay" id="maModal" onclick="if(event.target===this)_maCloseModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">📱 &nbsp;Mobile Alerts</span>
+      <button class="modal-close" onclick="_maCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body ma-body">
+      <div class="ma-intro">
+        Send a notification to your phone whenever an alarm trips. Pick a provider, fill in the fields, then enable the <strong>Mobile alert</strong> toggle on each alarm card you want to forward. The alarm sound and on-screen overlay still work as normal &mdash; this just adds a phone buzz on top.
+      </div>
+      <div class="ma-row">
+        <span class="ma-label">Provider</span>
+        <select id="maProviderSelect" class="ma-select" onchange="_maOnProviderChange()"></select>
+      </div>
+      <div id="maBlurb" class="ma-blurb"></div>
+      <div id="maFields"></div>
+    </div>
+    <div class="afk-modal-footer">
+      <span id="maStatus" class="ma-status info"></span>
+      <button class="rg-btn" onclick="_maTestSend()" title="Send a test notification to your phone using the current settings">▶ Test</button>
+      <button class="rg-btn" onclick="_maClearAndClose()" title="Remove all Mobile Alerts settings — alarm cards stop showing the mobile-alert toggle">Clear</button>
+      <button class="rg-btn" style="background:rgba(0,200,255,0.18);border-color:var(--accent);color:var(--accent);" onclick="_maSaveAndClose()">Save</button>
+    </div>
+  </div>
+</div>
+<script>
+  // ---- Mobile Alerts modal driver (v2.85.0) ----
+  let _maDraft = null;   // working copy while modal is open
+
+  function _maOpenModal() {
+    const cur = _maGetConfig();
+    _maDraft = cur ? JSON.parse(JSON.stringify(cur)) : { provider: 'ntfy', fields: {} };
+    if (!_MA_PROVIDERS.some(p => p.id === _maDraft.provider)) _maDraft.provider = 'ntfy';
+    _maDraft.fields = _maDraft.fields || {};
+    const sel = document.getElementById('maProviderSelect');
+    sel.innerHTML = _MA_PROVIDERS.map(p =>
+      '<option value="' + p.id + '"' + (p.id === _maDraft.provider ? ' selected' : '') + '>' + p.label + '</option>'
+    ).join('');
+    _maRenderProviderUI();
+    _maStatusInfo('');
+    document.getElementById('maModal').classList.add('open');
+  }
+  function _maCloseModal() {
+    document.getElementById('maModal').classList.remove('open');
+    _maDraft = null;
+  }
+  function _maOnProviderChange() {
+    if (!_maDraft) return;
+    const sel = document.getElementById('maProviderSelect');
+    _maDraft.provider = sel.value;
+    _maDraft.fields = {};
+    _maRenderProviderUI();
+    _maStatusInfo('');
+  }
+  function _maRenderProviderUI() {
+    const p = _maProviderById(_maDraft.provider);
+    document.getElementById('maBlurb').innerHTML = p ? p.blurb : '';
+    const host = document.getElementById('maFields');
+    if (!p) { host.innerHTML = ''; return; }
+    host.innerHTML = p.fields.map(f => {
+      const v = (_maDraft.fields[f.key] != null) ? String(_maDraft.fields[f.key]) : '';
+      const safe = v.replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      let input;
+      if (f.type === 'select') {
+        input = '<select class="ma-select" data-ma-key="' + f.key + '" oninput="_maFieldChange(this)">' +
+          (f.options || []).map(o => '<option value="' + o + '"' + (v === o ? ' selected' : '') + '>' + o + '</option>').join('') +
+        '</select>';
+      } else if (f.type === 'textarea') {
+        input = '<textarea class="ma-textarea" data-ma-key="' + f.key + '" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" oninput="_maFieldChange(this)">' + safe + '</textarea>';
+      } else {
+        input = '<input type="text" class="ma-input" data-ma-key="' + f.key + '" value="' + safe + '" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" oninput="_maFieldChange(this)" autocomplete="off" spellcheck="false">';
+      }
+      const hint = f.hint ? '<div class="ma-hint">' + f.hint + '</div>' : '';
+      return '<div class="ma-row"><span class="ma-label">' + f.label + '</span>' + input + hint + '</div>';
+    }).join('');
+    // Seed select-type fields with their default (first option) so the saved
+    // config has the field populated even if the user never touches it.
+    p.fields.forEach(f => {
+      if (f.type === 'select' && _maDraft.fields[f.key] == null && f.options && f.options.length) {
+        _maDraft.fields[f.key] = f.options[0];
+      }
+    });
+  }
+  function _maFieldChange(el) {
+    if (!_maDraft) return;
+    const k = el.getAttribute('data-ma-key');
+    if (k) _maDraft.fields[k] = el.value;
+  }
+  function _maStatusInfo(t) { const s = document.getElementById('maStatus'); s.className = 'ma-status info'; s.textContent = t || ''; }
+  function _maStatusOk(t)   { const s = document.getElementById('maStatus'); s.className = 'ma-status ok';   s.textContent = t; }
+  function _maStatusErr(t)  { const s = document.getElementById('maStatus'); s.className = 'ma-status err';  s.textContent = t; }
+
+  function _maTestSend() {
+    if (!_maDraft) return;
+    const p = _maProviderById(_maDraft.provider);
+    if (!p) { _maStatusErr('Unknown provider.'); return; }
+    const err = p.validate(_maDraft.fields || {});
+    if (err) { _maStatusErr(err); return; }
+    _maStatusInfo('Sending test…');
+    const stamp = new Date().toLocaleTimeString();
+    // Temporarily activate the draft so _maSend uses it, then restore.
+    const prev = localStorage.getItem(_MA_LS_KEY);
+    try { localStorage.setItem(_MA_LS_KEY, JSON.stringify(_maDraft)); } catch (_) {}
+    _maSend('SimFly Active Airports — test notification (' + stamp + ')')
+      .then(() => _maStatusOk('✓ Test sent. Check your phone.'))
+      .catch(e => _maStatusErr('✗ ' + (e && e.message ? e.message : 'Send failed.')))
+      .finally(() => { try { if (prev == null) localStorage.removeItem(_MA_LS_KEY); else localStorage.setItem(_MA_LS_KEY, prev); } catch (_) {} });
+  }
+  function _maSaveAndClose() {
+    if (!_maDraft) { _maCloseModal(); return; }
+    const p = _maProviderById(_maDraft.provider);
+    if (!p) { _maStatusErr('Unknown provider.'); return; }
+    const err = p.validate(_maDraft.fields || {});
+    if (err) { _maStatusErr(err); return; }
+    _maSetConfig(_maDraft);
+    _aaRtToast('📱 Mobile Alerts saved — ' + p.label + '.', 'ok');
+    _maCloseModal();
+    // Re-render the alarm list so per-alarm Mobile alert toggles appear.
+    if (typeof _afkRenderAlarmList === 'function') _afkRenderAlarmList();
+  }
+  function _maClearAndClose() {
+    _maClearConfig();
+    _aaRtToast('📱 Mobile Alerts settings cleared.', 'warn');
+    _maCloseModal();
+    if (typeof _afkRenderAlarmList === 'function') _afkRenderAlarmList();
+  }
+</script>
+
 <!-- AFK Alerts Configuration Modal -->
 <div class="modal-overlay" id="afkConfigModal" onclick="if(event.target===this)_afkCloseConfig()">
   <div class="modal">
@@ -31457,8 +32077,8 @@ function rgSendToFlightPlanner() {
       <span class="afk-footer-info" id="afkFooterInfo">No alarms armed</span>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
         <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
-        <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft.">⤓ Save to File</button>
-        <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. The local-storage autosave is overwritten.">⤒ Load from File</button>
+        <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save to File</button>
+        <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
         <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alarm, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
         <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alarm from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
@@ -31637,6 +32257,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
+            <button class="rg-btn rg-pulldown-row" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle.">📱 <span class="rg-btn-label">Mobile Alerts…</span></button>
             <div class="rg-pulldown-sep"></div>
             <button class="rg-btn rg-pulldown-row" onclick="_sbOfpClearUI();_rgCloseAnyPulldown()" title="Remove the plotted SimBrief flight plan from the map. Local-storage cache is also cleared, so the plan won't restore on next page load.">✕ <span class="rg-btn-label">Clear Flight Plan</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
