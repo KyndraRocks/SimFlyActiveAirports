@@ -3046,7 +3046,21 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-phase-text { font-family:'Rajdhani',sans-serif; font-size:1.38rem; color:var(--text); line-height:1.35; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   /* Drawing-phase instruction overlay — sits on the map during region-drawing flow */
   /* (idle/dep_drag/ruler/arr_drag) so the header doesn't have to carry long text. */
-  .rg-phase-overlay { position:absolute; top:55px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.55rem; padding:0.4rem 1.05rem; background:rgba(5,15,30,0.94); border:1px solid rgba(0,200,255,0.45); border-radius:999px; font-family:'Rajdhani',sans-serif; font-size:1.05rem; line-height:1.2; color:#fff; box-shadow:0 2px 14px rgba(0,0,0,0.55); pointer-events:none; max-width:80%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* v2.88.0 — pointer-events:auto so the embedded Cancel button can be
+     clicked. The text inside still doesn't intercept clicks because the
+     button is the only interactive child. */
+  .rg-phase-overlay { position:absolute; top:55px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.55rem; padding:0.4rem 1.05rem; background:rgba(5,15,30,0.94); border:1px solid rgba(0,200,255,0.45); border-radius:999px; font-family:'Rajdhani',sans-serif; font-size:1.05rem; line-height:1.2; color:#fff; box-shadow:0 2px 14px rgba(0,0,0,0.55); pointer-events:auto; max-width:80%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rg-phase-cancel {
+    margin-left:0.55rem;
+    background:rgba(255,61,90,0.12);
+    color:#ff8090;
+    border:1px solid rgba(255,61,90,0.55);
+    border-radius:999px;
+    padding:0.12rem 0.7rem;
+    font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:600;
+    cursor:pointer; line-height:1.2;
+  }
+  .rg-phase-cancel:hover { background:rgba(255,61,90,0.22); border-color:#ff8090; color:#fff; }
   .rg-phase-overlay.visible { display:flex; }
   .rg-phase-overlay .rg-phase-badge { font-family:'Orbitron',monospace; font-size:0.78rem; font-weight:700; letter-spacing:0.06em; padding:0.18rem 0.62rem; border-radius:14px; flex-shrink:0; margin:0; vertical-align:baseline; }
   /* Narrow-viewport polish — progressive collapse so the header stays on a */
@@ -3107,6 +3121,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-pulldown-row .rg-btn-label,
   #liveAcFollowBtn.rg-pulldown-row .rg-btn-label,
   #rgRulerBtn.rg-pulldown-row .rg-btn-label { display:inline !important; }
+  /* v2.89.0 — Disabled pulldown rows (used by the Clear Flight Plan /
+     Clear Aircraft Track items when there's nothing to clear). Visually
+     muted; the inline onclick guards prevent activation. */
+  .rg-pulldown-row.disabled {
+    opacity:0.4;
+    cursor:not-allowed;
+    pointer-events:auto; /* keep tooltip working */
+  }
+  .rg-pulldown-row.disabled:hover { background:transparent !important; color:inherit !important; }
 
   /* Floating measurement toolbar — appears over the map when measurement
      mode is active. Replaces the inline Distance Ring / Clear All buttons
@@ -3386,6 +3409,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .rg-matrix td.rg-col-hl { background:rgba(0,100,200,0.09); }
   .rg-results-bar { background:var(--panel); border-top:1px solid var(--border); padding:0.63rem 1rem; display:none; align-items:center; gap:1.2rem; flex-shrink:0; flex-wrap:wrap; }
   .rg-results-bar.visible { display:flex; }
+  /* v2.88.0 — Dismiss-matrix ✕ button at the far right of the results bar.
+     `margin-left:auto` shoves it to the end regardless of how the wrapping
+     filter widgets land. Sized to match the other rg-btn pill style but
+     visually distinct (accent-tinted) so it reads as a dismissal. */
+  .rg-results-close {
+    margin-left:auto;
+    background:rgba(0,200,255,0.08);
+    border:1px solid rgba(0,200,255,0.45);
+    color:var(--accent);
+    font-family:'Rajdhani',sans-serif;
+    font-size:1.05rem; font-weight:600;
+    padding:0.32rem 0.72rem;
+    border-radius:6px;
+    cursor:pointer; line-height:1;
+    flex-shrink:0;
+  }
+  .rg-results-close:hover { background:rgba(0,200,255,0.18); color:#fff; }
   .rg-results-summary { font-family:'Rajdhani',sans-serif; font-size:1.3rem; color:var(--muted); flex:1; text-align:center; }
   .rg-results-summary b { color:var(--text); }
   .rg-cap-row { display:flex; align-items:center; gap:0.45rem; }
@@ -4012,7 +4052,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     transition:border-color 0.12s, color 0.12s, background 0.12s;
   }
   .afk-add-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .afk-add-btn:active { cursor:grabbing; }
   .afk-add-btn-icon { font-size:1.2rem; flex-shrink:0; line-height:1; width:1.4em; text-align:center; }
+  /* v2.88.0 — small inline hint next to the column title indicating the
+     add buttons can be dragged onto the list to insert at a position. */
+  .afk-add-col-hint {
+    font-size:0.78rem; font-weight:500;
+    color:var(--accent); opacity:0.75;
+    letter-spacing:0.04em; text-transform:none;
+    margin-left:0.35rem;
+  }
+  /* While an add-drag is in progress, give the alarm list a subtle accent
+     so the user sees it's a valid drop target. */
+  .afk-list-col.dragging-add { outline:1px dashed rgba(0,200,255,0.35); outline-offset:-4px; border-radius:6px; }
 
   .afk-list-col {
     flex:1 1 auto;
@@ -4142,6 +4194,37 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     background:rgba(0,200,255,0.08);
     box-shadow:inset 0 0 0 1px rgba(0,200,255,0.3);
   }
+  /* v2.89.0 — per-alert editable name. Lives inside .afk-card-desc-title
+     beside the type label. Empty state shows a faint placeholder so the
+     field is discoverable without being noisy. Same 30-char cap as the
+     group name (enforced live via _afkNameInputCap + on commit). */
+  .afk-card-desc-title { display:inline-flex; align-items:baseline; gap:0.35rem; flex-wrap:wrap; }
+  .afk-card-name {
+    font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600;
+    color:var(--text);
+    padding:0 0.35rem;
+    border-radius:4px;
+    min-width:2.5em; min-height:1.2em;
+    outline:none;
+    max-width:18em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .afk-card-name:empty::before {
+    content:attr(data-placeholder);
+    color:var(--muted); font-style:italic; font-weight:500; opacity:0.65;
+  }
+  .afk-card-name:hover, .afk-card-name:focus {
+    background:rgba(0,200,255,0.08);
+    box-shadow:inset 0 0 0 1px rgba(0,200,255,0.3);
+  }
+  /* When a name is set, draw a bullet separator before the type label so
+     the two read as "Name · Timer". When name is empty, the placeholder
+     reads alongside the type label without a separator (the ::before
+     pseudo-element is the placeholder; the sep span stays empty/hidden). */
+  .afk-card-name-sep { display:none; color:var(--muted); }
+  .afk-card-name:not(:empty) + .afk-card-name-sep { display:inline; }
+  .afk-card-name:not(:empty) + .afk-card-name-sep::before { content:'·'; padding:0 0.2rem; }
+  .afk-card-type-label { color:var(--text); }
   .afk-group-count {
     font-family:'Rajdhani',sans-serif; font-size:0.8rem; font-weight:600;
     color:var(--muted); letter-spacing:0.05em;
@@ -4208,25 +4291,43 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      don't take any visual space; when a drag is active they bloom into
      a 22 px tall accent-coloured target, making "drop at the top" or
      "drop at the end" a single forgiving click. */
+  /* v2.89.0 — drop zones now also light up during an Add-from-menu drag
+     (dragging-add), expand to 44 px (was 22 px) so they're a much easier
+     target, and self-label with "Drop at top / bottom" so the user can
+     see what each zone does. */
   .afk-list-drop-zone {
     height:0;
     margin:0;
-    border-radius:4px;
+    border-radius:6px;
     transition:height 0.12s, background 0.12s, margin 0.12s;
     pointer-events:none;
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:600;
+    color:transparent;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    overflow:hidden;
   }
-  .afk-list-col.dragging-alarm .afk-list-drop-zone {
-    height:22px;
-    margin:0.25rem 0;
+  .afk-list-col.dragging-alarm .afk-list-drop-zone,
+  .afk-list-col.dragging-add   .afk-list-drop-zone {
+    height:44px;
+    margin:0.45rem 0;
     background:rgba(0,200,255,0.10);
-    border:1px dashed rgba(0,200,255,0.55);
+    border:2px dashed rgba(0,200,255,0.55);
     pointer-events:auto;
+    color:rgba(0,200,255,0.85);
   }
-  .afk-list-col.dragging-alarm .afk-list-drop-zone.drop-active {
-    background:rgba(0,230,118,0.20);
-    border-color:rgba(0,230,118,0.85);
+  .afk-list-col.dragging-alarm .afk-list-drop-zone.drop-active,
+  .afk-list-col.dragging-add   .afk-list-drop-zone.drop-active {
+    background:rgba(0,230,118,0.22);
+    border-color:rgba(0,230,118,0.95);
     border-style:solid;
+    color:rgba(0,230,118,1);
+    box-shadow:inset 0 0 12px rgba(0,230,118,0.25);
   }
+  .afk-list-drop-zone-top::before    { content:'⤴  Drop at top'; }
+  .afk-list-drop-zone-bottom::before { content:'⤵  Drop at bottom'; }
   /* Collapsible cards — chevron in the card header toggles the editor body. */
   .afk-card.collapsed .afk-card-editor { display:none; }
   .afk-card-chevron {
@@ -4338,6 +4439,70 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .afk-footer-info {
     font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--muted);
   }
+  /* v2.88.0 — Alerts modal status counter (e.g. "3 of 5 alarm(s) armed").
+     Bumped 40% over the default footer-info so the count is easy to read
+     across the room, and allowed to wrap so the new Enable All button
+     doesn't squeeze it on narrower viewports. */
+  /* v2.88.0 — Test Sound chooser popup */
+  .afk-test-sound-menu {
+    position:fixed;
+    z-index:9800;
+    background:linear-gradient(180deg, #0e1726 0%, #131f33 100%);
+    border:1px solid rgba(0,200,255,0.45);
+    border-radius:8px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.6);
+    padding:0.35rem 0;
+    min-width:200px;
+    font-family:'Rajdhani',sans-serif;
+  }
+  .afk-test-sound-menu-hdr {
+    padding:0.25rem 0.85rem 0.4rem;
+    font-size:0.78rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--muted);
+    border-bottom:1px solid rgba(255,255,255,0.08);
+    margin-bottom:0.25rem;
+  }
+  .afk-test-sound-menu-row {
+    display:flex; align-items:center; gap:0.55rem;
+    width:100%; padding:0.45rem 0.85rem;
+    background:transparent; border:0;
+    color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.0rem;
+    text-align:left; cursor:pointer;
+  }
+  .afk-test-sound-menu-row:hover {
+    background:rgba(0,200,255,0.10);
+    color:var(--accent);
+  }
+  .afk-test-sound-menu-icon { opacity:0.75; }
+
+  .afk-footer-info.afk-footer-info-status {
+    font-size:1.23rem;
+    line-height:1.15;
+    white-space:normal;
+    flex:1 1 auto;
+    color:var(--text);
+  }
+  /* v2.89.0 — Armed counter in the Alerts modal title bar. Sits between
+     the title and the close ✕, takes the remaining space, and pushes ✕
+     to the far right. Sized between the title and body text so it reads
+     as primary information without competing with the title. */
+  .afk-header-status {
+    flex:1 1 auto;
+    margin:0 0.9rem;
+    font-family:'Rajdhani',sans-serif;
+    font-size:1.08rem;
+    font-weight:600;
+    color:var(--text);
+    opacity:0.85;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    text-align:right;
+    letter-spacing:0.02em;
+  }
+  body.light-mode .afk-header-status { color:#1a1f2e; opacity:0.9; }
   .afk-btn-disable-all, .afk-btn-delete-all {
     background:rgba(255,61,90,0.10);
     border:1px solid rgba(255,61,90,0.5);
@@ -4464,14 +4629,17 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     padding:0.75rem 1.2rem;
     border-top:1px solid rgba(255,255,255,0.08);
   }
-  /* Map markers for plotted history entries */
-  .afk-hist-marker { pointer-events:none; }
+  /* Map markers for plotted history entries.
+     v2.88.0 — pin label now accepts hover (for full alert details) and
+     carries its own ✕ close badge (matching the measurement label style)
+     so a single pin can be dismissed without opening the history modal. */
   .afk-hist-marker-dot {
     position:absolute; left:-7px; top:-7px;
     width:14px; height:14px;
     background:#ffaa00; border:2px solid #1a1a22;
     border-radius:50%;
     box-shadow:0 0 0 1px #ffaa00, 0 0 10px rgba(255,170,0,0.65);
+    pointer-events:none;
   }
   .afk-hist-marker-label {
     position:absolute; left:12px; top:-12px;
@@ -4481,8 +4649,24 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     padding:1px 6px;
     font-family:'Rajdhani',sans-serif; font-size:0.82rem;
     white-space:nowrap;
-    pointer-events:none;
+    pointer-events:auto;
+    cursor:help;
   }
+  .afk-hist-marker-x {
+    position:absolute;
+    top:-10px; right:-10px;
+    width:18px; height:18px; box-sizing:border-box;
+    border-radius:50%;
+    border:1.5px solid rgba(255,170,0,0.9);
+    background:rgba(5,0,12,0.97);
+    color:#fff;
+    font-size:0.66rem; font-weight:700;
+    line-height:15px; text-align:center;
+    box-shadow:0 1px 5px rgba(0,0,0,0.6);
+    cursor:pointer;
+    pointer-events:auto;
+  }
+  .afk-hist-marker-x:hover { background:#ff5d70; border-color:#ff5d70; }
 
   /* Trip overlay — full-screen */
   #afkTripOverlay {
@@ -4514,6 +4698,22 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   @keyframes afkTripPulse {
     from { text-shadow:0 0 6px rgba(255,61,90,0.4); color:#ff5d70; }
     to   { text-shadow:0 0 24px rgba(255,180,200,0.95); color:#ffbacc; }
+  }
+  .afk-trip-hint {
+    margin-top:0.7rem;
+    font-family:'Rajdhani',sans-serif; font-size:0.92rem;
+    color:#ffaab8; opacity:0.78; letter-spacing:0.03em;
+  }
+  .afk-trip-hint kbd {
+    display:inline-block;
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.85rem;
+    padding:1px 8px;
+    margin:0 2px;
+    border:1px solid rgba(255,170,180,0.55);
+    border-radius:4px;
+    background:rgba(255,61,90,0.10);
+    color:#ffd6dd;
   }
   .afk-trip-sub {
     font-family:'Rajdhani',sans-serif; font-size:1.1rem; color:#ffaab8;
@@ -5148,7 +5348,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.87.18';
+const APP_VERSION = '2.89.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9499,7 +9699,10 @@ function _liveAcRenderMarker(d) {
   _liveAcLastUpdate = performance.now();
   // Aircraft breadcrumb trail — add a new point if it's far enough from the
   // last one. Clears the trail on teleport (sim restart / new flight loaded).
-  _liveAcUpdateTrail(lat, lng);
+  // v2.88.0 — pass GS so the trail can collapse a stationary stretch to a
+  // single "I stopped here" point instead of accumulating thousands of
+  // identical samples while the aircraft sits parked.
+  _liveAcUpdateTrail(lat, lng, d.gs);
   // AFK Alerts + Aircraft Data Panel tick — defensive guard so a tick failure
   // never breaks live-aircraft rendering.
   if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
@@ -9532,7 +9735,13 @@ function _liveAcRenderMarker(d) {
 // while keeping the last ~5 nm at taxi-grade resolution. Two-layer polyline
 // (outer glow + inner core), green to match the plane icon. Renders via the
 // shared canvas geom renderer ([[project_aa_geom_canvas]]).
-function _liveAcUpdateTrail(lat, lng) {
+// v2.88.0 — stationary-suppress flag. Set after the first GS=0 fix so all
+// subsequent identical points while still parked get skipped, leaving a
+// single "I stopped here" sample in the trail. Cleared as soon as motion
+// resumes (GS > 0). Preserves the high-detail behaviour everywhere else.
+let _liveAcLastWasZeroGs = false;
+
+function _liveAcUpdateTrail(lat, lng, gs) {
   if (!_rgMap) return;
   // Newest point lives in ultra. Fall back through the tiers when empty
   // (e.g. just-cleared or just-loaded state).
@@ -9546,11 +9755,25 @@ function _liveAcUpdateTrail(lat, lng) {
       if (d > _LIVE_AC_TRAIL_TELEPORT_NM) {
         // Big jump = sim restart / new flight loaded. Wipe and start over.
         _liveAcClearTrail();
+        _liveAcLastWasZeroGs = false;
       } else if (lastUltra && d < _LIVE_AC_TRAIL_ULTRA_NM) {
         // Too close to the previous ultra-fresh point — skip to avoid clutter.
         return;
       }
     }
+  }
+  // v2.88.0 — GS=0 handling. The first stationary fix is kept (so the
+  // trail clearly ends at the stopping location); every subsequent fix
+  // while still GS=0 is skipped. Resumes adding the moment motion is
+  // detected again. Treats missing/non-numeric GS as "moving" so STKP's
+  // 10-second push (which sometimes omits GS) never silently stalls.
+  const gsN = parseFloat(gs);
+  const isZeroGs = (isFinite(gsN) && gsN === 0);
+  if (isZeroGs) {
+    if (_liveAcLastWasZeroGs) return;
+    _liveAcLastWasZeroGs = true;
+  } else {
+    _liveAcLastWasZeroGs = false;
   }
   // Add to ultra-fresh tier at taxi-grade detail.
   _liveAcTrailUltra.push([lat, lng]);
@@ -9614,6 +9837,7 @@ function _liveAcClearTrail() {
   _liveAcTrailUltra   = [];
   _liveAcTrailFresh   = [];
   _liveAcTrailArchive = [];
+  _liveAcLastWasZeroGs = false; // v2.88.0
   try { localStorage.removeItem(_LIVE_AC_TRAIL_LS); } catch (_) {}
 }
 
@@ -9879,12 +10103,21 @@ async function _stkpFetchOnce() {
 const _FSUIPC_WS_URL    = 'ws://localhost:2048/fsuipc/';
 const _FSUIPC_WS_PROTO  = 'fsuipc';
 const _FSUIPC_GROUP     = 'simflyPos';
-const _FSUIPC_INTERVAL  = 1000;       // ms — push cadence; 1 Hz halves the per-second JS work on the render pipeline vs the v2.67–v2.77 default of 500 ms with no visible track-quality degradation (track is decimated by distance, not time). Follow A/C panTo duration was bumped to 0.8 s in lockstep so the tween bridges the longer gap between fixes.
-const _FSUIPC_RECONNECT = 10000;      // ms — retry while button is active
+// v2.88.0 — adaptive push cadence: 500 ms on the ground (taxi detail
+// matters), 1000 ms in flight (1 Hz is plenty for cruise/descent and
+// halves the per-second JS work on the render pipeline). Replaces the
+// fixed 1000 ms cadence introduced in v2.77. _fsuipcDesiredInterval()
+// reads _afkPhase to pick which one applies on every fix.
+const _FSUIPC_INTERVAL_GROUND = 500;
+const _FSUIPC_INTERVAL_FLIGHT = 1000;
+const _FSUIPC_INTERVAL_INITIAL = _FSUIPC_INTERVAL_GROUND; // safe default before phase is known
+const _FSUIPC_RECONNECT = 15000;      // v2.88.0 — silent retry every 15 s while button is active (was 10 s)
 const _FSUIPC_DEBUG     = true;       // set false to silence the console log on each push
 let _fsuipcWs           = null;
 let _fsuipcReconnectTmr = 0;
 let _fsuipcUserActive   = false;      // true while user wants tracking; survives reconnects
+let _fsuipcCurInterval  = 0;          // ms — most-recently-requested push interval; 0 = not yet subscribed
+let _fsuipcRetryCount   = 0;          // how many silent retries since the last successful open
 
 function _fsuipcButtonClick() {
   if (_fsuipcUserActive) { _fsuipcStop(); return; }
@@ -9897,6 +10130,7 @@ function _fsuipcStart() {
   _liveAcStopOthers('fsuipc');
   _liveAcSource = 'fsuipc';
   _fsuipcUserActive = true;
+  _fsuipcRetryCount = 0; // v2.88.0 — reset so the next failure still surfaces a toast
   _fsuipcUpdateButtonState(true);
   _aaRtToast('🔌 Connecting to FSUIPC at ' + _FSUIPC_WS_URL + '…', 'ok');
   _fsuipcOpenWs();
@@ -9909,6 +10143,8 @@ function _fsuipcStop() {
     try { _fsuipcWs.close(); } catch (_) {}
     _fsuipcWs = null;
   }
+  _fsuipcCurInterval = 0;
+  _fsuipcRetryCount  = 0;
   if (_liveAcSource === 'fsuipc') _liveAcClear();
   _fsuipcUpdateButtonState(false);
 }
@@ -9927,11 +10163,37 @@ function _fsuipcUpdateButtonState(active) {
   if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
 }
 
+// v2.88.0 — Desired push interval based on current flight phase. On the
+// ground we want 500 ms (taxi detail); in the air 1000 ms is plenty.
+// Defaults to ground when phase is unknown so the cadence is never slower
+// than configured during the first few fixes.
+function _fsuipcDesiredInterval() {
+  let phase = null;
+  try { phase = _afkPhase.get(); } catch (_) {}
+  return (phase === 'ground' || !phase) ? _FSUIPC_INTERVAL_GROUND : _FSUIPC_INTERVAL_FLIGHT;
+}
+
+function _fsuipcMaybeSwitchInterval() {
+  if (!_fsuipcWs || _fsuipcWs.readyState !== 1 /* OPEN */) return;
+  const want = _fsuipcDesiredInterval();
+  if (want === _fsuipcCurInterval) return;
+  try {
+    _fsuipcWs.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: want }));
+    _fsuipcCurInterval = want;
+  } catch (_) {}
+}
+
 function _fsuipcOpenWs() {
   try {
     _fsuipcWs = new WebSocket(_FSUIPC_WS_URL, _FSUIPC_WS_PROTO);
   } catch (err) {
-    _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on?', 'err');
+    // v2.88.0 — silent retry: only the very first attempt may toast (handled
+    // in _fsuipcStart's connecting toast). Subsequent failures schedule a
+    // background retry without surfacing a toast on each one.
+    if (_fsuipcRetryCount === 0) {
+      _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'err');
+    }
+    _fsuipcScheduleRetry();
     return;
   }
   _fsuipcWs.onopen = () => {
@@ -9973,12 +10235,14 @@ function _fsuipcOpenWs() {
       // wasn't actively moving (parked, taxiing slowly). Removed in v2.67.1 — the
       // server now pushes at every interval regardless. Bandwidth impact is
       // negligible (one small JSON per 500 ms over loopback).
-      _fsuipcWs.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: _FSUIPC_INTERVAL }));
+      _fsuipcCurInterval = _FSUIPC_INTERVAL_INITIAL;
+      _fsuipcWs.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: _fsuipcCurInterval }));
     } catch (e) {
       _aaRtToast('✕ FSUIPC handshake failed: ' + e.message, 'err');
       return;
     }
-    _aaRtToast('🔌 Tracking via FSUIPC (' + _FSUIPC_INTERVAL + ' ms updates).', 'ok');
+    _fsuipcRetryCount = 0;
+    _aaRtToast('🔌 Tracking via FSUIPC (cadence adapts to flight phase).', 'ok');
   };
   _fsuipcWs.onmessage = (ev) => {
     let msg;
@@ -10013,6 +10277,11 @@ function _fsuipcOpenWs() {
       dest:   null,
       source: 'fsuipc',
     });
+    // v2.88.0 — re-evaluate desired push cadence after each fix. _afkPhase
+    // updates as a side-effect of _liveAcRenderMarker (via the AFK tick
+    // hook), so checking here picks up phase transitions on the very next
+    // fix. Sends a new offsets.read only when the interval actually changes.
+    _fsuipcMaybeSwitchInterval();
   };
   _fsuipcWs.onerror = () => {
     // onclose fires immediately after onerror; report from onclose so we
@@ -10020,15 +10289,30 @@ function _fsuipcOpenWs() {
   };
   _fsuipcWs.onclose = () => {
     _fsuipcWs = null;
+    _fsuipcCurInterval = 0;
     if (!_fsuipcUserActive) return;
-    if (!_liveAcMarker) {
-      _aaRtToast('✕ FSUIPC WebSocket closed — couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying in 10 s…', 'warn');
+    // v2.88.0 — silent retry. The very first failure (no _liveAcMarker yet
+    // AND retryCount=0) still surfaces a toast so the user knows tracking
+    // didn't start; every subsequent retry is silent so a long-running
+    // disconnect doesn't spam the toast stack.
+    if (!_liveAcMarker && _fsuipcRetryCount === 0) {
+      _aaRtToast('✕ FSUIPC WebSocket couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'warn');
     }
-    _fsuipcReconnectTmr = setTimeout(() => {
-      _fsuipcReconnectTmr = 0;
-      if (_fsuipcUserActive) _fsuipcOpenWs();
-    }, _FSUIPC_RECONNECT);
+    _fsuipcScheduleRetry();
   };
+}
+
+// v2.88.0 — Schedule the next silent reconnect attempt. Lives at module
+// scope so the open-side catch can call it for synchronous WebSocket
+// constructor failures too.
+function _fsuipcScheduleRetry() {
+  if (_fsuipcReconnectTmr) return;
+  _fsuipcReconnectTmr = setTimeout(() => {
+    _fsuipcReconnectTmr = 0;
+    if (!_fsuipcUserActive) return;
+    _fsuipcRetryCount++;
+    _fsuipcOpenWs();
+  }, _FSUIPC_RECONNECT);
 }
 
 /* ===========================================================================
@@ -10064,11 +10348,11 @@ const _MA_PROVIDERS = [
   {
     id: 'ntfy',
     label: 'ntfy.sh',
-    blurb: 'Free, no account. Install the ntfy app on your phone, subscribe to your topic name, and you\'re done. Pick a long random topic — anyone who guesses it can read your alerts.',
+    blurb: 'Free, no account. Install the ntfy app on your phone, subscribe to your topic name, and you\'re done. Pick a long random topic — anyone who guesses it can read your alerts. Topic name MUST be 8 characters or fewer.',
     fields: [
-      { key: 'topic', label: 'Topic',  type: 'text', placeholder: 'simfly-alerts-9f3xq2', hint: 'Anything unguessable. This IS your channel — keep it secret.' },
-      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Shown as the notification title on your phone.' },
-      { key: 'priority', label: 'Priority', type: 'select', options: ['max (sound + bypass Do Not Disturb)', 'high (sound + heads-up)', 'default (silent notification)', 'low', 'min'], hint: 'Android plays the notification sound on max or high — default and below stay silent. Max also bypasses Do Not Disturb so it wakes you.' }
+      { key: 'topic', label: 'Topic',  type: 'text', placeholder: 'sfly9f3x', hint: 'Anything unguessable, 8 characters max. This IS your channel — keep it secret.', maxlength: 8 },
+      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Shown as the notification title on your phone. The triggering alert type is auto-appended (e.g. “… — Top of Descent”).' },
+      { key: 'priority', label: 'Priority', type: 'select', options: ['max (sound + bypass Do Not Disturb)', 'high (sound + heads-up)', 'default (silent notification)', 'low', 'min'], hint: 'Android plays the notification sound on max or high — default and below stay silent. Max also bypasses Do Not Disturb so it wakes you. Defaults to Max.' }
     ],
     build(cfg, msg) {
       // Topic tolerance — strip whitespace, and if the user pasted a full
@@ -10100,6 +10384,9 @@ const _MA_PROVIDERS = [
       topic = topic.replace(/^\/+|\/+$/g, '');
       if (!topic) return 'Topic is required.';
       if (!/^[A-Za-z0-9._\-]+$/.test(topic)) return 'Topic name can only contain letters, numbers, dashes, underscores, and dots — no spaces or slashes.';
+      // v2.88.0 — hard 8-character cap (per user spec). The maxlength on
+      // the input handles typing; this catches paste / URL extraction.
+      if (topic.length > 8) return 'Topic name must be 8 characters or fewer.';
       return null;
     }
   },
@@ -10217,14 +10504,26 @@ function _maIsConfigured() {
   return p.validate(cfg.fields || {}) === null;
 }
 
-function _maSend(message) {
+// v2.88.0 — Optional `opts.alertType` appends the human-readable alarm
+// type to the user's configured Title (e.g. "SimFly Active Airports —
+// Top of Descent") so the phone notification surfaces the type without
+// having to read the body. Providers without a `title` field (Discord,
+// Telegram, Slack, Custom) ignore the suffix — the alarm type is already
+// in the body.
+function _maSend(message, opts) {
   const cfg = _maGetConfig();
   if (!cfg) return Promise.reject(new Error('Mobile Alerts not configured'));
   const p = _maProviderById(cfg.provider);
   if (!p) return Promise.reject(new Error('Unknown provider: ' + cfg.provider));
   const err = p.validate(cfg.fields || {});
   if (err) return Promise.reject(new Error(err));
-  const req = p.build(cfg.fields || {}, String(message || ''));
+  let fields = cfg.fields || {};
+  if (opts && opts.alertType) {
+    fields = Object.assign({}, fields);
+    const base = (fields.title && String(fields.title).trim()) || 'SimFly Active Airports';
+    fields.title = base + ' — ' + opts.alertType;
+  }
+  const req = p.build(fields, String(message || ''));
   return fetch(req.url, { method: req.method, headers: req.headers, body: req.body, mode: 'cors' })
     .then(r => {
       if (r.ok) return r;
@@ -10365,12 +10664,89 @@ function _afkPreviewSelectedSound(selectId) {
 // after the last. Re-uses _afkAudio.preview so an actively-tripped alarm
 // resumes after the 2.5 s preview ends.
 let _afkTestSoundIdx = 0;
-function _afkTestSound() {
+function _afkTestSound(ev) {
   if (!_AFK_SOUNDS.length) return;
+  // v2.88.0 — shift-click (or right-click via the contextmenu handler) opens
+  // a popup menu so the user can pick a specific sound to preview instead
+  // of cycling. Plain left-click keeps the legacy cycle behaviour.
+  if (ev && (ev.shiftKey || ev.type === 'contextmenu')) {
+    if (ev.preventDefault) ev.preventDefault();
+    _afkOpenTestSoundMenu(ev.currentTarget || (ev.target && ev.target.closest('button')));
+    return;
+  }
   const sound = _AFK_SOUNDS[_afkTestSoundIdx % _AFK_SOUNDS.length];
   _afkTestSoundIdx = (_afkTestSoundIdx + 1) % _AFK_SOUNDS.length;
   _afkAudio.preview(sound.id);
-  _aaRtToast('🔊 Testing sound — ' + sound.name + ' (click again for next)', 'ok');
+  _aaRtToast('🔊 Testing sound — ' + sound.name + ' (click again for next, Shift-click to pick)', 'ok');
+}
+
+// v2.88.0 — Floating sound-chooser popup anchored to the Test Sound button.
+// Lists every built-in sound; clicking one previews it and closes the menu.
+// Closes on outside-click, Escape, or scroll. The button passes itself as
+// anchor so the menu sits flush above it regardless of viewport.
+function _afkOpenTestSoundMenu(anchorBtn) {
+  _afkCloseTestSoundMenu();
+  if (!anchorBtn) anchorBtn = document.querySelector('button[onclick^="_afkTestSound"]');
+  if (!anchorBtn) return;
+  const menu = document.createElement('div');
+  menu.className = 'afk-test-sound-menu';
+  menu.id = 'afkTestSoundMenu';
+  menu.innerHTML =
+    '<div class="afk-test-sound-menu-hdr">Preview a sound</div>' +
+    _AFK_SOUNDS.map(s =>
+      '<button class="afk-test-sound-menu-row" data-sound-id="' + s.id + '">' +
+        '<span class="afk-test-sound-menu-icon">🔊</span>' +
+        '<span>' + s.name + '</span>' +
+      '</button>'
+    ).join('');
+  document.body.appendChild(menu);
+  // Position above the anchor button (popup-style). Falls back to below
+  // if there's no room above.
+  const r = anchorBtn.getBoundingClientRect();
+  menu.style.visibility = 'hidden';
+  menu.style.left = '0px'; menu.style.top = '0px';
+  const mh = menu.offsetHeight;
+  const top = (r.top - mh - 6 >= 6) ? (r.top - mh - 6) : (r.bottom + 6);
+  let left = r.left;
+  const maxLeft = window.innerWidth - menu.offsetWidth - 6;
+  if (left > maxLeft) left = Math.max(6, maxLeft);
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+  menu.style.visibility = '';
+  // Row clicks preview the chosen sound and close the menu.
+  menu.addEventListener('click', e => {
+    const row = e.target.closest('.afk-test-sound-menu-row');
+    if (!row) return;
+    const id = row.getAttribute('data-sound-id');
+    const sound = _AFK_SOUNDS.find(s => s.id === id);
+    if (sound) {
+      _afkAudio.preview(sound.id);
+      _aaRtToast('🔊 Testing sound — ' + sound.name, 'ok');
+    }
+    _afkCloseTestSoundMenu();
+  });
+  // Dismiss handlers — installed on next tick so the opening click doesn't
+  // close the menu immediately.
+  setTimeout(() => {
+    document.addEventListener('mousedown', _afkTestSoundMenuOutside, true);
+    document.addEventListener('keydown',  _afkTestSoundMenuKey, true);
+    window.addEventListener('scroll',     _afkCloseTestSoundMenu, true);
+  }, 0);
+}
+function _afkCloseTestSoundMenu() {
+  const m = document.getElementById('afkTestSoundMenu');
+  if (m) m.remove();
+  document.removeEventListener('mousedown', _afkTestSoundMenuOutside, true);
+  document.removeEventListener('keydown',  _afkTestSoundMenuKey, true);
+  window.removeEventListener('scroll',     _afkCloseTestSoundMenu, true);
+}
+function _afkTestSoundMenuOutside(e) {
+  const m = document.getElementById('afkTestSoundMenu');
+  if (!m) return;
+  if (!m.contains(e.target)) _afkCloseTestSoundMenu();
+}
+function _afkTestSoundMenuKey(e) {
+  if (e.key === 'Escape') _afkCloseTestSoundMenu();
 }
 
 // ===========================================================================
@@ -10456,12 +10832,46 @@ const _afkHistory = (() => {
 })();
 
 // Capture a telemetry snapshot suitable for the history log.
+// v2.88.0 — also captures the flight-progress fields (elapsed since takeoff,
+// great-circle distance to destination, track miles remaining along the
+// SimBrief route, and time-remaining to destination) so the user can see
+// where in the trip each alert tripped without having to correlate the
+// timestamp manually.
 function _afkHistorySnapshotTelemetry() {
   const d = (typeof _liveAcLastData !== 'undefined') ? _liveAcLastData : null;
   let vs = null;
   try { vs = _afkPhase.vsFpm(); } catch (_) {}
   const phase = (() => { try { return _afkPhase.get(); } catch (_) { return null; } })();
-  if (!d) return { lat: null, lng: null, alt: null, gs: null, ias: null, hdg: null, vs: vs, phase: phase, source: null, ident: null };
+  // Flight-progress fields — derived from the same machinery the data
+  // panel uses (see _afkUpdateDataPanel). Each one falls back to null if
+  // the inputs aren't available (no SimBrief plan, GS too low, no takeoff
+  // detected yet, etc.) so the log entry simply shows '—' for missing rows.
+  let elapsedSec = null;
+  if (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) {
+    elapsedSec = (Date.now() - _afkTakeoffAt) / 1000;
+  }
+  let distToDestNm = null, trkMilesRemNm = null, remainingSec = null;
+  try {
+    const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    if (d && fp && fp.destination && isFinite(parseFloat(fp.destination.pos_lat))) {
+      const destLat = parseFloat(fp.destination.pos_lat);
+      const destLng = parseFloat(fp.destination.pos_long);
+      const dNm = _afkDistNm(d.lat, d.lng, destLat, destLng);
+      if (isFinite(dNm)) distToDestNm = dNm;
+      const trkNm = _afkTrackMilesRemaining(d, fp);
+      const remNm = isFinite(trkNm) ? trkNm : dNm;
+      if (isFinite(remNm)) trkMilesRemNm = remNm;
+      const gs = parseFloat(d.gs);
+      if (isFinite(remNm) && isFinite(gs) && gs > 5) {
+        remainingSec = (remNm / gs) * 3600;
+      }
+    }
+  } catch (_) {}
+  if (!d) return {
+    lat: null, lng: null, alt: null, gs: null, ias: null, hdg: null,
+    vs: vs, phase: phase, source: null, ident: null,
+    elapsedSec: elapsedSec, distToDestNm: null, trkMilesRemNm: null, remainingSec: null,
+  };
   const num = v => (v != null && isFinite(parseFloat(v))) ? parseFloat(v) : null;
   return {
     lat:    num(d.lat),
@@ -10474,6 +10884,11 @@ function _afkHistorySnapshotTelemetry() {
     phase:  (d.phase || phase || null),
     source: d.source || null,
     ident:  d.ident  || null,
+    // v2.88.0 — flight-progress snapshot
+    elapsedSec:    (elapsedSec != null && isFinite(elapsedSec))     ? elapsedSec    : null,
+    distToDestNm:  (distToDestNm != null && isFinite(distToDestNm)) ? distToDestNm  : null,
+    trkMilesRemNm: (trkMilesRemNm != null && isFinite(trkMilesRemNm))? trkMilesRemNm: null,
+    remainingSec:  (remainingSec != null && isFinite(remainingSec)) ? remainingSec  : null,
   };
 }
 
@@ -10570,9 +10985,13 @@ function _afkHistoryPlot(entryId) {
   const mm = String(d.getMinutes()).padStart(2, '0');
   const lbl = (e.label || e.typeLabel || 'Alert').replace(/</g, '&lt;');
   const role = e.group && e.group.role === 'cascaded' ? ' (cascade)' : '';
+  // v2.88.0 — pin now carries its own ✕ close badge and a hover tooltip
+  // surfaces the full alert details, matching the distance-measurement UX.
   const html =
     '<div class="afk-hist-marker-dot"></div>' +
-    '<div class="afk-hist-marker-label">' + hh + ':' + mm + ' · ' + e.typeLabel + role + (e.label ? ' — ' + lbl : '') + '</div>';
+    '<div class="afk-hist-marker-label">' + hh + ':' + mm + ' · ' + e.typeLabel + role + (e.label ? ' — ' + lbl : '') +
+      '<span class="afk-hist-marker-x" title="Remove this pin">✕</span>' +
+    '</div>';
   const icon = L.divIcon({
     className: 'afk-hist-marker',
     html: html,
@@ -10581,11 +11000,66 @@ function _afkHistoryPlot(entryId) {
   });
   const m = L.marker([e.telemetry.lat, e.telemetry.lng], {
     icon: icon,
-    interactive: false,
+    interactive: true,
+    bubblingMouseEvents: false,
     zIndexOffset: 1500,
   }).addTo(_rgMap);
+  // Hover tooltip with the full alert details. Native browser tooltip via
+  // the title attribute on the label element — cheap, no extra Leaflet
+  // tooltip layer needed. Multi-line content carried by the title attr.
+  try {
+    const el = m.getElement && m.getElement();
+    const lblEl = el && el.querySelector('.afk-hist-marker-label');
+    if (lblEl) {
+      lblEl.title = _afkHistoryFmtPinTooltip(e);
+      // Stop hover/click on the label from registering as a map drag start.
+      lblEl.addEventListener('mousedown', ev => ev.stopPropagation());
+      lblEl.addEventListener('dblclick',  ev => ev.stopPropagation());
+    }
+    const xEl = el && el.querySelector('.afk-hist-marker-x');
+    if (xEl) {
+      xEl.addEventListener('mousedown', ev => { ev.stopPropagation(); ev.preventDefault(); });
+      xEl.addEventListener('click', ev => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        _afkHistoryUnplot(entryId);
+        // Refresh the History modal's per-row pin state if it's open.
+        if (typeof _afkRenderHistoryList === 'function') _afkRenderHistoryList();
+      });
+    }
+  } catch (_) {}
   _afkHistoryPlots[entryId] = m;
   _afkHistory.update(entryId, { plotted: true });
+}
+
+// v2.88.0 — Build the multi-line tooltip shown when the user hovers a
+// pinned alert marker on the map. Uses native title attribute (newline-
+// separated) so it works without any extra layer or tooltip CSS.
+function _afkHistoryFmtPinTooltip(e) {
+  const lines = [];
+  const role = e.group && e.group.role === 'cascaded' ? ' (group cascade)' : '';
+  lines.push((e.label ? e.label + ' — ' : '') + e.typeLabel + role);
+  if (e.paramsSummary) lines.push(e.paramsSummary);
+  lines.push('Tripped: ' + _afkHistoryFmtLocal(e.firedAt) + ' local');
+  if (e.dismissal && e.dismissal.at) {
+    const ackSec = (e.dismissal.at - e.firedAt) / 1000;
+    const ackTime = _afkHistoryFmtLocal(e.dismissal.at).slice(11);
+    const ackDur  = (isFinite(ackSec) && ackSec >= 0) ? ' (after ' + _afkFmtHMSLong(ackSec) + ')' : '';
+    lines.push('Acknowledged: ' + ackTime + ackDur);
+  } else {
+    lines.push('Awaiting dismissal');
+  }
+  if (e.telemetry) {
+    const t = e.telemetry;
+    const bits = [];
+    if (t.lat != null && t.lng != null) bits.push(t.lat.toFixed(4) + '°, ' + t.lng.toFixed(4) + '°');
+    if (t.alt != null)   bits.push('Alt ' + Math.round(t.alt) + ' ft');
+    if (t.gs  != null)   bits.push('GS ' + Math.round(t.gs)  + ' kt');
+    if (t.hdg != null)   bits.push('Hdg ' + Math.round(t.hdg).toString().padStart(3, '0') + '°');
+    if (t.phase)         bits.push('Phase ' + t.phase);
+    if (bits.length) lines.push(bits.join(' · '));
+  }
+  return lines.join('\n');
 }
 
 function _afkHistoryUnplot(entryId, opts) {
@@ -10671,6 +11145,12 @@ function _afkHistoryFmtTelemetry(t) {
   rows.push(['Phase', t.phase || '—']);
   rows.push(['Src',   t.source || '—']);
   if (t.ident) rows.push(['A/C', t.ident]);
+  // v2.88.0 — flight-progress fields (added below so they sit at the end
+  // of the row, after the always-available position/speed/phase block).
+  rows.push(['Elapsed',     (t.elapsedSec    != null && isFinite(t.elapsedSec))    ? _afkFmtHMS(t.elapsedSec)    : '—']);
+  rows.push(['Remaining',   (t.remainingSec  != null && isFinite(t.remainingSec))  ? _afkFmtHMS(t.remainingSec)  : '—']);
+  rows.push(['Dist to Dest',(t.distToDestNm  != null && isFinite(t.distToDestNm))  ? (t.distToDestNm.toFixed(1) + ' nm') : '—']);
+  rows.push(['Trk Miles Rem',(t.trkMilesRemNm!= null && isFinite(t.trkMilesRemNm)) ? (t.trkMilesRemNm.toFixed(1) + ' nm') : '—']);
   return rows.map(r =>
     '<span class="afk-hist-tele-pair"><span class="afk-hist-tele-k">' + r[0] + '</span>' +
     '<span class="afk-hist-tele-v">' + r[1] + '</span></span>'
@@ -10705,7 +11185,37 @@ function _afkHistoryFmtDismissal(entry) {
             : r === 'group-cascade' ? 'afk-hist-pill-cascade'
             : 'afk-hist-pill-user';
   const when = entry.dismissal.at ? (' · ' + _afkHistoryFmtLocal(entry.dismissal.at).slice(11)) : '';
-  return '<span class="afk-hist-pill ' + cls + '">' + tag + when + '</span>';
+  // v2.88.0 — for indefinite-duration alarms, append the trip→ack delay
+  // (hours, minutes, seconds) so the user can see how long the alarm sat
+  // unacknowledged. Only meaningful when the duration mode was indefinite
+  // AND the dismissal wasn't an automatic timer expiry.
+  let ack = '';
+  try {
+    const durMode = (entry.params && entry.params.durationMode) || 'indefinite';
+    if (durMode === 'indefinite' && r !== 'timer'
+        && entry.firedAt && entry.dismissal.at) {
+      const deltaSec = (entry.dismissal.at - entry.firedAt) / 1000;
+      if (isFinite(deltaSec) && deltaSec >= 0) {
+        ack = ' · ack after ' + _afkFmtHMSLong(deltaSec);
+      }
+    }
+  } catch (_) {}
+  return '<span class="afk-hist-pill ' + cls + '">' + tag + when + ack + '</span>';
+}
+
+// v2.88.0 — Human-friendly H:M:S formatter for the "ack after …" delta on
+// indefinite alarms. Drops leading zero units so a 12-second ack reads
+// "12s" instead of "0h 0m 12s". Always shows seconds (down to 1 s).
+function _afkFmtHMSLong(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const parts = [];
+  if (h) parts.push(h + 'h');
+  if (h || m) parts.push(m + 'm');
+  parts.push(s + 's');
+  return parts.join(' ');
 }
 
 function _afkRenderHistoryList() {
@@ -11528,6 +12038,18 @@ const _afkAlarms = (() => {
     _save();
   }
 
+  // v2.88.0 — Enable every configured alarm at once. Cleans transient
+  // tripped state too so the toolbar badge reflects an accurate armed
+  // count immediately, matching the inverse contract of disableAll().
+  function enableAll() {
+    alarms.forEach(a => {
+      a.enabled = true;
+      a.status = 'armed';
+      a.trippedAt = null;
+    });
+    _save();
+  }
+
   function reorder(fromId, toId, position) {
     // Move alarm with `fromId` to be just before `toId` (position='before')
     // or just after (position='after'). List order = sound priority order.
@@ -11562,7 +12084,7 @@ const _afkAlarms = (() => {
   }
 
   _load();
-  return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, reorder, flightPlanChanged };
+  return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, enableAll, reorder, flightPlanChanged };
 })();
 
 // ---------------------- ALARM GROUPS (v2.83.0+) --------------------------
@@ -11629,7 +12151,9 @@ const _afkGroups = (() => {
 
   function rename(id, name) {
     const g = groups[id]; if (!g) return;
-    g.name = name || '';
+    // v2.89.0 — hard 30-char cap so group names stay scannable next to
+    // the member-count chip and don't push the Ungroup button off-row.
+    g.name = String(name || '').slice(0, _AFK_NAME_MAX);
     _save();
   }
   function setCollapsed(id, on) {
@@ -12216,7 +12740,9 @@ function _afkOnTripped(newTrips) {
         let detail = '';
         try { detail = _afkAlarmShortDescription(a, false).replace(/<[^>]+>/g, '').trim(); } catch (_) {}
         const msg = '🔔 ' + typeLabel + (detail ? ' — ' + detail : '') + ' tripped.';
-        _maSend(msg).catch(e => {
+        // v2.88.0 — pass typeLabel as alertType so providers with a title
+        // field (ntfy, Pushover) surface it as "Title — AlertType".
+        _maSend(msg, { alertType: typeLabel }).catch(e => {
           _aaRtToast('📱 Mobile alert failed (' + typeLabel + '): ' + (e && e.message ? e.message : 'send error'), 'warn');
         });
       });
@@ -12340,6 +12866,28 @@ function _afkDisableAll() {
   _afkUpdateBtnState();
   _afkUpdateBadge();
   _aaRtToast('🔔 All alarms disabled.', 'ok');
+}
+
+// v2.88.0 — Inverse of _afkDisableAll: flip every alarm to enabled and
+// re-arm the visual + scheduling machinery (timer countdowns, geofence
+// rings, waypoint highlights, badge count). No-op (with toast) when the
+// queue is empty so the button never silently does nothing.
+function _afkEnableAll() {
+  const n = _afkAlarms.count();
+  if (n === 0) { _aaRtToast('🔔 No alarms configured.', 'warn'); return; }
+  _afkAlarms.enableAll();
+  // Reschedule any timer alarms so their countdowns resume.
+  _afkAlarms.list().forEach(a => {
+    if (a.type === 'timer') {
+      try { _afkScheduleTimer(a); } catch (_) {}
+    }
+  });
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  _afkRenderAlarmList();
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+  _aaRtToast('🔔 All ' + n + ' alarm(s) enabled.', 'ok');
 }
 
 // Save the current alarm queue to a JSON file on disk. v2.82.0+ — lets
@@ -12561,15 +13109,28 @@ function _afkDeleteAll() {
 }
 
 // ---------------------- TRIP OVERLAY --------------------------------------
+// v2.88.0 — Enter dismisses the whole alarm batch while the trip overlay is
+// open. Hook attached/detached around show/hide so the key only fires when
+// the overlay is actually on screen (avoids hijacking Enter in modals).
+function _afkTripKeyHandler(e) {
+  if (e.key !== 'Enter') return;
+  const ov = document.getElementById('afkTripOverlay');
+  if (!ov || !ov.classList.contains('open')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _afkDismissAll();
+}
 function _afkShowTripOverlay() {
   const ov = document.getElementById('afkTripOverlay');
   if (!ov) return;
   ov.classList.add('open');
   _afkSyncTripOverlay();
+  document.addEventListener('keydown', _afkTripKeyHandler, true);
 }
 function _afkHideTripOverlay() {
   const ov = document.getElementById('afkTripOverlay');
   if (ov) ov.classList.remove('open');
+  document.removeEventListener('keydown', _afkTripKeyHandler, true);
 }
 function _afkSyncTripOverlay() {
   const ov = document.getElementById('afkTripOverlay');
@@ -12684,7 +13245,16 @@ function _afkAlarmTooltip(type) {
 }
 
 function _afkAlarmShortDescription(a, includeTitle) {
-  const title = includeTitle ? '<span style="font-weight:600;">' + _afkAlarmTypeLabel(a.type) + '</span> · ' : '';
+  // v2.89.0 — prepend the user-set name (if any) to the title block so
+  // the trip overlay and any other includeTitle caller reads e.g.
+  // "Top of Descent · Descent Started · …" before the type-specific
+  // details. Geofence keeps its own inline label rendering further down
+  // for backwards compatibility with its existing summary line.
+  const userName = (a.params && a.params.label) ? String(a.params.label).trim() : '';
+  const typeLbl  = _afkAlarmTypeLabel(a.type);
+  const title = includeTitle
+    ? '<span style="font-weight:600;">' + (userName ? (userName + '</span> · <span style="font-weight:600;">' + typeLbl) : typeLbl) + '</span> · '
+    : '';
   if (a.type === 'timer') {
     if (a.state && a.state.fired) return title + '✓ Already fired — toggle off / on to re-arm';
     return title + _afkFmtTimerTarget(a);
@@ -12768,7 +13338,26 @@ function _afkRenderCardHtml(a) {
       '<button class="afk-card-chevron" onclick="event.stopPropagation();_afkToggleCardCollapse(' + a.id + ')" title="Collapse / expand this alarm card">' + chevronGlyph + '</button>' +
       '<div class="afk-card-icon" title="' + tip + '">' + _afkAlarmIcon(a.type) + '</div>' +
       '<div class="afk-card-desc">' +
-        '<div class="afk-card-desc-title" title="' + tip + '">' + _afkAlarmTypeLabel(a.type) + '</div>' +
+        '<div class="afk-card-desc-title" title="' + tip + '">' +
+          // v2.89.0 — editable per-alert name (max 30 chars). Reuses
+          // params.label so geofences continue to share one source of
+          // truth with their existing modal Label field. Empty state
+          // shows a faint "Name…" placeholder so the field is visible
+          // but stays non-intrusive.
+          '<span class="afk-card-name" contenteditable="true" spellcheck="false"' +
+            ' data-placeholder="Name…"' +
+            ' onclick="event.stopPropagation()"' +
+            ' onmousedown="event.stopPropagation()"' +
+            ' ondragstart="event.preventDefault();event.stopPropagation();return false"' +
+            ' oninput="_afkNameInputCap(this)"' +
+            ' onblur="_afkAlarmRenameBlur(event,' + a.id + ')"' +
+            ' onkeydown="_afkAlarmRenameKey(event,' + a.id + ')"' +
+            ' title="Click to name this alert (max 30 chars). Shows in the alarm pin label, Next Alert telemetry, and Alert History log.">' +
+            (((a.params && a.params.label) || '').replace(/</g, '&lt;')) +
+          '</span>' +
+          '<span class="afk-card-name-sep" aria-hidden="true"></span>' +
+          '<span class="afk-card-type-label">' + _afkAlarmTypeLabel(a.type) + '</span>' +
+        '</div>' +
         '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
       '</div>' +
       '<div class="afk-card-actions">' +
@@ -12810,9 +13399,10 @@ function _afkRenderGroupHtml(gid, members) {
       '<span class="afk-group-icon" title="Group of ' + members.length + ' alarms — they fire together; dismissing any one dismisses + disables all">⛓</span>' +
       '<span class="afk-group-name" contenteditable="true" spellcheck="false" ' +
             'data-placeholder="' + placeholder + '" ' +
+            'oninput="_afkNameInputCap(this)" ' +
             'onblur="_afkGroupRenameBlur(event,\'' + gid + '\')" ' +
             'onkeydown="_afkGroupRenameKey(event,\'' + gid + '\')" ' +
-            'title="Click to rename the group">' + name + '</span>' +
+            'title="Click to rename the group (max 30 chars)">' + name + '</span>' +
       '<span class="afk-group-count">' + members.length + ' member' + (members.length === 1 ? '' : 's') + '</span>' +
       '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
     '</div>' +
@@ -12842,7 +13432,15 @@ function _afkRenderAlarmList() {
   if (!list) return;
   const items = _afkAlarms.list();
   if (items.length === 0) {
-    list.innerHTML = '<div class="afk-list-empty">No alarms configured. Pick a type on the left to add one.</div>';
+    // v2.88.0 — empty-state div doubles as a drop target so an add-from-menu
+    // drag has somewhere to land before the first alarm exists.
+    list.innerHTML =
+      '<div class="afk-list-empty"' +
+        ' ondragover="_afkListZoneOver(event,\'top\')"' +
+        ' ondragleave="_afkListZoneLeave(event)"' +
+        ' ondrop="_afkListZoneDrop(event,\'top\')">' +
+        'No alarms configured. Pick a type on the left to add one — or drag one onto this panel.' +
+      '</div>';
     _afkUpdateFooterInfo();
     return;
   }
@@ -12875,16 +13473,35 @@ function _afkRenderAlarmList() {
 }
 
 // Drop-zone handlers for the top/bottom of the alarm list (v2.82.0+).
+// v2.88.0 — these also accept add-from-menu drags.
 function _afkListZoneOver(ev, where) {
-  if (_afkDragFromId == null) return;
+  if (_afkDragFromId == null && !_afkAddDragType) return;
   ev.preventDefault();
-  try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+  try { ev.dataTransfer.dropEffect = _afkAddDragType ? 'copy' : 'move'; } catch (_) {}
   if (ev.currentTarget) ev.currentTarget.classList.add('drop-active');
 }
 function _afkListZoneLeave(ev) {
   if (ev.currentTarget) ev.currentTarget.classList.remove('drop-active');
 }
 function _afkListZoneDrop(ev, where) {
+  // Add-from-menu path: drop above the first / below the last existing alarm,
+  // or onto an empty list.
+  if (_afkAddDragType) {
+    ev.preventDefault();
+    if (ev.currentTarget) ev.currentTarget.classList.remove('drop-active');
+    const type = _afkAddDragType;
+    _afkAddDragType = null;
+    const items = _afkAlarms.list();
+    if (items.length === 0) {
+      // Empty list — just append.
+      _afkAddDroppedAlarm(type, null, null);
+    } else {
+      const targetId = (where === 'top') ? items[0].id : items[items.length - 1].id;
+      const position = (where === 'top') ? 'before'   : 'after';
+      _afkAddDroppedAlarm(type, targetId, position);
+    }
+    return;
+  }
   if (_afkDragFromId == null) return;
   ev.preventDefault();
   const items = _afkAlarms.list();
@@ -12969,13 +13586,21 @@ function _afkAlarmCardSummary(a) {
 }
 
 function _afkUpdateFooterInfo() {
+  // v2.89.0 — renders into the modal-title row (was the footer). Uses
+  // proper singular/plural ("1 alert" vs "2 alerts") instead of the
+  // lazy "alert(s)" form, and switches the noun to "alert" to match
+  // the rest of the UI's terminology pass.
   const info = document.getElementById('afkFooterInfo');
   if (!info) return;
   const armed = _afkAlarms.armedCount();
   const total = _afkAlarms.count();
-  if (total === 0) info.textContent = 'No alarms configured';
-  else if (armed === 0) info.textContent = total + ' alarm(s) configured · 0 armed';
-  else info.textContent = armed + ' of ' + total + ' alarm(s) armed';
+  const totalNoun = total === 1 ? 'alert' : 'alerts';
+  if (total === 0)        info.textContent = 'No alerts configured';
+  else if (armed === 0)   info.textContent = total + ' ' + totalNoun + ' configured · 0 armed';
+  else if (armed === total) info.textContent = (total === 1
+                            ? '1 alert armed'
+                            : 'All ' + total + ' alerts armed');
+  else                    info.textContent = armed + ' of ' + total + ' ' + totalNoun + ' armed';
 }
 
 // ---------------------- DRAG-TO-REORDER ALARM CARDS -----------------------
@@ -12989,6 +13614,59 @@ function _afkCardDragStart(ev, id) {
   // zones can expand into clearly visible targets.
   const list = document.getElementById('afkAlarmList');
   if (list) list.classList.add('dragging-alarm');
+}
+
+// v2.88.0 — Drag-from-Add-menu: dragging an Add Alarm button onto the
+// alarms list creates a new alarm of that type at the drop position. Uses
+// a separate global so the existing reorder/grouping flows still work
+// untouched. _afkAddDragType !== null while dragging; cleared on dragend
+// or on a successful drop.
+let _afkAddDragType = null;
+function _afkAddDragStart(ev, type) {
+  _afkAddDragType = type;
+  try {
+    ev.dataTransfer.effectAllowed = 'copy';
+    // v2.89.0 — use a custom MIME type instead of text/plain so dropping
+    // on an inline text input (e.g. an alarm/group name field) doesn't
+    // paste the literal "add:timer" string. Firefox still requires SOME
+    // data to be set for the drag to initiate, hence the custom type.
+    ev.dataTransfer.setData('application/x-simfly-alert-add', type);
+  } catch (_) {}
+  const list = document.getElementById('afkAlarmList');
+  if (list) list.classList.add('dragging-add');
+}
+function _afkAddDragEnd(ev) {
+  _afkAddDragType = null;
+  const list = document.getElementById('afkAlarmList');
+  if (list) {
+    list.classList.remove('dragging-add');
+    list.querySelectorAll('.drop-active,.drop-before,.drop-after,.drop-onto').forEach(el => {
+      el.classList.remove('drop-active', 'drop-before', 'drop-after', 'drop-onto');
+    });
+  }
+}
+
+// Append a new alarm of `type` via the standard _afkAddAlarm flow, then
+// move it to the requested neighbour-relative position. Geofence opens a
+// multi-step picker, so for that type we just open the picker and append
+// at the list end (with a toast so the user isn't surprised).
+function _afkAddDroppedAlarm(type, targetId, position) {
+  if (type === 'geofence') {
+    _aaRtToast('⊙ Configure the geofence — it will be added at the end of the list.', 'ok');
+    _afkAddAlarm('geofence');
+    return;
+  }
+  const beforeIds = new Set(_afkAlarms.list().map(a => a.id));
+  _afkAddAlarm(type);
+  // Find the newly-created alarm by id-diffing; the add path always appends
+  // to the end so the new alarm has the highest id.
+  const after = _afkAlarms.list();
+  const created = after.find(a => !beforeIds.has(a.id));
+  if (!created) return;
+  if (targetId != null && targetId !== created.id) {
+    _afkAlarms.reorder(created.id, targetId, position);
+    _afkRenderAlarmList();
+  }
 }
 // v2.83.0 — three drop zones per card: top 30% = drop-before (reorder
 // above), bottom 30% = drop-after (reorder below), middle 40% = drop-onto
@@ -13004,6 +13682,19 @@ function _afkCardDragZone(ev, card) {
   return 'onto';
 }
 function _afkCardDragOver(ev, id) {
+  // v2.88.0 — accept add-from-menu drags too. For an add-drag we only
+  // expose before/after zones (no grouping with a brand-new alarm).
+  if (_afkAddDragType) {
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+    const card = ev.currentTarget;
+    const r = card.getBoundingClientRect();
+    const zone = (ev.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+    card.classList.toggle('drop-before', zone === 'before');
+    card.classList.toggle('drop-after',  zone === 'after');
+    card.classList.remove('drop-onto');
+    return;
+  }
   if (_afkDragFromId == null || id === _afkDragFromId) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
@@ -13022,6 +13713,18 @@ function _afkCardDragLeave(ev) {
   }
 }
 function _afkCardDrop(ev, toId) {
+  // v2.88.0 — Add-from-menu drop: insert a new alarm before/after this card.
+  if (_afkAddDragType) {
+    ev.preventDefault();
+    const card = ev.currentTarget;
+    const r = card.getBoundingClientRect();
+    const position = (ev.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+    const type = _afkAddDragType;
+    _afkAddDragType = null;
+    card.classList.remove('drop-before', 'drop-after', 'drop-onto');
+    _afkAddDroppedAlarm(type, toId, position);
+    return;
+  }
   if (_afkDragFromId == null || toId === _afkDragFromId) return;
   ev.preventDefault();
   const card = ev.currentTarget;
@@ -13182,6 +13885,28 @@ function _afkGroupToggleAll(gid, on) {
   _afkRenderGeofenceVisuals();
   _afkRenderWaypointVisuals();
 }
+// v2.89.0 — Shared character cap for group AND per-alert names. Names
+// sit alongside other UI (member-count chip, type label, count badge)
+// so they need to stay short enough not to push siblings off-row.
+const _AFK_NAME_MAX = 30;
+// Enforce the cap live as the user types in a contenteditable name span.
+// Trims back to the cap, restores caret to the end so typing past the
+// limit doesn't bounce the cursor home.
+function _afkNameInputCap(el) {
+  if (!el) return;
+  const t = el.textContent || '';
+  if (t.length <= _AFK_NAME_MAX) return;
+  el.textContent = t.slice(0, _AFK_NAME_MAX);
+  // Move caret to end of trimmed text.
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch (_) {}
+}
 function _afkGroupRenameBlur(ev, gid) {
   const el = ev.currentTarget;
   const name = (el.textContent || '').trim();
@@ -13195,6 +13920,36 @@ function _afkGroupRenameKey(ev, gid) {
     ev.preventDefault();
     const g = _afkGroups.get(gid);
     if (g) ev.currentTarget.textContent = g.name || '';
+    ev.currentTarget.blur();
+  }
+}
+
+// v2.89.0 — Per-alert name handlers. Mirror the group-rename pattern so
+// the editing experience is identical (inline contenteditable, Enter
+// commits, Escape reverts, 30-char cap on input). The stored value
+// reuses the existing `alarm.params.label` slot (which geofences already
+// use) so save/load files round-trip without schema migration and the
+// rename surfaces in the Alert History log entries automatically.
+function _afkAlarmRenameBlur(ev, id) {
+  const el = ev.currentTarget;
+  const name = (el.textContent || '').trim().slice(0, _AFK_NAME_MAX);
+  const a = _afkAlarms.get(id);
+  if (!a) return;
+  const params = Object.assign({}, a.params || {});
+  params.label = name;
+  _afkAlarms.update(id, { params: params });
+  // Re-render so the next-alert telemetry, collapsed-card title, and any
+  // other places that read params.label pick up the new value on next tick.
+  _afkRenderAlarmList();
+}
+function _afkAlarmRenameKey(ev, id) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    ev.currentTarget.blur();
+  } else if (ev.key === 'Escape') {
+    ev.preventDefault();
+    const a = _afkAlarms.get(id);
+    if (a) ev.currentTarget.textContent = (a.params && a.params.label) || '';
     ev.currentTarget.blur();
   }
 }
@@ -14294,8 +15049,8 @@ const _AFK_DP_ELEMENTS = {
                title:"Great-circle nautical miles directly from your current position to the destination airport — straight line, ignores the planned route's dogleg." },
   trkRem:    { label:'TRK MILES REM',group:'Distance',  valueId:'afkDpTrkRem',    minWidth:'5.5em',
                title:'Track miles remaining along the SimBrief route — from your current position to the next un-passed waypoint, plus the sum of all remaining legs to the destination. Drives the REMAINING / ETA estimates.' },
-  nextAlarm: { label:'NEXT ALARM',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
-  nextEta:   { label:'IN',           group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
+  nextAlarm: { label:'NEXT ALERT',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
+  nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
 };
 
 const _AFK_DP_DEFAULT_CONFIG = [
@@ -14556,6 +15311,43 @@ function _afkDpSet(id, text, klass) {
   return el;
 }
 
+// v2.88.0 — Set a dynamic tooltip on a data-panel field's wrapper. The
+// wrapper carries the title (so the entire LABEL+VALUE area triggers it).
+// Passing null/empty clears the dynamic title and lets the static title
+// from _AFK_DP_ELEMENTS take over again.
+//
+// v2.89.1 — Two anti-flash guards:
+//   1. No-op when the desired title is byte-identical to the current one.
+//      Useful for static-string tooltips (Next Alert config) that don't
+//      really change every tick.
+//   2. Skip updates while the cursor is hovering the wrapper. Native
+//      browser tooltips dismiss the moment the title attribute mutates,
+//      so writing a fresh value every ~1 s while hovering produced a
+//      visible flash. The next mouseleave/mouseenter cycle picks up
+//      whatever the most-recent panel update produced — at most ~1 s
+//      stale, which is fine for a hover affordance.
+function _afkDpSetTitle(valueId, titleText) {
+  const el = document.getElementById(valueId);
+  if (!el) return;
+  const wrap = el.closest('.afk-dp-field');
+  if (!wrap) return;
+  _afkSetTitleSafe(wrap, titleText);
+}
+
+// v2.89.1 — Element-agnostic anti-flash title setter. Skips the write
+// when the title is unchanged OR when the cursor is currently over the
+// target, so a re-render mid-hover never dismisses the native tooltip
+// the user is reading.
+function _afkSetTitleSafe(el, titleText) {
+  if (!el) return;
+  const desired = titleText || '';
+  const current = el.getAttribute('title') || '';
+  if (desired === current) return;
+  if (el.matches && el.matches(':hover')) return;
+  if (desired) el.setAttribute('title', desired);
+  else el.removeAttribute('title');
+}
+
 function _afkUpdateDataPanel(ac) {
   _afkDpSet('afkDpLat', _afkFmtCoord(ac.lat, true));
   _afkDpSet('afkDpLon', _afkFmtCoord(ac.lng, false));
@@ -14579,8 +15371,16 @@ function _afkUpdateDataPanel(ac) {
   // Elapsed
   if (_afkTakeoffAt > 0) {
     _afkDpSet('afkDpElapsed', _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000), 'afk-dp-value');
+    // v2.88.0 — hover reveals the takeoff timestamp in local + Zulu form.
+    const t = new Date(_afkTakeoffAt);
+    const lcl = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const utc = String(t.getUTCHours()).padStart(2, '0') + ':' +
+                String(t.getUTCMinutes()).padStart(2, '0') + ':' +
+                String(t.getUTCSeconds()).padStart(2, '0') + 'Z';
+    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff. Takeoff at ' + lcl + ' local · ' + utc + ' Zulu.');
   } else {
     _afkDpSet('afkDpElapsed', '—', 'afk-dp-value muted');
+    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff — awaiting wheels-up detection.');
   }
 
   // Destination ETA
@@ -14596,6 +15396,13 @@ function _afkUpdateDataPanel(ac) {
     const dNm = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
     if (distEl) distEl.textContent = isFinite(dNm) ? dNm.toFixed(1) + ' nm' : '—';
     if (distEl) distEl.className = 'afk-dp-value';
+    // v2.88.0 — hover reveals km equivalent (1 nm = 1.852 km).
+    if (isFinite(dNm)) {
+      _afkDpSetTitle('afkDpDistRem',
+        'Great-circle distance to destination: ' + dNm.toFixed(1) + ' nm · ' + (dNm * 1.852).toFixed(1) + ' km. Straight line — ignores the planned route’s dogleg.');
+    } else {
+      _afkDpSetTitle('afkDpDistRem', null);
+    }
     // Track miles remaining along the SimBrief route — sums the leg from
     // current position to the next un-passed fix, then every leg after
     // that through the destination. Falls back to the great-circle figure
@@ -14604,8 +15411,12 @@ function _afkUpdateDataPanel(ac) {
     const remNm = isFinite(trkNm) ? trkNm : dNm;
     if (isFinite(remNm)) {
       if (trkEl) { trkEl.textContent = remNm.toFixed(1) + ' nm'; trkEl.className = 'afk-dp-value'; }
+      // v2.88.0 — hover reveals km equivalent.
+      _afkDpSetTitle('afkDpTrkRem',
+        'Track miles remaining along the SimBrief route: ' + remNm.toFixed(1) + ' nm · ' + (remNm * 1.852).toFixed(1) + ' km. Current position to the next un-passed waypoint plus all remaining legs to destination. Drives REMAINING / ETA.');
     } else {
       if (trkEl) { trkEl.textContent = '—'; trkEl.className = 'afk-dp-value muted'; }
+      _afkDpSetTitle('afkDpTrkRem', null);
     }
     // REMAINING / ETA now use track miles (more accurate on legs with a
     // dogleg); fall back to the great-circle figure if the plan has no
@@ -14627,6 +15438,8 @@ function _afkUpdateDataPanel(ac) {
     if (remEl)  { remEl.textContent = '—';  remEl.className = 'afk-dp-value muted'; }
     if (etaLEl) { etaLEl.textContent = '—'; etaLEl.className = 'afk-dp-value muted'; }
     if (etaUEl) { etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted'; }
+    _afkDpSetTitle('afkDpDistRem', null);
+    _afkDpSetTitle('afkDpTrkRem',  null);
   }
 
   // Next alarm
@@ -14634,10 +15447,24 @@ function _afkUpdateDataPanel(ac) {
   const nextEtaEl = document.getElementById('afkDpNextEta');
   const nx = _afkETA.next(ac);
   if (nx) {
-    const label = _afkAlarmTypeLabel(nx.alarm.type) +
-      (nx.alarm.type === 'geofence' && nx.alarm.params.label ? ' (' + nx.alarm.params.label + ')' : '') +
-      (nx.alarm.type === 'waypoint' && nx.location && nx.location.label ? ' (' + nx.location.label + ')' : '');
+    // v2.89.0 — every alarm can carry a user-set name in params.label
+    // (was geofence-only). When present, show it as the primary label
+    // with the type as a parenthetical so the panel reads "Top of Descent
+    // (Descent Started)" instead of "Descent Started (Top of Descent)".
+    // Waypoint-fix labels still get the leg name as a parenthetical
+    // appended so the user can tell which fix is upcoming.
+    const userName = (nx.alarm.params && nx.alarm.params.label) ? String(nx.alarm.params.label).trim() : '';
+    const typeLbl  = _afkAlarmTypeLabel(nx.alarm.type);
+    const wpLeg    = (nx.alarm.type === 'waypoint' && nx.location && nx.location.label) ? ' (' + nx.location.label + ')' : '';
+    const label    = userName
+      ? (userName + ' (' + typeLbl + ')' + wpLeg)
+      : (typeLbl + wpLeg);
     if (nextEl) nextEl.textContent = label;
+    // v2.88.0 — hover reveals the full alarm configuration (the same summary
+    // the collapsed-card tooltip uses), so the user can see every detail of
+    // what's about to fire without opening the Alerts modal.
+    let detailTip = '';
+    try { detailTip = _afkAlarmCardSummary(nx.alarm); } catch (_) {}
     // Geofence + waypoint alarms have a fixed map location — make the label
     // a click target that recentres the map on the alarm and disables the
     // follow-aircraft mode (per [[feedback_disclosure_triangle_direction]]
@@ -14645,24 +15472,44 @@ function _afkUpdateDataPanel(ac) {
     if (nextEl) {
       if (nx.location) {
         nextEl.className = 'afk-dp-value is-link';
-        nextEl.title = 'Click to centre the map on this alarm';
+        // v2.89.1 — safe setter avoids the mid-hover title flash.
+        _afkSetTitleSafe(nextEl, (detailTip ? detailTip + '\n\n' : '') + 'Click to centre the map on this alarm.');
         nextEl.onclick = () => _afkRecentreOnAlarm(nx.location);
       } else {
         nextEl.className = 'afk-dp-value';
-        nextEl.title = '';
+        _afkSetTitleSafe(nextEl, detailTip || '');
         nextEl.onclick = null;
       }
     }
-    if (nextEtaEl) { nextEtaEl.textContent = _afkETA.fmt(nx.etaSec); nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : ''); }
+    // Field wrapper also carries the tooltip so hovering the LABEL ("NEXT
+    // ALARM") works too, not just the value.
+    _afkDpSetTitle('afkDpNextAlarm', detailTip || null);
+    if (nextEtaEl) {
+      nextEtaEl.textContent = _afkETA.fmt(nx.etaSec);
+      nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : '');
+      // v2.88.0 — hover shows the predicted trip time in local + Zulu form.
+      if (isFinite(nx.etaSec)) {
+        const trip = new Date(Date.now() + nx.etaSec * 1000);
+        const lcl = trip.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        const utc = String(trip.getUTCHours()).padStart(2, '0') + ':' +
+                    String(trip.getUTCMinutes()).padStart(2, '0') + ':' +
+                    String(trip.getUTCSeconds()).padStart(2, '0') + 'Z';
+        _afkDpSetTitle('afkDpNextEta', 'Predicted trip time: ' + lcl + ' local · ' + utc + ' Zulu.');
+      } else {
+        _afkDpSetTitle('afkDpNextEta', null);
+      }
+    }
   } else {
     const armed = _afkAlarms.armedCount();
     if (nextEl) {
       nextEl.textContent = armed > 0 ? '(' + armed + ' armed, none ETA-predictable)' : '—';
       nextEl.className = 'afk-dp-value' + (armed > 0 ? '' : ' muted');
-      nextEl.title = '';
+      _afkSetTitleSafe(nextEl, '');
       nextEl.onclick = null;
     }
+    _afkDpSetTitle('afkDpNextAlarm', null);
     if (nextEtaEl) { nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted'; }
+    _afkDpSetTitle('afkDpNextEta', null);
   }
 }
 
@@ -18503,7 +19350,32 @@ function _rgCloseAnyPulldown() {
     .forEach(el => el.classList.remove('is-open'));
 }
 function _rgToggleToolsMenu(ev) { _rgTogglePulldown('rgToolsMenu', 'rgToolsBtn', ev); }
-function _rgToggleLiveMenu(ev)  { _rgTogglePulldown('rgLiveMenu',  'rgLiveBtn',  ev); }
+function _rgToggleLiveMenu(ev)  {
+  // v2.89.0 — refresh the disabled state of the Clear items just before
+  // opening so the user always sees an accurate UI without any per-tick
+  // polling. Closes don't need refreshing.
+  if (!document.getElementById('rgLiveMenu').classList.contains('open')) {
+    try { _rgRefreshLiveMenuDisabled(); } catch (_) {}
+  }
+  _rgTogglePulldown('rgLiveMenu',  'rgLiveBtn',  ev);
+}
+
+// v2.89.0 — Grey out "Clear Aircraft Track" when no breadcrumb points
+// exist. Avoids the dead-click surprise of an enabled button that does
+// nothing. v2.89.2 — "Clear Flight Plan" handling removed: the SimBrief
+// Flight Plan item now serves as the load / clear toggle on its own.
+function _rgRefreshLiveMenuDisabled() {
+  const trkBtn = document.getElementById('rgClearTrackBtn');
+  const hasTrack = (typeof _liveAcTrailUltra   !== 'undefined' && _liveAcTrailUltra.length   > 0) ||
+                   (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
+                   (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
+  if (trkBtn) {
+    trkBtn.classList.toggle('disabled', !hasTrack);
+    trkBtn.title = hasTrack
+      ? "Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load."
+      : 'No aircraft track recorded yet.';
+  }
+}
 function _rgTogglePulldown(menuId, triggerId, ev) {
   if (ev) ev.stopPropagation();
   const m = document.getElementById(menuId);
@@ -21186,38 +22058,77 @@ function _rgSetCursor(type) {
 function _rgUpdatePhaseText() {
   const el = document.getElementById('rgPhaseText');
   if (!el) return;
+  // v2.88.0 — the drawing-phase overlay now also carries the Cancel button
+  // (was a header pill that toggled between "Cancel" and "Undo"). Cancel
+  // sits to the right of the STEP text so it's reachable without leaving
+  // the map area. _rgUpdatePhaseText is called every phase transition so
+  // the button shows up exactly during drawing phases.
   const msgs = {
     idle:     '<span class="rg-phase-badge dep">STEP 1</span>Click &amp; drag on the map to define the <b>departure region</b>',
     dep_drag: '<span class="rg-phase-badge dep">DEP</span>Drag to set radius — release to lock departure region',
     ruler:    '<span class="rg-phase-badge arr">STEP 2</span>Click &amp; drag to define the <b>arrival region</b>',
     arr_drag: '<span class="rg-phase-badge arr">ARR</span>Drag to set radius — release to lock arrival region',
   };
-  // Render drawing-phase instructions on the map (centered overlay) instead of
-  // the header — keeps the header compact on narrow viewports and puts the
-  // instruction near where the user is interacting. Header phase-text is left
-  // empty during drawing; explore/results phases never set it here either.
   const drawingMsg = msgs[_rgPhase] || '';
   const overlay = document.getElementById('rgPhaseOverlay');
   if (overlay) {
-    overlay.innerHTML = drawingMsg;
+    overlay.innerHTML = drawingMsg + (drawingMsg
+      ? '<button class="rg-phase-cancel" onclick="_rgCancelDraw()" title="Cancel region selection and return to free map exploration">✕ Cancel</button>'
+      : '');
     overlay.classList.toggle('visible', !!drawingMsg);
   }
   el.innerHTML = '';
-  const selBtn        = document.getElementById('rgSelectBtn');
+  // The original header buttons (Select / Undo / DONE) are kept in the DOM
+  // but the toolbar-visible Select + DONE buttons are hidden permanently
+  // via inline `display:none !important` (v2.88.0). Undo remains visible
+  // during draw phases for in-progress backtracking; the "Cancel" mode
+  // moved to the floating overlay (rgPhaseOverlay) so the header stays
+  // free of phase-conditional buttons.
   const undoBtn       = document.getElementById('rgUndoBtn');
-  const newRegionsBtn = document.getElementById('rgNewRegionsBtn');
   const drawingPhases = ['idle', 'dep_drag', 'ruler', 'arr_drag'];
-  if (selBtn)        selBtn.style.display        = _rgPhase === 'explore' ? '' : 'none';
   if (undoBtn) {
-    undoBtn.style.display = drawingPhases.includes(_rgPhase) ? '' : 'none';
-    if (_rgPhase === 'idle') {
-      undoBtn.disabled  = false;
-      undoBtn.innerHTML = 'Cancel';
+    // v2.88.0 — Undo button only shows after the user has actually started
+    // dragging (dep_drag onward). The 'idle' phase has nothing to undo and
+    // Cancel is on the floating overlay anyway.
+    const show = drawingPhases.includes(_rgPhase) && _rgPhase !== 'idle';
+    undoBtn.style.display = show ? '' : 'none';
+    undoBtn.innerHTML = '&#x21A9; Undo';
+  }
+  // v2.88.0 — keep the Tools menu's Select/Dismiss Regions label in sync
+  // with the current phase so the entry self-describes whether clicking
+  // it begins a new selection or dismisses the live matrix.
+  const selMenuLbl = document.getElementById('rgSelectMenuLbl');
+  const selMenuBtn = document.getElementById('rgSelectMenuBtn');
+  if (selMenuLbl && selMenuBtn) {
+    if (_rgPhase === 'results') {
+      selMenuLbl.textContent = 'Dismiss Regions';
+      selMenuBtn.title = 'Collapse the matrix and return to free map exploration — region circles stay visible';
+    } else if (drawingPhases.includes(_rgPhase)) {
+      selMenuLbl.textContent = 'Cancel Selection';
+      selMenuBtn.title = 'Cancel the in-progress region selection';
     } else {
-      undoBtn.innerHTML = '&#x21A9; Undo';
+      selMenuLbl.textContent = 'Select Regions';
+      selMenuBtn.title = 'Draw departure and arrival circles on the map to define the route matrix';
     }
   }
-  if (newRegionsBtn) newRegionsBtn.style.display = _rgPhase === 'results' ? '' : 'none';
+}
+
+// v2.88.0 — Tools-menu entry handler. Dispatches to begin / cancel /
+// dismiss based on the current phase so a single menu item covers the
+// full lifecycle of the selection workflow.
+function _rgSelectMenuClick() {
+  const drawing = ['idle', 'dep_drag', 'ruler', 'arr_drag'];
+  if (_rgPhase === 'results')       rgExploreReturn();
+  else if (drawing.includes(_rgPhase)) _rgCancelDraw();
+  else                              _rgBeginSelection();
+}
+
+// v2.88.0 — Cancel any in-progress region selection and return to free
+// explore mode. Mirrors what the legacy header "Cancel" pill did when
+// phase=='idle'; for partial-draw phases (dep_drag / ruler / arr_drag)
+// it forces an explore-return so the user always lands cleanly.
+function _rgCancelDraw() {
+  rgExploreReturn();
 }
 
 // ── Airport filtering ───────────────────────────────────────────────────
@@ -24508,11 +25419,11 @@ function rgSendToFlightPlanner() {
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
-            <strong>Disable All</strong> (modal footer) disarms every alarm in one click, removes geofence circles and waypoint highlights from the map, and stops any active sound. Your alarm configuration is preserved &mdash; re-enable individual cards to bring them back. <strong>Delete All</strong> (next to it) permanently removes every alarm from the queue. The per-card ✕ button does the same for a single alarm.<br/><br/>
+            <strong>Enable All / Disable All</strong> (modal footer, next to Delete All) flip every configured alert in one click. <em>Disable All</em> disarms everything, removes geofence circles and waypoint highlights from the map, and stops any active sound &mdash; configuration is preserved so a follow-up <em>Enable All</em> (v2.88.0+) re-arms the whole queue and reschedules any timer countdowns. <strong>Delete All</strong> permanently removes every alert from the queue. The per-card ✕ button does the same for a single alert. The footer is grouped left-to-right: tool buttons (Test Sound, Alert History, Group selected) | Save / Load to file | the three bulk state-flip buttons (Enable All, Disable All, Delete All) as of v2.89.0.<br/><br/>
             <strong>Load from File behaviour</strong> (v2.87.1+) &mdash; importing an alarm file always produces a ready-to-fire configuration: every imported alarm is set to <em>enabled</em> regardless of whatever <em>enabled</em> state was saved in the file, and per-type transient state (cruise / descent / alt-min <em>fired</em> sentinels, geofence <em>wasInside</em>, waypoint <em>trippedFixes</em>) is freshly seeded so the next live tick treats each alarm as just-armed. <strong>Airborne import warning</strong>: if the aircraft is actively flying (live source connected and groundspeed &gt; 30&nbsp;kt, or |VS| &gt; 100&nbsp;fpm, or wheels-up confirmed) AA shows a confirmation dialog before applying the import &mdash; some alarm types can fire on the first tick post-load if the current flight state already satisfies their conditions (e.g., a Cruise alarm with a target altitude below your current FL). You can Cancel or Load Anyway.<br/><br/>
 
             <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads (with their <em>enabled</em> state preserved &mdash; that's distinct from file import, which always re-enables everything). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
-            <strong>🔊 Test Sound</strong> (v2.87.0) &mdash; a button at the bottom of the Alerts modal that previews one of the five built-in sounds for ~2.5 seconds so you can verify audio is working without arming an alarm. Each successive click cycles to the next sound in the library, with a toast showing which one is playing. If an alarm is actively tripped and sounding when you click, the preview takes over briefly and the original alarm sound resumes automatically afterwards.<br/><br/>
+            <strong>🔊 Test Sound</strong> (v2.87.0, picker in v2.88.0) &mdash; a button at the bottom of the Alerts modal that previews one of the five built-in sounds for ~2.5 seconds so you can verify audio is working without arming an alarm. Plain click cycles through the library. <strong>Shift-click</strong> or <strong>right-click</strong> opens a popup picker so you can preview any specific sound directly. If an alarm is actively tripped and sounding when you click, the preview takes over briefly and the original alarm sound resumes automatically afterwards.<br/><br/>
 
             <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>Clear History</strong> in the footer wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
@@ -24532,7 +25443,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Provider presets</strong> (pick one):
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
-              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something long and random (the app suggests <code>simfly-alerts-9f3xq2</code>-style strings). Best for getting going in under a minute with zero setup cost.</li>
+              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something unguessable (the app suggests random strings; the input is now capped at <strong>8 characters</strong>). Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em> so alerts wake you. The triggering alarm type is appended to the notification title automatically (e.g. <em>&ldquo;SimFly Active Airports &mdash; Top of Descent&rdquo;</em>). Best for getting going in under a minute with zero setup cost. Every other provider in the dropdown is marked <em>(beta)</em>.</li>
               <li><strong>Pushover</strong> &mdash; one-time US$5 per platform (iOS / Android / desktop). Install Pushover, copy your <em>User Key</em>, create an application at <em>pushover.net/apps</em> for an <em>API Token</em>, paste both in. Most polished delivery of the bunch &mdash; per-message priorities, custom alert sounds, and emergency re-alerting until acknowledged.</li>
               <li><strong>Discord webhook</strong> &mdash; in any Discord channel: <em>Edit Channel &rarr; Integrations &rarr; Webhooks &rarr; New Webhook &rarr; Copy URL</em>. Paste the URL. Alerts land as messages in that channel, and Discord&rsquo;s mobile app handles the push notification &mdash; enable channel notifications on your phone. Optionally override the webhook&rsquo;s display name with a <em>Username</em> field.</li>
               <li><strong>Telegram bot</strong> &mdash; chat with <em>@BotFather</em> in Telegram and run <code>/newbot</code> to get a <em>Bot Token</em>. Then message your bot once and visit <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser to find your numeric <em>Chat ID</em>. Telegram bots can only send to chats they&rsquo;ve been added to.</li>
@@ -24607,10 +25518,80 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.89.2</span>
+          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live menu — removed the duplicate "Clear Flight Plan" row.</strong> The v2.89.0 reorg added a dedicated <em>✕ Clear Flight Plan</em> item below the separator without realizing the <em>✈ SimBrief Flight Plan</em> item above already toggles between Load and Clear (via <code>_sbOfpButtonClick</code>): with no plan loaded it fetches, with a plan loaded it clears. The duplicate is gone; the SimBrief Flight Plan row remains the single load/clear control. <em>✕ Clear Aircraft Track</em> stays — there's no load counterpart for the breadcrumb trail.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.89.1</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Telemetry-panel hover tooltips no longer flash at 1 s intervals.</strong> The v2.88.0 hover tooltips on Dist to Dest, Trk Miles Rem, Alert ETA, Elapsed, and Next Alert were native browser title-attribute tooltips. The data panel re-renders every tick (~1 Hz), and writing the `title` attribute — even with the same value — dismisses the active native tooltip, producing a visible flash on every tick. The new <code>_afkSetTitleSafe()</code> setter (used by every tick-frequency title update in the data panel) (a) no-ops when the desired title is byte-identical to the current one and (b) skips the write while the cursor is hovering the target. The tooltip stays stable for the duration of the hover; the next mouseleave/mouseenter cycle picks up whatever the most-recent tick produced.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.89.0</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Per-alert names.</strong> Every alert can now be named (up to 30 characters) just like groups can — click the editable name slot at the top of any alert card and type. The name flows through to the Alert History log, the Next Alert telemetry panel, plotted alert pins on the map, and Save/Load files. Geofence labels share the same field so renaming one place updates everywhere. Group names also gained the 30-char cap with the same live-typing enforcement.</li>
+          <li><strong>Telemetry labels — Alarm → Alert.</strong> Renamed <em>NEXT ALARM</em> to <em>NEXT ALERT</em> and <em>IN</em> to <em>ALERT ETA</em> to match the rest of the UI's "Alert" terminology pass.</li>
+          <li><strong>Add Alert palette — alphabetized, renamed.</strong> Sidebar title changed from "Add alarm" to "Add Alert" and the type buttons are now in alphabetical order: Altitude, Cruise Reached, Descent Started, Geofence, Timer, Waypoint.</li>
+          <li><strong>Armed counter moved to the Alerts modal title bar.</strong> Was at the bottom-left of the footer; now sits next to the modal title. Frees up footer space so the button row never wraps. Pluralization is now proper ("1 alert armed" / "All 3 alerts armed" / "2 of 5 alerts armed") — no more lazy "alarm(s)".</li>
+          <li><strong>Alerts modal footer reordered.</strong> Now: [Test Sound] [Alert History] [Group X (when active)] | [Save] [Load] | <strong>[Enable All]</strong> [Disable All] [Delete All]. Enable All moves next to its destructive siblings because they share the "bulk state flip" semantics; Save/Load cluster reads as a distinct group between them.</li>
+          <li><strong>Drag-to-add — bigger, clearer drop zones.</strong> The drop targets at the top and bottom of the alerts list now appear during an Add-from-menu drag (was reorder-only), expand to 44 px tall, and self-label "Drop at top" / "Drop at bottom" so it's obvious where the new alert will land. The existing top drop spot is now a first-class, visible insertion target.</li>
+          <li><strong>Drag-to-add — fixed name-field paste bug.</strong> Dropping a draggable Add Alert button onto an existing alert/group name field used to insert the literal "add:alarmtype" text. The drag now uses a custom MIME type instead of text/plain, and editable name spans block drop entirely, so the bug is gone.</li>
+          <li><strong>SimBrief Flight Plan moved to the Live menu.</strong> Now the <em>first</em> item under 🔌 Live (above FSUIPC Live). The Tools menu keeps Select Regions + Measurement only. Reflects how SimBrief data informs the live-flight surface (route line, end rings, waypoint markers, Trk Miles Rem, ETA, waypoint alarms).</li>
+          <li><strong>Live menu — Clear items disabled when nothing to clear.</strong> <em>Clear Flight Plan</em> greys out when no SimBrief plan is loaded; <em>Clear Aircraft Track</em> greys out when no breadcrumb points exist. Hovering shows a short "No … currently loaded" tooltip. Avoids the dead-click surprise of an enabled button that does nothing.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.88.0</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alarm modal — Enter dismisses.</strong> Pressing <kbd>Enter</kbd> while the full-screen ALARM overlay is on screen now triggers DISMISS ALL, matching the visual "single primary action" of the modal. A small hint sits below the button so the shortcut is discoverable.</li>
+          <li><strong>Alerts modal — Enable All button.</strong> A new <em>Enable All</em> button (paired with the existing <em>Disable All</em>) re-arms every configured alarm in one click, including rescheduling timer countdowns. Useful for re-arming after a Disable All or after importing a saved alarm set.</li>
+          <li><strong>Alerts modal — armed-count text 40% larger.</strong> The footer status (<em>"n of m alarm(s) armed"</em>) is now visible across the room and wraps gracefully so the new Enable All button doesn't crowd it.</li>
+          <li><strong>Test Sound — sound picker.</strong> Shift-click (or right-click) the <em>🔊 Test Sound</em> button to open a popup menu listing every built-in sound — pick one directly instead of cycling through them. Plain click still cycles as before.</li>
+          <li><strong>Alerts list — drag-from-menu to insert.</strong> Every type in the left-hand <em>Add alarm</em> column is now draggable. Drop one onto the alarms list to add it at a specific position (between two existing alarms, at the very top, or at the very bottom) instead of always appending at the end. Click still works for append-and-done.</li>
+          <li><strong>Alert History — flight-progress telemetry.</strong> Each logged alert now captures Elapsed (time since takeoff), Remaining (time to destination), Dist to Dest, and Trk Miles Rem alongside the existing position / speed / altitude. For indefinite-duration alarms, the dismissal pill now shows how long the alarm sat unacknowledged (e.g. <em>"user dismissed · 14:32:11 · ack after 2m 17s"</em>).</li>
+          <li><strong>Telemetry panel — hover tooltips.</strong> Hover any of the following fields for extra context: <em>NEXT ALARM</em> (full alarm configuration), <em>DIST TO DEST</em> / <em>TRK MILES REM</em> (km equivalent), <em>IN</em> (predicted trip time in local + Zulu), <em>ELAPSED</em> (takeoff time in local + Zulu).</li>
+          <li><strong>FSUIPC — adaptive push cadence.</strong> Push rate is now 500 ms on the ground (taxi detail) and 1000 ms in flight (eases render load). The cadence switches automatically on phase change and the toast no longer advertises a fixed number.</li>
+          <li><strong>FSUIPC — silent 15 s retry.</strong> Lost connections retry in the background every 15 s without spamming a toast on each attempt. The very first failure still surfaces a clear toast so the user knows tracking didn't start.</li>
+          <li><strong>Aircraft track — collapse stationary points.</strong> While GS=0, the breadcrumb trail now captures a single "I stopped here" point instead of accumulating thousands of identical samples. Resumes high-detail capture the moment motion is detected.</li>
+          <li><strong>Mobile Alerts — provider clarity.</strong> Every provider except <em>ntfy.sh</em> now displays as "(beta)" in the dropdown to signal which one is production-ready. ntfy.sh remains the recommended default.</li>
+          <li><strong>Mobile Alerts — ntfy defaults &amp; topic cap.</strong> ntfy.sh topic is now hard-capped at 8 characters (maxlength on input + validate-on-save) with a matching note in the provider description. Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em>.</li>
+          <li><strong>Mobile Alerts — alert type in title.</strong> Outgoing notifications append the triggering alarm type to the configured title for providers that support a title field (ntfy.sh, Pushover) — e.g. <em>"SimFly Active Airports — Top of Descent"</em> — so the phone surface shows what fired without reading the body.</li>
+          <li><strong>Alert pins — ✕ to dismiss + hover details.</strong> Plotted alert pins on the map now carry their own ✕ close badge (matching the distance-measurement style) and surface the full alert details on hover (label, params, trip time, acknowledgement delay, telemetry snapshot). Removes the need to open the History modal just to dismiss a single pin.</li>
+          <li><strong>Region Selection — relocated.</strong> The <em>⊙ Select Regions</em> button moves out of the top header bar and into the first slot of the 🛠 <em>Tools</em> menu, where it self-relabels to <em>Dismiss Regions</em> while a matrix is displayed. The old <em>⊙ DONE</em> button is gone — dismiss the matrix via the new ✕ button at the far right of the matrix results bar. The "Cancel" button during region drawing now lives inside the floating STEP 1 / STEP 2 overlay so the header stays clean.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.87.18</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -32594,9 +33575,13 @@ function rgSendToFlightPlanner() {
     if (!_MA_PROVIDERS.some(p => p.id === _maDraft.provider)) _maDraft.provider = 'ntfy';
     _maDraft.fields = _maDraft.fields || {};
     const sel = document.getElementById('maProviderSelect');
-    sel.innerHTML = _MA_PROVIDERS.map(p =>
-      '<option value="' + p.id + '"' + (p.id === _maDraft.provider ? ' selected' : '') + '>' + p.label + '</option>'
-    ).join('');
+    // v2.88.0 — only ntfy is considered stable. Every other provider gets
+    // a "(beta)" suffix so users know what they're picking. The provider
+    // .id is untouched so saved configs continue to round-trip.
+    sel.innerHTML = _MA_PROVIDERS.map(p => {
+      const display = (p.id === 'ntfy') ? p.label : (p.label + ' (beta)');
+      return '<option value="' + p.id + '"' + (p.id === _maDraft.provider ? ' selected' : '') + '>' + display + '</option>';
+    }).join('');
     _maRenderProviderUI();
     _maStatusInfo('');
     document.getElementById('maModal').classList.add('open');
@@ -32629,7 +33614,10 @@ function rgSendToFlightPlanner() {
       } else if (f.type === 'textarea') {
         input = '<textarea class="ma-textarea" data-ma-key="' + f.key + '" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" oninput="_maFieldChange(this)">' + safe + '</textarea>';
       } else {
-        input = '<input type="text" class="ma-input" data-ma-key="' + f.key + '" value="' + safe + '" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '" oninput="_maFieldChange(this)" autocomplete="off" spellcheck="false">';
+        // v2.88.0 — honour optional `maxlength` on a field (used by ntfy
+        // topic which is hard-capped at 8 chars).
+        const ml = (f.maxlength != null) ? ' maxlength="' + f.maxlength + '"' : '';
+        input = '<input type="text" class="ma-input" data-ma-key="' + f.key + '" value="' + safe + '" placeholder="' + (f.placeholder || '').replace(/"/g, '&quot;') + '"' + ml + ' oninput="_maFieldChange(this)" autocomplete="off" spellcheck="false">';
       }
       const hint = f.hint ? '<div class="ma-hint">' + f.hint + '</div>' : '';
       return '<div class="ma-row"><span class="ma-label">' + f.label + '</span>' + input + hint + '</div>';
@@ -32692,35 +33680,45 @@ function rgSendToFlightPlanner() {
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">🔔 &nbsp;Alerts</span>
+      <!-- v2.89.0 — Armed counter moved here from the footer so the
+           bottom button cluster never has to wrap on narrow viewports.
+           Driven by _afkUpdateFooterInfo (still named for history). -->
+      <span class="afk-header-status" id="afkFooterInfo">No alerts configured</span>
       <button class="modal-close" onclick="_afkCloseConfig()">&times;</button>
     </div>
     <div class="modal-body afk-config-body">
       <div class="afk-add-col">
-        <div class="afk-add-col-title">Add alarm</div>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('timer')"><span class="afk-add-btn-icon">⏰</span><span>Timer</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
-        <button class="afk-add-btn" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">↕</span><span>Altitude</span></button>
+        <div class="afk-add-col-title">Add Alert <span class="afk-add-col-hint" title="Click to append at the end of the list, or drag onto the alerts area to insert at a specific position.">(or drag →)</span></div>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'alt-min')"  ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">↕</span><span>Altitude</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'cruise')"   ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'descent')"  ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'geofence')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'timer')"    ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('timer')"><span class="afk-add-btn-icon">⏰</span><span>Timer</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'waypoint')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
       </div>
       <div class="afk-list-col" id="afkAlarmList">
         <div class="afk-list-empty">No alarms configured. Pick a type on the left to add one.</div>
       </div>
     </div>
     <div class="afk-modal-footer">
-      <span class="afk-footer-info" id="afkFooterInfo">No alarms armed</span>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
-        <button class="afk-btn-secondary" onclick="_afkTestSound()" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; any active alarm sound resumes after the preview.">🔊 Test Sound</button>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;flex:1 1 auto;">
+        <!-- v2.89.0 — Footer order:
+             [Test Sound] [Alert History] [Group X (when active)]
+             | [Save] [Load]
+             | [Enable All] [Disable All] [Delete All]
+             Enable All moved next to Disable/Delete because they share
+             the "bulk state-flip" semantics. Counter relocated to title. -->
+        <button class="afk-btn-secondary" onclick="_afkTestSound(event)" oncontextmenu="_afkTestSound(event);return false;" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; Shift-click or right-click to pick a specific sound from a menu.">🔊 Test Sound</button>
         <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
-        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
+        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save to File</button>
         <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
         <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
-        <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alarm, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
-        <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alarm from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
+        <button class="afk-btn-secondary" onclick="_afkEnableAll()" title="Enable every configured alert at once — useful for re-arming after a Disable All or after importing a saved alert set.">Enable All</button>
+        <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alert, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
+        <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alert from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
       </div>
     </div>
   </div>
@@ -32887,6 +33885,7 @@ function rgSendToFlightPlanner() {
     <div class="afk-trip-sub" id="afkTripSub">Tap DISMISS ALL when you're back at the keyboard.</div>
     <ul class="afk-trip-list" id="afkTripList"></ul>
     <button class="afk-dismiss-all" onclick="_afkDismissAll()">Dismiss All</button>
+    <div class="afk-trip-hint">Press <kbd>Enter</kbd> to dismiss</div>
   </div>
 </div>
 
@@ -32895,32 +33894,44 @@ function rgSendToFlightPlanner() {
   <div class="rg-modal">
     <div class="rg-modal-hdr">
       <div class="rg-hdr-left">
-        <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none;flex-shrink:0">⊙ Select Regions</button>
+        <!-- v2.88.0 — Select Regions moved into the Tools menu; DONE moved
+             to an ✕ at the right of the matrix results bar. These two
+             buttons are kept in the DOM (hidden) so the existing state
+             machinery in _rgUpdatePhaseText keeps working without surgery.
+             Cancel-during-draw moved into the floating STEP 1/2 overlay. -->
+        <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none !important">⊙ Select Regions</button>
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
-        <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none;background:rgba(0,200,255,0.08);border-color:rgba(0,200,255,0.45);color:var(--accent);flex-shrink:0" title="Collapse the matrix and return to free map exploration — region circles stay visible">⊙ DONE</button>
+        <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none !important">⊙ DONE</button>
         <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
 
-        <!-- 🛠 Tools pulldown (v2.81.0+) — groups Measurement + SimBrief Flight Plan -->
+        <!-- 🛠 Tools pulldown — groups Region Select + Measurement.
+             SimBrief Flight Plan moved to Live menu in v2.89.0. -->
         <div class="rg-pulldown-wrap" id="rgToolsWrap">
-          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Measurement, SimBrief Flight Plan">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
+          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Select Regions, Measurement">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgToolsMenu">
+            <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
-            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
           </div>
         </div>
 
-        <!-- 🔌 Live pulldown (v2.81.0+) — groups live-aircraft sources + Follow A/C + icon picker -->
+        <!-- 🔌 Live pulldown — flight plan + live-aircraft sources + follow + icon picker + mobile alerts.
+             v2.89.0: SimBrief moved here as the first item; Clear items grey-out when nothing to clear. -->
         <div class="rg-pulldown-wrap" id="rgLiveWrap">
-          <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Live aircraft tracking, follow A/C, aircraft icon picker">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
+          <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
+            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle.">📱 <span class="rg-btn-label">Mobile Alerts…</span></button>
             <div class="rg-pulldown-sep"></div>
-            <button class="rg-btn rg-pulldown-row" onclick="_sbOfpClearUI();_rgCloseAnyPulldown()" title="Remove the plotted SimBrief flight plan from the map. Local-storage cache is also cleared, so the plan won't restore on next page load.">✕ <span class="rg-btn-label">Clear Flight Plan</span></button>
-            <button class="rg-btn rg-pulldown-row" onclick="_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
+            <!-- v2.89.2 — Removed the dedicated "Clear Flight Plan" row: the
+                 SimBrief Flight Plan item above already doubles as a load /
+                 clear toggle (_sbOfpButtonClick), so showing it twice was
+                 redundant. Clear Aircraft Track stays — there's no load
+                 counterpart for the breadcrumb trail. -->
+            <button class="rg-btn rg-pulldown-row" id="rgClearTrackBtn" onclick="if(this.classList.contains('disabled'))return;_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
           </div>
         </div>
 
@@ -33167,6 +34178,11 @@ function rgSendToFlightPlanner() {
         </select>
         <span class="rg-perf-warn" id="rgPerfWarn" style="display:none;">⚠ Large matrix — may be slow</span>
       </div>
+      <!-- v2.88.0 — Dismiss-matrix ✕ replaces the old DONE button. Lives at
+           the far right of the results bar; collapses the matrix and
+           returns to free map exploration while leaving the region circles
+           on the map (same behaviour as the legacy DONE button). -->
+      <button class="rg-results-close" onclick="rgExploreReturn()" title="Dismiss the route matrix and return to free map exploration — region circles stay visible">✕</button>
     </div>
     <div class="rg-matrix-wrap" id="rgMatrixWrap">
       <div class="rg-sel-route" id="rgSelRoute">
