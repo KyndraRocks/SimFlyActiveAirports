@@ -5437,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.92.4';
+const APP_VERSION = '2.93.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10957,7 +10957,9 @@ const _afkHistory = (() => {
   }
 
   _load();
-  return { list, getById, add, update, remove, clear, latestForAlarm };
+  // v2.93.0 — Public reload for cross-tab storage-event handler.
+  function reload() { entries = []; _load(); }
+  return { list, getById, add, update, remove, clear, latestForAlarm, reload };
 })();
 
 // Capture a telemetry snapshot suitable for the history log.
@@ -12219,7 +12221,13 @@ const _afkAlarms = (() => {
   }
 
   _load();
-  return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, enableAll, reorder, flightPlanChanged };
+  // v2.93.0 — Public reload for the cross-tab storage-event handler. Re-
+  // reads the localStorage payload and replaces the in-memory `alarms`
+  // array. Used when another AA tab persists changes — without this,
+  // each tab keeps its stale snapshot and the next save() in this tab
+  // silently overwrites the other tab's edits.
+  function reload() { alarms = []; _load(); }
+  return { list, get, count, armedCount, trippedCount, tripped, add, remove, update, trip, dismiss, dismissAll, disableAll, enableAll, reorder, flightPlanChanged, reload };
 })();
 
 // ---------------------- ALARM GROUPS (v2.83.0+) --------------------------
@@ -12442,8 +12450,49 @@ const _afkGroups = (() => {
 
   _load();
   // GC runs after _afkAlarms has loaded — _afkInit handles ordering.
-  return { list, get, create, rename, setCollapsed, setMode, getMode, addMember, removeMember, ungroup, membersOf, _gc, nextId, _injectFromImport };
+  // v2.93.0 — Public reload for cross-tab storage-event handler. Symmetric
+  // to _afkAlarms.reload — see comment there.
+  function reload() { groups = {}; _load(); }
+  return { list, get, create, rename, setCollapsed, setMode, getMode, addMember, removeMember, ungroup, membersOf, _gc, nextId, _injectFromImport, reload };
 })();
+
+// v2.93.0 — Multi-tab storage sync. Without this, opening AA in two
+// browser tabs (intentionally or accidentally) silently corrupts state:
+// tab B persists a change, tab A keeps its stale in-memory snapshot,
+// then tab A's next save() overwrites B's edits. The storage event
+// fires in OTHER tabs only (never the originating tab) when a
+// localStorage key changes — perfect for "the other tab just wrote
+// something, pull it in." We coalesce rapid bursts via a debounce so a
+// drag-reorder doesn't cause 20 reflows.
+let _afkCrossTabReloadTmr = 0;
+function _afkCrossTabReload(keys) {
+  if (_afkCrossTabReloadTmr) clearTimeout(_afkCrossTabReloadTmr);
+  _afkCrossTabReloadTmr = setTimeout(() => {
+    _afkCrossTabReloadTmr = 0;
+    try {
+      if (keys.has(_AFK_LS_KEY)        && typeof _afkAlarms.reload  === 'function') _afkAlarms.reload();
+      if (keys.has(_AFK_LS_GROUPS)     && typeof _afkGroups.reload  === 'function') _afkGroups.reload();
+      if (keys.has(_AFK_HIST_LS_KEY)   && typeof _afkHistory.reload === 'function') _afkHistory.reload();
+      // Re-render every surface that depends on the in-memory alarm /
+      // group / history state.
+      try { _afkRenderAlarmList(); } catch (_) {}
+      try { _afkRenderGeofenceVisuals(); } catch (_) {}
+      try { _afkRenderWaypointVisuals(); } catch (_) {}
+      try { _afkUpdateBtnState(); } catch (_) {}
+      try { _afkUpdateBadge(); } catch (_) {}
+      try { _afkSyncTripOverlay(); } catch (_) {}
+      try { _aaRtToast('🔁 Synced changes from another AA tab.', 'ok'); } catch (_) {}
+    } catch (_) {}
+  }, 250);
+}
+try {
+  window.addEventListener('storage', (e) => {
+    if (!e || !e.key) return;
+    if (e.key !== _AFK_LS_KEY && e.key !== _AFK_LS_GROUPS && e.key !== _AFK_HIST_LS_KEY) return;
+    const keys = new Set([e.key]);
+    _afkCrossTabReload(keys);
+  });
+} catch (_) {}
 
 // v2.91.0 — Top-level helpers used by the alarm eval and tick paths so
 // they don't have to reach into _afkGroups directly.
@@ -12552,11 +12601,34 @@ function _afkEvalGeofence(alarm, ac) {
   if (!isFinite(d)) return false;
   const inside = d < p.radiusNm;
   const s = alarm.state;
-  if (s.wasInside == null) { s.wasInside = inside; return false; }
+  if (s.wasInside == null) { s.wasInside = inside; s.prevDist = d; return false; }
   let trip = false;
   if ((p.trigger === 'enter' || p.trigger === 'both') && !s.wasInside && inside) trip = true;
   if ((p.trigger === 'exit'  || p.trigger === 'both') && s.wasInside && !inside) trip = true;
+  // v2.93.0 — CPA fly-by fallback. At 10s STKP polling × 500 kt ground
+  // speed, the aircraft covers ~1.4 nm between samples. A small fence
+  // (e.g. 0.5 nm) flown at speed can have the aircraft on the OUTSIDE
+  // of both samples flanking the overflight — wasInside stays false the
+  // whole time and neither enter nor exit ever fires. Catch this by
+  // looking at the cross-fence approach + recession pattern.
+  //
+  // Heuristic: if not currently inside AND was not inside last tick BUT
+  // the previous-sample distance was very close (< 2× radius), the
+  // current-sample distance is now further than previous (recession),
+  // AND the minimum-of-(prev, cur) is below 1× fence-near threshold —
+  // treat it as a virtual enter+exit and fire whatever trigger applies.
+  if (!trip && s.prevDist != null && !inside && !s.wasInside && p.radiusNm > 0) {
+    const NEAR = Math.max(2 * p.radiusNm, p.radiusNm + 1); // safety band
+    const minOf = Math.min(s.prevDist, d);
+    if (minOf < NEAR && d > s.prevDist) {
+      if (p.trigger === 'enter' || p.trigger === 'both' || p.trigger === 'exit') {
+        trip = true;
+        s.flybyAt = Date.now(); // history annotation hook
+      }
+    }
+  }
   s.wasInside = inside;
+  s.prevDist  = d;
   return trip;
 }
 
@@ -12587,6 +12659,20 @@ function _afkWpCandidates(alarm, fixes) {
     return fixes.filter(f => picks.indexOf(f.ident) >= 0);
   }
   return fixes; // 'all'
+}
+
+// v2.93.0 — true if the alarm's candidate set has at least one un-tripped
+// fix remaining. Used by the dismiss path to keep multi-waypoint alarms
+// armed instead of disabling after the first fire.
+function _afkWpHasMoreCandidates(alarm) {
+  if (!alarm || alarm.type !== 'waypoint') return false;
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || !fp.navlog || !fp.navlog.fix) return false;
+  const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix];
+  const cands = _afkWpCandidates(alarm, fixes);
+  if (cands.length <= 1) return false;
+  const trip = (alarm.state && alarm.state.trippedFixes) || {};
+  return cands.some(f => !trip[f.ident]);
 }
 
 function _afkEvalWaypoint(alarm, ac) {
@@ -12679,6 +12765,19 @@ function _afkEvalCruise(alarm, ac) {
     if (!ac || ac.alt == null || !isFinite(ac.alt)) return false;
     const prev = alarm.state.prevAlt;
     if (prev == null || !isFinite(prev)) {
+      // v2.93.0 — "Armed above target" immediate fire. If the user adds
+      // a Cruise@FL280 alarm while the aircraft is already at FL350,
+      // the crossing path (prev < thresh && ac.alt >= thresh) is never
+      // satisfied because prev seeds at FL350. Result: alarm sits armed
+      // forever, silently. Detect this on the seed tick: if the first
+      // sample is at-or-above the threshold AND the phase detector says
+      // we're in cruise (i.e. not still climbing through it organically),
+      // fire immediately.
+      if (ac.alt >= thresh && _afkPhase.get() === 'cruise') {
+        alarm.state.prevAlt = ac.alt;
+        alarm.state.fired = true;
+        return true;
+      }
       alarm.state.prevAlt = ac.alt;
       return false; // seed only on first valid sample
     }
@@ -13122,6 +13221,27 @@ function _afkTakeoffTrack(ac) {
   const hasValidGs = (ac.gs != null && isFinite(ac.gs));
   const gs = hasValidGs ? ac.gs : 0;
   const now = performance.now();
+  // v2.93.0 — Post-reload airborne detection. If the page is reloaded
+  // mid-flight (or telemetry resumes after a long disconnect), the
+  // 10-second-above-40kt takeoff confirmation will never re-arm because
+  // the user never took off in this session. Without _afkTakeoffAt set,
+  // cruise / descent alarms cannot fire (their guard returns false), so
+  // a pilot who arms a cruise alarm post-reload silently never gets it.
+  //
+  // v2.93.1 — Threshold tuned: dropped the 5,000 ft MSL gate (excluded
+  // low-altitude GA cruise) and lowered GS floor from 80 → 58 kt. 58 kt
+  // sits comfortably above the fastest realistic taxi (~30 kt; even an
+  // aggressive 50 kt high-speed taxi clears) but below the cruise speed
+  // of the slowest piston single in common use (Cub / Cessna 152 at
+  // 75–95 kt). Removing the altitude check means a 2,500-ft Cub cruise
+  // qualifies the same as a FL350 jet cruise. False-positive risk: a
+  // bizarre wind-driven gust pushing a parked aircraft over 58 kt
+  // ground speed — implausible in any realistic sim setup.
+  if (!_afkTakeoffAt && hasValidGs && gs >= 58) {
+    _afkTakeoffAt = Date.now();
+    _afkAirborneSince = now;
+    _afkSaveTakeoff();
+  }
   if (gs > 40) {
     if (!_afkLastGsAbove40) _afkLastGsAbove40 = now;
     if (!_afkTakeoffAt && (now - _afkLastGsAbove40) > 10000) {
@@ -13373,6 +13493,18 @@ function _afkDismissOne(id, reason) {
     // Dismiss the tripped status (so the overlay row clears) THEN disable
     // so the alarm doesn't immediately re-trip on the next tick.
     if (ca.status === 'tripped') _afkOnDismiss(ca);
+    // v2.93.0 — Multi-waypoint auto-rearm. If this is a Waypoint alarm
+    // that still has un-tripped candidates (e.g. scope='all' with more
+    // route fixes ahead, or scope='specific' with multiple picks not
+    // yet crossed), keep the alarm enabled so the next waypoint can
+    // also fire instead of forcing the user to manually re-toggle. The
+    // per-fix `trippedFixes` map prevents the already-tripped fix from
+    // re-firing. Only applies to standalone alarms — group-cascade
+    // dismiss still disables every member.
+    if (!a.groupId && ca.type === 'waypoint' && _afkWpHasMoreCandidates(ca)) {
+      // No disable — clear tripped status only (forEach: return = skip).
+      return;
+    }
     _afkAlarms.update(cid, { enabled: false });
   });
   // Refresh visuals + alarm list so toggles flip off and any map overlays
@@ -14988,6 +15120,37 @@ function _afkRenderEditor(a) {
     });
     body += '</div>';
     body += '<button class="rg-btn afk-cond-add" onclick="_afkAddCond(' + a.id + ')" title="Add another condition row" style="margin-top:0.3rem">+ Add condition</button>';
+    // v2.93.0 — "Awaiting data" diagnostic. Walk every enabled condition,
+    // ask its evalFn for a current value, and surface any that can't be
+    // evaluated right now (e.g. distDest with no SimBrief plan, distWp
+    // with an unpicked fix, alertEta with no upcoming alarms). Without
+    // this the alarm just silently never fires and the user has no way
+    // to know why.
+    try {
+      const acNow = (typeof _liveAcLastData === 'object' && _liveAcLastData) ? _liveAcLastData : null;
+      const fpNow = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+      const blocking = [];
+      conds.filter(c => c && c.enabled).forEach(c => {
+        const def = _afkCondParamDef(c.param);
+        if (!def) return;
+        const v = (function() { try { return def.evalFn(acNow, c, fpNow); } catch (_) { return null; } })();
+        if (v == null || !isFinite(v)) {
+          let why = 'awaiting data';
+          if (!acNow) why = 'no live telemetry';
+          else if (def.needsWp && !c.wp) why = 'no waypoint picked';
+          else if ((def.id === 'distDest' || def.id === 'remTime' || def.id === 'trkRem' || def.id === 'distWp') && !fpNow) why = 'no SimBrief plan';
+          else if (def.id === 'elapsed' && !_afkTakeoffAt) why = 'on ground (no takeoff)';
+          blocking.push(def.label + ' — ' + why);
+        }
+      });
+      if (blocking.length > 0) {
+        body +=
+          '<div class="afk-footer-info" style="margin-top:0.4rem;color:#ffaa00;background:rgba(255,170,0,0.08);border:1px dashed rgba(255,170,0,0.35);border-radius:5px;padding:0.4rem 0.55rem;font-size:0.85rem;font-family:Rajdhani,sans-serif;">' +
+            '⚠ <strong>' + blocking.length + ' condition' + (blocking.length === 1 ? '' : 's') + ' awaiting data</strong> — alarm cannot fire until resolved:<br>' +
+            blocking.map(s => '&nbsp;&nbsp;• ' + s).join('<br>') +
+          '</div>';
+      }
+    } catch (_) {}
   }
   if (a.type === 'telemetry-loss') {
     // v2.90.0 — Single tuning knob: how long the gap between FSUIPC fixes
@@ -26577,10 +26740,39 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.93.1</span>
+          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Post-reload airborne detection — threshold tuned.</strong> v2.93.0 required gs &ge; 80 kt AND alt &ge; 5,000 ft MSL to recognise &ldquo;already airborne&rdquo; on the first telemetry sample after a mid-flight browser reload. The altitude gate excluded low-altitude GA cruise (a Cub at 2,500 ft, helicopter sightseeing, bush flying) — those pilots would have to wait 10 s for the sustained-gs &gt; 40 kt fallback. Altitude gate dropped; GS floor lowered to <strong>58 kt</strong>. 58 kt clears the fastest realistic taxi (~30 kt; even an aggressive 50 kt high-speed taxi qualifies as &ldquo;not airborne&rdquo;) but lands well below the cruise speed of the slowest piston single in common use (Cub / Cessna 152 at 75&ndash;95 kt). Cruise &amp; Descent alarms now arm immediately on the first valid sample after reload for the full speed range, jet cruise through Cub cruise.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.93.0</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Cruise &amp; Descent alarms now work after a mid-flight browser reload.</strong> Both alarms guard against high-elevation-airport false trips by requiring <em>this session&rsquo;s</em> wheels-up event (10 s of sustained gs &gt; 40 kt). Reloading the AA tab mid-flight cleared that flag, so a pilot who added a cruise alarm post-reload silently never got it &mdash; the guard saw <code>_afkTakeoffAt = 0</code> and returned <code>false</code> on every tick. <code>_afkTakeoffTrack</code> now also recognises &ldquo;already airborne&rdquo; from the first valid telemetry sample (gs &ge; 80 kt AND alt &ge; 5,000 ft MSL) and back-dates the takeoff timestamp so the alarms arm immediately. Thresholds chosen to keep a fast taxi or high-elevation parking spot from triggering it.</li>
+          <li><strong>Cruise@FL alarm fires immediately if armed at or above the target altitude.</strong> The threshold path required a <em>crossing from below</em> (<code>prev &lt; thresh &amp;&amp; ac.alt &ge; thresh</code>), which can never happen if you add the alarm while already cruising at-or-above the threshold &mdash; <code>prevAlt</code> seeds at current altitude and the crossing condition is never satisfied. New seed-tick check: if the first valid sample is at-or-above the threshold AND the phase detector says we&rsquo;re in cruise, fire immediately instead of sitting silently armed forever.</li>
+          <li><strong>Multi-waypoint alarms auto-rearm after dismiss instead of disabling.</strong> A Waypoint alarm with <code>scope=all</code> (every fix in the route) or <code>scope=specific</code> with &gt; 1 fix picked used to fire on the first qualifying overflight, then auto-disable on dismiss &mdash; meaning &ldquo;alert me at every waypoint&rdquo; effectively meant &ldquo;alert me at the first one then go silent.&rdquo; The per-fix <code>trippedFixes</code> map was already preserved across re-arming; the dismiss path now skips the <code>enabled:false</code> step for standalone (non-group) waypoint alarms that still have un-tripped candidates ahead. Group-cascade dismiss still disables every member &mdash; the auto-rearm only applies to ungrouped waypoint alarms.</li>
+          <li><strong>Geofence CPA fly-by fallback for tiny fences at speed.</strong> At 10 s STKP polling &times; 500 kt ground speed the aircraft moves ~1.4 nm between samples. A 0.5 nm fence flown at speed could be entirely overflown between two samples &mdash; the aircraft is OUTSIDE in both, <code>wasInside</code> never flips, and neither enter nor exit fires. New heuristic: if the previous-sample distance was within 2&times; the radius (safety band), the current distance is now further (recession), and the minimum-of-the-two was inside that safety band, treat as a virtual fly-by and trip the alarm. Catches the bullet-past case without false-tripping on aircraft that approach-but-don&rsquo;t-enter.</li>
+          <li><strong>🧩 Conditional alarm &mdash; &ldquo;awaiting data&rdquo; diagnostic.</strong> Conditional alerts that reference parameters which currently have no value (e.g. <em>Distance to destination</em> with no SimBrief plan loaded, <em>Distance to waypoint</em> with no fix picked, <em>Elapsed time</em> before takeoff, <em>Alert ETA</em> with no upcoming alarms) used to silently never fire and the user had no way to know why. The alarm card now shows an inline yellow-tinted warning panel listing each blocking condition and the reason it can&rsquo;t be evaluated (&ldquo;no live telemetry&rdquo;, &ldquo;no SimBrief plan&rdquo;, &ldquo;no waypoint picked&rdquo;, &ldquo;on ground (no takeoff)&rdquo;, &ldquo;awaiting data&rdquo;). Re-evaluates every time the alarm list re-renders, so the warning disappears once the missing data shows up.</li>
+          <li><strong>Multi-tab localStorage sync.</strong> Opening AA in two browser tabs (intentionally for monitoring, or accidentally) silently corrupted state: tab B&rsquo;s changes persisted, tab A kept its stale snapshot, then tab A&rsquo;s next save() overwrote everything B had done. A new <code>window.addEventListener('storage', &hellip;)</code> handler listens for changes to the three alarm-related localStorage keys (alarms, groups, history), reloads in-memory state from disk, and re-renders the alarm list / map overlays / badges / trip overlay. Coalesced with a 250 ms debounce so rapid bursts (drag-reorder, batch updates) don&rsquo;t cause render storms. Brief toast (&ldquo;🔁 Synced changes from another AA tab&rdquo;) on each sync so the user knows what happened.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.92.4</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
