@@ -3522,7 +3522,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-owner-stripe.rg-stripe-locked { box-shadow:inset 0 0 0 2px rgba(255,255,255,0.72); }
   .rg-stripe-col { top:0; left:0; right:0; height:8px; }
   .rg-stripe-row { top:0; bottom:0; left:0; width:8px; }
-  .rg-matrix th.rg-corner   { position:sticky; left:0; top:0; z-index:4; text-align:center; font-size:0.93rem; color:var(--muted); border-top:none !important; border-left:none !important; }
+  .rg-matrix th.rg-corner   { position:sticky; left:0; top:0; z-index:4; text-align:center; font-size:0.93rem; color:var(--muted); border-top:none !important; border-left:none !important;
+    /* v2.90.11 — Override the default .rg-matrix th padding (0.42rem 0.75rem)
+       with the main matrix's tighter 0.15rem 0.2rem corner padding. The
+       extra padding was squeezing the inner .matrix-corner-diag div, which
+       pulled the ARR / DEP labels visually closer to the diagonal line and
+       made them look crowded. Matching the main matrix gives the labels
+       the same breathing room around the diagonal. */
+    padding: 0.15rem 0.2rem !important; }
   .rg-th-icao  { display:inline-block; font-weight:700; font-size:1.2rem; letter-spacing:0.05em; line-height:1.25; }
   .rg-th-owner { display:block; font-size:0.93rem; font-weight:400; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:108px; line-height:1.2; margin-top:1px; }
   .rg-th-link  { text-decoration:none; color:inherit; cursor:pointer; }
@@ -5348,7 +5355,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.90.10';
+const APP_VERSION = '2.90.11';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14308,7 +14315,7 @@ function _afkRenderEditor(a) {
       '<span class="afk-edit-label">Sound for</span>' +
       '<select class="afk-select" onchange="_afkSetDurationMode(' + a.id + ', this.value)">' +
         '<option value="indefinite"' + (durMode === 'indefinite' ? ' selected' : '') + '>Indefinite (until dismissed)</option>' +
-        '<option value="seconds"'    + (durMode === 'seconds'    ? ' selected' : '') + '>Specific time…</option>' +
+        '<option value="seconds"'    + (durMode === 'seconds'    ? ' selected' : '') + '>Set duration</option>' +
       '</select>' +
       durSecInput +
     '</div>';
@@ -25770,7 +25777,7 @@ function rgSendToFlightPlanner() {
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Re-arms automatically on the next ground transition for the next flight. Only setting: <em>Trip after N minutes</em> (1&ndash;60).</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
-            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
+            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Set duration</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
 
@@ -25882,8 +25889,21 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.90.10</span>
+          <span class="release-version">v2.90.11</span>
           <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alerts modal &mdash; "Sound for" dropdown wording.</strong> The second option in the <em>Sound for</em> picker (per-alarm card + Geofence quick-add + Waypoint quick-add) reads <strong>Set duration</strong> instead of the previous <em>Specific time…</em>. The new label more accurately describes what picking the option lets you do (choose how long the sound runs before auto-dismiss).</li>
+          <li><strong>Region matrix &mdash; corner cell 1:1 ARR / DEP labels less crowded.</strong> The diagonal-split corner cell shared between the main distance matrix and the Region Mode matrix looked tight in Region Mode because the default <code>.rg-matrix th</code> padding (<code>0.42rem 0.75rem</code>) squeezed the inner <code>.matrix-corner-diag</code> div, pulling the ARR / DEP labels visually closer to the diagonal line. Region Mode&rsquo;s corner cell now overrides padding to <code>0.15rem 0.2rem</code> &mdash; matching the main matrix&rsquo;s <code>.dist-corner-cell</code> &mdash; so the labels get the same breathing room around the diagonal. No change to the shared diagonal split layout itself.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.10</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -26753,7 +26773,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="release-divider"></div>
         <ul class="release-notes">
-          <li><strong>Set sound duration directly from the Geofence and Waypoint quick-add modals.</strong> Both modals now have a <em>Sound for</em> row matching the one on the alarm cards &mdash; pick <em>Indefinite (until dismissed)</em> or <em>Specific time…</em> with a seconds input. Previously the duration could only be set after committing the alarm by opening the main Alerts modal and finding the card; now you can pick the duration once during the initial draw / right-click and never have to revisit. The seconds value seeds from your saved preference (or 10 if you haven't picked one yet); changing it writes back to <code>localStorage</code> as the new default, same as on the main cards. Mode always opens at <em>Indefinite</em> so you must explicitly opt-in to seconds &mdash; preserves the existing "new alarms default to indefinite" contract.</li>
+          <li><strong>Set sound duration directly from the Geofence and Waypoint quick-add modals.</strong> Both modals now have a <em>Sound for</em> row matching the one on the alarm cards &mdash; pick <em>Indefinite (until dismissed)</em> or <em>Set duration</em> with a seconds input. Previously the duration could only be set after committing the alarm by opening the main Alerts modal and finding the card; now you can pick the duration once during the initial draw / right-click and never have to revisit. The seconds value seeds from your saved preference (or 10 if you haven't picked one yet); changing it writes back to <code>localStorage</code> as the new default, same as on the main cards. Mode always opens at <em>Indefinite</em> so you must explicitly opt-in to seconds &mdash; preserves the existing "new alarms default to indefinite" contract.</li>
         </ul>
       </div>
 
@@ -26778,7 +26798,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="release-divider"></div>
         <ul class="release-notes">
-          <li><strong>Per-alarm sound duration &mdash; indefinite or auto-stop after N seconds.</strong> Every alarm card now has a new <strong>Sound for</strong> row: choose <em>Indefinite (until dismissed)</em> (the default for new alarms, preserves current behaviour) or <em>Specific time…</em> which auto-stops the alarm sound and dismisses it from the trip overlay after a number of seconds you specify. The seconds value defaults to 10 the first time you switch into seconds mode; if you change it, your value is saved to <code>localStorage</code> (<code>simfly_aa_afk_alarm_duration_sec</code>) as the default for the next time you use seconds mode on a different alarm. <strong>New alarms always default to indefinite</strong> &mdash; only switching the mode picker to seconds applies your saved preference. Auto-dismiss timers are properly cleared when an alarm is manually dismissed, disabled, deleted, or when <em>Disable All</em> / <em>Delete All</em> runs &mdash; never a stale timer leaking past its alarm.</li>
+          <li><strong>Per-alarm sound duration &mdash; indefinite or auto-stop after N seconds.</strong> Every alarm card now has a new <strong>Sound for</strong> row: choose <em>Indefinite (until dismissed)</em> (the default for new alarms, preserves current behaviour) or <em>Set duration</em> which auto-stops the alarm sound and dismisses it from the trip overlay after a number of seconds you specify. The seconds value defaults to 10 the first time you switch into seconds mode; if you change it, your value is saved to <code>localStorage</code> (<code>simfly_aa_afk_alarm_duration_sec</code>) as the default for the next time you use seconds mode on a different alarm. <strong>New alarms always default to indefinite</strong> &mdash; only switching the mode picker to seconds applies your saved preference. Auto-dismiss timers are properly cleared when an alarm is manually dismissed, disabled, deleted, or when <em>Disable All</em> / <em>Delete All</em> runs &mdash; never a stale timer leaking past its alarm.</li>
           <li><strong>[Enter] = submit on the per-geofence and per-waypoint quick-add modals.</strong> After drawing a geofence or right-clicking a waypoint, you can now press <strong>Enter</strong> to commit the alarm without reaching for the <em>Add Alarm</em> button. Skips when focus is on a button (so Tab-to-Cancel + Enter still cancels). The main Alerts config modal is a list manager (no single primary action) so it's intentionally not bound &mdash; Enter still toggles dropdowns / commits text inputs there as normal.</li>
           <li><strong>Toolbar reorder: ✕ Clear route moved before ✈ SimBrief Flight Plan.</strong> The dot-routing <em>Clear route</em> button was previously buried at the end of the toolbar (after the Alerts button); moved up to sit immediately after <em>📐 Measurement</em> for better logical grouping &mdash; route controls now cluster together near the start of the toolbar.</li>
         </ul>
@@ -34284,7 +34304,7 @@ function rgSendToFlightPlanner() {
         <span class="afk-edit-label">Sound for</span>
         <select id="afkWpDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Wp')">
           <option value="indefinite">Indefinite (until dismissed)</option>
-          <option value="seconds">Specific time…</option>
+          <option value="seconds">Set duration</option>
         </select>
         <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
         <span id="afkWpDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
@@ -34381,7 +34401,7 @@ function rgSendToFlightPlanner() {
         <span class="afk-edit-label">Sound for</span>
         <select id="afkGfDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Gf')">
           <option value="indefinite">Indefinite (until dismissed)</option>
-          <option value="seconds">Specific time…</option>
+          <option value="seconds">Set duration</option>
         </select>
         <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
         <span id="afkGfDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
