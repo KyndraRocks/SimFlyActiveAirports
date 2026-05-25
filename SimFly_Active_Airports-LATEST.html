@@ -5348,7 +5348,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.90.8';
+const APP_VERSION = '2.90.9';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10509,11 +10509,41 @@ function _maIsConfigured() {
 }
 
 // v2.88.0 — Optional `opts.alertType` appends the human-readable alarm
-// type to the user's configured Title (e.g. "SimFly Active Airports —
+// type to the user's configured Title (e.g. "SimFly Active Airports -
 // Top of Descent") so the phone notification surfaces the type without
 // having to read the body. Providers without a `title` field (Discord,
 // Telegram, Slack, Custom) ignore the suffix — the alarm type is already
 // in the body.
+//
+// v2.90.9 — Two encoding fixes after a real-world report:
+//   1. The separator was " — " (em-dash U+2014) which is OUTSIDE Latin-1.
+//      HTTP/1.1 header values must be ISO-8859-1 (code points ≤ 0xFF), so
+//      ntfy's Title header (and Pushover's title field) blew up with
+//      "String contains non ISO-8859-1 code point" before the request
+//      even left the page. Now an ASCII hyphen " - ".
+//   2. Defense in depth: any string that ends up in an HTTP header gets
+//      run through _maToLatin1Safe() to transliterate the common Unicode
+//      typographic punctuation (em/en dashes, curly quotes, ellipsis)
+//      back to ASCII and drop anything else still > 0xFF. Covers user-
+//      typed Title values and per-alert names that happen to include
+//      non-Latin-1 characters (e.g. "Aéreo" works; "中文" gets dropped
+//      with a visible gap rather than a thrown TypeError).
+function _maToLatin1Safe(s) {
+  if (s == null) return s;
+  return String(s)
+    .replace(/[‐-―]/g, '-')   // ‐ ‑ ‒ – — ―  → ASCII hyphen
+    .replace(/[‘’]/g, "'")    // ‘ ’           → ASCII apostrophe
+    .replace(/[“”]/g, '"')    // “ ”           → ASCII quote
+    .replace(/…/g, '...')           // …             → 3 dots
+    .replace(/[^\x00-\xFF]/g, '');       // anything still > 0xFF: drop
+}
+function _maSanitizeHeaders(h) {
+  if (!h || typeof h !== 'object') return h;
+  const out = {};
+  Object.keys(h).forEach(k => { out[k] = _maToLatin1Safe(h[k]); });
+  return out;
+}
+
 function _maSend(message, opts) {
   const cfg = _maGetConfig();
   if (!cfg) return Promise.reject(new Error('Mobile Alerts not configured'));
@@ -10525,10 +10555,16 @@ function _maSend(message, opts) {
   if (opts && opts.alertType) {
     fields = Object.assign({}, fields);
     const base = (fields.title && String(fields.title).trim()) || 'SimFly Active Airports';
-    fields.title = base + ' — ' + opts.alertType;
+    // v2.90.9 — ASCII hyphen separator (was em-dash). See _maToLatin1Safe.
+    fields.title = base + ' - ' + opts.alertType;
   }
   const req = p.build(fields, String(message || ''));
-  return fetch(req.url, { method: req.method, headers: req.headers, body: req.body, mode: 'cors' })
+  // v2.90.9 — sanitize every header value to Latin-1 (HTTP/1.1 requirement)
+  // so a non-ASCII character anywhere in the configured Title or in the
+  // appended alert type / alarm name doesn't tank the fetch with
+  // "String contains non ISO-8859-1 code point".
+  const safeHeaders = _maSanitizeHeaders(req.headers);
+  return fetch(req.url, { method: req.method, headers: safeHeaders, body: req.body, mode: 'cors' })
     .then(r => {
       if (r.ok) return r;
       // On non-2xx, read the response body so the user sees the provider's
@@ -25748,7 +25784,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Provider presets</strong> (pick one):
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
-              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something unguessable (the app suggests random strings; the input is now capped at <strong>8 characters</strong>). Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em> so alerts wake you. The triggering alarm type is appended to the notification title automatically (e.g. <em>&ldquo;SimFly Active Airports &mdash; Top of Descent&rdquo;</em>). Best for getting going in under a minute with zero setup cost. Every other provider in the dropdown is marked <em>(beta)</em>.</li>
+              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something unguessable (the app suggests random strings; the input is now capped at <strong>8 characters</strong>). Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em> so alerts wake you. The triggering alarm type is appended to the notification title automatically (e.g. <em>&ldquo;SimFly Active Airports - Top of Descent&rdquo;</em>). Best for getting going in under a minute with zero setup cost. Every other provider in the dropdown is marked <em>(beta)</em>.</li>
               <li><strong>Pushover</strong> &mdash; one-time US$5 per platform (iOS / Android / desktop). Install Pushover, copy your <em>User Key</em>, create an application at <em>pushover.net/apps</em> for an <em>API Token</em>, paste both in. Most polished delivery of the bunch &mdash; per-message priorities, custom alert sounds, and emergency re-alerting until acknowledged.</li>
               <li><strong>Discord webhook</strong> &mdash; in any Discord channel: <em>Edit Channel &rarr; Integrations &rarr; Webhooks &rarr; New Webhook &rarr; Copy URL</em>. Paste the URL. Alerts land as messages in that channel, and Discord&rsquo;s mobile app handles the push notification &mdash; enable channel notifications on your phone. Optionally override the webhook&rsquo;s display name with a <em>Username</em> field.</li>
               <li><strong>Telegram bot</strong> &mdash; chat with <em>@BotFather</em> in Telegram and run <code>/newbot</code> to get a <em>Bot Token</em>. Then message your bot once and visit <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser to find your numeric <em>Chat ID</em>. Telegram bots can only send to chats they&rsquo;ve been added to.</li>
@@ -25825,8 +25861,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.90.8</span>
+          <span class="release-version">v2.90.9</span>
           <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Mobile Alerts fix — <em>"String contains non ISO-8859-1 code point"</em> error on outgoing pushes.</strong> The v2.88.0 alert-type-to-title feature appended <code>" — "</code> (em dash, U+2014) between the configured title and the alarm type. HTTP/1.1 header values must be ISO-8859-1 (code points ≤ 0xFF), and the em dash is outside that range, so <code>fetch()</code> threw a <code>TypeError</code> before the request ever left the page — visible to the user as a soft toast <em>"Mobile alert failed (Geofence): ... String contains non ISO-8859-1 code point"</em>. The in-tab sound + overlay still worked; only the phone push silently failed. Two-layer fix: (1) separator changed to ASCII <code>" - "</code> so the typical case never goes through the encoder, and (2) new <code>_maToLatin1Safe()</code> + <code>_maSanitizeHeaders()</code> defensively transliterate the common typographic Unicode (em/en dashes, curly quotes, ellipsis) back to ASCII and drop anything still &gt; 0xFF from every header value before the fetch — so user-typed titles or per-alert names containing accented letters / non-Latin scripts no longer break the push either.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.90.8</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
