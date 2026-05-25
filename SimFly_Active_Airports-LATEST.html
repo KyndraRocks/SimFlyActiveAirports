@@ -5348,7 +5348,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.89.2';
+const APP_VERSION = '2.90.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9373,7 +9373,9 @@ function _sbOfpRender(data, opts) {
     btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✕ ');
     btn.title = 'Remove the plotted SimBrief flight plan — Shift-click to open Flight Plan settings';
   }
-  if (typeof _rgUpdateToolsActive === 'function') _rgUpdateToolsActive();
+  // v2.90.4 — SimBrief plan moved from Tools to Live menu in v2.89.0; the
+  // plan-loaded indicator now lights the Live dot rather than the Tools dot.
+  if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
   // v2.84.2 — Smart Load: drag plan-dependent alarms immediately into a
   // visible / armed state instead of waiting for the next _afkTick. The
   // silent restore path passes opts.silent through to suppress the
@@ -9415,7 +9417,9 @@ function _sbOfpClear() {
     btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✈ ');
     btn.title = 'Fetch and plot your most recent SimBrief flight plan — Shift-click to open Flight Plan settings (Pilot ID, waypoint labels, route color)';
   }
-  if (typeof _rgUpdateToolsActive === 'function') _rgUpdateToolsActive();
+  // v2.90.4 — SimBrief plan-loaded indicator now lights the Live dot
+  // (SimBrief moved from Tools to Live in v2.89.0).
+  if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
 }
 
 // v2.84.1 — toast-wrapping helpers for the 🔌 Live menu's destructive
@@ -11727,30 +11731,26 @@ function _afkToggleCardCollapse(id) {
 }
 
 // ── Timer alarm helpers ─────────────────────────────────────────────────
-// Storage key for the user's last-used timer values — new Timer alarms
-// pre-fill from this so the second-and-subsequent timer setups are fast.
+// v2.90.6 — New Timer alarms always default to a 10-minute countdown.
+// The pre-v2.90.6 behaviour was to remember the user's last-used values
+// in localStorage and pre-fill new alarms with them; per user feedback
+// that surprise behaviour is now gone. The localStorage key is left
+// declared (and proactively cleared at module load) so any persisted
+// value from a prior version stops occupying space silently.
 const _AFK_LS_TIMER = 'simfly_aa_afk_timer_last';
+try { localStorage.removeItem(_AFK_LS_TIMER); } catch (_) {}
 function _afkGetUserTimerDefaults() {
-  try {
-    const raw = localStorage.getItem(_AFK_LS_TIMER);
-    if (raw) {
-      const o = JSON.parse(raw);
-      if (o && typeof o === 'object') return o;
-    }
-  } catch (_) {}
-  return { mode: 'countdown', countdownH: 0, countdownM: 5, countdownS: 0, clockH: 12, clockM: 0 };
+  // Always returns the fixed factory default — 10-minute countdown.
+  // Imported alarms (Load from File) bypass this entirely; they carry
+  // their own params straight from the saved JSON.
+  return { mode: 'countdown', countdownH: 0, countdownM: 10, countdownS: 0, clockH: 12, clockM: 0 };
 }
-function _afkSaveUserTimerDefaults(p) {
-  try {
-    localStorage.setItem(_AFK_LS_TIMER, JSON.stringify({
-      mode:       (p.timerMode === 'clock') ? 'clock' : 'countdown',
-      countdownH: parseInt(p.countdownH, 10) || 0,
-      countdownM: parseInt(p.countdownM, 10) || 0,
-      countdownS: parseInt(p.countdownS, 10) || 0,
-      clockH:     parseInt(p.clockH, 10) || 0,
-      clockM:     parseInt(p.clockM, 10) || 0,
-    }));
-  } catch (_) {}
+function _afkSaveUserTimerDefaults(_p) {
+  // v2.90.6 — no-op. Kept callable so the existing setter call sites
+  // (_afkSetTimerMode / _afkSetTimerCountdown / _afkSetTimerClock) don't
+  // need to change. If a future feature wants to revive per-user
+  // defaults, restore writes to _AFK_LS_TIMER here and update
+  // _afkGetUserTimerDefaults to read it back.
 }
 
 // Compute the wall-clock timestamp (ms since epoch) when a timer alarm
@@ -11817,6 +11817,12 @@ function _afkFreshState(alarm) {
       return { wasInside: null };
     case 'waypoint':
       return { trippedFixes: {}, wpTrack: {}, _lastFiredFix: null };
+    case 'telemetry-loss':
+      // fired = already-tripped flag (resets on ground transition / fresh fix);
+      // sourceArmedAt = performance.now() when this alarm armed, used as the
+      // staleness clock when no FSUIPC fix has arrived yet so the grace
+      // window starts from "now" rather than from the wall-clock 0.
+      return { fired: false, sourceArmedAt: performance.now() };
     default:
       return {};
   }
@@ -12495,14 +12501,62 @@ function _afkEvaluate(alarm, ac) {
     }
   }
   switch (alarm.type) {
-    case 'timer':        return _afkEvalTimer(alarm);
-    case 'geofence':     return _afkEvalGeofence(alarm, ac);
-    case 'waypoint':     return _afkEvalWaypoint(alarm, ac);
-    case 'cruise':       return _afkEvalCruise(alarm, ac);
-    case 'descent':      return _afkEvalDescent(alarm);
-    case 'alt-min':      return _afkEvalAltMin(alarm, ac);
+    case 'timer':          return _afkEvalTimer(alarm);
+    case 'geofence':       return _afkEvalGeofence(alarm, ac);
+    case 'waypoint':       return _afkEvalWaypoint(alarm, ac);
+    case 'cruise':         return _afkEvalCruise(alarm, ac);
+    case 'descent':        return _afkEvalDescent(alarm);
+    case 'alt-min':        return _afkEvalAltMin(alarm, ac);
+    case 'telemetry-loss': return _afkEvalTelemetryLoss(alarm);
   }
   return false;
+}
+
+// v2.90.0 — Loss of Telemetry (CTD canary). Fires when:
+//   - FSUIPC is the active live-aircraft source (no source = ignored)
+//   - The aircraft is airborne (phase !== 'ground' — covers climb, cruise,
+//     descent, and approach; ground/taxi is excluded so a sim closed while
+//     parked is not an alert)
+//   - No fresh telemetry update has arrived for `thresholdSec` (default
+//     300 s) — tolerates MSFS pause-menu trips by default.
+//
+// The check is driven both by _afkTick (when FSUIPC IS still pushing) AND
+// by a separate _afkTelemetryLossInterval poll below (which keeps running
+// even if FSUIPC stops pushing — without that, a real CTD silently freezes
+// _afkTick and this alarm could never trip).
+//
+// state.fired = one-shot guard. Reset on (a) ground-transition (next-flight
+// rearm) or (b) a fresh fix arriving (the staleness window closes; the next
+// loss event can fire again).
+function _afkEvalTelemetryLoss(alarm) {
+  if (alarm.state && alarm.state.fired) return false;
+  // Only meaningful with FSUIPC. No live source = nothing to be lost.
+  if (typeof _liveAcSource === 'undefined' || _liveAcSource !== 'fsuipc') return false;
+  // Only fire while in flight. Phase 'ground' (taxi / parked) is excluded
+  // so a sim quit while at the gate isn't an alert. Approach counts as
+  // in-flight here (a CTD on short final is exactly when you want this).
+  let phase = null;
+  try { phase = _afkPhase.get(); } catch (_) {}
+  if (!phase || phase === 'ground') return false;
+  // Resolve threshold (seconds). Sanity-clamp to ≥ 30 s so a careless edit
+  // can't produce a constant-firing alarm.
+  const thresholdSec = parseFloat(alarm.params && alarm.params.thresholdSec);
+  if (!isFinite(thresholdSec) || thresholdSec < 30) return false;
+  const thresholdMs = thresholdSec * 1000;
+  // v2.90.2 — Require a fresh fix to have arrived under the current source
+  // session before staleness is meaningful. _liveAcClear() resets
+  // _liveAcLastUpdate to 0 whenever FSUIPC is turned off, so the toggle-
+  // cycle path (off → on with the alarm still enabled) used to fall back
+  // to alarm.state.sourceArmedAt — which could be hours old — and fire
+  // immediately on the next watchdog tick. Now: no fresh fix yet under
+  // the current FSUIPC session → no staleness computation → no fire.
+  // The user can credibly "lose telemetry" only after they had it.
+  if (typeof _liveAcLastUpdate === 'undefined' || !_liveAcLastUpdate) return false;
+  const nowPN = performance.now();
+  const staleMs = nowPN - _liveAcLastUpdate;
+  if (staleMs < thresholdMs) return false;
+  if (alarm.state) alarm.state.fired = true;
+  return true;
 }
 
 // ---------------------- TICK ORCHESTRATOR ---------------------------------
@@ -12607,9 +12661,12 @@ function _afkTick(data) {
   // fired on flight B unless the user manually toggled enabled off/on.
   if (_curPhase === 'ground' && _prevPhase && _prevPhase !== 'ground') {
     _afkAlarms.list().forEach(a => {
-      if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min') && a.state && a.state.fired) {
+      if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min' || a.type === 'telemetry-loss') && a.state && a.state.fired) {
         a.state.fired = false;
         if (a.type === 'cruise' || a.type === 'alt-min') a.state.prevAlt = null;
+        // v2.90.0 — telemetry-loss also re-seeds its sourceArmedAt clock
+        // so the next flight starts the grace window cleanly.
+        if (a.type === 'telemetry-loss') a.state.sourceArmedAt = performance.now();
         _afkAlarms.update(a.id, { state: a.state });
       }
     });
@@ -12689,6 +12746,100 @@ function _afkTakeoffTrack(ac) {
 }
 
 // ---------------------- TRIP / DISMISS LIFECYCLE --------------------------
+// v2.90.0 — Independent watchdog for the Loss of Telemetry alarm. The
+// regular eval loop runs inside _afkTick, which is only called when a
+// FRESH FSUIPC fix arrives. A real CTD freezes those fixes — so without
+// this independent timer, the alarm could never fire because the very
+// event it's watching for stops the only loop that could detect it.
+//
+// Runs every 15 s while ANY enabled telemetry-loss alarm exists. Reuses
+// the same _afkEvaluate path so behaviour stays consistent with the
+// tick-driven path; just bypasses the position-data parameter (the eval
+// for this type ignores `ac` anyway).
+//
+// Also runs the fresh-fix auto-rearm: when a fix DID arrive within the
+// last 30 s and an alarm previously fired, reset state.fired so the next
+// staleness episode can fire again on the same arming.
+let _afkTelemetryLossInterval = 0;
+// v2.90.2 — Sleep / wake false-fire guards. The watchdog runs on
+// setInterval, which silently pauses when the OS suspends the machine
+// (laptop lid close, sleep mode, hibernate). performance.now() does not
+// pause — it keeps incrementing through suspend — so on resume the next
+// watchdog tick sees a huge `now - _liveAcLastUpdate` window and would
+// trip even though MSFS is fine and FSUIPC will reconnect within ~15 s.
+//
+// Mitigation has two layers:
+//   _afkLastWatchdogTickPN — the previous tick's performance.now(). If
+//     this tick's gap is way past the 15 s schedule (we use 60 s as the
+//     "definitely suspended, not just GC pause" threshold), install a
+//     grace window and skip the eval.
+//   _afkTelemetryLossGraceUntilPN — performance.now() value until which
+//     the watchdog skips eval entirely. Set to (now + 60 s) on detected
+//     wake so FSUIPC has plenty of time to reconnect (it retries every
+//     15 s silently + first fix arrives ~1 s after the read subscribes).
+let _afkLastWatchdogTickPN          = 0;
+let _afkTelemetryLossGraceUntilPN   = 0;
+const _AFK_WATCHDOG_SLEEP_GAP_MS    = 60000;  // tick-gap above this = suspended
+const _AFK_WATCHDOG_POST_WAKE_GRACE = 60000;  // skip eval for 60 s post-wake
+
+function _afkTelemetryLossTick() {
+  const nowPN  = performance.now();
+  const prevPN = _afkLastWatchdogTickPN;
+  _afkLastWatchdogTickPN = nowPN;
+  // Wake detection — if the previous tick was more than ~60 s ago, the
+  // setInterval skipped beats while the OS was suspended. Install a
+  // post-wake grace window and bail this tick.
+  if (prevPN && (nowPN - prevPN) > _AFK_WATCHDOG_SLEEP_GAP_MS) {
+    _afkTelemetryLossGraceUntilPN = nowPN + _AFK_WATCHDOG_POST_WAKE_GRACE;
+    return;
+  }
+  // Still inside a post-wake grace window — skip eval until FSUIPC has
+  // had a chance to reconnect and deliver a fresh fix. A real fresh fix
+  // arriving will update _liveAcLastUpdate to nowPN and clear the
+  // staleness window naturally, so we don't actively cancel the grace
+  // when fixes resume — it just becomes harmless.
+  if (nowPN < _afkTelemetryLossGraceUntilPN) return;
+  const alarms = _afkAlarms.list().filter(a => a.type === 'telemetry-loss' && a.enabled);
+  if (alarms.length === 0) return;
+  // Fresh-fix rearm: if there's a recent fix, clear fired flags so the
+  // next loss episode can re-trigger.
+  const lastPN = (typeof _liveAcLastUpdate !== 'undefined') ? _liveAcLastUpdate : 0;
+  const sinceFix = nowPN - lastPN;
+  alarms.forEach(a => {
+    if (a.state && a.state.fired && lastPN && sinceFix < 30000) {
+      a.state.fired = false;
+      _afkAlarms.update(a.id, { state: a.state });
+    }
+  });
+  // Evaluate. Anything that trips goes through the same _afkOnTripped path
+  // the regular tick uses so overlay / audio / mobile-alert / history
+  // capture all happen identically.
+  const newTrips = [];
+  alarms.forEach(a => {
+    if (a.status === 'tripped') return;
+    if (_afkEvaluate(a, {})) {
+      _afkAlarms.trip(a.id);
+      newTrips.push(a);
+    }
+  });
+  if (newTrips.length > 0) {
+    try { _afkOnTripped(newTrips); } catch (_) {}
+    try { _afkUpdateBadge(); } catch (_) {}
+    try { _afkSyncTripOverlay(); } catch (_) {}
+  }
+}
+function _afkStartTelemetryLossWatchdog() {
+  if (_afkTelemetryLossInterval) return;
+  _afkTelemetryLossInterval = setInterval(_afkTelemetryLossTick, 15000);
+}
+function _afkStopTelemetryLossWatchdog() {
+  if (_afkTelemetryLossInterval) { clearInterval(_afkTelemetryLossInterval); _afkTelemetryLossInterval = 0; }
+}
+// Start it unconditionally — the tick itself short-circuits when no
+// telemetry-loss alarm exists, so the cost is one negligible Array.filter
+// every 15 s. Simpler than gating start/stop on individual alarm toggles.
+try { _afkStartTelemetryLossWatchdog(); } catch (_) {}
+
 function _afkOnTripped(newTrips) {
   // Play sound of the HIGHEST-PRIORITY tripped alarm (top of the list).
   // The user can re-order alarms by dragging cards up/down — list order
@@ -13209,6 +13360,7 @@ function _afkAlarmIcon(type) {
     case 'cruise':       return '─';
     case 'descent':      return '↘';
     case 'alt-min':      return '↕';
+    case 'telemetry-loss': return '📡';
   }
   return '🔔';
 }
@@ -13221,6 +13373,7 @@ function _afkAlarmTypeLabel(type) {
     case 'cruise':       return 'Cruise Reached';
     case 'descent':      return 'Descent Started';
     case 'alt-min':      return 'Altitude';
+    case 'telemetry-loss': return 'Loss of Telemetry (CTD)';
   }
   return 'Alarm';
 }
@@ -13240,6 +13393,8 @@ function _afkAlarmTooltip(type) {
       return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise. Useful as the "wake me up before TOD" backstop.';
     case 'alt-min':
       return 'Altitude — fires when your aircraft CROSSES through a specified altitude. Pick "descending through" or "climbing through". Only fires on an actual crossing — if you arm the alarm already on the wrong side of the threshold, it waits until you cross. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
+    case 'telemetry-loss':
+      return 'Loss of Telemetry (CTD) — your "did MSFS just crash?" canary. Fires when FSUIPC Live tracking is ON, your aircraft is airborne (any phase except ground), AND no fresh telemetry update has arrived for the configured timeout (default 5 minutes). The 5-minute default is sized to tolerate normal MSFS pause-menu trips so opening Map / ATC / Settings won\'t false-alarm. Catches sim Crash-to-Desktop, MSFS freezes/hangs, and FSUIPC server crashes mid-flight — situations where the green aircraft icon would otherwise just go stale silently without you noticing. Only meaningful while FSUIPC is the active source; with no live source the alarm sits quiet. Re-arms automatically on the next ground transition for the next flight.';
   }
   return '';
 }
@@ -13299,6 +13454,11 @@ function _afkAlarmShortDescription(a, includeTitle) {
   if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
     return title + dir + ' ' + _afkFmtAltDisplay(a.params.altFt);
+  }
+  if (a.type === 'telemetry-loss') {
+    const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
+    const tMin = Math.max(1, Math.round(tSec / 60));
+    return title + 'No FSUIPC telemetry for ' + tMin + ' min while airborne (CTD canary)';
   }
   return title;
 }
@@ -14188,16 +14348,39 @@ function _afkRenderEditor(a) {
     }
   }
   if (a.type === 'cruise') {
-    // Optional target cruise altitude — primary use is making the NEXT
-    // ALARM "IN" countdown ETA-predictable for cruise alarms. Empty input
-    // = phase-detector only (legacy behaviour).
+    // v2.90.5 — Explicit Mode dropdown replaces the "leave the textbox
+    // blank for adaptive" UX. The pre-v2.90.5 single text input with a
+    // grey placeholder ("10000 or FL350") looked like it already had
+    // data — users would set the alarm in adaptive mode without realizing
+    // it, then wonder why their target altitude wasn't honoured. Now:
+    // Mode selector picks Adaptive (phase detector) vs Specific altitude
+    // (climb-through threshold). The altitude input is only rendered
+    // when Specific is selected, so there's no ambiguous empty field.
+    //
+    // Backwards-compat: existing alarms have no `cruiseMode` field, so
+    // mode is inferred from the saved cruiseAltFt — > 0 = Specific,
+    // 0/missing = Adaptive. New alarms get cruiseMode written explicitly.
     const cAltText = a.params && a.params.cruiseAltText != null ? a.params.cruiseAltText : '';
     const cAltFt   = a.params && isFinite(parseFloat(a.params.cruiseAltFt)) ? parseFloat(a.params.cruiseAltFt) : 0;
-    body =
-      '<div class="afk-edit-row"><span class="afk-edit-label">Cruise altitude</span>' +
-        '<input type="text" class="afk-input" style="width:130px;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" title="Optional. When set, the NEXT ALARM countdown estimates time-to-cruise from current altitude and vertical speed. Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350).">' +
-        '<span class="afk-altmin-hint" id="afkCruiseAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + (cAltFt > 0 ? _afkFmtAltDisplay(cAltFt) : '(optional — uses phase detector if blank)') + '</span>' +
+    const mode     = (a.params && a.params.cruiseMode === 'specific') ? 'specific'
+                   : (a.params && a.params.cruiseMode === 'adaptive') ? 'adaptive'
+                   : (cAltFt > 0 ? 'specific' : 'adaptive');
+    const modeRow =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Mode</span>' +
+        '<select class="afk-select" onchange="_afkSetCruiseMode(' + a.id + ', this.value)" title="Adaptive: fires when the phase detector promotes flight phase to cruise (60 s of level flight after a sustained climb). Specific altitude: fires when the aircraft climbs through a chosen altitude.">' +
+          '<option value="adaptive"' + (mode === 'adaptive' ? ' selected' : '') + '>Adaptive — fire on detected cruise transition</option>' +
+          '<option value="specific"' + (mode === 'specific' ? ' selected' : '') + '>At specific altitude — fire when climbing through</option>' +
+        '</select>' +
       '</div>';
+    const altRow = (mode === 'specific')
+      ? '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
+          '<input type="text" class="afk-input" style="width:130px;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" title="Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350).">' +
+          '<span class="afk-altmin-hint" id="afkCruiseAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + (cAltFt > 0 ? _afkFmtAltDisplay(cAltFt) : '(enter a target altitude above)') + '</span>' +
+        '</div>'
+      : '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
+          'Adaptive mode watches the phase detector for the climb → cruise transition (sustained level flight after a real climb). One-shot per flight — re-arms automatically on the next ground transition.' +
+        '</div>';
+    body = modeRow + altRow;
   }
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
@@ -14212,6 +14395,22 @@ function _afkRenderEditor(a) {
       '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
         '<input type="text" class="afk-input" style="width:130px;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200)">' +
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
+      '</div>';
+  }
+  if (a.type === 'telemetry-loss') {
+    // v2.90.0 — Single tuning knob: how long the gap between FSUIPC fixes
+    // must be before the CTD canary trips. Value is stored as seconds but
+    // the user input is minutes (whole minutes are the right resolution
+    // for the use case — sim freezes / CTD episodes / pause-menu trips).
+    const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
+    const tMin = Math.max(1, Math.round(tSec / 60));
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Trip after</span>' +
+        '<input type="number" class="afk-input" style="width:80px;" min="1" max="60" step="1" value="' + tMin + '" oninput="_afkSetTelemetryLossMinutes(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm.">' +
+        '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">minutes of silence (in flight, FSUIPC source)</span>' +
+      '</div>' +
+      '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
+        'Watches FSUIPC for a stuck-or-stopped telemetry stream while airborne. Sits quiet on the ground, with no live source, or while fixes are flowing normally.' +
       '</div>';
   }
   // Per-alarm Mobile Alerts toggle (v2.85.0) — only rendered when the user has
@@ -14361,6 +14560,37 @@ function _afkSetAltMin(id, v) {
   }
 }
 
+// v2.90.5 — Cruise Reached mode switcher. Adaptive clears the target
+// altitude so the eval falls through to the phase-detector path; Specific
+// preserves the existing typed value (or seeds from the user's saved
+// default) and keeps the altitude input row rendered.
+function _afkSetCruiseMode(id, mode) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const next = (mode === 'specific') ? 'specific' : 'adaptive';
+  a.params.cruiseMode = next;
+  if (next === 'adaptive') {
+    // Clear any stored altitude so the eval takes the phase-detector path
+    // unambiguously and the saved user-default doesn't bleed back in.
+    a.params.cruiseAltText = '';
+    a.params.cruiseAltFt   = 0;
+  } else if (!(a.params.cruiseAltFt > 0)) {
+    // Switching INTO specific without a saved value — seed from the user's
+    // saved typical cruise altitude (or leave blank if none).
+    try {
+      const pref = (typeof _afkGetUserDefaultCruiseAltText === 'function') ? _afkGetUserDefaultCruiseAltText() : '';
+      const parsed = pref ? _afkParseAlt(pref) : NaN;
+      a.params.cruiseAltText = pref || '';
+      a.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
+    } catch (_) {}
+  }
+  // Reset the crossing-detection state so neither path inherits stale data.
+  a.state = a.state || {};
+  a.state.prevAlt = null;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList(); // re-render to show/hide the altitude row
+}
+
 // Cruise Reached alarm — optional target altitude that powers the NEXT
 // ALARM "IN" ETA. Saves the text form to localStorage so the next Cruise
 // alarm pre-fills with the user's typical cruise altitude.
@@ -14369,6 +14599,8 @@ function _afkSetCruiseAlt(id, v) {
   const parsed = _afkParseAlt(v);
   a.params.cruiseAltText = v || '';
   a.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
+  // Typing a value implies Specific mode — keep the persisted flag in sync.
+  a.params.cruiseMode    = 'specific';
   // Reset the crossing-detection seed so a changed threshold re-arms cleanly
   // instead of inheriting a stale prevAlt that might trip on the next tick.
   a.state = a.state || {};
@@ -14430,6 +14662,22 @@ function _afkUpdateTimerCardLive(a) {
   }
 }
 
+// v2.90.0 — Telemetry-loss threshold setter. Input is in minutes (the
+// natural unit for "how long before this counts as a crash") and stored
+// as seconds (consistent with other duration fields). Min 1 min, no
+// upper cap enforced beyond the input's max=60.
+function _afkSetTelemetryLossMinutes(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const min = Math.max(1, parseInt(v, 10) || 5);
+  a.params.thresholdSec = min * 60;
+  _afkAlarms.update(id, { params: a.params });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
 function _afkSetAltDirection(id, dir) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.direction = (dir === 'climbing') ? 'climbing' : 'descending';
@@ -14484,11 +14732,30 @@ function _afkAddAlarm(type) {
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  if (type === 'telemetry-loss') {
+    // v2.90.0 — Default 5 min so opening MSFS Map / ATC / Settings (which
+    // pauses the sim and freezes FSUIPC pushes) doesn't false-alarm.
+    // sourceArmedAt seeded to "now" so the grace clock starts from arming
+    // when no FSUIPC fix has happened yet (otherwise the eval's fallback
+    // would handle it, but pinning it here makes the behaviour explicit).
+    // v2.90.1 — Default to Klaxon. CTD is a genuine emergency cue — the
+    // user wants the loudest, most attention-grabbing sound in the library
+    // by default, not the gentle Digital Clock.
+    base.params = { thresholdSec: 300 };
+    base.state  = { fired: false, sourceArmedAt: performance.now() };
+    base.sound  = 'klaxon';
+  }
   if (type === 'cruise') {
     const pref = _afkGetUserDefaultCruiseAltText();
     const parsed = pref ? _afkParseAlt(pref) : NaN;
     base.params.cruiseAltText = pref || '';
     base.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
+    // v2.90.5 — Pin the explicit mode so the new Mode dropdown renders
+    // the right initial state. If the user has a saved typical cruise
+    // altitude, default to Specific (preserves prior pre-fill behaviour);
+    // otherwise default to Adaptive so the altitude row stays hidden and
+    // the user isn't shown an empty-looking input.
+    base.params.cruiseMode = (base.params.cruiseAltFt > 0) ? 'specific' : 'adaptive';
   }
   if (type === 'timer') {
     // Pre-fill from the user's last-used values (or sensible defaults if none).
@@ -16869,9 +17136,13 @@ function _tipClearStore() {
   // ── Document-level delegation — for matrix labels (spans with data-tip-id) ─
   // Name-line anchors use inline onmouseenter/onmouseleave instead (see _calcDistance).
   document.addEventListener('mouseover', e => {
+    // v2.90.8 — guard for Text-node targets (closest() exists only on
+    // Element). Same root cause as the _wxInitTooltip fix; see notes there.
+    const t = e.target;
+    if (!t || typeof t.closest !== 'function') return;
     // Ignore elements that have inline handlers — they manage themselves
-    if (e.target.closest('[data-inline-tip]')) return;
-    const wrap = e.target.closest('.dist-tooltip-wrap[data-tip-id]');
+    if (t.closest('[data-inline-tip]')) return;
+    const wrap = t.closest('.dist-tooltip-wrap[data-tip-id]');
     if (!wrap) return;
     const id = parseInt(wrap.dataset.tipId, 10);
     if (_tipVisible && id === _currentTipId) return;
@@ -16891,8 +17162,11 @@ function _tipClearStore() {
   }, { passive: true });
 
   document.addEventListener('mouseout', e => {
-    if (e.target.closest('[data-inline-tip]')) return;
-    const wrap = e.target.closest('.dist-tooltip-wrap[data-tip-id]');
+    // v2.90.8 — same Text-node guard as the mouseover handler above.
+    const t = e.target;
+    if (!t || typeof t.closest !== 'function') return;
+    if (t.closest('[data-inline-tip]')) return;
+    const wrap = t.closest('.dist-tooltip-wrap[data-tip-id]');
     if (!wrap) return;
     if (!wrap.contains(e.relatedTarget)) _hideTipAndReset();
   });
@@ -17394,20 +17668,33 @@ setInterval(() => {
 // Tooltip delegation — hover on any .wx-dot badge anywhere in the page fires the rich weather tooltip.
 // When the dot is nested inside an element with data-tip-id (e.g. the dep/arr name anchor),
 // moving off the dot back into the parent restores the parent's airport tooltip instead of hiding.
+//
+// v2.90.8 — Defensive `_wxClosest` wrapper. With `capture: true`, browsers
+// can fire mouseenter/move/leave with `e.target` set to a non-Element node
+// (Text node when the cursor is directly over text content, the Document
+// or Window in some bubbling edge cases). Calling `.closest()` on those
+// throws `TypeError: e.target.closest is not a function` — emitted on
+// every mouse move across the main page until the cursor lands on an
+// actual Element. The wrapper short-circuits when the target is missing
+// the method, returning null so the rest of the handler bails harmlessly.
+function _wxClosest(target, sel) {
+  if (!target || typeof target.closest !== 'function') return null;
+  return target.closest(sel);
+}
 (function _wxInitTooltip() {
   document.addEventListener('mouseenter', e => {
-    const dot = e.target.closest('.wx-dot[data-wx-icao]');
+    const dot = _wxClosest(e.target, '.wx-dot[data-wx-icao]');
     if (!dot || !window._tipAPI) return;
     _tipAPI.showLive(() => _wxTooltipHtml(dot.dataset.wxIcao), e.clientX, e.clientY);
   }, true);
   document.addEventListener('mousemove', e => {
-    if (!e.target.closest('.wx-dot[data-wx-icao]') || !window._tipAPI) return;
+    if (!_wxClosest(e.target, '.wx-dot[data-wx-icao]') || !window._tipAPI) return;
     _tipAPI.move(e.clientX, e.clientY);
   }, true);
   document.addEventListener('mouseleave', e => {
-    const dot = e.target.closest('.wx-dot[data-wx-icao]');
+    const dot = _wxClosest(e.target, '.wx-dot[data-wx-icao]');
     if (!dot || !window._tipAPI) return;
-    const anchor = dot.closest('[data-tip-id]');
+    const anchor = _wxClosest(dot, '[data-tip-id]');
     if (anchor && e.relatedTarget && anchor.contains(e.relatedTarget)) {
       _tipAPI.showById(parseInt(anchor.dataset.tipId, 10), e.clientX, e.clientY);
     } else {
@@ -19403,17 +19690,29 @@ function _rgTogglePulldown(menuId, triggerId, ev) {
 // Update the green dot on the 🛠 Tools / 🔌 Live trigger buttons. Called
 // from the existing state-setters so the dot tracks whatever's currently
 // active without those setters needing to know about the pulldown.
+//
+// v2.90.4 — Tools menu in v2.89.0+ contains only Select Regions and
+// Measurement (SimBrief Flight Plan moved to the Live menu). The dot
+// now reflects only those two: measurement mode active, or the region
+// matrix currently visible (`_rgPhase === 'results'`). Pre-v2.90.4 this
+// function still checked `planLoaded`, which lit the dot whenever a
+// SimBrief plan was on the map — incorrect since SimBrief is no longer
+// a Tools-menu item. The plan-loaded indicator moved to the Live dot.
 function _rgUpdateToolsActive() {
   const btn = document.getElementById('rgToolsBtn');
   if (!btn) return;
-  const measActive = !!_rgMeasureActive;
-  const planLoaded = (typeof _sbOfpLayers !== 'undefined') && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0;
-  btn.classList.toggle('has-active', measActive || planLoaded);
+  const measActive   = !!_rgMeasureActive;
+  const matrixActive = (typeof _rgPhase !== 'undefined') && _rgPhase === 'results';
+  btn.classList.toggle('has-active', measActive || matrixActive);
 }
 function _rgUpdateLiveActive() {
   const btn = document.getElementById('rgLiveBtn');
   if (!btn) return;
-  btn.classList.toggle('has-active', !!_liveAcSource);
+  // v2.90.4 — Live menu now includes SimBrief Flight Plan as its first
+  // item, so a loaded plan should also light the Live dot.
+  const sourceActive = !!_liveAcSource;
+  const planLoaded   = (typeof _sbOfpLayers !== 'undefined') && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0;
+  btn.classList.toggle('has-active', sourceActive || planLoaded);
 }
 
 // Floating measurement toolbar — shown only while measurement mode is
@@ -22056,6 +22355,11 @@ function _rgSetCursor(type) {
 // ── Phase text ──────────────────────────────────────────────────────────
 
 function _rgUpdatePhaseText() {
+  // v2.90.4 — Phase changes drive the Tools-menu green-dot indicator too,
+  // since the matrix-visible state ('results' phase) is one of the two
+  // Tools-menu activations the dot reflects. _rgUpdatePhaseText is called
+  // on every phase transition, so it's the right hook.
+  if (typeof _rgUpdateToolsActive === 'function') _rgUpdateToolsActive();
   const el = document.getElementById('rgPhaseText');
   if (!el) return;
   // v2.88.0 — the drawing-phase overlay now also carries the Cancel button
@@ -25403,9 +25707,10 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. <strong>Optional target altitude</strong> (v2.76.0+): leave the <em>Cruise altitude</em> field blank to use the original adaptive phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). Fill it in (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>) and the alarm switches to a climbing-through-target trigger AND the NEXT ALARM "IN" countdown shows live time-to-cruise computed from current altitude and vertical speed. The value persists to <code>localStorage</code> so the next new Cruise alarm pre-fills with your typical cruise altitude. <strong>v2.87.0:</strong> additionally gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s); it cannot fire while still on the ground, even at high-elevation airports where the adaptive phase detector previously could drift to "cruise" during a long taxi. <strong>v2.87.1:</strong> a second structural gate now requires we have actually observed <code>peakClimbVS &gt; +200&nbsp;fpm</code> during this session before the climb &rarr; cruise transition can happen. Sustained-level ground operations keep <code>peakClimbVS</code> at 0, so cruise simply cannot be declared without evidence of a real climb &mdash; independent of the ground-detector's accuracy.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>Note:</strong> because Adaptive mode depends on having observed a real climb, arming a Cruise Reached alarm <em>while already in cruise</em> (e.g. set up after page-reload mid-flight, or after the alarm has already fired once) won&rsquo;t re-fire on its own.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
+              <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Re-arms automatically on the next ground transition for the next flight. Only setting: <em>Trip after N minutes</em> (1&ndash;60).</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Specific time…</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -25520,8 +25825,120 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.89.2</span>
+          <span class="release-version">v2.90.8</span>
           <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Console errors gone when moving the mouse across the main page.</strong> Two document-level tooltip-delegation handlers — the weather-dot tooltip in <code>_wxInitTooltip</code> and the main matrix-tooltip delegation in <code>_calcDistance</code> — called <code>e.target.closest()</code> without checking that <code>e.target</code> is an Element. When the cursor moves directly over text content, browsers fire <code>mouseenter</code>/<code>mouseleave</code>/<code>mouseover</code>/<code>mouseout</code> events with the Text node as the target — and Text nodes don&rsquo;t have a <code>closest()</code> method. Result: <code>TypeError: e.target.closest is not a function</code> emitted on every mouse move until the cursor hit an actual Element. Behaviour was visually unaffected (the throw caused the handler to bail, which is what an early <code>return</code> would have done anyway), but the console noise was distracting and made real errors harder to spot. New <code>_wxClosest()</code> helper guards the weather handlers; inline <code>typeof t.closest === 'function'</code> guards the matrix-tooltip ones. Three other document/scoped tooltip handlers (scenery star clicks, region-matrix tooltip delegation inside <code>rgMatrixWrap</code>) use the same pattern but are bounded to areas where Text-node targets aren&rsquo;t observed in practice; left untouched to avoid speculative changes.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.7</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Help text — step-climb handling for Cruise Reached.</strong> The Cruise Reached help-feature block now (a) reflects the v2.90.5 Mode dropdown (Adaptive vs Specific altitude) instead of the obsolete "leave the field blank" wording, and (b) describes the canonical step-climb workflow: add one Cruise Reached alarm per level-off altitude in <em>At specific altitude</em> mode (e.g. FL210, FL280, FL380), each fires independently as the aircraft climbs through its threshold, dismissing one auto-disables only that one so the rest stay armed for subsequent steps. Suggests combining with per-alert names ("Initial cruise — FL210", "Step climb 1 — FL280", etc.) so they're distinguishable in the trip overlay, the Alert History log, and on map pins. Also notes the related quirk: Adaptive mode can&rsquo;t self-trigger if you arm the alarm while already cruising, since the phase detector requires evidence of a climb in the current session before promoting to <code>cruise</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.6</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⏰ Timer alarms now always default to a 10-minute countdown.</strong> Pre-v2.90.6 (v2.74.0+) new Timer alarms pre-filled with whatever values the user had last typed — saved to <code>localStorage</code> under <code>simfly_aa_afk_timer_last</code>. That surprise-behaviour is gone: every newly-added Timer alarm starts at <em>Countdown · 0 h 10 m 0 s</em> regardless of history. The localStorage key is proactively cleared at module load so any stale value from a prior version is wiped. <strong>Load from File is unaffected</strong> — alarms imported from a saved JSON file still honor whatever timer values were saved in the file, since that path bypasses the &ldquo;new alarm&rdquo; defaults entirely.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.5</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>─ Cruise Reached: explicit Adaptive vs Specific altitude mode selector.</strong> Pre-v2.90.5 the Cruise alarm had a single text input with a grey "10000 or FL350" placeholder. Leaving it blank ran the adaptive phase-detector path; typing a value switched to a climbing-through-altitude trigger. The placeholder looked like real data, so users often set the alarm expecting target-altitude behaviour without realising they were in adaptive mode. Now: a <strong>Mode</strong> dropdown picks between <em>Adaptive — fire on detected cruise transition</em> (the default for new alarms) and <em>At specific altitude — fire when climbing through</em>. The altitude input row is only rendered in Specific mode, so the form never shows an ambiguous empty input. Adaptive mode also gets a one-line caption explaining what the phase detector does. Backwards-compat: existing alarms get the right mode inferred from their saved altitude (&gt; 0 = Specific, else Adaptive). New persistent param `cruiseMode`; both <code>_afkSetCruiseAlt</code> and the new <code>_afkSetCruiseMode</code> setter keep it in sync.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.90.4</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🛠 Tools menu green-dot indicator now reflects only what's actually in the Tools menu.</strong> Pre-v2.90.4 the dot lit when a SimBrief flight plan was loaded — but the SimBrief Flight Plan entry moved out of Tools and into the 🔌 Live menu in v2.89.0, so the dot was lighting up for a menu item that no longer lived there. Tools dot now lights only when <em>Measurement</em> mode is active OR the <em>region matrix is visible</em> (the two items actually in the Tools menu). The plan-loaded indicator moved to the Live menu's dot where SimBrief Flight Plan now lives, so the visual still tells you something useful — just on the right menu. Wired into `_rgUpdatePhaseText` so the Tools dot tracks every region-mode phase transition without those callers needing to know about the pulldown.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.3</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) — STKP references stripped from help, tooltips, and editor copy.</strong> The v2.90.0 surfaces around the new CTD alert all called out STKP as a "not eligible" source (alongside &ldquo;no live source&rdquo;). Since STKP isn&rsquo;t being further developed, those mentions are gone — the alert&rsquo;s app-help feature block, the alert-icon tooltip, the editor footer hint, and the eval&rsquo;s code comments now reference only &ldquo;FSUIPC&rdquo; and &ldquo;no live source&rdquo;. Pre-existing STKP integration code elsewhere in the app (the hidden STKP Live button, the SimToolkitPro fetch module, the source-label code) is unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.90.2</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) — fixed two false-fire paths found during post-ship audit.</strong></li>
+          <li><strong>Toggle-cycle false fire (FSUIPC off → on mid-flight).</strong> When the user turned FSUIPC off and then back on, the v2.90.0 eval's fallback clock used <code>alarm.state.sourceArmedAt</code> (the moment the alarm armed — potentially hours ago), so the very first watchdog tick after re-enabling FSUIPC saw a huge staleness window and tripped immediately. The eval now requires a fresh fix to have arrived under the current FSUIPC session before staleness is meaningful (<code>_liveAcLastUpdate &gt; 0</code>). No fix yet → no fire. The alarm can only credibly "lose" telemetry after it has had it.</li>
+          <li><strong>Sleep/wake false fire (laptop lid close, OS suspend, hibernate).</strong> <code>setInterval</code> silently pauses while the OS is suspended, but <code>performance.now()</code> does not — so on resume the next watchdog tick saw a multi-minute gap since the last fix (the entire suspend duration) and tripped before FSUIPC could reconnect. The watchdog now compares this tick's <code>performance.now()</code> to the previous tick's. A gap &gt; 60 s = the system was suspended; install a <strong>60-second post-wake grace window</strong> during which the eval skips entirely. FSUIPC's 15-second silent retry + ~1-second fix-arrival delay fits comfortably inside that window, so a real fresh fix lands well before the watchdog is allowed to fire again.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.1</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) now defaults to Klaxon.</strong> CTD is a genuine emergency cue — the loudest, most attention-grabbing sound in the library is the right default, not the gentle Digital Clock. Existing telemetry-loss alarms keep whatever sound they were already set to; only newly-added ones get Klaxon. Switch sound per-alarm via the dropdown on the card as usual.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.90.0</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New alert type: 📡 Loss of Telemetry (CTD).</strong> A "did MSFS just crash?" canary. Fires when <em>all three</em> conditions hold: <strong>FSUIPC Live tracking is ON</strong>, the aircraft is <strong>airborne</strong> (any phase except ground), AND <strong>no telemetry update has arrived for the configured timeout</strong>. <strong>Default 5 minutes</strong> — sized generously to tolerate normal MSFS pause-menu trips (opening Map / ATC / Settings, which freezes FSUIPC pushes, will not false-alarm). Single setting: <em>Trip after N minutes</em> (1–60). Catches MSFS crash-to-desktop, sim freezes / hangs, FSUIPC server crashes, accidental FSUIPC closures mid-flight — situations where the green aircraft icon would otherwise just go silently stale. Re-arms automatically on the next ground transition for the next flight.</li>
+          <li><strong>Independent watchdog</strong> — the regular alarm tick runs inside the live-aircraft fix-arrival path, so a real CTD freezes the very loop that could detect it. This alert is driven by a separate 15-second interval timer that keeps running independent of fix arrivals, so it can still fire when the telemetry stream itself is the thing that went silent. The watchdog evaluates only telemetry-loss alarms (no-op when none exist) so the overhead is one negligible Array.filter every 15 s.</li>
+          <li><strong>Alphabetical palette position.</strong> Slots into the Add Alert sidebar between Geofence and Timer (alphabetical order maintained).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.89.2</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -33693,6 +34110,7 @@ function rgSendToFlightPlanner() {
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'cruise')"   ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'descent')"  ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'geofence')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'telemetry-loss')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('telemetry-loss')" title="Fires when FSUIPC tracking is on, you are airborne, AND no telemetry update arrives for the configured timeout (default 5 min). The CTD canary — catches MSFS crashes / freezes that would otherwise silently stop your live tracker mid-flight."><span class="afk-add-btn-icon">📡</span><span>Loss of Telemetry (CTD)</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'timer')"    ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('timer')"><span class="afk-add-btn-icon">⏰</span><span>Timer</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'waypoint')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('waypoint')"><span class="afk-add-btn-icon">📍</span><span>Waypoint</span></button>
       </div>
