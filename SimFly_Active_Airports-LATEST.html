@@ -2771,15 +2771,25 @@
     height: 100%;
     min-width: 56px;
     min-height: 36px;
-    /* v2.87.10 — diagonal line uses var(--border) so it matches the
-       matrix's other cell borders exactly. */
-    background: linear-gradient(
-      to top right,
-      transparent calc(50% - 0.6px),
-      var(--border) calc(50% - 0.6px),
-      var(--border) calc(50% + 0.6px),
-      transparent calc(50% + 0.6px)
-    );
+    /* v2.91.0 — Diagonal line now drawn via an inline SVG (.matrix-corner-diag-line)
+       so it actually goes from top-left CORNER to bottom-right CORNER of the
+       cell. The pre-v2.91.0 linear-gradient stripe was perpendicular to the
+       gradient direction at the geometric midpoint — for non-square cells
+       (which Region Mode's corner cell is) the stripe ends fell on the cell
+       EDGES, not the corners. */
+  }
+  .matrix-corner-diag-line {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .matrix-corner-diag-line line {
+    stroke: var(--border);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
   }
   .matrix-corner-diag-arr,
   .matrix-corner-diag-dep {
@@ -2794,6 +2804,12 @@
   }
   .matrix-corner-diag-arr { top: 4px;    right: 6px; color: #ff6a00; }
   .matrix-corner-diag-dep { bottom: 4px; left:  6px; color: #00c8ff; }
+  /* v2.91.0 — Region matrix's corner cell is taller / wider than the main
+     matrix's, which combined with the 40% bigger label font landed the
+     ARR text uncomfortably close to the diagonal line. Shift ARR up 15 px
+     in Region Mode only (the main matrix's cell is narrower so the
+     baseline position still reads cleanly there). */
+  .rg-matrix th.rg-corner .matrix-corner-diag-arr { top: -11px; }
   /* Inline SWAP button between owner dropdowns */
   .dist-owner-swap-btn:disabled {
     opacity: 0.28;
@@ -4247,6 +4263,24 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     cursor:pointer;
   }
   .afk-group-ungroup:hover { background:rgba(255,140,40,0.22); color:#ffd0a0; }
+  /* v2.91.0 — Group mode pill (CASCADE / AND). Visually distinct from
+     the Ungroup button so the current mode is at-a-glance readable. */
+  .afk-group-mode {
+    background:rgba(0,200,255,0.10);
+    border:1px solid rgba(0,200,255,0.45);
+    color:var(--accent);
+    font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:700;
+    letter-spacing:0.06em; text-transform:uppercase;
+    padding:0.22rem 0.6rem; border-radius:999px;
+    cursor:pointer; line-height:1.1;
+    margin-right:0.25rem;
+  }
+  .afk-group-mode[data-mode="and"] {
+    background:rgba(255,170,0,0.14);
+    border-color:rgba(255,170,0,0.55);
+    color:#ffc870;
+  }
+  .afk-group-mode:hover { filter:brightness(1.18); }
   .afk-group-body { display:flex; flex-direction:column; gap:0.35rem; }
   .afk-group.collapsed .afk-group-body { display:none; }
   .afk-card.grouped {
@@ -4394,6 +4428,27 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     display:flex; flex-direction:column; gap:0.5rem;
   }
   .afk-edit-row { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+  /* v2.91.0 — Conditional alarm: dynamic list of param/op/value rows. */
+  .afk-cond-list { display:flex; flex-direction:column; gap:0.4rem; margin-top:0.3rem; }
+  .afk-cond-row {
+    display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap;
+    padding:0.35rem 0.4rem;
+    background:rgba(0,200,255,0.04);
+    border:1px solid rgba(0,200,255,0.16);
+    border-radius:5px;
+  }
+  body.light-mode .afk-cond-row { background:rgba(0,150,200,0.06); border-color:rgba(0,150,200,0.25); }
+  .afk-cond-row .afk-cond-param { min-width:13em; }
+  .afk-cond-row .afk-cond-op    { width:auto; min-width:3.4em; text-align:center; }
+  .afk-cond-row .afk-cond-val   { width:8em; }
+  .afk-cond-row .afk-cond-wp    { min-width:7em; max-width:10em; }
+  .afk-cond-row .afk-cond-unit  {
+    color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:0.88rem;
+    min-width:6em;
+  }
+  .afk-cond-row .afk-cond-hint  { color:var(--text); font-variant-numeric:tabular-nums; }
+  .afk-cond-row .afk-cond-en input { width:14px; height:14px; }
+  .afk-cond-row .afk-cond-del { margin-left:auto; }
   .afk-edit-label {
     font-family:'Rajdhani',sans-serif; font-size:0.88rem;
     color:var(--muted); letter-spacing:0.04em; text-transform:uppercase;
@@ -5355,7 +5410,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.90.11';
+const APP_VERSION = '2.91.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8844,7 +8899,7 @@ function renderDistMatrix() {
   // triangles of the cell (ARR top-right, DEP bottom-left) with a thin
   // diagonal divider drawn by the CSS background gradient on
   // .matrix-corner-diag. Position conveys orientation; arrows dropped.
-  let html = `<thead><tr><th class="dist-corner-cell" title="${cornerTitle}"><div class="matrix-corner-diag"><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>`;
+  let html = `<thead><tr><th class="dist-corner-cell" title="${cornerTitle}"><div class="matrix-corner-diag"><svg class="matrix-corner-diag-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="0" x2="100" y2="100" /></svg><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>`;
   for (let c = 0; c < arrAirports.length; c++) {
     const a        = arrAirports[c];
     const tipHtml_c = _buildTooltipHtml(a.icao, a.rec, false, colSortHint(), resolvedArr.name, 'arr');
@@ -11866,6 +11921,10 @@ function _afkFreshState(alarm) {
       // staleness clock when no FSUIPC fix has arrived yet so the grace
       // window starts from "now" rather than from the wall-clock 0.
       return { fired: false, sourceArmedAt: performance.now() };
+    case 'conditional':
+      // v2.91.0 — one-shot fired flag, same auto-rearm semantics as
+      // cruise / descent / alt-min / telemetry-loss.
+      return { fired: false };
     default:
       return {};
   }
@@ -12210,6 +12269,22 @@ const _afkGroups = (() => {
     g.collapsed = !!on;
     _save();
   }
+  // v2.91.0 — Group mode toggle. 'cascade' (default, pre-v2.91.0
+  // behaviour): first member to trip fires the user-visible alert and
+  // every other member is dismissed + disabled. 'and': every member can
+  // reach tripped status independently; the user-visible alert (overlay
+  // + sound + mobile push) only fires when ALL members are
+  // simultaneously tripped. If any drops back to armed (condition
+  // reverts) the group disarms until the last member trips again.
+  function setMode(id, mode) {
+    const g = groups[id]; if (!g) return;
+    g.mode = (mode === 'and') ? 'and' : 'cascade';
+    _save();
+  }
+  function getMode(id) {
+    const g = groups[id]; if (!g) return 'cascade';
+    return (g.mode === 'and') ? 'and' : 'cascade';
+  }
 
   // Add an existing ungrouped alarm to an existing group.
   function addMember(gid, alarmId) {
@@ -12296,8 +12371,27 @@ const _afkGroups = (() => {
 
   _load();
   // GC runs after _afkAlarms has loaded — _afkInit handles ordering.
-  return { list, get, create, rename, setCollapsed, addMember, removeMember, ungroup, membersOf, _gc, nextId, _injectFromImport };
+  return { list, get, create, rename, setCollapsed, setMode, getMode, addMember, removeMember, ungroup, membersOf, _gc, nextId, _injectFromImport };
 })();
+
+// v2.91.0 — Top-level helpers used by the alarm eval and tick paths so
+// they don't have to reach into _afkGroups directly.
+function _afkGroupMode(gid) {
+  if (!gid || typeof _afkGroups === 'undefined') return 'cascade';
+  try { return _afkGroups.getMode(gid); } catch (_) { return 'cascade'; }
+}
+// True if every enabled member of the group is currently tripped. Used
+// to decide whether an AND-mode group should surface its alert to the user.
+function _afkGroupAllTripped(gid) {
+  if (!gid) return false;
+  const mems = _afkAlarms.list().filter(a => a.groupId === gid);
+  if (mems.length === 0) return false;
+  for (let i = 0; i < mems.length; i++) {
+    if (!mems[i].enabled) continue;        // disabled members don't gate
+    if (mems[i].status !== 'tripped') return false;
+  }
+  return mems.some(a => a.enabled && a.status === 'tripped');
+}
 
 // ---------------------- EVALUATORS ----------------------------------------
 
@@ -12521,6 +12615,96 @@ function _afkEvalAltMin(alarm, ac) {
   return false;
 }
 
+// v2.91.0 — Conditional alert (🧩) parameter registry. Each entry
+// describes one telemetry value the user can pin a >/< threshold on.
+//   id          — stable storage key
+//   label       — dropdown text
+//   unit        — display unit (also used in the per-row hint)
+//   defaultVal  — starter value when a fresh condition row is added
+//   isTime      — true if the value is in seconds and should be parsed/
+//                 displayed as H:MM:SS instead of a bare number
+//   needsWp     — true if a waypoint picker is also required (distWp)
+//   evalFn(ac, c, fp) — returns the current value (number) or null
+//                       if not currently determinable (no plan loaded,
+//                       no fix yet, etc.). null = condition NOT met.
+const _AFK_COND_PARAMS = [
+  { id: 'alt',       label: 'Altitude (MSL)',          unit: 'ft',  defaultVal: 10000, evalFn: (ac) => (ac && ac.alt != null && isFinite(ac.alt)) ? ac.alt : null },
+  { id: 'ias',       label: 'Indicated airspeed',      unit: 'kt',  defaultVal: 250,   evalFn: (ac) => (ac && ac.ias != null && isFinite(ac.ias)) ? ac.ias : null },
+  { id: 'gs',        label: 'Ground speed',            unit: 'kt',  defaultVal: 400,   evalFn: (ac) => (ac && ac.gs  != null && isFinite(ac.gs )) ? ac.gs  : null },
+  { id: 'vs',        label: 'Vertical speed (±fpm)',   unit: 'fpm', defaultVal: 500,   evalFn: () => { try { const v = _afkPhase.vsFpm(); return isFinite(v) ? v : null; } catch (_) { return null; } } },
+  { id: 'distDest',  label: 'Distance to destination', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination || !isFinite(parseFloat(fp.destination.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)); return isFinite(d) ? d : null; } },
+  { id: 'distWp',    label: 'Distance to waypoint',    unit: 'nm',  defaultVal: 20,    needsWp: true, evalFn: (ac, c, fp) => { if (!ac || !c.wp || !fp || !fp.navlog) return null; const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix]; const w = fixes.find(f => f && f.ident === c.wp); if (!w || !isFinite(parseFloat(w.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(w.pos_lat), parseFloat(w.pos_long)); return isFinite(d) ? d : null; } },
+  { id: 'trkRem',    label: 'Track miles remaining',   unit: 'nm',  defaultVal: 100,   evalFn: (ac, c, fp) => { if (!ac || !fp) return null; const v = _afkTrackMilesRemaining(ac, fp); return isFinite(v) ? v : null; } },
+  { id: 'remTime',   label: 'Remaining time',          unit: 'sec', defaultVal: 1800, isTime: true, evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination) return null; const trk = _afkTrackMilesRemaining(ac, fp); const dest = isFinite(trk) ? trk : (fp.destination ? _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)) : null); if (!isFinite(dest) || !ac.gs || ac.gs <= 5) return null; return (dest / ac.gs) * 3600; } },
+  { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 3600, isTime: true, evalFn: () => (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null },
+  { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
+];
+function _afkCondParamDef(id) { return _AFK_COND_PARAMS.find(p => p.id === id) || null; }
+// Parse the user-typed value into a number using the parameter's expected
+// unit. Altitude uses _afkParseAlt (FL350 / 10,000 / 35000). Time fields
+// accept either bare seconds, "M:SS", "H:MM:SS", or "Nm" / "Ns" tokens.
+// Everything else parses as a bare float.
+function _afkCondParseValue(def, text) {
+  if (text == null || text === '') return NaN;
+  if (def.id === 'alt') return _afkParseAlt(text);
+  if (def.isTime) {
+    const t = String(text).trim();
+    // H:MM:SS or M:SS
+    const colMatch = t.match(/^(\d+):(\d+)(?::(\d+))?$/);
+    if (colMatch) {
+      const a = parseInt(colMatch[1], 10), b = parseInt(colMatch[2], 10), c = colMatch[3] ? parseInt(colMatch[3], 10) : 0;
+      return (colMatch[3] != null) ? (a*3600 + b*60 + c) : (a*60 + b);
+    }
+    // "Nh" / "Nm" / "Ns" tokens — e.g. "1h 30m 22s" or just "30m"
+    const tokMatch = t.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?$/i);
+    if (tokMatch && (tokMatch[1] || tokMatch[2] || tokMatch[3])) {
+      return (parseInt(tokMatch[1] || 0, 10) * 3600) +
+             (parseInt(tokMatch[2] || 0, 10) * 60) +
+             (parseInt(tokMatch[3] || 0, 10));
+    }
+    const n = parseFloat(t);
+    return isFinite(n) ? n : NaN;
+  }
+  const n = parseFloat(text);
+  return isFinite(n) ? n : NaN;
+}
+// Pretty-print a parsed condition value for the hint span next to the input.
+function _afkCondFmtValue(def, val) {
+  if (val == null || !isFinite(val)) return '—';
+  if (def.id === 'alt') return _afkFmtAltDisplay(val);
+  if (def.isTime)       return _afkFmtHMS(val);
+  return val + ' ' + def.unit;
+}
+// v2.91.0 — Conditional alarm eval. Iterates enabled conditions, asks
+// each parameter's evalFn for its current value, applies the user's
+// `> threshold` or `< threshold` comparator, and combines the booleans
+// with AND or OR per `params.combinator`. One-shot per flight — fires
+// once, then state.fired blocks until ground transition.
+function _afkEvalConditional(alarm, ac) {
+  if (alarm.state && alarm.state.fired) return false;
+  const conds = (alarm.params && Array.isArray(alarm.params.conditions))
+    ? alarm.params.conditions.filter(c => c && c.enabled)
+    : [];
+  if (conds.length === 0) return false; // nothing enabled
+  const combinator = (alarm.params && alarm.params.combinator === 'OR') ? 'OR' : 'AND';
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  let anyMet = false, allMet = true;
+  for (let i = 0; i < conds.length; i++) {
+    const c = conds[i];
+    const def = _afkCondParamDef(c.param);
+    if (!def) { allMet = false; continue; }
+    const cur = def.evalFn(ac, c, fp);
+    if (cur == null || !isFinite(cur)) { allMet = false; continue; } // unavailable
+    const threshold = parseFloat(c.value);
+    if (!isFinite(threshold)) { allMet = false; continue; }
+    const met = (c.op === '<') ? (cur < threshold) : (cur > threshold);
+    if (met) anyMet = true; else allMet = false;
+  }
+  const fire = (combinator === 'OR') ? anyMet : allMet;
+  if (fire) { if (alarm.state) alarm.state.fired = true; return true; }
+  return false;
+}
+
 function _afkEvaluate(alarm, ac) {
   if (!alarm.enabled || alarm.status === 'tripped') return false;
   // v2.87.1 — Group cascade enforcement at evaluation time. The
@@ -12530,11 +12714,12 @@ function _afkEvaluate(alarm, ac) {
   // and fire independently — defeating the documented "one fires,
   // rest disable" contract. Checking sibling status here closes that
   // window: any time a sibling is already tripped, this alarm cannot
-  // fire. Handles both same-tick races (the trip loop calls trip()
-  // before the next eval, so the second member sees the first tripped
-  // when its eval runs) and different-tick races (sibling tripped on
-  // a prior tick).
-  if (alarm.groupId) {
+  // fire.
+  // v2.91.0 — Skip the cascade-sibling gate for AND-mode groups. In AND
+  // mode each member needs to be able to reach tripped status
+  // independently; the user-visible side-effects (overlay/sound/mobile)
+  // are gated separately on _afkGroupAllTripped (see _afkTick).
+  if (alarm.groupId && (typeof _afkGroupMode !== 'function' || _afkGroupMode(alarm.groupId) !== 'and')) {
     const siblings = _afkAlarms.list();
     for (let i = 0; i < siblings.length; i++) {
       const s = siblings[i];
@@ -12551,6 +12736,7 @@ function _afkEvaluate(alarm, ac) {
     case 'descent':        return _afkEvalDescent(alarm);
     case 'alt-min':        return _afkEvalAltMin(alarm, ac);
     case 'telemetry-loss': return _afkEvalTelemetryLoss(alarm);
+    case 'conditional':    return _afkEvalConditional(alarm, ac);
   }
   return false;
 }
@@ -12583,8 +12769,10 @@ function _afkEvalTelemetryLoss(alarm) {
   if (!phase || phase === 'ground') return false;
   // Resolve threshold (seconds). Sanity-clamp to ≥ 30 s so a careless edit
   // can't produce a constant-firing alarm.
+  // v2.91.0 — Floor lowered from 30 s to 10 s now that seconds-unit input
+  // is supported. The 15 s watchdog cycle adds latency on top either way.
   const thresholdSec = parseFloat(alarm.params && alarm.params.thresholdSec);
-  if (!isFinite(thresholdSec) || thresholdSec < 30) return false;
+  if (!isFinite(thresholdSec) || thresholdSec < 10) return false;
   const thresholdMs = thresholdSec * 1000;
   // v2.90.2 — Require a fresh fix to have arrived under the current source
   // session before staleness is meaningful. _liveAcClear() resets
@@ -12704,23 +12892,44 @@ function _afkTick(data) {
   // fired on flight B unless the user manually toggled enabled off/on.
   if (_curPhase === 'ground' && _prevPhase && _prevPhase !== 'ground') {
     _afkAlarms.list().forEach(a => {
-      if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min' || a.type === 'telemetry-loss') && a.state && a.state.fired) {
+      if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min' || a.type === 'telemetry-loss' || a.type === 'conditional') && a.state && a.state.fired) {
         a.state.fired = false;
         if (a.type === 'cruise' || a.type === 'alt-min') a.state.prevAlt = null;
         // v2.90.0 — telemetry-loss also re-seeds its sourceArmedAt clock
         // so the next flight starts the grace window cleanly.
         if (a.type === 'telemetry-loss') a.state.sourceArmedAt = performance.now();
+        // v2.91.0 — conditional auto-rearms too (same one-shot semantics).
         _afkAlarms.update(a.id, { state: a.state });
       }
     });
   }
   const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg };
+  // v2.91.0 — AND-mode group gating. Two-pass strategy:
+  //   Pass 1: Evaluate every alarm. Members of AND-mode groups whose
+  //           condition is met set status='tripped' but are NOT added
+  //           to the user-visible newTrips batch — they wait silently
+  //           until every group member is simultaneously tripped.
+  //   Pass 2: For each AND-mode group, if all members are now tripped,
+  //           batch all of them into newTrips so _afkOnTripped fires
+  //           the overlay / sound / mobile push once for the whole group.
   const newTrips = [];
+  const pendingAndGroups = new Set(); // group ids that had a trip this tick
   _afkAlarms.list().forEach(a => {
     if (_afkEvaluate(a, ac)) {
       _afkAlarms.trip(a.id);
-      newTrips.push(a);
+      if (a.groupId && _afkGroupMode(a.groupId) === 'and') {
+        pendingAndGroups.add(a.groupId);
+      } else {
+        newTrips.push(a);
+      }
     }
+  });
+  // Pass 2: check AND groups for completion.
+  pendingAndGroups.forEach(gid => {
+    if (!_afkGroupAllTripped(gid)) return;
+    _afkAlarms.list().forEach(m => {
+      if (m.groupId === gid && !newTrips.includes(m)) newTrips.push(m);
+    });
   });
   // Track takeoff for ELAPSED
   _afkTakeoffTrack(ac);
@@ -12913,6 +13122,11 @@ function _afkOnTripped(newTrips) {
     // they'll be cascade-dismissed via _afkDismissOne on user action.
     newTrips.forEach(a => {
       if (!a.groupId) return;
+      // v2.91.0 — AND-mode groups don't cascade-disable armed siblings.
+      // In AND mode every member needs to remain capable of tripping so
+      // the group can complete; the v2.87.1 cascade-disable is a
+      // cascade-mode behaviour only.
+      if (_afkGroupMode(a.groupId) === 'and') return;
       _afkAlarms.list().forEach(sib => {
         if (sib.groupId !== a.groupId) return;
         if (sib.id === a.id) return;
@@ -13331,7 +13545,15 @@ function _afkSyncTripOverlay() {
   if (!ov) return;
   const list = document.getElementById('afkTripList');
   if (!list) return;
-  const tripped = _afkAlarms.tripped(); // list order = priority order
+  // v2.91.0 — AND-mode group members whose group is NOT yet fully tripped
+  // shouldn't appear in the user-visible overlay; they're silently
+  // accumulating until the last member trips. Filter them out here so
+  // the overlay reflects only "fire-worthy" trips.
+  const tripped = _afkAlarms.tripped().filter(a => {
+    if (!a.groupId) return true;
+    if (_afkGroupMode(a.groupId) !== 'and') return true;
+    return _afkGroupAllTripped(a.groupId);
+  });
   if (tripped.length === 0) {
     ov.classList.remove('open');
     list.innerHTML = '';
@@ -13404,6 +13626,7 @@ function _afkAlarmIcon(type) {
     case 'descent':      return '↘';
     case 'alt-min':      return '↕';
     case 'telemetry-loss': return '📡';
+    case 'conditional':  return '🧩';
   }
   return '🔔';
 }
@@ -13417,6 +13640,7 @@ function _afkAlarmTypeLabel(type) {
     case 'descent':      return 'Descent Started';
     case 'alt-min':      return 'Altitude';
     case 'telemetry-loss': return 'Loss of Telemetry (CTD)';
+    case 'conditional':  return 'Conditional';
   }
   return 'Alarm';
 }
@@ -13436,6 +13660,8 @@ function _afkAlarmTooltip(type) {
       return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise. Useful as the "wake me up before TOD" backstop.';
     case 'alt-min':
       return 'Altitude — fires when your aircraft CROSSES through a specified altitude. Pick "descending through" or "climbing through". Only fires on an actual crossing — if you arm the alarm already on the wrong side of the threshold, it waits until you cross. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
+    case 'conditional':
+      return 'Conditional — fire when a custom combination of live telemetry parameters is met. Pick any subset from Altitude / IAS / GS / VS / Distance-to-destination / Distance-to-waypoint / Track-miles-remaining / Remaining-time / Elapsed-time / Alert-ETA, set a comparator (> or <) and threshold on each, combine with AND (every condition must hold) or OR (any condition fires). Useful for compound milestones — e.g. "alert me when GS > 400 kt AND altitude > FL350 AND elapsed > 1 h 15 min". One-shot per flight; auto-rearms on next ground transition.';
     case 'telemetry-loss':
       return 'Loss of Telemetry (CTD) — your "did MSFS just crash?" canary. Fires when FSUIPC Live tracking is ON, your aircraft is airborne (any phase except ground), AND no fresh telemetry update has arrived for the configured timeout (default 5 minutes). The 5-minute default is sized to tolerate normal MSFS pause-menu trips so opening Map / ATC / Settings won\'t false-alarm. Catches sim Crash-to-Desktop, MSFS freezes/hangs, and FSUIPC server crashes mid-flight — situations where the green aircraft icon would otherwise just go stale silently without you noticing. Only meaningful while FSUIPC is the active source; with no live source the alarm sits quiet. Re-arms automatically on the next ground transition for the next flight.';
   }
@@ -13500,8 +13726,21 @@ function _afkAlarmShortDescription(a, includeTitle) {
   }
   if (a.type === 'telemetry-loss') {
     const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
-    const tMin = Math.max(1, Math.round(tSec / 60));
-    return title + 'No FSUIPC telemetry for ' + tMin + ' min while airborne (CTD canary)';
+    const u    = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
+    const display = (u === 'seconds') ? (tSec + ' s') : (Math.max(1, Math.round(tSec / 60)) + ' min');
+    return title + 'No FSUIPC telemetry for ' + display + ' while airborne (CTD canary)';
+  }
+  if (a.type === 'conditional') {
+    const conds = (a.params && Array.isArray(a.params.conditions)) ? a.params.conditions.filter(c => c && c.enabled) : [];
+    if (conds.length === 0) return title + '(no conditions enabled)';
+    const combinator = (a.params && a.params.combinator === 'OR') ? ' OR ' : ' AND ';
+    const parts = conds.map(c => {
+      const def = _afkCondParamDef(c.param);
+      if (!def) return '?';
+      const v = parseFloat(c.value);
+      return def.label.replace(/ \(.*\)$/, '') + ' ' + (c.op || '>') + ' ' + (isFinite(v) ? _afkCondFmtValue(def, v) : '?');
+    });
+    return title + parts.join(combinator);
   }
   return title;
 }
@@ -13607,6 +13846,12 @@ function _afkRenderGroupHtml(gid, members) {
             'onkeydown="_afkGroupRenameKey(event,\'' + gid + '\')" ' +
             'title="Click to rename the group (max 30 chars). Plain text only — smart-quote / em-dash / ellipsis auto-normalize to ASCII; characters outside Latin-1 (CJK, emoji) are dropped because the Mobile Alerts HTTP header layer can&apos;t carry them.">' + name + '</span>' +
       '<span class="afk-group-count">' + members.length + ' member' + (members.length === 1 ? '' : 's') + '</span>' +
+      // v2.91.0 — Mode toggle: Cascade (default) vs AND. Click to flip.
+      // Tooltip explains the semantic difference. Visually distinct pill
+      // so the mode is at-a-glance readable in the group header.
+      '<button class="afk-group-mode" data-mode="' + (g.mode === 'and' ? 'and' : 'cascade') + '" onclick="event.stopPropagation();_afkGroupToggleMode(\'' + gid + '\')" title="Group mode. CASCADE (default): the first member to trip fires the alert and disables every other member. AND: every member must reach a tripped state simultaneously before the group fires; one drop-out disarms the group. Click to flip.">' +
+        (g.mode === 'and' ? 'AND' : 'CASCADE') +
+      '</button>' +
       '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
     '</div>' +
     '<div class="afk-group-body">' +
@@ -14057,6 +14302,14 @@ function _afkGroupUngroup(gid) {
   _afkGroups.ungroup(gid);
   _afkRenderAlarmList();
 }
+// v2.91.0 — Flip group mode between cascade and AND.
+function _afkGroupToggleMode(gid) {
+  const cur = _afkGroupMode(gid);
+  const next = (cur === 'and') ? 'cascade' : 'and';
+  _afkGroups.setMode(gid, next);
+  _aaRtToast('⛓ Group mode: ' + (next === 'and' ? 'AND (all members must trip simultaneously)' : 'CASCADE (first member fires, rest disable)'), 'ok');
+  _afkRenderAlarmList();
+}
 
 // Master-toggle handler — drives every member's enabled state at once.
 // Mirrors _afkToggleAlarm's per-type re-arm semantics (timer reschedule,
@@ -14461,17 +14714,81 @@ function _afkRenderEditor(a) {
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
       '</div>';
   }
+  if (a.type === 'conditional') {
+    // v2.91.0 — Conditional alarm editor: combinator dropdown + dynamic
+    // list of condition rows (param / op / value [/ waypoint picker] / ✕).
+    const combinator = (a.params && a.params.combinator === 'OR') ? 'OR' : 'AND';
+    const conds      = (a.params && Array.isArray(a.params.conditions)) ? a.params.conditions : [];
+    const fp     = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    const fixes  = (fp && fp.navlog && fp.navlog.fix)
+      ? (Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix])
+      : [];
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Combinator</span>' +
+        '<select class="afk-select" onchange="_afkSetCondCombinator(' + a.id + ', this.value)" title="AND: every enabled condition must be met simultaneously. OR: any one enabled condition met fires the alert.">' +
+          '<option value="AND"' + (combinator === 'AND' ? ' selected' : '') + '>AND — every enabled condition must hold</option>' +
+          '<option value="OR"' +  (combinator === 'OR'  ? ' selected' : '') + '>OR — any enabled condition fires</option>' +
+        '</select>' +
+      '</div>';
+    body += '<div class="afk-cond-list" id="afkCondList_' + a.id + '">';
+    conds.forEach((c, idx) => {
+      const def    = _afkCondParamDef(c.param) || _AFK_COND_PARAMS[0];
+      const op     = (c.op === '<') ? '<' : '>';
+      const valTxt = (c.valueText != null) ? String(c.valueText) : (c.value != null ? String(c.value) : '');
+      const hint   = _afkCondFmtValue(def, parseFloat(c.value));
+      const paramOpts = _AFK_COND_PARAMS.map(p => '<option value="' + p.id + '"' + (p.id === c.param ? ' selected' : '') + '>' + p.label + '</option>').join('');
+      body +=
+        '<div class="afk-cond-row" data-cond-idx="' + idx + '">' +
+          '<label class="afk-toggle afk-cond-en" title="Enable / disable this condition without removing it.">' +
+            '<input type="checkbox"' + (c.enabled !== false ? ' checked' : '') + ' onchange="_afkSetCondEnabled(' + a.id + ', ' + idx + ', this.checked)">' +
+          '</label>' +
+          '<select class="afk-select afk-cond-param" onchange="_afkSetCondParam(' + a.id + ', ' + idx + ', this.value)" title="Telemetry parameter to compare">' +
+            paramOpts +
+          '</select>' +
+          '<select class="afk-select afk-cond-op" onchange="_afkSetCondOp(' + a.id + ', ' + idx + ', this.value)" title="Comparator">' +
+            '<option value=">"' + (op === '>' ? ' selected' : '') + '>&gt;</option>' +
+            '<option value="<"' + (op === '<' ? ' selected' : '') + '>&lt;</option>' +
+          '</select>' +
+          '<input type="text" class="afk-input afk-cond-val" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 1h 30m or 1:30:00' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)" title="' + (def.isTime ? 'Accepts seconds (e.g. 3600), M:SS / H:MM:SS, or H/M/S tokens (e.g. 1h 30m 22s).' : (def.id === 'alt' ? 'Accepts feet or FL form.' : 'Numeric ' + def.unit + ' value.')) + '">' +
+          '<span class="afk-cond-unit">' + (def.isTime ? '' : (def.unit + ' ')) + '<span class="afk-cond-hint" id="afkCondHint_' + a.id + '_' + idx + '">' + hint + '</span></span>';
+      if (def.needsWp) {
+        const noFp = fixes.length === 0;
+        const wpOpts = fixes.map(f => '<option value="' + (f.ident || '').replace(/"/g, '&quot;') + '"' + (c.wp === f.ident ? ' selected' : '') + '>' + (f.ident || '') + '</option>').join('');
+        body +=
+          '<select class="afk-select afk-cond-wp" onchange="_afkSetCondWp(' + a.id + ', ' + idx + ', this.value)" title="Pick a waypoint from the loaded SimBrief flight plan."' + (noFp ? ' disabled' : '') + '>' +
+            (noFp ? '<option>(load SimBrief plan)</option>' : ('<option value="">— pick —</option>' + wpOpts)) +
+          '</select>';
+      }
+      body +=
+          '<button class="afk-icon-btn danger afk-cond-del" onclick="_afkRemoveCond(' + a.id + ', ' + idx + ')" title="Remove this condition">✕</button>' +
+        '</div>';
+    });
+    body += '</div>';
+    body += '<button class="rg-btn afk-cond-add" onclick="_afkAddCond(' + a.id + ')" title="Add another condition row" style="margin-top:0.3rem">+ Add condition</button>';
+  }
   if (a.type === 'telemetry-loss') {
     // v2.90.0 — Single tuning knob: how long the gap between FSUIPC fixes
-    // must be before the CTD canary trips. Value is stored as seconds but
-    // the user input is minutes (whole minutes are the right resolution
-    // for the use case — sim freezes / CTD episodes / pause-menu trips).
-    const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
-    const tMin = Math.max(1, Math.round(tSec / 60));
+    // must be before the CTD canary trips.
+    // v2.91.0 — Unit picker (minutes / seconds). Stored as seconds in
+    // `thresholdSec`; `thresholdUnit` controls which value is displayed
+    // in the input. Seconds mode allows down to 10 s (the watchdog runs
+    // every 15 s so detection latency is at least one watchdog cycle
+    // regardless of threshold — documented in the title attribute).
+    const tSec  = parseInt((a.params && a.params.thresholdSec) || 300, 10);
+    const tUnit = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
+    const tVal  = (tUnit === 'seconds')
+      ? Math.max(10, Math.round(tSec))
+      : Math.max(1,  Math.round(tSec / 60));
+    const tMin  = (tUnit === 'seconds') ? 10 : 1;
+    const tMax  = (tUnit === 'seconds') ? 600 : 60;
     body =
       '<div class="afk-edit-row"><span class="afk-edit-label">Trip after</span>' +
-        '<input type="number" class="afk-input" style="width:80px;" min="1" max="60" step="1" value="' + tMin + '" oninput="_afkSetTelemetryLossMinutes(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm.">' +
-        '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">minutes of silence (in flight, FSUIPC source)</span>' +
+        '<input type="number" class="afk-input" style="width:80px;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 10 s, but note that the watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold.">' +
+        '<select class="afk-select" style="width:auto" onchange="_afkSetTelemetryLossUnit(' + a.id + ', this.value)" title="Switch between minutes and seconds.">' +
+          '<option value="minutes"' + (tUnit === 'minutes' ? ' selected' : '') + '>minutes</option>' +
+          '<option value="seconds"' + (tUnit === 'seconds' ? ' selected' : '') + '>seconds</option>' +
+        '</select>' +
+        '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">of silence (in flight, FSUIPC source)</span>' +
       '</div>' +
       '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
         'Watches FSUIPC for a stuck-or-stopped telemetry stream while airborne. Sits quiet on the ground, with no live source, or while fixes are flowing normally.' +
@@ -14726,20 +15043,142 @@ function _afkUpdateTimerCardLive(a) {
   }
 }
 
-// v2.90.0 — Telemetry-loss threshold setter. Input is in minutes (the
-// natural unit for "how long before this counts as a crash") and stored
-// as seconds (consistent with other duration fields). Min 1 min, no
-// upper cap enforced beyond the input's max=60.
-function _afkSetTelemetryLossMinutes(id, v) {
+// v2.91.0 — Conditional alarm setters. Each one mutates the alarm's
+// params.conditions array (creating it if missing) and persists. Most
+// re-render the alarm list so the editor reflects the change; the
+// value setter does a live-update path to preserve input focus while
+// the user is typing.
+function _afkSetCondCombinator(id, v) {
   const a = _afkAlarms.get(id); if (!a) return;
-  const min = Math.max(1, parseInt(v, 10) || 5);
-  a.params.thresholdSec = min * 60;
+  a.params.combinator = (v === 'OR') ? 'OR' : 'AND';
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+function _afkAddCond(id) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.conditions = a.params.conditions || [];
+  a.params.conditions.push({ enabled: true, param: 'gs', op: '>', value: 200, valueText: '200' });
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList();
+}
+function _afkRemoveCond(id, idx) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  if (!Array.isArray(a.params.conditions)) return;
+  a.params.conditions.splice(idx, 1);
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList();
+}
+function _afkSetCondEnabled(id, idx, on) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  c.enabled = !!on;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+function _afkSetCondParam(id, idx, paramId) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  const def = _afkCondParamDef(paramId); if (!def) return;
+  c.param = paramId;
+  // Re-seed value to the param's default since units changed.
+  c.value = def.defaultVal;
+  c.valueText = String(def.defaultVal);
+  if (!def.needsWp) delete c.wp; else c.wp = c.wp || '';
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  _afkRenderAlarmList();
+}
+function _afkSetCondOp(id, idx, op) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  c.op = (op === '<') ? '<' : '>';
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+function _afkSetCondValue(id, idx, text) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  const def = _afkCondParamDef(c.param); if (!def) return;
+  c.valueText = text || '';
+  const parsed = _afkCondParseValue(def, text);
+  c.value = isFinite(parsed) ? parsed : 0;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  // Live-update the parsed-value hint span without re-rendering the
+  // whole card (keeps input focus).
+  const hint = document.getElementById('afkCondHint_' + id + '_' + idx);
+  if (hint) hint.textContent = _afkCondFmtValue(def, c.value);
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+function _afkSetCondWp(id, idx, wp) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  c.wp = wp || '';
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+}
+
+// v2.90.0 — Telemetry-loss threshold setter. Storage is seconds.
+// v2.91.0 — Split into two setters so the unit (minutes / seconds) is a
+// first-class param. The input value is interpreted in the current unit.
+function _afkSetTelemetryLossThreshold(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const unit = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
+  const num  = parseFloat(v);
+  if (!isFinite(num)) return;
+  if (unit === 'seconds') {
+    a.params.thresholdSec = Math.max(10, Math.round(num));
+  } else {
+    a.params.thresholdSec = Math.max(60, Math.round(num) * 60);
+  }
   _afkAlarms.update(id, { params: a.params });
   const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
   if (card) {
     const sub = card.querySelector('.afk-card-desc-sub');
     if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
   }
+}
+// Switch units on the fly. The stored thresholdSec stays the same — only
+// the display (and edit) unit changes. Caps re-clamped: seconds → ≥ 10 s,
+// minutes → ≥ 60 s (so the input never displays a fractional minute).
+function _afkSetTelemetryLossUnit(id, u) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const next = (u === 'seconds') ? 'seconds' : 'minutes';
+  a.params.thresholdUnit = next;
+  let sec = parseInt(a.params.thresholdSec || 300, 10);
+  if (next === 'seconds' && sec < 10) sec = 10;
+  if (next === 'minutes' && sec < 60) sec = 60;
+  a.params.thresholdSec = sec;
+  _afkAlarms.update(id, { params: a.params });
+  _afkRenderAlarmList(); // re-render so the input min/max and shown value flip
+}
+// Legacy v2.90.x setter — kept as a forwarder so any external bookmark /
+// macro that called it still works.
+function _afkSetTelemetryLossMinutes(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.thresholdUnit = 'minutes';
+  _afkSetTelemetryLossThreshold(id, v);
 }
 
 function _afkSetAltDirection(id, dir) {
@@ -14796,6 +15235,18 @@ function _afkAddAlarm(type) {
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  if (type === 'conditional') {
+    // v2.91.0 — Seed a single example condition (Altitude > 10,000) so the
+    // editor renders with a sensible starter row instead of an empty
+    // shell. User can add / remove / disable rows freely.
+    base.params = {
+      combinator: 'AND',
+      conditions: [
+        { enabled: true, param: 'alt', op: '>', value: 10000, valueText: '10000' },
+      ],
+    };
+    base.state = { fired: false };
+  }
   if (type === 'telemetry-loss') {
     // v2.90.0 — Default 5 min so opening MSFS Map / ATC / Settings (which
     // pauses the sim and freezes FSUIPC pushes) doesn't false-alarm.
@@ -14805,7 +15256,7 @@ function _afkAddAlarm(type) {
     // v2.90.1 — Default to Klaxon. CTD is a genuine emergency cue — the
     // user wants the loudest, most attention-grabbing sound in the library
     // by default, not the gentle Digital Clock.
-    base.params = { thresholdSec: 300 };
+    base.params = { thresholdSec: 300, thresholdUnit: 'minutes' };
     base.state  = { fired: false, sourceArmedAt: performance.now() };
     base.sound  = 'klaxon';
   }
@@ -23472,7 +23923,7 @@ function _rgRenderMatrix() {
 
   // Header row (arrival airports = columns)
   // v2.87.9 — Diagonal-split corner cell (same design as main matrix).
-  let hdr = '<tr><th class="rg-col-hdr rg-corner"><div class="matrix-corner-diag"><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>';
+  let hdr = '<tr><th class="rg-col-hdr rg-corner"><div class="matrix-corner-diag"><svg class="matrix-corner-diag-line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="0" x2="100" y2="100" /></svg><span class="matrix-corner-diag-arr">ARR</span><span class="matrix-corner-diag-dep">DEP</span></div></th>';
   for (const a of sortedArr) {
     const oi  = ownerOf(a.icao);
     const col = oi ? oi.color : 'rgba(255,255,255,0.1)';
@@ -25774,7 +26225,8 @@ function rgSendToFlightPlanner() {
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>Note:</strong> because Adaptive mode depends on having observed a real climb, arming a Cruise Reached alarm <em>while already in cruise</em> (e.g. set up after page-reload mid-flight, or after the alarm has already fired once) won&rsquo;t re-fire on its own.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
-              <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Re-arms automatically on the next ground transition for the next flight. Only setting: <em>Trip after N minutes</em> (1&ndash;60).</li>
+              <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Set duration</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -25784,6 +26236,11 @@ function rgSendToFlightPlanner() {
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
             <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
+            <strong>Group mode &mdash; CASCADE vs AND</strong> (v2.91.0+) &mdash; a pill on the group header (default <em>CASCADE</em>) toggles between two semantically distinct modes. Click to flip:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is dismissed + disabled (the eval-time gate prevents siblings from firing while the parent is tripped). One acknowledgement covers the whole bundle. Best for related-alarms-where-only-one-needs-to-fire scenarios.</li>
+              <li><strong>AND</strong> &mdash; every member must reach a tripped state <em>simultaneously</em> before the group fires its single composite alert. Members can individually trip in any order; while the group is incomplete, those trips are silent (no overlay, no sound, no mobile push). The moment the last member trips, the whole group fires at once. If any member's condition stops being met before completion, the group disarms. Best for compound-milestone scenarios &mdash; e.g. a group of [Cruise Reached] + [🧩 Conditional: GS &gt; 400 AND alt &gt; FL350] fires only when both conditions hold simultaneously.</li>
+            </ul><br/>
 
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
@@ -25887,10 +26344,26 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.91.0</span>
+          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New alert type: 🧩 Conditional.</strong> Fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong> + <strong>comparator</strong> (&gt; or &lt;) + <strong>threshold</strong>. The combinator chooses <strong>AND</strong> (every enabled row must hold) or <strong>OR</strong> (any row fires). Ten parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with waypoint picker), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time fields accept seconds, <code>H:MM:SS</code>, or H/M/S tokens. Per-row checkboxes disable conditions without removing them. One-shot per flight; auto-rearms on next ground transition. Example use: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+          <li><strong>⛓ Alert Groups &mdash; new AND mode.</strong> A pill on the group header toggles between <em>CASCADE</em> (default, pre-v2.91.0 behaviour — first member fires and disables the rest) and <em>AND</em> (every member must reach a tripped state simultaneously before the group fires its single composite alert; individual member trips are silent while the group is incomplete; one drop-out disarms). Best for compound milestones — e.g. <em>[Cruise Reached] + [Conditional: GS &gt; 400 AND alt &gt; FL350]</em> fires only when both hold at once. AND mode skips the cascade sibling-disable so every member can keep evaluating.</li>
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; seconds unit support.</strong> The threshold now has a minutes / seconds unit picker. Use seconds (down to 10 s) when you want fast detection of a stuck telemetry stream &mdash; e.g. a 15 s threshold for a CTD canary tuned tighter than the default 5 min pause-menu tolerance. Note the 15 s watchdog interval still sets a floor on actual detection latency (a 15 s threshold fires somewhere between 15 s and 30 s after stream silence). Eval floor lowered from 30 s to 10 s.</li>
+          <li><strong>Region matrix &mdash; diagonal line now extends corner-to-corner.</strong> The CSS-gradient stripe that the corner cell used had its ends fall on the cell EDGES (not corners) for non-square cells. Switched to an inline SVG line that goes exactly from top-left corner to bottom-right corner regardless of aspect ratio. Shared between the main matrix and Region Mode matrix.</li>
+          <li><strong>Region matrix corner cell &mdash; ARR text moved up 15 px.</strong> Combined with the new corner-to-corner diagonal, the bigger Region Mode cell layout was landing ARR uncomfortably close to the line. Region Mode only; main matrix cell unchanged.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.90.11</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -34226,6 +34699,7 @@ function rgSendToFlightPlanner() {
       <div class="afk-add-col">
         <div class="afk-add-col-title">Add Alert <span class="afk-add-col-hint" title="Click to append at the end of the list, or drag onto the alerts area to insert at a specific position.">(or drag →)</span></div>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'alt-min')"  ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('alt-min')"><span class="afk-add-btn-icon">↕</span><span>Altitude</span></button>
+        <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'conditional')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('conditional')" title="Fire when a custom combination of live telemetry parameters is met. Pick from Altitude / IAS / GS / VS / distances / times, set thresholds, combine with AND or OR."><span class="afk-add-btn-icon">🧩</span><span>Conditional</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'cruise')"   ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('cruise')"><span class="afk-add-btn-icon">─</span><span>Cruise Reached</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'descent')"  ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('descent')"><span class="afk-add-btn-icon">↘</span><span>Descent Started</span></button>
         <button class="afk-add-btn" draggable="true" ondragstart="_afkAddDragStart(event,'geofence')" ondragend="_afkAddDragEnd(event)" onclick="_afkAddAlarm('geofence')"><span class="afk-add-btn-icon">⊙</span><span>Geofence</span></button>
