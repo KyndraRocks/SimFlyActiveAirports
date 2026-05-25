@@ -5348,7 +5348,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.90.9';
+const APP_VERSION = '2.90.10';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10355,7 +10355,7 @@ const _MA_PROVIDERS = [
     blurb: 'Free, no account. Install the ntfy app on your phone, subscribe to your topic name, and you\'re done. Pick a long random topic — anyone who guesses it can read your alerts. Topic name MUST be 8 characters or fewer.',
     fields: [
       { key: 'topic', label: 'Topic',  type: 'text', placeholder: 'sfly9f3x', hint: 'Anything unguessable, 8 characters max. This IS your channel — keep it secret.', maxlength: 8 },
-      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Shown as the notification title on your phone. The triggering alert type is auto-appended (e.g. “… — Top of Descent”).' },
+      { key: 'title', label: 'Title (optional)', type: 'text', placeholder: 'SimFly Active Airports', hint: 'Shown as the notification title on your phone. The triggering alert type is auto-appended (e.g. "… - Top of Descent"). Plain ASCII / Latin-1 only — smart-quote, em-dash and ellipsis are auto-normalized as you type; anything outside Latin-1 (CJK, emoji, etc.) is dropped because ntfy carries the title in an HTTP header, which can\'t represent those code points.' },
       { key: 'priority', label: 'Priority', type: 'select', options: ['max (sound + bypass Do Not Disturb)', 'high (sound + heads-up)', 'default (silent notification)', 'low', 'min'], hint: 'Android plays the notification sound on max or high — default and below stay silent. Max also bypasses Do Not Disturb so it wakes you. Defaults to Max.' }
     ],
     build(cfg, msg) {
@@ -13548,7 +13548,7 @@ function _afkRenderCardHtml(a) {
             ' oninput="_afkNameInputCap(this)"' +
             ' onblur="_afkAlarmRenameBlur(event,' + a.id + ')"' +
             ' onkeydown="_afkAlarmRenameKey(event,' + a.id + ')"' +
-            ' title="Click to name this alert (max 30 chars). Shows in the alarm pin label, Next Alert telemetry, and Alert History log.">' +
+            ' title="Click to name this alert (max 30 chars). Shows in the alarm pin label, Next Alert telemetry, and Alert History log. Use plain text — letters, digits, basic punctuation. Smart-quote / em-dash / ellipsis are auto-normalized to ASCII as you type; characters outside Latin-1 (e.g. CJK, emoji) are dropped because the Mobile Alerts HTTP header layer can&apos;t carry them.">' +
             (((a.params && a.params.label) || '').replace(/</g, '&lt;')) +
           '</span>' +
           '<span class="afk-card-name-sep" aria-hidden="true"></span>' +
@@ -13598,7 +13598,7 @@ function _afkRenderGroupHtml(gid, members) {
             'oninput="_afkNameInputCap(this)" ' +
             'onblur="_afkGroupRenameBlur(event,\'' + gid + '\')" ' +
             'onkeydown="_afkGroupRenameKey(event,\'' + gid + '\')" ' +
-            'title="Click to rename the group (max 30 chars)">' + name + '</span>' +
+            'title="Click to rename the group (max 30 chars). Plain text only — smart-quote / em-dash / ellipsis auto-normalize to ASCII; characters outside Latin-1 (CJK, emoji) are dropped because the Mobile Alerts HTTP header layer can&apos;t carry them.">' + name + '</span>' +
       '<span class="afk-group-count">' + members.length + ' member' + (members.length === 1 ? '' : 's') + '</span>' +
       '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
     '</div>' +
@@ -14085,15 +14085,30 @@ function _afkGroupToggleAll(gid, on) {
 // sit alongside other UI (member-count chip, type label, count badge)
 // so they need to stay short enough not to push siblings off-row.
 const _AFK_NAME_MAX = 30;
-// Enforce the cap live as the user types in a contenteditable name span.
-// Trims back to the cap, restores caret to the end so typing past the
-// limit doesn't bounce the cursor home.
+// v2.89.0 — Enforce the 30-char cap live as the user types in a
+// contenteditable name span.
+//
+// v2.90.10 — Also Latin-1-normalize the contents on every keystroke. The
+// per-alert name lands in the Mobile Alerts message body (UTF-8 safe) AND
+// could in future feed an HTTP header somewhere, so cleaning it at input
+// time matches the Mobile Alerts header restriction (ISO-8859-1, code
+// points ≤ 0xFF) regardless of where the string ends up. `_maToLatin1Safe`
+// transliterates the common Unicode typographic punctuation (em/en
+// dashes, curly quotes, ellipsis) back to ASCII equivalents and drops
+// anything still > 0xFF — so typing `"Top of Descent — set up"` silently
+// becomes `"Top of Descent - set up"`, and pasting `"中文"` ends up empty.
+// The tooltip on the name span explains.
 function _afkNameInputCap(el) {
   if (!el) return;
-  const t = el.textContent || '';
-  if (t.length <= _AFK_NAME_MAX) return;
-  el.textContent = t.slice(0, _AFK_NAME_MAX);
-  // Move caret to end of trimmed text.
+  const orig = el.textContent || '';
+  // Latin-1 normalise first, then enforce length cap.
+  let t = (typeof _maToLatin1Safe === 'function') ? _maToLatin1Safe(orig) : orig;
+  if (t.length > _AFK_NAME_MAX) t = t.slice(0, _AFK_NAME_MAX);
+  if (t === orig) return;
+  el.textContent = t;
+  // Move caret to end after any normalisation (simpler than re-positioning
+  // mid-text after a strip; the user is typing at the end anyway in the
+  // overwhelming majority of cases).
   try {
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -14105,7 +14120,10 @@ function _afkNameInputCap(el) {
 }
 function _afkGroupRenameBlur(ev, gid) {
   const el = ev.currentTarget;
-  const name = (el.textContent || '').trim();
+  // v2.90.10 — backstop Latin-1 clean at commit (the live input handler
+  // already does this; this is defense for programmatic textContent edits).
+  let name = (el.textContent || '').trim();
+  if (typeof _maToLatin1Safe === 'function') name = _maToLatin1Safe(name);
   _afkGroups.rename(gid, name);
 }
 function _afkGroupRenameKey(ev, gid) {
@@ -14128,7 +14146,10 @@ function _afkGroupRenameKey(ev, gid) {
 // rename surfaces in the Alert History log entries automatically.
 function _afkAlarmRenameBlur(ev, id) {
   const el = ev.currentTarget;
-  const name = (el.textContent || '').trim().slice(0, _AFK_NAME_MAX);
+  // v2.90.10 — backstop Latin-1 clean at commit (matches _afkGroupRenameBlur).
+  let raw = (el.textContent || '').trim();
+  if (typeof _maToLatin1Safe === 'function') raw = _maToLatin1Safe(raw);
+  const name = raw.slice(0, _AFK_NAME_MAX);
   const a = _afkAlarms.get(id);
   if (!a) return;
   const params = Object.assign({}, a.params || {});
@@ -25784,7 +25805,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Provider presets</strong> (pick one):
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
-              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something unguessable (the app suggests random strings; the input is now capped at <strong>8 characters</strong>). Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em> so alerts wake you. The triggering alarm type is appended to the notification title automatically (e.g. <em>&ldquo;SimFly Active Airports - Top of Descent&rdquo;</em>). Best for getting going in under a minute with zero setup cost. Every other provider in the dropdown is marked <em>(beta)</em>.</li>
+              <li><strong>ntfy.sh</strong> &mdash; free, no account. Install the <em>ntfy</em> app on your phone, subscribe to the topic name you choose, and you&rsquo;re done. The topic IS the channel &mdash; anyone who guesses it can read your alerts, so pick something unguessable (the app suggests random strings; the input is now capped at <strong>8 characters</strong>). Priority defaults to <em>Max (sound + bypass Do Not Disturb)</em> so alerts wake you. The triggering alarm type is appended to the notification title automatically (e.g. <em>&ldquo;SimFly Active Airports - Top of Descent&rdquo;</em>). <strong>Title characters are Latin-1 only</strong> &mdash; ntfy carries the title in an HTTP header so anything outside that range (CJK, emoji, etc.) is stripped as you type. Smart-quote, em-dash and ellipsis are auto-normalized to ASCII so you don&rsquo;t lose meaning. Best for getting going in under a minute with zero setup cost. Every other provider in the dropdown is marked <em>(beta)</em>.</li>
               <li><strong>Pushover</strong> &mdash; one-time US$5 per platform (iOS / Android / desktop). Install Pushover, copy your <em>User Key</em>, create an application at <em>pushover.net/apps</em> for an <em>API Token</em>, paste both in. Most polished delivery of the bunch &mdash; per-message priorities, custom alert sounds, and emergency re-alerting until acknowledged.</li>
               <li><strong>Discord webhook</strong> &mdash; in any Discord channel: <em>Edit Channel &rarr; Integrations &rarr; Webhooks &rarr; New Webhook &rarr; Copy URL</em>. Paste the URL. Alerts land as messages in that channel, and Discord&rsquo;s mobile app handles the push notification &mdash; enable channel notifications on your phone. Optionally override the webhook&rsquo;s display name with a <em>Username</em> field.</li>
               <li><strong>Telegram bot</strong> &mdash; chat with <em>@BotFather</em> in Telegram and run <code>/newbot</code> to get a <em>Bot Token</em>. Then message your bot once and visit <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> in a browser to find your numeric <em>Chat ID</em>. Telegram bots can only send to chats they&rsquo;ve been added to.</li>
@@ -25859,10 +25880,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.90.10</span>
+          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Mobile Alerts — non-Latin-1 input is now prevented at the keystroke, not just sanitized at send.</strong> The v2.90.9 fix sanitized headers right before <code>fetch()</code>, which prevented the crash but allowed problematic characters to be stored silently and quietly dropped from outgoing pushes. v2.90.10 catches them at input time on the three surfaces that feed HTTP headers (or could in future): the <strong>per-alert name</strong> field on every alarm card, the <strong>group name</strong> field on every group header, and the <strong>ntfy Title</strong> field in Mobile Alerts settings. As you type, the common typographic Unicode (em/en dashes, curly quotes, ellipsis) is transliterated to ASCII equivalents on the fly; anything outside Latin-1 (CJK, emoji, RTL scripts) is dropped before it ever lands in localStorage. Caret position is preserved as best as possible. Tooltips on the affected inputs and the in-app Help &rarr; Mobile Alerts &rarr; ntfy entry now explain the restriction so the silent character disappearance isn&rsquo;t surprising. Blur-time backstop also runs the same cleaner so any programmatic textContent edit gets normalized too.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.90.9</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -34098,7 +34131,25 @@ function rgSendToFlightPlanner() {
   function _maFieldChange(el) {
     if (!_maDraft) return;
     const k = el.getAttribute('data-ma-key');
-    if (k) _maDraft.fields[k] = el.value;
+    if (!k) return;
+    // v2.90.10 — ntfy Title lands in an HTTP header (ISO-8859-1 only).
+    // Live-strip non-Latin-1 chars on every input so the user can't even
+    // sneak an em-dash or CJK character past us into storage. Other
+    // providers' Title fields go in the request BODY (UTF-8 fine), so
+    // we don't touch them. _maToLatin1Safe transliterates the common
+    // typographic Unicode to ASCII (em-dash → -, curly quotes → ',
+    // ellipsis → ...) and drops anything still > 0xFF.
+    if (_maDraft.provider === 'ntfy' && k === 'title' && el.tagName === 'INPUT') {
+      const before = el.value;
+      const cleaned = _maToLatin1Safe(before);
+      if (before !== cleaned) {
+        const pos = el.selectionStart;
+        el.value = cleaned;
+        const newPos = Math.min(pos != null ? pos : cleaned.length, cleaned.length);
+        try { el.setSelectionRange(newPos, newPos); } catch (_) {}
+      }
+    }
+    _maDraft.fields[k] = el.value;
   }
   function _maStatusInfo(t) { const s = document.getElementById('maStatus'); s.className = 'ma-status info'; s.textContent = t || ''; }
   function _maStatusOk(t)   { const s = document.getElementById('maStatus'); s.className = 'ma-status ok';   s.textContent = t; }
