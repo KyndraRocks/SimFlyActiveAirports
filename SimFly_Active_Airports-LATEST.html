@@ -4275,12 +4275,39 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     cursor:pointer; line-height:1.1;
     margin-right:0.25rem;
   }
-  .afk-group-mode[data-mode="and"] {
+  /* v2.91.0 legacy alias kept for any in-flight saved groups. */
+  .afk-group-mode[data-mode="and"],
+  .afk-group-mode[data-mode="concurrent"] {
     background:rgba(255,170,0,0.14);
     border-color:rgba(255,170,0,0.55);
     color:#ffc870;
   }
+  /* v2.92.0 — sequential mode in a distinct violet so the three modes
+     are visually distinguishable at a glance in the group header. */
+  .afk-group-mode[data-mode="sequential"] {
+    background:rgba(195,120,255,0.16);
+    border-color:rgba(195,120,255,0.55);
+    color:#d0a0ff;
+  }
   .afk-group-mode:hover { filter:brightness(1.18); }
+  /* v2.92.0 — Visual ✓ pip on alarm cards whose member has tripped but
+     the parent group hasn't fired yet (concurrent in progress, or
+     sequential awaiting other members). Sits to the right of the card
+     name, distinct enough to read at a glance, not so loud that it
+     competes with the actual ALARM trip overlay. */
+  .afk-card-tripped-pip {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px;
+    margin-left:0.4rem;
+    border-radius:50%;
+    background:rgba(0,230,118,0.18);
+    border:1px solid rgba(0,230,118,0.6);
+    color:#00e676;
+    font-size:0.78rem;
+    font-weight:700;
+    line-height:1;
+  }
+  body.light-mode .afk-card-tripped-pip { background:rgba(0,150,80,0.18); border-color:rgba(0,150,80,0.55); color:#008040; }
   .afk-group-body { display:flex; flex-direction:column; gap:0.35rem; }
   .afk-group.collapsed .afk-group-body { display:none; }
   .afk-card.grouped {
@@ -5410,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.91.0';
+const APP_VERSION = '2.92.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12269,21 +12296,37 @@ const _afkGroups = (() => {
     g.collapsed = !!on;
     _save();
   }
-  // v2.91.0 — Group mode toggle. 'cascade' (default, pre-v2.91.0
-  // behaviour): first member to trip fires the user-visible alert and
-  // every other member is dismissed + disabled. 'and': every member can
-  // reach tripped status independently; the user-visible alert (overlay
-  // + sound + mobile push) only fires when ALL members are
-  // simultaneously tripped. If any drops back to armed (condition
-  // reverts) the group disarms until the last member trips again.
+  // v2.91.0 introduced 'cascade' / 'and'. v2.92.0 expands to three
+  // explicit modes:
+  //   'cascade'    — pre-v2.91.0 default. First member to trip fires the
+  //                  user-visible alert; every other member is auto-
+  //                  dismissed + disabled. One acknowledgement covers the
+  //                  whole bundle.
+  //   'concurrent' — every member must be in tripped status at the same
+  //                  tick before the group fires. If any drops back to
+  //                  armed (condition reverts, member dismissed
+  //                  individually, etc.) the group disarms. Renamed from
+  //                  'and' for clarity. 'and' is preserved as a read alias
+  //                  for backwards-compat with v2.91.0 saved data.
+  //   'sequential' — each member's first trip is silently noted and
+  //                  persists (state.sequentialMet) for the rest of the
+  //                  flight. When ALL members have tripped at any point
+  //                  in the mission (sequentially is fine), the group
+  //                  fires. Visual ✓ pip on cards that have tripped but
+  //                  the group hasn't fired yet. Ground transition clears
+  //                  the sequentialMet flags.
   function setMode(id, mode) {
     const g = groups[id]; if (!g) return;
-    g.mode = (mode === 'and') ? 'and' : 'cascade';
+    g.mode = (mode === 'and' || mode === 'concurrent') ? 'concurrent'
+           : (mode === 'sequential') ? 'sequential'
+           : 'cascade';
     _save();
   }
   function getMode(id) {
     const g = groups[id]; if (!g) return 'cascade';
-    return (g.mode === 'and') ? 'and' : 'cascade';
+    if (g.mode === 'sequential') return 'sequential';
+    if (g.mode === 'concurrent' || g.mode === 'and') return 'concurrent';
+    return 'cascade';
   }
 
   // Add an existing ungrouped alarm to an existing group.
@@ -12360,13 +12403,21 @@ const _afkGroups = (() => {
   // their original (remapped) `groupId` already in place. Skips the
   // normal "create needs ≥ 2 members" gate because membership is
   // already linked through the imported alarms.
+  // v2.92.2 — Now also threads `mode` through so an imported CONCURRENT
+  // or SEQUENTIAL group keeps its mode instead of silently reverting
+  // to CASCADE. Legacy v2.91.0 saved files with mode='and' are
+  // normalised to 'concurrent' via setMode's input handling.
   function _injectFromImport(gid, meta) {
-    groups[gid] = {
+    const rec = {
       id: gid,
       name: (meta && meta.name) || '',
       collapsed: !!(meta && meta.collapsed),
     };
-    _save();
+    // Mode preservation (v2.92.2 fix). setMode normalises the input
+    // value to one of the three valid canonical modes.
+    groups[gid] = rec;
+    if (meta && meta.mode) setMode(gid, meta.mode);
+    else _save();
   }
 
   _load();
@@ -12376,21 +12427,67 @@ const _afkGroups = (() => {
 
 // v2.91.0 — Top-level helpers used by the alarm eval and tick paths so
 // they don't have to reach into _afkGroups directly.
+// v2.92.0 — extended for the three-mode taxonomy (cascade / concurrent /
+// sequential). _afkGroupCompleted picks the right "all-met" predicate
+// per mode: concurrent uses currently-tripped status; sequential uses
+// the persistent state.sequentialMet flag (so a member that tripped
+// earlier and was dismissed individually still counts).
 function _afkGroupMode(gid) {
   if (!gid || typeof _afkGroups === 'undefined') return 'cascade';
   try { return _afkGroups.getMode(gid); } catch (_) { return 'cascade'; }
 }
-// True if every enabled member of the group is currently tripped. Used
-// to decide whether an AND-mode group should surface its alert to the user.
+// Legacy v2.91.0 name — concurrent semantics.
 function _afkGroupAllTripped(gid) {
   if (!gid) return false;
   const mems = _afkAlarms.list().filter(a => a.groupId === gid);
   if (mems.length === 0) return false;
   for (let i = 0; i < mems.length; i++) {
-    if (!mems[i].enabled) continue;        // disabled members don't gate
+    if (!mems[i].enabled) continue;
     if (mems[i].status !== 'tripped') return false;
   }
   return mems.some(a => a.enabled && a.status === 'tripped');
+}
+// v2.92.0 — mode-aware "is this group ready to fire?" check.
+function _afkGroupCompleted(gid) {
+  const mode = _afkGroupMode(gid);
+  if (mode === 'cascade') return false; // cascade fires per-member, not as a group
+  const mems = _afkAlarms.list().filter(a => a.groupId === gid);
+  if (mems.length === 0) return false;
+  // Need at least one enabled member to ever be "complete"; disabled
+  // members are skipped (they can't ever trip).
+  const enabled = mems.filter(m => m.enabled);
+  if (enabled.length === 0) return false;
+  if (mode === 'concurrent') {
+    // Every enabled member must currently have status === 'tripped'.
+    return enabled.every(m => m.status === 'tripped');
+  }
+  // Sequential: every enabled member must have tripped at some point
+  // this mission (state.sequentialMet is the persistent flag).
+  return enabled.every(m => m.state && (m.state.sequentialMet === true || m.status === 'tripped'));
+}
+// v2.92.0 — has this member's group already fired (composite alert
+// already shown to the user)? Tracked per-group on the group record
+// so we don't re-fire on subsequent ticks. Cleared on ground transition.
+function _afkGroupHasFired(gid) {
+  if (!gid) return false;
+  try {
+    const g = _afkGroups.get(gid);
+    return !!(g && g._fired);
+  } catch (_) { return false; }
+}
+function _afkGroupMarkFired(gid) {
+  if (!gid) return;
+  try {
+    const g = _afkGroups.get(gid);
+    if (g) { g._fired = true; }
+  } catch (_) {}
+}
+function _afkGroupClearFired(gid) {
+  if (!gid) return;
+  try {
+    const g = _afkGroups.get(gid);
+    if (g) { g._fired = false; }
+  } catch (_) {}
 }
 
 // ---------------------- EVALUATORS ----------------------------------------
@@ -12715,11 +12812,12 @@ function _afkEvaluate(alarm, ac) {
   // rest disable" contract. Checking sibling status here closes that
   // window: any time a sibling is already tripped, this alarm cannot
   // fire.
-  // v2.91.0 — Skip the cascade-sibling gate for AND-mode groups. In AND
-  // mode each member needs to be able to reach tripped status
-  // independently; the user-visible side-effects (overlay/sound/mobile)
-  // are gated separately on _afkGroupAllTripped (see _afkTick).
-  if (alarm.groupId && (typeof _afkGroupMode !== 'function' || _afkGroupMode(alarm.groupId) !== 'and')) {
+  // v2.91.0 — Skip the cascade-sibling gate for non-cascade group modes.
+  // In concurrent / sequential mode each member needs to be able to reach
+  // tripped status independently; the user-visible side-effects
+  // (overlay/sound/mobile) are gated separately on _afkGroupCompleted
+  // (see _afkTick). v2.92.0 — recognise both concurrent and sequential.
+  if (alarm.groupId && (typeof _afkGroupMode !== 'function' || _afkGroupMode(alarm.groupId) === 'cascade')) {
     const siblings = _afkAlarms.list();
     for (let i = 0; i < siblings.length; i++) {
       const s = siblings[i];
@@ -12891,6 +12989,9 @@ function _afkTick(data) {
   // flights, so an altitude alarm that tripped on flight A silently never
   // fired on flight B unless the user manually toggled enabled off/on.
   if (_curPhase === 'ground' && _prevPhase && _prevPhase !== 'ground') {
+    // v2.92.0 — Clear the per-group _fired flag so concurrent /
+    // sequential groups can fire again on the next flight.
+    try { _afkGroups.list().forEach(g => { if (g) g._fired = false; }); } catch (_) {}
     _afkAlarms.list().forEach(a => {
       if ((a.type === 'cruise' || a.type === 'descent' || a.type === 'alt-min' || a.type === 'telemetry-loss' || a.type === 'conditional') && a.state && a.state.fired) {
         a.state.fired = false;
@@ -12901,32 +13002,51 @@ function _afkTick(data) {
         // v2.91.0 — conditional auto-rearms too (same one-shot semantics).
         _afkAlarms.update(a.id, { state: a.state });
       }
+      // v2.92.0 — Sequential-group bookkeeping: clear the per-member
+      // sequentialMet flag on every alarm in the queue (not just the
+      // ones that fired this flight — a non-fired member that's part
+      // of a sequential group might still carry a stale flag from a
+      // prior flight that didn't complete).
+      if (a.state && a.state.sequentialMet) {
+        a.state.sequentialMet = false;
+        _afkAlarms.update(a.id, { state: a.state });
+      }
     });
   }
   const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg };
-  // v2.91.0 — AND-mode group gating. Two-pass strategy:
-  //   Pass 1: Evaluate every alarm. Members of AND-mode groups whose
-  //           condition is met set status='tripped' but are NOT added
-  //           to the user-visible newTrips batch — they wait silently
-  //           until every group member is simultaneously tripped.
-  //   Pass 2: For each AND-mode group, if all members are now tripped,
-  //           batch all of them into newTrips so _afkOnTripped fires
-  //           the overlay / sound / mobile push once for the whole group.
+  // v2.91.0 introduced the two-pass group strategy. v2.92.0 extends it
+  // for three modes:
+  //   cascade    — pre-v2.91.0 behavior, member trips go straight to
+  //                newTrips and fire individually
+  //   concurrent — members trip silently; group fires when every member
+  //                is currently in tripped status
+  //   sequential — members trip silently AND set state.sequentialMet
+  //                (persistent until ground transition); group fires
+  //                when every member has tripped at any point this flight
   const newTrips = [];
-  const pendingAndGroups = new Set(); // group ids that had a trip this tick
+  const pendingGroupGroups = new Set(); // group ids whose member tripped this tick (concurrent / sequential)
   _afkAlarms.list().forEach(a => {
     if (_afkEvaluate(a, ac)) {
       _afkAlarms.trip(a.id);
-      if (a.groupId && _afkGroupMode(a.groupId) === 'and') {
-        pendingAndGroups.add(a.groupId);
+      const gMode = a.groupId ? _afkGroupMode(a.groupId) : 'cascade';
+      if (gMode === 'concurrent' || gMode === 'sequential') {
+        // Persist the sequential "this member has tripped" flag so a
+        // sequential group can still complete later even if this
+        // member is later dismissed individually or its status reverts.
+        if (gMode === 'sequential' && a.state) a.state.sequentialMet = true;
+        pendingGroupGroups.add(a.groupId);
       } else {
         newTrips.push(a);
       }
     }
   });
-  // Pass 2: check AND groups for completion.
-  pendingAndGroups.forEach(gid => {
-    if (!_afkGroupAllTripped(gid)) return;
+  // Pass 2: check non-cascade groups for completion. Only fire each
+  // group ONCE per mission (the group._fired flag blocks re-fire until
+  // the next ground transition).
+  pendingGroupGroups.forEach(gid => {
+    if (_afkGroupHasFired(gid)) return;
+    if (!_afkGroupCompleted(gid)) return;
+    _afkGroupMarkFired(gid);
     _afkAlarms.list().forEach(m => {
       if (m.groupId === gid && !newTrips.includes(m)) newTrips.push(m);
     });
@@ -12934,6 +13054,18 @@ function _afkTick(data) {
   // Track takeoff for ELAPSED
   _afkTakeoffTrack(ac);
   if (newTrips.length > 0) _afkOnTripped(newTrips);
+  // v2.92.0 — A non-cascade group having a member just trip silently
+  // changes the ✓ pip state on that card. Cheap to re-render the
+  // alarm list when a group is in flight; we only do it when at least
+  // one non-cascade group had a member trip this tick, AND only when
+  // the Alerts modal is actually open (otherwise the DOM doesn't exist
+  // to update).
+  if (pendingGroupGroups.size > 0) {
+    const cfg = document.getElementById('afkConfigModal');
+    if (cfg && cfg.classList.contains('open')) {
+      try { _afkRenderAlarmList(); } catch (_) {}
+    }
+  }
   _afkUpdateBadge();
   _afkUpdateDataPanel(ac);
   _afkSyncTripOverlay();
@@ -13122,11 +13254,12 @@ function _afkOnTripped(newTrips) {
     // they'll be cascade-dismissed via _afkDismissOne on user action.
     newTrips.forEach(a => {
       if (!a.groupId) return;
-      // v2.91.0 — AND-mode groups don't cascade-disable armed siblings.
-      // In AND mode every member needs to remain capable of tripping so
-      // the group can complete; the v2.87.1 cascade-disable is a
-      // cascade-mode behaviour only.
-      if (_afkGroupMode(a.groupId) === 'and') return;
+      // v2.91.0 — Non-cascade groups don't cascade-disable armed siblings.
+      // In concurrent/sequential mode every member needs to remain
+      // capable of tripping so the group can complete; the v2.87.1
+      // cascade-disable is a cascade-mode behaviour only.
+      // v2.92.0 — recognise both concurrent and sequential.
+      if (_afkGroupMode(a.groupId) !== 'cascade') return;
       _afkAlarms.list().forEach(sib => {
         if (sib.groupId !== a.groupId) return;
         if (sib.id === a.id) return;
@@ -13310,9 +13443,22 @@ function _afkExportAlarms() {
   // Build a { id → group } map of just the groups that have ≥ 2 current
   // members. Alarms keep their `groupId` strings so the import path can
   // remap them onto fresh local group ids.
+  // v2.92.2 — Strip the transient `_fired` per-group flag (added in
+  // v2.92.0 to prevent same-flight re-fire) before serialisation. It's
+  // a per-mission runtime flag and has no meaning across a save/load
+  // cycle. Importing a "true" value would also be ignored by
+  // _injectFromImport, but cleaner to leave it out of the file.
   const usedGroupIds = new Set(alarms.filter(a => a.groupId).map(a => a.groupId));
   const groups = {};
-  _afkGroups.list().forEach(g => { if (usedGroupIds.has(g.id)) groups[g.id] = g; });
+  _afkGroups.list().forEach(g => {
+    if (!usedGroupIds.has(g.id)) return;
+    groups[g.id] = {
+      id:        g.id,
+      name:      g.name || '',
+      collapsed: !!g.collapsed,
+      mode:      g.mode || 'cascade',  // v2.92.2 — preserve mode in export
+    };
+  });
   // v2.85.0 (v3) — bundle the Mobile Alerts provider config alongside so a
   // saved alarm set is fully portable. NB: the file will contain whatever
   // tokens / webhook URLs / topic names the user has configured, which is
@@ -13464,8 +13610,15 @@ function _afkImportAlarms(input) {
       const meta = fileGroups[origGid] || {};
       // Re-use the existing internal create path by setting a known record
       // directly (members are already linked via their `groupId`).
-      _afkGroups._injectFromImport(newGid, { id: newGid, name: meta.name || '', collapsed: !!meta.collapsed });
+      _afkGroups._injectFromImport(newGid, { id: newGid, name: meta.name || '', collapsed: !!meta.collapsed, mode: meta.mode || 'cascade' });
     });
+    // v2.92.2 — Post-import GC. Defensive: if any imported alarm failed to
+    // land (e.g. unrecognised type filtered out, or any future edge that
+    // skips an alarm), a group from the file could end up with fewer
+    // than 2 members. _gc strips those orphan group records so the UI
+    // and persistence stay consistent. The pre-import _gc only cleans
+    // up the wiped-current state — this one covers the imported state.
+    try { _afkGroups._gc(); } catch (_) {}
     // v2.85.0 — apply the file's Mobile Alerts config (if any & valid) BEFORE
     // re-rendering the alarm list so the per-alarm Mobile alert toggle rows
     // appear in the right state on first paint. If the file carried no
@@ -13545,14 +13698,17 @@ function _afkSyncTripOverlay() {
   if (!ov) return;
   const list = document.getElementById('afkTripList');
   if (!list) return;
-  // v2.91.0 — AND-mode group members whose group is NOT yet fully tripped
+  // v2.91.0 — Non-cascade group members whose group has NOT fired yet
   // shouldn't appear in the user-visible overlay; they're silently
-  // accumulating until the last member trips. Filter them out here so
+  // accumulating until the group completes. Filter them out here so
   // the overlay reflects only "fire-worthy" trips.
+  // v2.92.0 — _afkGroupHasFired is the right gate: it's set the moment
+  // _afkTick batches a group into newTrips, so once the group has
+  // fired its members ARE allowed in the overlay.
   const tripped = _afkAlarms.tripped().filter(a => {
     if (!a.groupId) return true;
-    if (_afkGroupMode(a.groupId) !== 'and') return true;
-    return _afkGroupAllTripped(a.groupId);
+    if (_afkGroupMode(a.groupId) === 'cascade') return true;
+    return _afkGroupHasFired(a.groupId);
   });
   if (tripped.length === 0) {
     ov.classList.remove('open');
@@ -13731,8 +13887,13 @@ function _afkAlarmShortDescription(a, includeTitle) {
     return title + 'No FSUIPC telemetry for ' + display + ' while airborne (CTD canary)';
   }
   if (a.type === 'conditional') {
-    const conds = (a.params && Array.isArray(a.params.conditions)) ? a.params.conditions.filter(c => c && c.enabled) : [];
-    if (conds.length === 0) return title + '(no conditions enabled)';
+    const allRows = (a.params && Array.isArray(a.params.conditions)) ? a.params.conditions : [];
+    const conds   = allRows.filter(c => c && c.enabled);
+    if (conds.length === 0) {
+      return title + (allRows.length === 0
+        ? '(no conditions configured — click + Add condition)'
+        : '(no conditions enabled — toggle at least one on)');
+    }
     const combinator = (a.params && a.params.combinator === 'OR') ? ' OR ' : ' AND ';
     const parts = conds.map(c => {
       const def = _afkCondParamDef(c.param);
@@ -13799,6 +13960,25 @@ function _afkRenderCardHtml(a) {
           '</span>' +
           '<span class="afk-card-name-sep" aria-hidden="true"></span>' +
           '<span class="afk-card-type-label">' + _afkAlarmTypeLabel(a.type) + '</span>' +
+          // v2.92.0 — ✓ pip when this member has tripped but its
+          // parent group hasn't fired yet. Covers two scenarios:
+          //  - Concurrent group: this member is currently tripped, waiting
+          //    on the rest to also be tripped at the same moment.
+          //  - Sequential group: this member tripped at some point this
+          //    flight (state.sequentialMet); group is waiting on others.
+          (function () {
+            if (!a.groupId) return '';
+            const m = _afkGroupMode(a.groupId);
+            if (m === 'cascade') return '';
+            if (_afkGroupHasFired(a.groupId)) return '';
+            const memberMet = (a.status === 'tripped') ||
+                              (m === 'sequential' && a.state && a.state.sequentialMet === true);
+            if (!memberMet) return '';
+            const tip = (m === 'sequential')
+              ? 'This member has tripped this flight (sequential group). Waiting for the remaining members to trip before the group fires its composite alert.'
+              : 'This member is currently tripped (concurrent group). Waiting for every other member to be tripped at the same moment before the group fires.';
+            return '<span class="afk-card-tripped-pip" title="' + tip.replace(/"/g, '&quot;') + '" aria-label="member tripped, waiting for group">✓</span>';
+          })() +
         '</div>' +
         '<div class="afk-card-desc-sub">' + _afkAlarmShortDescription(a, false) + '</div>' +
       '</div>' +
@@ -13846,12 +14026,20 @@ function _afkRenderGroupHtml(gid, members) {
             'onkeydown="_afkGroupRenameKey(event,\'' + gid + '\')" ' +
             'title="Click to rename the group (max 30 chars). Plain text only — smart-quote / em-dash / ellipsis auto-normalize to ASCII; characters outside Latin-1 (CJK, emoji) are dropped because the Mobile Alerts HTTP header layer can&apos;t carry them.">' + name + '</span>' +
       '<span class="afk-group-count">' + members.length + ' member' + (members.length === 1 ? '' : 's') + '</span>' +
-      // v2.91.0 — Mode toggle: Cascade (default) vs AND. Click to flip.
-      // Tooltip explains the semantic difference. Visually distinct pill
-      // so the mode is at-a-glance readable in the group header.
-      '<button class="afk-group-mode" data-mode="' + (g.mode === 'and' ? 'and' : 'cascade') + '" onclick="event.stopPropagation();_afkGroupToggleMode(\'' + gid + '\')" title="Group mode. CASCADE (default): the first member to trip fires the alert and disables every other member. AND: every member must reach a tripped state simultaneously before the group fires; one drop-out disarms the group. Click to flip.">' +
-        (g.mode === 'and' ? 'AND' : 'CASCADE') +
-      '</button>' +
+      // v2.91.0 added the pill; v2.92.0 expands to three modes — click
+      // cycles cascade → concurrent → sequential → cascade.
+      // data-mode drives the per-mode colour treatment in CSS.
+      (function () {
+        const _m = _afkGroupMode(gid);
+        const _label = (_m === 'concurrent') ? 'CONCURRENT'
+                     : (_m === 'sequential') ? 'SEQUENTIAL'
+                     :                          'CASCADE';
+        const _tip = 'Group mode. Click to cycle through CASCADE → CONCURRENT → SEQUENTIAL.\n\n' +
+                     'CASCADE (default): the first member to trip fires the alert and auto-disables every other member. One acknowledgement covers the bundle.\n\n' +
+                     'CONCURRENT: every member must reach a tripped state at the same moment before the group fires its single composite alert. If any drops back to armed (condition reverts, member dismissed individually), the group disarms.\n\n' +
+                     'SEQUENTIAL: each member trip is silently noted (✓ pip on the card) and persists for the rest of the flight. When every member has tripped at any point this mission (even non-overlapping), the group fires. Dismiss disables the whole group; ground transition clears the pip flags for the next flight.';
+        return '<button class="afk-group-mode" data-mode="' + _m + '" onclick="event.stopPropagation();_afkGroupToggleMode(\'' + gid + '\')" title="' + _tip.replace(/"/g, '&quot;') + '">' + _label + '</button>';
+      })() +
       '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
     '</div>' +
     '<div class="afk-group-body">' +
@@ -14302,12 +14490,18 @@ function _afkGroupUngroup(gid) {
   _afkGroups.ungroup(gid);
   _afkRenderAlarmList();
 }
-// v2.91.0 — Flip group mode between cascade and AND.
+// v2.91.0 — Flip group mode. v2.92.0 — three-way cycle through the
+// three modes:  cascade → concurrent → sequential → cascade.
 function _afkGroupToggleMode(gid) {
   const cur = _afkGroupMode(gid);
-  const next = (cur === 'and') ? 'cascade' : 'and';
+  const next = (cur === 'cascade')    ? 'concurrent'
+             : (cur === 'concurrent') ? 'sequential'
+             :                          'cascade';
   _afkGroups.setMode(gid, next);
-  _aaRtToast('⛓ Group mode: ' + (next === 'and' ? 'AND (all members must trip simultaneously)' : 'CASCADE (first member fires, rest disable)'), 'ok');
+  const desc = (next === 'cascade')    ? 'CASCADE (first member fires, rest auto-disable)'
+             : (next === 'concurrent') ? 'CONCURRENT (every member must be tripped simultaneously)'
+             :                           'SEQUENTIAL (every member must trip at some point this flight)';
+  _aaRtToast('⛓ Group mode: ' + desc, 'ok');
   _afkRenderAlarmList();
 }
 
@@ -14731,6 +14925,15 @@ function _afkRenderEditor(a) {
         '</select>' +
       '</div>';
     body += '<div class="afk-cond-list" id="afkCondList_' + a.id + '">';
+    if (conds.length === 0) {
+      // v2.92.1 — Empty-state hint. New conditional alarms start with zero
+      // conditions so they can't trip on the very first tick before the
+      // user has even configured anything. Tell the user what to do next.
+      body +=
+        '<div class="afk-cond-empty" style="padding:0.55rem 0.7rem; color:var(--muted); font-family:Rajdhani,sans-serif; font-size:0.9rem; background:rgba(255,170,0,0.06); border:1px dashed rgba(255,170,0,0.35); border-radius:5px;">' +
+          'No conditions yet — click <strong>+ Add condition</strong> below, configure the parameter / comparator / threshold, then <strong>toggle the row\'s checkbox on</strong>. New rows are added in the disabled state so the alarm cannot fire while you are still tuning the values.' +
+        '</div>';
+    }
     conds.forEach((c, idx) => {
       const def    = _afkCondParamDef(c.param) || _AFK_COND_PARAMS[0];
       const op     = (c.op === '<') ? '<' : '>';
@@ -14739,7 +14942,7 @@ function _afkRenderEditor(a) {
       const paramOpts = _AFK_COND_PARAMS.map(p => '<option value="' + p.id + '"' + (p.id === c.param ? ' selected' : '') + '>' + p.label + '</option>').join('');
       body +=
         '<div class="afk-cond-row" data-cond-idx="' + idx + '">' +
-          '<label class="afk-toggle afk-cond-en" title="Enable / disable this condition without removing it.">' +
+          '<label class="afk-toggle afk-cond-en" title="Enable / disable this condition without removing it. New rows default to disabled so you can configure them safely mid-flight — toggle on once the parameter, comparator and threshold are set the way you want.">' +
             '<input type="checkbox"' + (c.enabled !== false ? ' checked' : '') + ' onchange="_afkSetCondEnabled(' + a.id + ', ' + idx + ', this.checked)">' +
           '</label>' +
           '<select class="afk-select afk-cond-param" onchange="_afkSetCondParam(' + a.id + ', ' + idx + ', this.value)" title="Telemetry parameter to compare">' +
@@ -15062,7 +15265,13 @@ function _afkSetCondCombinator(id, v) {
 function _afkAddCond(id) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.conditions = a.params.conditions || [];
-  a.params.conditions.push({ enabled: true, param: 'gs', op: '>', value: 200, valueText: '200' });
+  // v2.92.3 — New rows land in the DISABLED state. Same defensive
+  // rationale as v2.92.1's empty-default-conditions fix: a user building
+  // a condition mid-flight could otherwise add a row, find the default
+  // threshold already satisfied by current telemetry, and watch the
+  // alarm fire before they could even tune the value. User explicitly
+  // toggles each row on once it's configured the way they want.
+  a.params.conditions.push({ enabled: false, param: 'gs', op: '>', value: 200, valueText: '200' });
   a.state.fired = false;
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkRenderAlarmList();
@@ -15236,14 +15445,16 @@ function _afkAddAlarm(type) {
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
   if (type === 'cruise' || type === 'descent') base.state = { fired: false };
   if (type === 'conditional') {
-    // v2.91.0 — Seed a single example condition (Altitude > 10,000) so the
-    // editor renders with a sensible starter row instead of an empty
-    // shell. User can add / remove / disable rows freely.
+    // v2.92.1 — Empty conditions list by default. The pre-v2.92.1 default
+    // seeded "Altitude > 10000" as an example row, but if the user
+    // happened to already be above 10,000 ft when adding the alarm, the
+    // first eval tick after enabling would trip immediately — surprising
+    // and counterproductive. Empty is the safe default; the eval bails
+    // when there are no enabled conditions, and the editor's empty-state
+    // hint nudges the user to click "+ Add condition" first.
     base.params = {
       combinator: 'AND',
-      conditions: [
-        { enabled: true, param: 'alt', op: '>', value: 10000, valueText: '10000' },
-      ],
+      conditions: [],
     };
     base.state = { fired: false };
   }
@@ -26226,7 +26437,7 @@ function rgSendToFlightPlanner() {
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
-              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Set duration</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -26236,11 +26447,13 @@ function rgSendToFlightPlanner() {
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
             <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
-            <strong>Group mode &mdash; CASCADE vs AND</strong> (v2.91.0+) &mdash; a pill on the group header (default <em>CASCADE</em>) toggles between two semantically distinct modes. Click to flip:
+            <strong>Group mode &mdash; three options</strong> (v2.91.0 added CASCADE/AND; v2.92.0 expanded to three explicit modes) &mdash; a pill on the group header (default <em>CASCADE</em>) cycles through the three modes on click:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
-              <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is dismissed + disabled (the eval-time gate prevents siblings from firing while the parent is tripped). One acknowledgement covers the whole bundle. Best for related-alarms-where-only-one-needs-to-fire scenarios.</li>
-              <li><strong>AND</strong> &mdash; every member must reach a tripped state <em>simultaneously</em> before the group fires its single composite alert. Members can individually trip in any order; while the group is incomplete, those trips are silent (no overlay, no sound, no mobile push). The moment the last member trips, the whole group fires at once. If any member's condition stops being met before completion, the group disarms. Best for compound-milestone scenarios &mdash; e.g. a group of [Cruise Reached] + [🧩 Conditional: GS &gt; 400 AND alt &gt; FL350] fires only when both conditions hold simultaneously.</li>
-            </ul><br/>
+              <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is auto-dismissed and disabled. One acknowledgement covers the whole bundle. Best for "any one of these is a problem, alert me about it" scenarios.</li>
+              <li><strong>CONCURRENT</strong> (renamed from AND in v2.92.0) &mdash; every member must reach a tripped state <em>simultaneously</em> before the group fires its single composite alert. Members can individually trip in any order; while the group is incomplete, those trips are silent (no overlay, no sound, no mobile push) but show a small ✓ pip on the card so you can see progress. The moment the last member trips, the whole group fires at once. If any member drops back out of tripped status before the group completes (condition reverts, individual dismiss, etc.), the group disarms. Best for "all these conditions must currently be true at the same moment" scenarios &mdash; e.g. [🧩 Conditional: GS &gt; 400] + [🧩 Conditional: alt &gt; FL350] fires only while both are currently true.</li>
+              <li><strong>SEQUENTIAL</strong> (new in v2.92.0) &mdash; each member's first trip is silently noted and <em>persists</em> for the rest of the flight, even if that member is later dismissed individually or its condition reverts. The ✓ pip on the card stays lit. When every enabled member has tripped at any point this mission (sequentially is fine &mdash; no overlap required), the group fires its single composite alert. Best for compound-milestone scenarios where the events happen at different times &mdash; e.g. [Cruise Reached] + [Waypoint TOD] + [Altitude descending through FL100] fires only after all three have happened during the flight. Ground transition clears the ✓ pip flags so the group re-arms for the next flight.</li>
+            </ul>
+            All three modes share the same dismissal cascade: when the group fires (or when any member fires in CASCADE mode), dismissing one disables the entire group. Save / Load JSON files preserve the mode; the legacy <code>and</code> value from v2.91.0 reads back as <code>concurrent</code>.<br/><br/>
 
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
@@ -26344,10 +26557,70 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.92.3</span>
+          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🧩 Conditional alert &mdash; new condition rows default to DISABLED.</strong> Companion to v2.92.1&rsquo;s empty-conditions default. When the user clicks <em>+ Add condition</em>, the new row lands with its checkbox <strong>off</strong>. Same defensive rationale: a user building a conditional alert mid-flight could otherwise add a row, find the default threshold (GS &gt; 200 kt) already satisfied by current telemetry, and watch the alarm fire before they could tune the value. Now the workflow is: add row → set parameter / comparator / threshold → toggle the checkbox on when ready. The empty-state hint and the per-row checkbox tooltip both call out the new behaviour so it doesn&rsquo;t come across as broken.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.92.2</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⛓ Group MODE is now preserved across Save / Load.</strong> Critical regression found during an audit pass: <code>_afkGroups._injectFromImport()</code> only copied <code>name</code> and <code>collapsed</code> from the saved group record &mdash; the <code>mode</code> field (<code>cascade</code> / <code>concurrent</code> / <code>sequential</code>) was silently dropped on import. Any saved CONCURRENT or SEQUENTIAL group reloaded as CASCADE, completely changing the alert behaviour. Bug introduced in v2.91.0 (when group modes were added) and made more visible in v2.92.0 (when SEQUENTIAL was added). Both the export side (groups now serialise <code>mode</code> as a first-class field) and import side (passes <code>mode</code> through to <code>_injectFromImport</code>, which now applies it via <code>setMode</code>) are fixed.</li>
+          <li><strong>Exported JSON no longer contains the transient <code>_fired</code> group flag.</strong> v2.92.0&rsquo;s per-group fired-this-flight flag was being JSON-serialised because the export grabbed the live group object by reference. It was harmless (import didn&rsquo;t read it) but polluted the file and could confuse a human reading the JSON. Export now constructs a clean group record with just <code>{ id, name, collapsed, mode }</code>.</li>
+          <li><strong>Post-import GC.</strong> Defensive: if any imported alarm gets filtered out (e.g. unrecognised type from a future file format) and its group ends up with fewer than 2 members, the group record now gets cleaned up rather than persisting as a ghost. Pre-import <code>_gc</code> only cleaned up the wiped current state; the new post-import call covers the imported state too.</li>
+          <li><strong>Audit pass.</strong> Verified that <em>all 8 alert types</em> (Timer, Geofence, Waypoint, Cruise Reached, Descent Started, Altitude, Loss of Telemetry, Conditional) preserve their full params on save/load, and that transient state (<code>state.fired</code>, <code>state.prevAlt</code>, <code>state.wasInside</code>, <code>state.trippedFixes</code>, <code>state.sourceArmedAt</code>, <code>state.sequentialMet</code>, <code>status</code>, <code>trippedAt</code>) all reset to fresh per-type defaults via <code>_afkResetTransientState</code>. Timer&rsquo;s absolute <code>targetMs</code> recomputes from params on load so a saved &ldquo;30-min countdown&rdquo; reloads as &ldquo;30 min from now&rdquo;. Conditional with empty <code>conditions[]</code> round-trips correctly and the eval bails. Saved-while-tripped never re-fires on load (status forced to <code>'armed'</code>). Backwards-compat: missing <code>cruiseMode</code> / <code>thresholdUnit</code> / pre-v2.92 group <code>mode</code> all fall through to safe defaults.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.92.1</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🧩 Conditional alarms now start with an empty conditions list.</strong> The v2.91.0 default seeded "Altitude &gt; 10,000 ft" as an example row &mdash; convenient, but if you happened to already be above 10,000 ft when adding the alarm, the first eval tick after enabling tripped it immediately. Empty is the safe default; the eval bails when there are no enabled conditions, and the editor now shows a yellow-tinted hint row reading <em>"No conditions yet &mdash; click + Add condition below to set up a trigger. The alarm will not fire until at least one enabled condition is in place."</em> Short-description on the card also distinguishes "no conditions configured" from "configured but none enabled" so the state is clear from a collapsed card too.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.92.0</span>
+          <span class="release-date">May 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⛓ Alert Groups &mdash; three explicit modes.</strong> The v2.91.0 binary CASCADE / AND replaced with a three-way cycle on the group header pill (click to advance):
+            <ul style="margin:0.3rem 0 0 1.2rem;">
+              <li><strong>CASCADE</strong> &mdash; default. First member to trip fires; rest auto-disable. (Unchanged.)</li>
+              <li><strong>CONCURRENT</strong> &mdash; renamed from AND for clarity. Every member must be in tripped status at the same moment for the group to fire. A drop-out disarms the group.</li>
+              <li><strong>SEQUENTIAL</strong> &mdash; new. Each member's first trip is silently noted and <em>persists</em> for the rest of the flight (even if the member is later dismissed individually). Group fires when every enabled member has tripped at any point this mission &mdash; no simultaneity required.</li>
+            </ul>
+          </li>
+          <li><strong>✓ pip on tripped-but-suppressed cards.</strong> When a member of a CONCURRENT or SEQUENTIAL group has tripped but the group hasn't completed yet, the member's card shows a small green ✓ next to the alert name &mdash; so you can see progress toward group completion without opening any modal. Pip clears when the group fires (and a normal trip overlay takes over) or on the next ground transition.</li>
+          <li><strong>Backwards-compat.</strong> v2.91.0 saved files with <code>mode: "and"</code> read back as <code>"concurrent"</code>; persistence updates the field to the new name on the next save. CASCADE / non-grouped alarms behave identically to v2.91.0.</li>
+          <li><strong>Persistence semantics.</strong> Sequential's per-member <code>state.sequentialMet</code> flag and the per-group <code>_fired</code> flag are both cleared on the next ground transition, matching the existing one-shot rearm pattern used by Cruise Reached / Descent Started / Altitude crossing / CTD / Conditional.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.91.0</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
