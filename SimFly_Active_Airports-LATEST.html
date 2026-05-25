@@ -5437,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.93.1';
+const APP_VERSION = '2.94.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10878,6 +10878,90 @@ function _afkTestSoundMenuKey(e) {
   if (e.key === 'Escape') _afkCloseTestSoundMenu();
 }
 
+// v2.94.0 — Bulk "set sound for all alarms" picker. Same popup pattern
+// as the test-sound menu but on selection it applies the chosen sound
+// to every alarm in the queue (not previews). One-shot operation; the
+// previous per-card sounds are overwritten without an undo. Toast
+// confirms how many alarms were updated.
+function _afkBulkSetSoundMenu(e) {
+  e.stopPropagation();
+  // Reuse the close-other-menus discipline so multiple popups don't
+  // stack on screen.
+  _afkCloseTestSoundMenu();
+  _afkCloseBulkSoundMenu();
+  const alarms = _afkAlarms.list();
+  if (alarms.length === 0) {
+    _aaRtToast('🔔 No alarms configured to set a sound for.', 'warn');
+    return;
+  }
+  const anchorBtn = e.currentTarget || e.target;
+  const menu = document.createElement('div');
+  menu.className = 'afk-test-sound-menu';
+  menu.id = 'afkBulkSoundMenu';
+  menu.innerHTML =
+    '<div class="afk-test-sound-menu-hdr">Apply to all ' + alarms.length + ' alarm' + (alarms.length === 1 ? '' : 's') + '</div>' +
+    _AFK_SOUNDS.map(s =>
+      '<button class="afk-test-sound-menu-row" data-sound-id="' + s.id + '">' +
+        '<span class="afk-test-sound-menu-icon">🔊</span>' +
+        '<span>' + s.name + '</span>' +
+      '</button>'
+    ).join('');
+  document.body.appendChild(menu);
+  const r = anchorBtn.getBoundingClientRect();
+  menu.style.visibility = 'hidden';
+  menu.style.left = '0px'; menu.style.top = '0px';
+  const mh = menu.offsetHeight;
+  const top = (r.top - mh - 6 >= 6) ? (r.top - mh - 6) : (r.bottom + 6);
+  let left = r.left;
+  const maxLeft = window.innerWidth - menu.offsetWidth - 6;
+  if (left > maxLeft) left = Math.max(6, maxLeft);
+  menu.style.top  = top  + 'px';
+  menu.style.left = left + 'px';
+  menu.style.visibility = '';
+  menu.addEventListener('click', ev => {
+    const row = ev.target.closest('.afk-test-sound-menu-row');
+    if (!row) return;
+    const id = row.getAttribute('data-sound-id');
+    const sound = _AFK_SOUNDS.find(s => s.id === id);
+    if (sound) {
+      let n = 0;
+      _afkAlarms.list().forEach(a => {
+        if (a.sound !== sound.id) {
+          _afkAlarms.update(a.id, { sound: sound.id });
+          n++;
+        }
+      });
+      _afkRenderAlarmList();
+      if (n > 0) {
+        _aaRtToast('🔊 Set sound "' + sound.name + '" on ' + n + ' alarm' + (n === 1 ? '' : 's') + '.', 'ok');
+      } else {
+        _aaRtToast('🔊 No changes — every alarm already used "' + sound.name + '".', 'ok');
+      }
+    }
+    _afkCloseBulkSoundMenu();
+  });
+  setTimeout(() => {
+    document.addEventListener('mousedown', _afkBulkSoundMenuOutside, true);
+    document.addEventListener('keydown',  _afkBulkSoundMenuKey, true);
+    window.addEventListener('scroll',     _afkCloseBulkSoundMenu, true);
+  }, 0);
+}
+function _afkCloseBulkSoundMenu() {
+  const m = document.getElementById('afkBulkSoundMenu');
+  if (m) m.remove();
+  document.removeEventListener('mousedown', _afkBulkSoundMenuOutside, true);
+  document.removeEventListener('keydown',  _afkBulkSoundMenuKey, true);
+  window.removeEventListener('scroll',     _afkCloseBulkSoundMenu, true);
+}
+function _afkBulkSoundMenuOutside(e) {
+  const m = document.getElementById('afkBulkSoundMenu');
+  if (!m) return;
+  if (!m.contains(e.target)) _afkCloseBulkSoundMenu();
+}
+function _afkBulkSoundMenuKey(e) {
+  if (e.key === 'Escape') _afkCloseBulkSoundMenu();
+}
+
 // ===========================================================================
 // ALERT HISTORY (v2.87.0)
 // ---------------------------------------------------------------------------
@@ -11353,11 +11437,41 @@ function _afkRenderHistoryList() {
   const host = document.getElementById('afkHistoryList');
   const meta = document.getElementById('afkHistoryMeta');
   if (!host) return;
-  const list = _afkHistory.list();
-  if (meta) meta.textContent = list.length === 0 ? 'No alert events logged yet.' :
-    (list.length + ' event' + (list.length === 1 ? '' : 's') + ' · max ' + _AFK_HIST_MAX + ' (FIFO)');
-  if (list.length === 0) {
+  const fullList = _afkHistory.list();
+  // v2.94.0 — Apply user-selected type + dismissal-reason filters. Both
+  // dropdowns default to "" which is the unfiltered all-pass state. The
+  // 'awaiting' reason matches entries with no dismissal record (alerts
+  // that fired but haven't been dismissed yet).
+  const tEl = document.getElementById('afkHistoryFilterType');
+  const rEl = document.getElementById('afkHistoryFilterReason');
+  const filterType   = tEl ? tEl.value : '';
+  const filterReason = rEl ? rEl.value : '';
+  const list = fullList.filter(e => {
+    if (filterType && e.type !== filterType) return false;
+    if (filterReason) {
+      if (filterReason === 'awaiting') {
+        if (e.dismissal) return false;
+      } else {
+        if (!e.dismissal || e.dismissal.reason !== filterReason) return false;
+      }
+    }
+    return true;
+  });
+  if (meta) {
+    if (fullList.length === 0) {
+      meta.textContent = 'No alert events logged yet.';
+    } else if (list.length === fullList.length) {
+      meta.textContent = fullList.length + ' event' + (fullList.length === 1 ? '' : 's') + ' · max ' + _AFK_HIST_MAX + ' (FIFO)';
+    } else {
+      meta.textContent = 'Showing ' + list.length + ' of ' + fullList.length + ' (filtered)';
+    }
+  }
+  if (fullList.length === 0) {
     host.innerHTML = '<div class="afk-hist-empty">No alerts have fired yet on this device. Once they do, the most recent ' + _AFK_HIST_MAX + ' events will appear here.</div>';
+    return;
+  }
+  if (list.length === 0) {
+    host.innerHTML = '<div class="afk-hist-empty">No log entries match the current filters. Clear them to see all ' + fullList.length + ' event' + (fullList.length === 1 ? '' : 's') + '.</div>';
     return;
   }
   host.innerHTML = list.map(e => {
@@ -12843,6 +12957,13 @@ function _afkEvalAltMin(alarm, ac) {
 //   evalFn(ac, c, fp) — returns the current value (number) or null
 //                       if not currently determinable (no plan loaded,
 //                       no fix yet, etc.). null = condition NOT met.
+// v2.94.2 — time params now carry a `defaultUnit` ('seconds' / 'minutes'
+// / 'hours') that drives the per-condition `valueUnit` field. The unit
+// pulldown next to the value input gives the user an explicit picker so
+// the threshold can be expressed in whichever unit makes sense for the
+// scale of the comparison (Alert ETA is usually 30–300 s; Remaining /
+// Elapsed times are usually 30–300 min). The canonical stored `value` is
+// always seconds — `valueUnit` only affects entry/display.
 const _AFK_COND_PARAMS = [
   { id: 'alt',       label: 'Altitude (MSL)',          unit: 'ft',  defaultVal: 10000, evalFn: (ac) => (ac && ac.alt != null && isFinite(ac.alt)) ? ac.alt : null },
   { id: 'ias',       label: 'Indicated airspeed',      unit: 'kt',  defaultVal: 250,   evalFn: (ac) => (ac && ac.ias != null && isFinite(ac.ias)) ? ac.ias : null },
@@ -12851,44 +12972,63 @@ const _AFK_COND_PARAMS = [
   { id: 'distDest',  label: 'Distance to destination', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination || !isFinite(parseFloat(fp.destination.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'distWp',    label: 'Distance to waypoint',    unit: 'nm',  defaultVal: 20,    needsWp: true, evalFn: (ac, c, fp) => { if (!ac || !c.wp || !fp || !fp.navlog) return null; const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix]; const w = fixes.find(f => f && f.ident === c.wp); if (!w || !isFinite(parseFloat(w.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(w.pos_lat), parseFloat(w.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'trkRem',    label: 'Track miles remaining',   unit: 'nm',  defaultVal: 100,   evalFn: (ac, c, fp) => { if (!ac || !fp) return null; const v = _afkTrackMilesRemaining(ac, fp); return isFinite(v) ? v : null; } },
-  { id: 'remTime',   label: 'Remaining time',          unit: 'sec', defaultVal: 1800, isTime: true, evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination) return null; const trk = _afkTrackMilesRemaining(ac, fp); const dest = isFinite(trk) ? trk : (fp.destination ? _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)) : null); if (!isFinite(dest) || !ac.gs || ac.gs <= 5) return null; return (dest / ac.gs) * 3600; } },
-  { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 3600, isTime: true, evalFn: () => (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null },
-  { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
+  { id: 'remTime',   label: 'Remaining time',          unit: 'sec', defaultVal: 30,   isTime: true, defaultUnit: 'minutes', defaultValSec: 1800, evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination) return null; const trk = _afkTrackMilesRemaining(ac, fp); const dest = isFinite(trk) ? trk : (fp.destination ? _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)) : null); if (!isFinite(dest) || !ac.gs || ac.gs <= 5) return null; return (dest / ac.gs) * 3600; } },
+  { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'minutes', defaultValSec: 3600, evalFn: () => (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null },
+  { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'seconds', defaultValSec: 60,   evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
 ];
+// v2.94.2 — Seconds-per-unit for the time-unit pulldown.
+const _AFK_TIME_UNIT_SEC = { seconds: 1, minutes: 60, hours: 3600 };
 function _afkCondParamDef(id) { return _AFK_COND_PARAMS.find(p => p.id === id) || null; }
-// Parse the user-typed value into a number using the parameter's expected
-// unit. Altitude uses _afkParseAlt (FL350 / 10,000 / 35000). Time fields
-// accept either bare seconds, "M:SS", "H:MM:SS", or "Nm" / "Ns" tokens.
-// Everything else parses as a bare float.
-function _afkCondParseValue(def, text) {
+// v2.94.2 — Resolve the canonical seconds-multiplier for a condition's
+// chosen unit. Defaults to 1 (seconds) for backwards compat with pre-
+// v2.94.2 conditions that have no `valueUnit` field.
+function _afkCondUnitMult(unit) {
+  return _AFK_TIME_UNIT_SEC[unit] || 1;
+}
+// Parse the user-typed value into the param's CANONICAL unit (seconds
+// for time, feet for altitude, plain number for everything else).
+// Altitude uses _afkParseAlt (FL350 / 10,000 / 35000). Time fields:
+// plain number is multiplied by the condition's `valueUnit` seconds-
+// multiplier so the user can type "1.5" with unit=hours and get 5400 s.
+// The legacy "1h 30m" / "H:MM:SS" / "M:SS" composite formats are still
+// accepted (they parse as explicit seconds and ignore the unit) so any
+// pre-v2.94.2 saved conditions / files keep working.
+function _afkCondParseValue(def, text, unit) {
   if (text == null || text === '') return NaN;
   if (def.id === 'alt') return _afkParseAlt(text);
   if (def.isTime) {
     const t = String(text).trim();
-    // H:MM:SS or M:SS
+    // H:MM:SS or M:SS — explicit, unit-agnostic.
     const colMatch = t.match(/^(\d+):(\d+)(?::(\d+))?$/);
     if (colMatch) {
       const a = parseInt(colMatch[1], 10), b = parseInt(colMatch[2], 10), c = colMatch[3] ? parseInt(colMatch[3], 10) : 0;
       return (colMatch[3] != null) ? (a*3600 + b*60 + c) : (a*60 + b);
     }
-    // "Nh" / "Nm" / "Ns" tokens — e.g. "1h 30m 22s" or just "30m"
+    // "Nh" / "Nm" / "Ns" tokens — also explicit, unit-agnostic.
     const tokMatch = t.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?$/i);
     if (tokMatch && (tokMatch[1] || tokMatch[2] || tokMatch[3])) {
       return (parseInt(tokMatch[1] || 0, 10) * 3600) +
              (parseInt(tokMatch[2] || 0, 10) * 60) +
              (parseInt(tokMatch[3] || 0, 10));
     }
+    // Plain number: multiply by the unit picker's seconds-multiplier.
     const n = parseFloat(t);
-    return isFinite(n) ? n : NaN;
+    if (!isFinite(n)) return NaN;
+    return n * _afkCondUnitMult(unit);
   }
   const n = parseFloat(text);
   return isFinite(n) ? n : NaN;
 }
 // Pretty-print a parsed condition value for the hint span next to the input.
+// v2.94.3 — Time hint switched from the colon format (1:30:22) to the
+// explicit-units format (1h 30m 22s) so the hours / minutes / seconds
+// are unambiguous at a glance. Suppresses leading zero components
+// (a 90-second value reads "1m 30s", not "0h 1m 30s") via the
+// existing _afkFmtHMSLong skip-while-zero logic.
 function _afkCondFmtValue(def, val) {
   if (val == null || !isFinite(val)) return '—';
   if (def.id === 'alt') return _afkFmtAltDisplay(val);
-  if (def.isTime)       return _afkFmtHMS(val);
+  if (def.isTime)       return _afkFmtHMSLong(val);
   return val + ' ' + def.unit;
 }
 // v2.91.0 — Conditional alarm eval. Iterates enabled conditions, asks
@@ -13414,9 +13554,29 @@ function _afkOnTripped(newTrips) {
     // v2.85.0 — forward to phone any newly-tripped alarms that opted into
     // Mobile alerts AND the user still has a configured provider. Fire-and-
     // forget; failures surface as a toast but don't disrupt the alarm flow.
+    // v2.94.0 — Group-aware batching. A non-cascade group completing fires
+    // every member into newTrips in one tick (see _afkTick pass 2). Pre-
+    // v2.94 that produced N separate pushes — phone buzzed N times for
+    // one logical event. Now: group members coalesce into ONE composite
+    // push naming the group + member roster; standalone alarms still
+    // push individually as before.
     if (typeof _maIsConfigured === 'function' && _maIsConfigured()) {
+      // Split newTrips into (a) per-group buckets for non-cascade groups
+      // whose group fired this tick, and (b) loose alarms (no group, OR
+      // member of a cascade group — cascade members trip individually
+      // and don't need batching).
+      const groupBuckets = {}; // gid → [alarms]
+      const loose = [];
       newTrips.forEach(a => {
         if (!a.mobileAlert) return;
+        if (a.groupId && _afkGroupMode(a.groupId) !== 'cascade') {
+          (groupBuckets[a.groupId] = groupBuckets[a.groupId] || []).push(a);
+        } else {
+          loose.push(a);
+        }
+      });
+      // Loose alarms — one push each (existing behaviour).
+      loose.forEach(a => {
         const typeLabel = _afkAlarmTypeLabel(a.type);
         let detail = '';
         try { detail = _afkAlarmShortDescription(a, false).replace(/<[^>]+>/g, '').trim(); } catch (_) {}
@@ -13425,6 +13585,27 @@ function _afkOnTripped(newTrips) {
         // field (ntfy, Pushover) surface it as "Title — AlertType".
         _maSend(msg, { alertType: typeLabel }).catch(e => {
           _aaRtToast('📱 Mobile alert failed (' + typeLabel + '): ' + (e && e.message ? e.message : 'send error'), 'warn');
+        });
+      });
+      // Group-batched pushes — one push per group. v2.94.1: group NAME
+      // only (no per-member roster) per user feedback. The push reads
+      // like a single logical event: which group fired, in which mode,
+      // and how many alarms it covered — without the noise of every
+      // member's per-alert name.
+      Object.keys(groupBuckets).forEach(gid => {
+        const members = groupBuckets[gid];
+        if (members.length === 0) return;
+        let gName = '';
+        try { const g = _afkGroups.list().find(x => x.id === gid); gName = (g && g.name) || ''; } catch (_) {}
+        const mode = _afkGroupMode(gid);
+        const modeLabel = (mode === 'concurrent') ? 'concurrent' : (mode === 'sequential') ? 'sequential' : 'group';
+        const groupTitle = gName || 'Alert group';
+        const msg = '🔔 ⛓ ' + groupTitle + ' (' + modeLabel + ') — ' +
+                    members.length + ' alert' + (members.length === 1 ? '' : 's') + ' tripped.';
+        // alertType title = group name OR "Alert group" so the phone
+        // surfaces it cleanly. Single composite push, not N.
+        _maSend(msg, { alertType: groupTitle }).catch(e => {
+          _aaRtToast('📱 Mobile alert failed (' + groupTitle + '): ' + (e && e.message ? e.message : 'send error'), 'warn');
         });
       });
     }
@@ -13464,6 +13645,13 @@ function _afkDismissOne(id, reason) {
     } catch (_) {}
     groupCtx = { groupId: a.groupId, groupName: gName };
   }
+  // v2.94.0 — Track what the cascade affected so we can surface a
+  // single user-facing toast at the end ("3 sibling alarms cancelled by
+  // group cascade"). Pre-v2.94, the silent disable left the user
+  // wondering why three other alarms suddenly turned off — the History
+  // entries existed but you had to open the modal to see them.
+  let cascadedAlsoTrippedCount = 0;
+  let cascadedSilentlyDisabledCount = 0;
   cascadeIds.forEach(cid => {
     const ca = _afkAlarms.get(cid);
     if (!ca) return;
@@ -13486,8 +13674,10 @@ function _afkDismissOne(id, reason) {
         _afkHistoryMarkDismissed(cid, primaryReason);
       } else if (ca.status === 'tripped') {
         _afkHistoryMarkDismissed(cid, 'group-cascade');
+        cascadedAlsoTrippedCount++;
       } else if (ca.enabled) {
         _afkHistoryRecordCascadedSibling(ca, groupCtx);
+        cascadedSilentlyDisabledCount++;
       }
     } catch (_) {}
     // Dismiss the tripped status (so the overlay row clears) THEN disable
@@ -13507,6 +13697,23 @@ function _afkDismissOne(id, reason) {
     }
     _afkAlarms.update(cid, { enabled: false });
   });
+  // v2.94.0 — One-shot toast naming the cascade impact. Only emit when
+  // siblings (i.e. NOT just the primary alarm the user just clicked) were
+  // affected. Total cancelled = also-tripped + silently-disabled. Skips
+  // when the cascade only touched the one alarm being dismissed.
+  if (a.groupId) {
+    const totalCancelled = cascadedAlsoTrippedCount + cascadedSilentlyDisabledCount;
+    if (totalCancelled > 0) {
+      const groupName = (groupCtx && groupCtx.groupName) ? '"' + groupCtx.groupName + '"' : 'group';
+      const parts = [];
+      if (cascadedAlsoTrippedCount > 0) parts.push(cascadedAlsoTrippedCount + ' also-tripped');
+      if (cascadedSilentlyDisabledCount > 0) parts.push(cascadedSilentlyDisabledCount + ' still-armed');
+      const msg = '⛓ ' + groupName + ' cascade: dismissed ' + totalCancelled +
+                  ' sibling alert' + (totalCancelled === 1 ? '' : 's') +
+                  ' (' + parts.join(' + ') + '). See Alert History.';
+      try { _aaRtToast(msg, 'ok'); } catch (_) {}
+    }
+  }
   // Refresh visuals + alarm list so toggles flip off and any map overlays
   // (geofence rings, waypoint highlights) for cascaded members disappear.
   _afkRenderAlarmList();
@@ -13826,7 +14033,10 @@ function _afkDeleteAll() {
 // open. Hook attached/detached around show/hide so the key only fires when
 // the overlay is actually on screen (avoids hijacking Enter in modals).
 function _afkTripKeyHandler(e) {
-  if (e.key !== 'Enter') return;
+  // v2.94.0 — Escape now also dismisses the trip overlay, matching the
+  // universal "Esc closes modal" expectation. Enter still works (the
+  // documented v2.88.0 shortcut) — both keys hit _afkDismissAll.
+  if (e.key !== 'Enter' && e.key !== 'Escape') return;
   const ov = document.getElementById('afkTripOverlay');
   if (!ov || !ov.classList.contains('open')) return;
   e.preventDefault();
@@ -14906,15 +15116,20 @@ function _afkRenderEditor(a) {
   const durMode = (a.params && a.params.durationMode) || 'indefinite';
   const durSec  = (a.params && a.params.durationSec)  || _afkGetUserDefaultDurationSec();
   const durSecInput = durMode === 'seconds'
-    ? '<input type="number" class="afk-input" style="width:70px;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" title="Auto-stop the alarm sound after this many seconds. Your value is saved as the default for new alarms.">' +
+    ? '<input type="number" class="afk-input" style="width:70px;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" title="After this many seconds the alarm is auto-dismissed: sound stops, the trip-overlay row clears, and the alarm is disabled (same as a manual dismiss). Your value is saved as the default for new alarms.">' +
       '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">seconds</span>'
     : '';
+  // v2.94.0 — Renamed "Set duration" → "Auto-dismiss after". The previous
+  // label was misleading: it sounded like "how long the sound plays before
+  // stopping" but in fact the alarm is also dismissed AND disabled at the
+  // same instant (same as a manual ✕ click). New label states the actual
+  // semantics; the input tooltip spells out the full behaviour.
   const durationRow =
     '<div class="afk-edit-row">' +
       '<span class="afk-edit-label">Sound for</span>' +
-      '<select class="afk-select" onchange="_afkSetDurationMode(' + a.id + ', this.value)">' +
+      '<select class="afk-select" onchange="_afkSetDurationMode(' + a.id + ', this.value)" title="Indefinite: sound loops until you dismiss the alarm manually. Auto-dismiss after N seconds: the alarm is auto-dismissed (sound stops AND alarm disables) after the chosen number of seconds.">' +
         '<option value="indefinite"' + (durMode === 'indefinite' ? ' selected' : '') + '>Indefinite (until dismissed)</option>' +
-        '<option value="seconds"'    + (durMode === 'seconds'    ? ' selected' : '') + '>Set duration</option>' +
+        '<option value="seconds"'    + (durMode === 'seconds'    ? ' selected' : '') + '>Auto-dismiss after…</option>' +
       '</select>' +
       durSecInput +
     '</div>';
@@ -15089,9 +15304,25 @@ function _afkRenderEditor(a) {
     conds.forEach((c, idx) => {
       const def    = _afkCondParamDef(c.param) || _AFK_COND_PARAMS[0];
       const op     = (c.op === '<') ? '<' : '>';
+      // v2.94.2 — Resolve the per-condition time unit (seconds / minutes /
+      // hours) with a sensible fallback. Older saved conditions without a
+      // valueUnit field default to 'seconds' so their stored seconds value
+      // still reads correctly.
+      const curUnit = (def.isTime)
+        ? ((c.valueUnit === 'minutes' || c.valueUnit === 'hours') ? c.valueUnit : (c.valueUnit || 'seconds'))
+        : null;
       const valTxt = (c.valueText != null) ? String(c.valueText) : (c.value != null ? String(c.value) : '');
       const hint   = _afkCondFmtValue(def, parseFloat(c.value));
       const paramOpts = _AFK_COND_PARAMS.map(p => '<option value="' + p.id + '"' + (p.id === c.param ? ' selected' : '') + '>' + p.label + '</option>').join('');
+      // v2.94.2 — Time params get an explicit seconds/minutes/hours unit
+      // pulldown immediately after the value input. The hint span now
+      // reads as "= 1h 30m 0s" so the user sees what their typed value
+      // resolves to in human terms.
+      const unitPullDown = def.isTime
+        ? '<select class="afk-select afk-cond-unit-sel" onchange="_afkSetCondUnit(' + a.id + ', ' + idx + ', this.value)" title="Unit for the time threshold. The typed value is multiplied by this unit\'s seconds count to give the canonical threshold. The hint to the right shows the resulting H:MM:SS so you can sanity-check.">' +
+            ['seconds', 'minutes', 'hours'].map(u => '<option value="' + u + '"' + (curUnit === u ? ' selected' : '') + '>' + u + '</option>').join('') +
+          '</select>'
+        : '';
       body +=
         '<div class="afk-cond-row" data-cond-idx="' + idx + '">' +
           '<label class="afk-toggle afk-cond-en" title="Enable / disable this condition without removing it. New rows default to disabled so you can configure them safely mid-flight — toggle on once the parameter, comparator and threshold are set the way you want.">' +
@@ -15104,8 +15335,9 @@ function _afkRenderEditor(a) {
             '<option value=">"' + (op === '>' ? ' selected' : '') + '>&gt;</option>' +
             '<option value="<"' + (op === '<' ? ' selected' : '') + '>&lt;</option>' +
           '</select>' +
-          '<input type="text" class="afk-input afk-cond-val" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 1h 30m or 1:30:00' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)" title="' + (def.isTime ? 'Accepts seconds (e.g. 3600), M:SS / H:MM:SS, or H/M/S tokens (e.g. 1h 30m 22s).' : (def.id === 'alt' ? 'Accepts feet or FL form.' : 'Numeric ' + def.unit + ' value.')) + '">' +
-          '<span class="afk-cond-unit">' + (def.isTime ? '' : (def.unit + ' ')) + '<span class="afk-cond-hint" id="afkCondHint_' + a.id + '_' + idx + '">' + hint + '</span></span>';
+          '<input type="text" class="afk-input afk-cond-val" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 30' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)" title="' + (def.isTime ? 'Numeric value in the chosen unit. Pick the unit (seconds / minutes / hours) from the pulldown to the right. Power-user formats H:MM:SS, M:SS, and "1h 30m" are also accepted and bypass the unit.' : (def.id === 'alt' ? 'Accepts feet or FL form.' : 'Numeric ' + def.unit + ' value.')) + '">' +
+          unitPullDown +
+          '<span class="afk-cond-unit">' + (def.isTime ? '= ' : (def.unit + ' ')) + '<span class="afk-cond-hint" id="afkCondHint_' + a.id + '_' + idx + '">' + hint + '</span></span>';
       if (def.needsWp) {
         const noFp = fixes.length === 0;
         const wpOpts = fixes.map(f => '<option value="' + (f.ident || '').replace(/"/g, '&quot;') + '"' + (c.wp === f.ident ? ' selected' : '') + '>' + (f.ident || '') + '</option>').join('');
@@ -15206,17 +15438,48 @@ function _afkToggleAlarm(id, on) {
   const a = _afkAlarms.get(id);
   if (!a) return;
   if (on) {
-    // v2.87.1 — Single per-type state reset path. Every false → true
-    // transition restores the alarm to "ready to fire on next qualifying
-    // event" regardless of type. Previously this branch only handled
-    // timer / cruise / descent; alt-min, geofence, and waypoint silently
-    // kept their post-fire state and could fail to re-arm.
-    _afkResetTransientState(a);
-    _afkAlarms.update(id, { enabled: true, status: a.status, trippedAt: a.trippedAt, state: a.state });
-    if (a.type === 'timer') _afkScheduleTimer(_afkAlarms.get(id));
+    // v2.94.0 — Timer pause/resume. If the user toggled off a running
+    // countdown timer (state.pausedRemainingMs captured below), restore
+    // the timer by computing a new targetMs = now + pausedRemainingMs
+    // INSTEAD of recomputing the full duration from scratch via
+    // _afkFreshState. So a 10-min countdown disabled at 1 min remaining
+    // re-arms with 1 min remaining, not 10. Only applies to countdown
+    // mode; clock-mode timers always honour their absolute clock time.
+    if (a.type === 'timer' &&
+        (a.params && (a.params.timerMode || 'countdown') === 'countdown') &&
+        a.state && a.state.pausedRemainingMs > 0) {
+      const remainingMs = a.state.pausedRemainingMs;
+      a.state.targetMs = Date.now() + remainingMs;
+      a.state.fired = false;
+      delete a.state.pausedRemainingMs;
+      _afkAlarms.update(id, { enabled: true, status: a.status, trippedAt: a.trippedAt, state: a.state });
+      _afkScheduleTimer(_afkAlarms.get(id));
+    } else {
+      // v2.87.1 — Single per-type state reset path. Every false → true
+      // transition restores the alarm to "ready to fire on next qualifying
+      // event" regardless of type. Previously this branch only handled
+      // timer / cruise / descent; alt-min, geofence, and waypoint silently
+      // kept their post-fire state and could fail to re-arm.
+      _afkResetTransientState(a);
+      _afkAlarms.update(id, { enabled: true, status: a.status, trippedAt: a.trippedAt, state: a.state });
+      if (a.type === 'timer') _afkScheduleTimer(_afkAlarms.get(id));
+    }
   } else {
+    // v2.94.0 — Capture remaining ms for countdown-mode timers BEFORE
+    // cancelling the schedule. On the next toggle-on we'll resume from
+    // this remaining instead of restarting from full duration. Clock-
+    // mode timers don't need this — their target is absolute wall time.
+    if (a.type === 'timer' &&
+        (a.params && (a.params.timerMode || 'countdown') === 'countdown') &&
+        a.state && a.state.targetMs &&
+        !(a.state && a.state.fired)) {
+      const remainingMs = a.state.targetMs - Date.now();
+      if (remainingMs > 0) {
+        a.state.pausedRemainingMs = remainingMs;
+      }
+    }
     if (a.type === 'timer') _afkCancelTimerSchedule(id);
-    _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null });
+    _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null, state: a.state });
   }
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -15390,6 +15653,11 @@ function _afkSetTimerMode(id, mode) {
   a.params.timerMode = (mode === 'clock') ? 'clock' : 'countdown';
   a.state.targetMs = _afkComputeTimerTarget(a.params);
   a.state.fired = false;
+  // v2.94.0 — Any edit to the timer params invalidates a previously
+  // captured paused-remaining-ms (the user is changing what "remaining"
+  // means). Without this, a paused 10-min timer that the user edits to
+  // 30 min would still resume from the old remaining value.
+  delete a.state.pausedRemainingMs;
   _afkSaveUserTimerDefaults(a.params);
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkScheduleTimer(a);
@@ -15400,6 +15668,7 @@ function _afkSetTimerCountdown(id, field, v) {
   a.params[field] = Math.max(0, parseInt(v, 10) || 0);
   a.state.targetMs = _afkComputeTimerTarget(a.params);
   a.state.fired = false;
+  delete a.state.pausedRemainingMs;  // v2.94.0 — see _afkSetTimerMode comment.
   _afkSaveUserTimerDefaults(a.params);
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkScheduleTimer(a);
@@ -15412,6 +15681,7 @@ function _afkSetTimerClock(id, val) {
   a.params.clockM = Math.max(0, Math.min(59, parseInt(parts[1], 10) || 0));
   a.state.targetMs = _afkComputeTimerTarget(a.params);
   a.state.fired = false;
+  delete a.state.pausedRemainingMs;  // v2.94.0 — see _afkSetTimerMode comment.
   _afkSaveUserTimerDefaults(a.params);
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkScheduleTimer(a);
@@ -15484,13 +15754,45 @@ function _afkSetCondParam(id, idx, paramId) {
   const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
   const def = _afkCondParamDef(paramId); if (!def) return;
   c.param = paramId;
-  // Re-seed value to the param's default since units changed.
-  c.value = def.defaultVal;
-  c.valueText = String(def.defaultVal);
+  // v2.94.2 — Re-seed defaults appropriate to the new param. Time params
+  // have a defaultUnit (seconds/minutes/hours) and a defaultValSec
+  // (canonical seconds for state.value). Non-time params keep the old
+  // single defaultVal path; valueUnit is cleared.
+  if (def.isTime) {
+    c.valueUnit = def.defaultUnit || 'seconds';
+    c.valueText = String(def.defaultVal);
+    c.value     = def.defaultValSec || (def.defaultVal * _afkCondUnitMult(c.valueUnit));
+  } else {
+    delete c.valueUnit;
+    c.value     = def.defaultVal;
+    c.valueText = String(def.defaultVal);
+  }
   if (!def.needsWp) delete c.wp; else c.wp = c.wp || '';
   a.state.fired = false;
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkRenderAlarmList();
+}
+// v2.94.2 — Setter for the per-condition time unit. Reinterprets the
+// current valueText in the new unit (so typing "5" then switching from
+// seconds → minutes means the threshold becomes 5 minutes, not 5 seconds).
+// Hint span updates live without a full re-render so the user can see
+// the new conversion immediately.
+function _afkSetCondUnit(id, idx, unit) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
+  const def = _afkCondParamDef(c.param); if (!def || !def.isTime) return;
+  c.valueUnit = (unit === 'minutes' || unit === 'hours') ? unit : 'seconds';
+  const parsed = _afkCondParseValue(def, c.valueText, c.valueUnit);
+  c.value = isFinite(parsed) ? parsed : 0;
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const hint = document.getElementById('afkCondHint_' + id + '_' + idx);
+  if (hint) hint.textContent = _afkCondFmtValue(def, c.value);
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
 }
 function _afkSetCondOp(id, idx, op) {
   const a = _afkAlarms.get(id); if (!a) return;
@@ -15509,7 +15811,9 @@ function _afkSetCondValue(id, idx, text) {
   const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
   const def = _afkCondParamDef(c.param); if (!def) return;
   c.valueText = text || '';
-  const parsed = _afkCondParseValue(def, text);
+  // v2.94.2 — pass valueUnit so plain numbers are multiplied by the
+  // chosen time unit.
+  const parsed = _afkCondParseValue(def, text, c.valueUnit);
   c.value = isFinite(parsed) ? parsed : 0;
   a.state.fired = false;
   _afkAlarms.update(id, { params: a.params, state: a.state });
@@ -26625,7 +26929,15 @@ function rgSendToFlightPlanner() {
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Set duration</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
-            <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right. <em>List order is priority order</em>: the highest card&rsquo;s sound is what plays when multiple alarms are tripped. If you dismiss the leading alarm via the ✕ on its row in the trip overlay, audio swaps to the next-highest still-tripped alarm.<br/><br/>
+            <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right.<br/><br/>
+            <em>List order IS sound priority</em>. There is no separate priority number &mdash; the alarm closest to the TOP of the list wins the audio channel when several alarms are tripped at once. Implications:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li>If you care more about hearing certain alarms than others (e.g. <em>📡 Loss of Telemetry</em> should always override a quiet timer), drag those alarms to the top of the list.</li>
+              <li>Sounds never overlap &mdash; only one plays at a time. Additional alarms that pile on are still added to the trip overlay list visually; their sound simply waits in queue.</li>
+              <li>Dismissing the leading alarm via the ✕ on its row in the trip overlay seamlessly swaps audio to the next-highest still-tripped alarm.</li>
+              <li>List order also drives Save / Load file ordering and the on-card per-alarm sequence in the trip overlay, so reordering helps with visual scanning too.</li>
+            </ul>
+            <br/>
 
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
@@ -26742,8 +27054,63 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.93.1</span>
+          <span class="release-version">v2.94.3</span>
           <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🧩 Conditional &mdash; time hint labels h / m / s explicitly.</strong> v2.94.2 added the unit pulldown but the hint span next to the input still rendered via <code>_afkFmtHMS</code> &mdash; the colon format (<em>1:30:22</em>) &mdash; which leaves you guessing whether the leading number is hours or days. Switched to <code>_afkFmtHMSLong</code> which labels each component (<em>1h 30m 22s</em>) and skips leading zeros (90 seconds reads as <em>1m 30s</em>, not <em>0h 1m 30s</em>). The same format flows through the collapsed-card subtitle and the trip-overlay row via the shared <code>_afkCondFmtValue</code> helper, so the conditional alarm&rsquo;s presentation is consistent everywhere a threshold is shown.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.94.2</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🧩 Conditional &mdash; time params get an explicit unit pulldown.</strong> Per user feedback that the Alert ETA textbox was confusing. Pre-v2.94.2 a time-based row (Alert ETA, Remaining time, Elapsed time) accepted four input formats: plain seconds (<code>3600</code>), <code>M:SS</code>, <code>H:MM:SS</code>, and Nh / Nm / Ns tokens (<code>1h 30m 22s</code>) &mdash; clever for power users, opaque for everyone else. The unit was always seconds with no visual cue. Now: a small <strong>seconds / minutes / hours</strong> pulldown sits between the value input and the hint span. Plain numbers are multiplied by the chosen unit&rsquo;s seconds count, so typing &ldquo;1.5&rdquo; with unit=hours gives a 5,400-second threshold and the hint to the right reads <em>"= 1h 30m 0s"</em>. The pulldown re-interprets the existing typed value on change &mdash; switching units updates the canonical threshold live. Sensible per-param defaults: <strong>Alert ETA</strong> defaults to <em>seconds</em> (typical 30&ndash;300 s), <strong>Remaining</strong> and <strong>Elapsed</strong> default to <em>minutes</em> (typical 30&ndash;300 min). The legacy <code>H:MM:SS</code> / <code>1h 30m</code> composite formats still parse correctly (they bypass the unit), so pre-v2.94.2 saved files keep working without migration; old conditions without a <code>valueUnit</code> field default to <em>seconds</em> on render.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.94.1</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Group-batched mobile push &mdash; group name only.</strong> v2.94.0 sent one composite push per non-cascade group completion (replacing N separate buzzes), but included a bullet-list roster of every member alarm. Per user feedback that&rsquo;s noisy — the point of a group is that it&rsquo;s ONE logical event. The push now reads <em>"🔔 ⛓ Approach Reminders (concurrent) &mdash; 5 alerts tripped."</em> with no member roster. The provider title still uses the group name so the phone surfaces it cleanly.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.94.0</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Trip overlay — Escape now dismisses too.</strong> v2.88.0 added Enter as a dismiss shortcut. Escape is the universal &ldquo;close modal&rdquo; key &mdash; pilots juggling sim controls reach for it instinctively. Both keys now hit <code>_afkDismissAll</code> on the open trip overlay; cursor focus doesn&rsquo;t matter (the handler is installed at capture phase on document).</li>
+          <li><strong>Mobile push consolidated for group completions.</strong> Pre-v2.94 a CONCURRENT or SEQUENTIAL group with N members produced N separate phone notifications when it completed &mdash; one logical event, N buzzes. <code>_afkOnTripped</code> now splits <code>newTrips</code> into per-group buckets (for non-cascade groups) and a loose-alarms bucket. Loose alarms still push individually (existing behaviour); each group sends ONE composite push titled with the group name plus a bullet-list of every member that tripped together. CASCADE groups are unaffected (their members trip individually by design).</li>
+          <li><strong>Cascade dismiss now surfaces a toast naming what it affected.</strong> Pre-v2.94, dismissing one member of a CASCADE group silently disabled the other N members &mdash; the Alert History captured it but you had to open the modal to find out. A one-shot toast (<em>&ldquo;⛓ "Approach Reminders" cascade: dismissed 3 sibling alerts (1 also-tripped + 2 still-armed). See Alert History.&rdquo;</em>) now fires when sibling alerts are affected, telling you exactly how many alarms were tripped vs. still-armed at the moment of the cascade. The toast only emits when siblings were actually affected; a one-member group or a dismiss-from-history of an already-cancelled alert doesn&rsquo;t fire it.</li>
+          <li><strong>⏰ Timer pause/resume preserves the elapsed countdown.</strong> Toggling a countdown Timer off then back on used to restart the full duration from scratch (a 10-min countdown disabled at the 9-min mark would re-arm with 10 min remaining). Now: toggle-off captures <code>state.pausedRemainingMs = targetMs &minus; now</code>; toggle-on consumes that value to compute the new <code>targetMs</code>. So a 10-min countdown disabled at 1 min remaining resumes with 1 min remaining. Clock-mode timers are unaffected (their target is absolute wall-clock time). Editing any timer param (mode, countdown digits, clock time) clears the paused-remaining-ms so the new params take effect on the next arm.</li>
+          <li><strong>"Set duration" renamed to "Auto-dismiss after…".</strong> The <em>Sound for</em> dropdown&rsquo;s second option was misleadingly labelled &mdash; it sounded like &ldquo;how long the sound plays before stopping&rdquo; but in fact the entire alarm is also dismissed and disabled at the same instant (same as a manual ✕ click). New label states what actually happens; the dropdown and input tooltips spell out the full behaviour. Three places renamed: per-alarm card editor, Geofence quick-add modal, Waypoint quick-add modal.</li>
+          <li><strong>🔊→All bulk-sound button.</strong> New Alerts-modal-footer button next to <em>🔊 Test Sound</em>. Click opens a sound picker (same popup style as the test-sound chooser); the chosen sound applies to every alarm in the queue in one shot. Confirmation toast names the sound and how many alarms were actually updated (skipped if every alarm already used that sound). Saves the &ldquo;edit 7 alarm cards one by one to set the same sound&rdquo; clickfest.</li>
+          <li><strong>📜 Alert History &mdash; type + dismissal-reason filters.</strong> Two dropdowns added to the History modal toolbar: <em>type</em> (all 8 alert types) and <em>reason</em> (user / timer / group cascade / awaiting dismissal). Live-filter on change. Meta line updates to &ldquo;showing N of M (filtered)&rdquo; so the user knows the total count is still 100. Empty-filter-result state shows a hint pointing back to the unfiltered count.</li>
+          <li><strong>Sound priority documentation expanded.</strong> The audit flagged that list-order-equals-priority wasn&rsquo;t obvious. The help-modal Alerts block&rsquo;s &ldquo;Reorder &amp; prioritize&rdquo; paragraph now spells out the four implications: drag top-priority alarms to top, only one sound plays at a time, dismissing the leader hands audio to the next-highest, and list order also drives Save/Load file ordering and trip-overlay row order. The drag-handle tooltip already named this behaviour in v2.82.0; this update extends the long-form help.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.93.1</span>
+          <span class="release-date">May 25, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -35217,6 +35584,7 @@ function rgSendToFlightPlanner() {
              Enable All moved next to Disable/Delete because they share
              the "bulk state-flip" semantics. Counter relocated to title. -->
         <button class="afk-btn-secondary" onclick="_afkTestSound(event)" oncontextmenu="_afkTestSound(event);return false;" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; Shift-click or right-click to pick a specific sound from a menu.">🔊 Test Sound</button>
+        <button class="afk-btn-secondary" onclick="_afkBulkSetSoundMenu(event)" title="Apply one sound to every alarm in the queue at once. Click to open a sound picker; the chosen sound replaces each alarm's current per-card sound setting.">🔊→All</button>
         <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
         <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
         <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
@@ -35242,6 +35610,27 @@ function rgSendToFlightPlanner() {
     <div class="modal-body">
       <div class="afk-hist-toolbar">
         <span class="afk-hist-meta" id="afkHistoryMeta">—</span>
+        <!-- v2.94.0 — Type + dismissal-reason filters. Live-filter on
+             change; the meta line updates to "showing N of M" so the
+             user knows the total count is still 100. -->
+        <select id="afkHistoryFilterType" class="afk-select" style="width:auto;" onchange="_afkRenderHistoryList()" title="Filter the log by alert type — pick a type to see only those entries.">
+          <option value="">All types</option>
+          <option value="timer">⏰ Timer</option>
+          <option value="geofence">⊙ Geofence</option>
+          <option value="waypoint">📍 Waypoint</option>
+          <option value="cruise">─ Cruise Reached</option>
+          <option value="descent">↘ Descent Started</option>
+          <option value="alt-min">↕ Altitude</option>
+          <option value="telemetry-loss">📡 Loss of Telemetry</option>
+          <option value="conditional">🧩 Conditional</option>
+        </select>
+        <select id="afkHistoryFilterReason" class="afk-select" style="width:auto;" onchange="_afkRenderHistoryList()" title="Filter the log by dismissal reason. 'Awaiting' shows alerts that fired but haven't been dismissed yet.">
+          <option value="">All reasons</option>
+          <option value="user">User dismissed</option>
+          <option value="timer">Duration timer</option>
+          <option value="group-cascade">Group cascade</option>
+          <option value="awaiting">Awaiting dismissal</option>
+        </select>
         <button class="afk-btn-secondary" onclick="_afkRenderHistoryList()" title="Re-read the log from storage. Useful if events fired in the background while this modal was open on another tab.">↻ Refresh</button>
       </div>
       <div class="afk-hist-list-wrap" id="afkHistoryList"></div>
@@ -35275,7 +35664,7 @@ function rgSendToFlightPlanner() {
         <span class="afk-edit-label">Sound for</span>
         <select id="afkWpDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Wp')">
           <option value="indefinite">Indefinite (until dismissed)</option>
-          <option value="seconds">Set duration</option>
+          <option value="seconds">Auto-dismiss after…</option>
         </select>
         <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
         <span id="afkWpDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
@@ -35372,7 +35761,7 @@ function rgSendToFlightPlanner() {
         <span class="afk-edit-label">Sound for</span>
         <select id="afkGfDurationMode" class="afk-select" onchange="_afkModalDurationModeChange('Gf')">
           <option value="indefinite">Indefinite (until dismissed)</option>
-          <option value="seconds">Set duration</option>
+          <option value="seconds">Auto-dismiss after…</option>
         </select>
         <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
         <span id="afkGfDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
