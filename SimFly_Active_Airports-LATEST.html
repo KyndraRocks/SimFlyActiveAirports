@@ -5437,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.92.3';
+const APP_VERSION = '2.92.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12248,7 +12248,27 @@ const _afkGroups = (() => {
       Object.keys(obj).forEach(k => {
         const g = obj[k];
         if (!g || !g.id) return;
-        groups[g.id] = { id: g.id, name: g.name || '', collapsed: !!g.collapsed };
+        // v2.92.4 — Preserve `mode` and `_fired` on browser reload. Pre-
+        // v2.92.4 _load() only cherry-picked {id, name, collapsed} even
+        // though _save() serialised the full group object including mode
+        // and _fired. Same shape as the v2.92.2 file-import bug but on
+        // the localStorage-reload path. Without this, a refreshed page
+        // silently drops SEQUENTIAL / CONCURRENT mode back to CASCADE,
+        // and a fired sequential group can re-fire on the first tick
+        // after a mid-flight reload (because state.sequentialMet IS
+        // preserved on the alarm side but _fired wasn't on the group
+        // side, so the completion check passes again).
+        // setMode normalises legacy 'and' → 'concurrent' for v2.91.0 data.
+        const mode = (g.mode === 'and' || g.mode === 'concurrent') ? 'concurrent'
+                   : (g.mode === 'sequential') ? 'sequential'
+                   : 'cascade';
+        groups[g.id] = {
+          id:        g.id,
+          name:      g.name || '',
+          collapsed: !!g.collapsed,
+          mode:      mode,
+          _fired:    !!g._fired,
+        };
         // Keep the id sequence ahead of any persisted id ("g7" → seq 8).
         const m = String(g.id).match(/^g(\d+)$/);
         if (m) { const n = parseInt(m[1], 10); if (n >= _afkGroupIdSeq) _afkGroupIdSeq = n + 1; }
@@ -26557,10 +26577,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.92.4</span>
+          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Group MODE preserved across browser reload.</strong> Same shape as the v2.92.2 file-import bug, on a different persistence path. <code>_afkGroups._load()</code> only cherry-picked <code>{id, name, collapsed}</code> from the saved registry even though <code>_save()</code> serialised the full group object (including <code>mode</code> and <code>_fired</code>). Net effect pre-v2.92.4: refreshing the browser silently dropped SEQUENTIAL / CONCURRENT mode back to CASCADE. <code>_load()</code> now also reads <code>mode</code> (normalising legacy <code>and</code> → <code>concurrent</code>) and the per-group <code>_fired</code> flag &mdash; so reloading mid-flight preserves both the user&rsquo;s chosen mode and the &ldquo;this group has already fired this mission&rdquo; gate. Without the <code>_fired</code> half, a fired sequential group could re-fire on the first tick after reload (member-side <code>state.sequentialMet</code> IS preserved on reload, so the completion check would re-pass).</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.92.3</span>
-          <span class="release-date">May 24, 2026 &middot; Current</span>
+          <span class="release-date">May 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
