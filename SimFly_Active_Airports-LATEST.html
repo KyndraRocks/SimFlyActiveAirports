@@ -5437,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.94.3';
+const APP_VERSION = '2.95.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12242,6 +12242,14 @@ const _afkAlarms = (() => {
     if (!a || a.status === 'tripped') return;
     a.status = 'tripped';
     a.trippedAt = Date.now();
+    // v2.95.0 — Per-flight "ever tripped" flag used by CONCURRENT /
+    // SEQUENTIAL group completion accounting. Set on every trip event;
+    // cleared on ground transition (see _afkTick). Lets a member that
+    // tripped earlier in the flight still count toward concurrent
+    // completion even if it later un-trips (geofence both-trigger) or
+    // gets dismissed individually.
+    a.state = a.state || {};
+    a.state.everTripped = true;
     _save();
   }
 
@@ -12641,12 +12649,25 @@ function _afkGroupCompleted(gid) {
   const enabled = mems.filter(m => m.enabled);
   if (enabled.length === 0) return false;
   if (mode === 'concurrent') {
-    // Every enabled member must currently have status === 'tripped'.
+    // v2.95.0 — CONCURRENT now allows individual members to trip,
+    // un-trip, and re-trip during the flight without breaking the
+    // group's progress toward completion. The check is still a
+    // SAME-TICK coincidence (every enabled member currently in tripped
+    // status) — that's the defining distinction from SEQUENTIAL. The
+    // pre-v2.95 implementation already used the same check; the rework
+    // is in the dismiss path (members no longer auto-disable on
+    // dismiss when in non-cascade groups; they re-arm so the group
+    // can complete again on a later same-tick coincidence). The
+    // group._fired flag stays per-mission so once the composite alert
+    // fires, it doesn't re-fire — clears on ground transition.
     return enabled.every(m => m.status === 'tripped');
   }
   // Sequential: every enabled member must have tripped at some point
-  // this mission (state.sequentialMet is the persistent flag).
-  return enabled.every(m => m.state && (m.state.sequentialMet === true || m.status === 'tripped'));
+  // this mission (state.sequentialMet OR state.everTripped — both
+  // serve as persistent "this member tripped at some point" flags;
+  // checking everTripped means a v2.95.0+ alarm without the older
+  // sequentialMet flag also counts correctly).
+  return enabled.every(m => m.state && (m.state.sequentialMet === true || m.state.everTripped === true || m.status === 'tripped'));
 }
 // v2.92.0 — has this member's group already fired (composite alert
 // already shown to the user)? Tracked per-group on the group record
@@ -13270,6 +13291,14 @@ function _afkTick(data) {
         a.state.sequentialMet = false;
         _afkAlarms.update(a.id, { state: a.state });
       }
+      // v2.95.0 — Companion clear for the everTripped per-flight flag
+      // added in the CONCURRENT rework. Same shape as sequentialMet:
+      // a stale value from a prior incomplete flight would otherwise
+      // pollute the next mission's group-completion accounting.
+      if (a.state && a.state.everTripped) {
+        a.state.everTripped = false;
+        _afkAlarms.update(a.id, { state: a.state });
+      }
     });
   }
   const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg };
@@ -13650,8 +13679,19 @@ function _afkDismissOne(id, reason) {
   // group cascade"). Pre-v2.94, the silent disable left the user
   // wondering why three other alarms suddenly turned off — the History
   // entries existed but you had to open the modal to see them.
+  // v2.95.0 — Non-cascade groups (CONCURRENT / SEQUENTIAL) no longer
+  // disable members on dismiss. The group has fired its composite
+  // alert; the per-group _fired flag prevents re-fire this mission
+  // (until ground transition); individual members keep their enabled
+  // state and have their transient state reset so they can re-trip if
+  // their underlying condition fires again. CASCADE groups still
+  // disable-all on dismiss — that's the "one fires, rest go silent"
+  // contract the mode is named for.
+  const groupMode = a.groupId ? _afkGroupMode(a.groupId) : null;
+  const isNonCascadeGroup = a.groupId && groupMode !== 'cascade';
   let cascadedAlsoTrippedCount = 0;
   let cascadedSilentlyDisabledCount = 0;
+  let nonCascadeRearmedCount = 0;
   cascadeIds.forEach(cid => {
     const ca = _afkAlarms.get(cid);
     if (!ca) return;
@@ -13675,24 +13715,38 @@ function _afkDismissOne(id, reason) {
       } else if (ca.status === 'tripped') {
         _afkHistoryMarkDismissed(cid, 'group-cascade');
         cascadedAlsoTrippedCount++;
-      } else if (ca.enabled) {
+      } else if (ca.enabled && !isNonCascadeGroup) {
+        // Cascade-mode armed sibling that just got silently disabled —
+        // record the synthetic "never fired, auto-disabled" entry.
         _afkHistoryRecordCascadedSibling(ca, groupCtx);
         cascadedSilentlyDisabledCount++;
       }
     } catch (_) {}
-    // Dismiss the tripped status (so the overlay row clears) THEN disable
-    // so the alarm doesn't immediately re-trip on the next tick.
+    // Dismiss the tripped status (so the overlay row clears) THEN apply
+    // either disable (cascade mode) or re-arm (non-cascade mode).
     if (ca.status === 'tripped') _afkOnDismiss(ca);
-    // v2.93.0 — Multi-waypoint auto-rearm. If this is a Waypoint alarm
-    // that still has un-tripped candidates (e.g. scope='all' with more
-    // route fixes ahead, or scope='specific' with multiple picks not
-    // yet crossed), keep the alarm enabled so the next waypoint can
-    // also fire instead of forcing the user to manually re-toggle. The
-    // per-fix `trippedFixes` map prevents the already-tripped fix from
-    // re-firing. Only applies to standalone alarms — group-cascade
-    // dismiss still disables every member.
+    // v2.95.0 — NON-CASCADE group member: reset transient state and
+    // keep enabled so the alarm can re-trip if conditions warrant. The
+    // group's _fired flag (set when the composite alert fired) prevents
+    // the group from re-firing this mission — clears only on ground
+    // transition. So the user's vision holds: members can independently
+    // trip, un-trip, re-trip without the group or the member being
+    // disabled, and the group's "this is the once-per-flight event"
+    // contract is still honoured.
+    if (isNonCascadeGroup) {
+      _afkResetTransientState(ca);
+      _afkAlarms.update(cid, { status: 'armed', trippedAt: null, state: ca.state });
+      // Re-schedule timer countdowns the same way _afkToggleAlarm does
+      // on a fresh enable — the freshly-reset state has a new targetMs.
+      if (ca.type === 'timer') _afkScheduleTimer(_afkAlarms.get(cid));
+      nonCascadeRearmedCount++;
+      return; // skip the cascade-mode disable below
+    }
+    // v2.93.0 — Multi-waypoint auto-rearm (standalone alarms only).
+    // If this is a Waypoint alarm that still has un-tripped candidates
+    // ahead, keep it enabled. The per-fix `trippedFixes` map prevents
+    // already-tripped fixes from re-firing.
     if (!a.groupId && ca.type === 'waypoint' && _afkWpHasMoreCandidates(ca)) {
-      // No disable — clear tripped status only (forEach: return = skip).
       return;
     }
     _afkAlarms.update(cid, { enabled: false });
@@ -13701,17 +13755,37 @@ function _afkDismissOne(id, reason) {
   // siblings (i.e. NOT just the primary alarm the user just clicked) were
   // affected. Total cancelled = also-tripped + silently-disabled. Skips
   // when the cascade only touched the one alarm being dismissed.
+  // v2.95.0 — Two distinct toasts now, one per mode:
+  //   CASCADE      — "dismissed N siblings (X also-tripped + Y still-armed)"
+  //                  (unchanged; the cancelled-and-disabled message).
+  //   NON-CASCADE  — "Group fired. N members re-armed and stay enabled"
+  //                  so the user knows nothing got silently disabled and
+  //                  the alarms remain ready to fire individually for the
+  //                  rest of the flight (group itself won't re-fire until
+  //                  ground transition).
   if (a.groupId) {
-    const totalCancelled = cascadedAlsoTrippedCount + cascadedSilentlyDisabledCount;
-    if (totalCancelled > 0) {
-      const groupName = (groupCtx && groupCtx.groupName) ? '"' + groupCtx.groupName + '"' : 'group';
-      const parts = [];
-      if (cascadedAlsoTrippedCount > 0) parts.push(cascadedAlsoTrippedCount + ' also-tripped');
-      if (cascadedSilentlyDisabledCount > 0) parts.push(cascadedSilentlyDisabledCount + ' still-armed');
-      const msg = '⛓ ' + groupName + ' cascade: dismissed ' + totalCancelled +
-                  ' sibling alert' + (totalCancelled === 1 ? '' : 's') +
-                  ' (' + parts.join(' + ') + '). See Alert History.';
-      try { _aaRtToast(msg, 'ok'); } catch (_) {}
+    const groupName = (groupCtx && groupCtx.groupName) ? '"' + groupCtx.groupName + '"' : 'group';
+    if (isNonCascadeGroup) {
+      // nonCascadeRearmedCount includes the primary alarm too — total
+      // members affected = the whole group.
+      if (nonCascadeRearmedCount > 0) {
+        const modeLabel = (groupMode === 'concurrent') ? 'concurrent' : 'sequential';
+        const msg = '⛓ ' + groupName + ' (' + modeLabel + ') dismissed. ' +
+                    nonCascadeRearmedCount + ' member' + (nonCascadeRearmedCount === 1 ? '' : 's') +
+                    ' re-armed — group will not re-fire this mission.';
+        try { _aaRtToast(msg, 'ok'); } catch (_) {}
+      }
+    } else {
+      const totalCancelled = cascadedAlsoTrippedCount + cascadedSilentlyDisabledCount;
+      if (totalCancelled > 0) {
+        const parts = [];
+        if (cascadedAlsoTrippedCount > 0) parts.push(cascadedAlsoTrippedCount + ' also-tripped');
+        if (cascadedSilentlyDisabledCount > 0) parts.push(cascadedSilentlyDisabledCount + ' still-armed');
+        const msg = '⛓ ' + groupName + ' cascade: dismissed ' + totalCancelled +
+                    ' sibling alert' + (totalCancelled === 1 ? '' : 's') +
+                    ' (' + parts.join(' + ') + '). See Alert History.';
+        try { _aaRtToast(msg, 'ok'); } catch (_) {}
+      }
     }
   }
   // Refresh visuals + alarm list so toggles flip off and any map overlays
@@ -26945,10 +27019,10 @@ function rgSendToFlightPlanner() {
             <strong>Group mode &mdash; three options</strong> (v2.91.0 added CASCADE/AND; v2.92.0 expanded to three explicit modes) &mdash; a pill on the group header (default <em>CASCADE</em>) cycles through the three modes on click:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is auto-dismissed and disabled. One acknowledgement covers the whole bundle. Best for "any one of these is a problem, alert me about it" scenarios.</li>
-              <li><strong>CONCURRENT</strong> (renamed from AND in v2.92.0) &mdash; every member must reach a tripped state <em>simultaneously</em> before the group fires its single composite alert. Members can individually trip in any order; while the group is incomplete, those trips are silent (no overlay, no sound, no mobile push) but show a small ✓ pip on the card so you can see progress. The moment the last member trips, the whole group fires at once. If any member drops back out of tripped status before the group completes (condition reverts, individual dismiss, etc.), the group disarms. Best for "all these conditions must currently be true at the same moment" scenarios &mdash; e.g. [🧩 Conditional: GS &gt; 400] + [🧩 Conditional: alt &gt; FL350] fires only while both are currently true.</li>
-              <li><strong>SEQUENTIAL</strong> (new in v2.92.0) &mdash; each member's first trip is silently noted and <em>persists</em> for the rest of the flight, even if that member is later dismissed individually or its condition reverts. The ✓ pip on the card stays lit. When every enabled member has tripped at any point this mission (sequentially is fine &mdash; no overlap required), the group fires its single composite alert. Best for compound-milestone scenarios where the events happen at different times &mdash; e.g. [Cruise Reached] + [Waypoint TOD] + [Altitude descending through FL100] fires only after all three have happened during the flight. Ground transition clears the ✓ pip flags so the group re-arms for the next flight.</li>
+              <li><strong>CONCURRENT</strong> (renamed from AND in v2.92.0; semantics reworked in v2.95.0) &mdash; the group fires its single composite alert at the moment <em>every enabled member is currently in tripped status at the same tick</em>. Members can trip, un-trip (geofence "both" trigger re-exit; manual dismiss), and re-trip independently during the flight without breaking the group's progress &mdash; the check is just "are they all currently tripped right now?". While the group is incomplete, individual trips are silent (no overlay, no sound, no mobile push) but show a small ✓ pip on the card so you can see progress. Best for "all these conditions must currently be true at the same moment" scenarios &mdash; e.g. [🧩 Conditional: GS &gt; 400] + [🧩 Conditional: alt &gt; FL350] fires only while both are currently true. <strong>Dismissal behaviour</strong> (v2.95.0+): dismissing a fired CONCURRENT group re-arms all members (clears tripped status, resets transient state) so each member can independently re-trip later in the flight if its condition fires again. The group itself does NOT re-fire this mission &mdash; the per-group <code>_fired</code> flag stays set until the next ground transition. So you get one composite alert per group per flight, but the underlying alarms remain useful as individual sentries for the rest of the mission.</li>
+              <li><strong>SEQUENTIAL</strong> (new in v2.92.0) &mdash; each member's first trip is silently noted and <em>persists</em> for the rest of the flight (via the per-alarm <code>state.everTripped</code> flag), even if that member is later dismissed individually or its condition reverts. The ✓ pip on the card stays lit. When every enabled member has tripped at any point this mission (sequentially is fine &mdash; no overlap required), the group fires its single composite alert. Best for compound-milestone scenarios where the events happen at different times &mdash; e.g. [Cruise Reached] + [Waypoint TOD] + [Altitude descending through FL100] fires only after all three have happened during the flight. Ground transition clears the ✓ pip flags so the group re-arms for the next flight. Same v2.95.0 dismissal behaviour as CONCURRENT: dismissing a fired sequential group re-arms members; group doesn't re-fire this mission.</li>
             </ul>
-            All three modes share the same dismissal cascade: when the group fires (or when any member fires in CASCADE mode), dismissing one disables the entire group. Save / Load JSON files preserve the mode; the legacy <code>and</code> value from v2.91.0 reads back as <code>concurrent</code>.<br/><br/>
+            <strong>Dismissal &mdash; mode-aware</strong> (v2.95.0+): CASCADE mode dismisses disable every member (the documented "one fires, rest go silent" contract). CONCURRENT / SEQUENTIAL mode dismisses re-arm every member (members can keep tripping individually for the rest of the flight; the group's <code>_fired</code> flag prevents the composite alert from re-firing until ground transition). A mode-aware toast surfaces the impact: CASCADE shows <em>"dismissed N siblings (X also-tripped + Y still-armed)"</em>; non-cascade shows <em>"Group fired. N members re-armed &mdash; group will not re-fire this mission."</em> Save / Load JSON files preserve the mode; the legacy <code>and</code> value from v2.91.0 reads back as <code>concurrent</code>.<br/><br/>
 
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
@@ -27052,10 +27126,26 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.95.0</span>
+          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⛓ CONCURRENT &amp; SEQUENTIAL groups &mdash; mode-aware dismissal.</strong> Pre-v2.95, dismissing a fired non-cascade group disabled every member &mdash; same as CASCADE. That defeated the intent: a group like [🧩 GS &gt; 400] + [🧩 alt &gt; FL350] would fire its composite alert once, then the individual sentries would all be silently disabled for the rest of the flight. Per user feedback, CONCURRENT and SEQUENTIAL group dismissals now <strong>re-arm every member instead of disabling them</strong>. Members keep their enabled toggle on, their transient state is reset (cruise <code>state.fired</code> clears, geofence <code>wasInside</code> re-seeds, etc.), and they can independently trip again later in the flight. The per-group <code>_fired</code> flag is what blocks the composite alert from re-firing &mdash; it stays set until the next ground transition, so you get one composite per group per mission, but the underlying alarms remain useful individually. CASCADE mode behaviour is unchanged (its whole point is "one fires, rest go silent").</li>
+          <li><strong>Per-alarm <code>state.everTripped</code> flag.</strong> Set inside <code>_afkAlarms.trip()</code> on every trip event; cleared on ground transition. SEQUENTIAL group completion now reads <code>everTripped</code> OR the legacy <code>sequentialMet</code> OR current tripped status, so the persistent "this member tripped at some point" check is robust across the new dismiss-and-rearm flow. CONCURRENT completion still requires same-tick coincidence (every enabled member currently in tripped status); that's the defining distinction from SEQUENTIAL.</li>
+          <li><strong>Two distinct dismiss toasts now.</strong> CASCADE shows the existing <em>"⛓ "Approach Reminders" cascade: dismissed 3 sibling alerts (1 also-tripped + 2 still-armed). See Alert History."</em> Non-cascade shows the new <em>"⛓ "Approach Reminders" (concurrent) dismissed. 3 members re-armed &mdash; group will not re-fire this mission."</em> So at a glance you know whether the cascade silenced alarms (cascade) or kept them productive (concurrent / sequential).</li>
+          <li><strong>Help-modal CONCURRENT / SEQUENTIAL blocks rewritten</strong> to describe the new mode-aware dismissal behaviour and the re-trip allowance. Save / Load JSON files preserve mode unchanged (legacy <code>and</code> still reads as <code>concurrent</code>).</li>
+          <li><strong>Resolves audit finding #3 (concurrent deadlock).</strong> The pre-v2.95 dismiss-disables-all behaviour combined with the eval-time sibling-tripped gate could leave a CONCURRENT group in a state where some members were tripped, some were disabled, and the completion check could never satisfy. The new re-arm-instead-of-disable path makes the deadlock impossible by construction.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.94.3</span>
-          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-date">May 25, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
