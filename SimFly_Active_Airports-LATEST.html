@@ -3538,7 +3538,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     outline:none;
     background:#0a0f0a;
     border-color:#fff;
+    cursor:text;
   }
+  /* v2.97.26 — vertical-resize cursor signals the drag-to-scrub affordance.
+     Switches back to a text caret when the input is focused for typing. */
+  .demo-ap-lcd { cursor:ns-resize; }
   body.light-mode .demo-ap-lcd {
     background:#0a1a14;
     color:#7dffaf;
@@ -6026,7 +6030,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.97.25';
+const APP_VERSION = '2.97.26';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11242,17 +11246,29 @@ function _demoApFindNextWptFromPos() {
 }
 
 // AP setter actions called from the UI.
+// v2.97.26 — Aviation 1-360 heading convention. 360 = north (not 0);
+// 361 wraps to 1; -90 wraps to 270. Display layer renders the canonical
+// 1-360 value; the integrator's _demoAcHdg keeps its 0-359 form for
+// math (the dHdg = tgtHdg - _demoAcHdg comparison and the
+// while > 180 / < -180 normalization handle either equally).
+function _demoNormHdg360(deg) {
+  return ((deg - 1) % 360 + 360) % 360 + 1;
+}
 function _demoApSetHdg(deg) {
   const v = parseFloat(deg);
   if (!isFinite(v)) return;
-  _demoApSetpoints.hdg = ((v % 360) + 360) % 360;
+  _demoApSetpoints.hdg = _demoNormHdg360(v);
   _demoApMode.hdg = 'manual';
   _demoUpdateApPanel();
 }
+// v2.97.26 — Snap ALT setpoints to whole 100-ft increments so the user
+// gets clean values (8000 / 8100 / 8200) rather than whatever they
+// happened to drag to (8016 / 8116 / 8216).
 function _demoApSetAlt(ft) {
   const lim = _demoCatLimits();
   let v = parseFloat(ft);
   if (!isFinite(v)) return;
+  v = Math.round(v / 100) * 100;
   v = Math.max(0, Math.min(lim.altMax, v));
   _demoApSetpoints.alt = v;
   _demoApMode.alt = 'manual';
@@ -11266,6 +11282,84 @@ function _demoApSetGs(kts) {
   _demoApSetpoints.gs = v;
   _demoApMode.gs = 'manual';
   _demoUpdateApPanel();
+}
+
+// ── Click-and-drag scrub on the LCD inputs (v2.97.26) ──
+// Drag vertically inside any LCD value box to bump it up/down. Small
+// moves = small changes (linear up to 20 px), large moves accelerate
+// (3× thereafter). The existing setters handle clamping (cat limits on
+// SPD/ALT), 1-360 wrap on HDG, and 100-ft snap on ALT, so the drag
+// path doesn't have to repeat any of that logic. Mouseup without
+// movement falls through to focus the input for typing.
+let _demoApDragAxis     = null;
+let _demoApDragStartY   = 0;
+let _demoApDragStartVal = 0;
+let _demoApDragMoved    = false;
+let _demoApDragLastSet  = null;
+
+function _demoApDragStart(axis, e) {
+  if (e.button !== 0) return;          // left mouse only
+  e.preventDefault();
+  _demoApDragAxis     = axis;
+  _demoApDragStartY   = e.clientY;
+  _demoApDragMoved    = false;
+  _demoApDragLastSet  = null;
+  // Seed start value from manual setpoint if engaged, else current live state.
+  if (axis === 'hdg') _demoApDragStartVal = (_demoApMode.hdg === 'manual') ? _demoApSetpoints.hdg : _demoAcHdg;
+  else if (axis === 'alt') _demoApDragStartVal = (_demoApMode.alt === 'manual') ? _demoApSetpoints.alt : _demoAcAlt;
+  else if (axis === 'gs')  _demoApDragStartVal = (_demoApMode.gs  === 'manual') ? _demoApSetpoints.gs  : _demoAcGs;
+  document.addEventListener('mousemove', _demoApDragMove, true);
+  document.addEventListener('mouseup',   _demoApDragEnd,  true);
+  document.body.style.cursor = 'ns-resize';
+}
+
+function _demoApDragMove(e) {
+  if (!_demoApDragAxis) return;
+  const dy = e.clientY - _demoApDragStartY;
+  if (!_demoApDragMoved) {
+    if (Math.abs(dy) < 3) return;      // tiny moves treated as click, not drag
+    _demoApDragMoved = true;
+  }
+  // Negative dy (drag up) = increase value.
+  const steps = _demoApDragSteps(-dy, _demoApDragAxis);
+  const stepSize = (_demoApDragAxis === 'hdg') ? 1
+                 : (_demoApDragAxis === 'alt') ? 100
+                 : 1;                  // SPD = 1 kt per step
+  const newVal = _demoApDragStartVal + steps * stepSize;
+  if (newVal === _demoApDragLastSet) return;
+  _demoApDragLastSet = newVal;
+  if      (_demoApDragAxis === 'hdg') _demoApSetHdg(newVal);
+  else if (_demoApDragAxis === 'alt') _demoApSetAlt(newVal);
+  else if (_demoApDragAxis === 'gs')  _demoApSetGs(newVal);
+}
+
+function _demoApDragEnd(e) {
+  document.removeEventListener('mousemove', _demoApDragMove, true);
+  document.removeEventListener('mouseup',   _demoApDragEnd,  true);
+  document.body.style.cursor = '';
+  const axis = _demoApDragAxis;
+  const moved = _demoApDragMoved;
+  _demoApDragAxis    = null;
+  _demoApDragMoved   = false;
+  _demoApDragLastSet = null;
+  // No-movement mouseup = treat as click → focus the input for typing.
+  if (!moved && axis) {
+    const inp = document.getElementById('demoAp' + axis.charAt(0).toUpperCase() + axis.slice(1) + 'Input');
+    if (inp) { inp.focus(); inp.select(); }
+  }
+}
+
+// Drag-pixel → step count. Linear up to 20 px (1 step per pxPerStep
+// pixels); above 20 px each pixel counts 3× (acceleration). Per-axis
+// pxPerStep tuned so a normal-sized drag moves a useful amount.
+function _demoApDragSteps(dragPx, axis) {
+  const pxPerStep = (axis === 'hdg') ? 2 : (axis === 'alt') ? 4 : 4;
+  const sign = Math.sign(dragPx);
+  const absPx = Math.abs(dragPx);
+  let steps;
+  if (absPx <= 20) steps = absPx / pxPerStep;
+  else             steps = (20 / pxPerStep) + ((absPx - 20) * 3 / pxPerStep);
+  return sign * Math.round(steps);
 }
 function _demoApReturnToAuto(axis) {
   if (_demoApMode[axis]) {
@@ -29756,8 +29850,24 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.97.25</span>
+          <span class="release-version">v2.97.26</span>
           <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>✈ Autopilot panel &mdash; drag the LCDs to scrub HDG / ALT / SPD.</strong> Click anywhere on a value display and drag vertically to bump the setpoint. Up = increase, down = decrease. Small moves make small changes (linear 1 step per 2&ndash;4 px); larger drags accelerate (each pixel beyond the first 20 counts 3&times;) so you can sweep across the full range without an endless drag. Releasing without movement still focuses the input for typing &mdash; the existing &lt;Enter&gt; commit path is unchanged. Cursor switches to <code>ns-resize</code> over each LCD so the affordance is visible.</li>
+          <li><strong>HDG now uses the aviation 1&ndash;360 convention.</strong> 360 means north (not 0); 361 wraps to 1; &minus;90 wraps to 270; 720 wraps to 360. The wrap formula is <code>((v &minus; 1) mod 360 + 360) mod 360 + 1</code>, exposed via <code>_demoNormHdg360()</code>. The integrator continues to use its 0&ndash;359 internal form; only the display + setpoint storage adopts 1&ndash;360. Input bounds updated to <code>min=1 max=360</code>.</li>
+          <li><strong>ALT snaps to whole 100-ft increments.</strong> Dragging or typing 8016 settles at 8000; 8050 rounds up to 8100; 8049 rounds down to 8000. Snap happens inside <code>_demoApSetAlt</code> via <code>Math.round(v / 100) * 100</code>, then the cat-derived service ceiling clamps the upper bound. Input step changed from 500 to 100 so the browser's native ▲/▼ arrows also follow the convention.</li>
+          <li><strong>SPD continues to clamp to the aircraft's category min/max</strong> &mdash; Cat 1 caps at 60&ndash;180 kt, Cat 6 at 180&ndash;520 kt, Cat 7 at 200&ndash;560 kt &mdash; whether the value comes from the drag, the input, the ▼/▲ steppers, or programmatic <code>_demoApSetGs</code> calls. Drag below or above the category band silently clamps to the band edge.</li>
+          <li><strong>Verified:</strong> 7-case HDG wrap probe (1 / 360 / 0 / 361 / &minus;90 / 720 / 90.5), 6-case ALT snap+clamp probe, 3-case SPD clamp probe (Cat 6 = 180&ndash;520), 9-case drag-math probe (HDG/ALT/SPD &times; small/medium/large) &mdash; every assertion passes. Cursor:ns-resize confirmed on the LCDs.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.25</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -39146,10 +39256,12 @@ function rgSendToFlightPlanner() {
             <div class="demo-ap-axis-label">HDG</div>
             <div class="demo-ap-value-row">
               <button class="demo-ap-step" onclick="_demoApBumpHdg(-10)" title="-10°">◀</button>
-              <input type="number" id="demoApHdgInput" min="0" max="359" step="1" inputmode="numeric"
+              <input type="number" id="demoApHdgInput" min="1" max="360" step="1" inputmode="numeric"
                      class="demo-ap-lcd"
+                     onmousedown="_demoApDragStart('hdg', event)"
                      onkeydown="if(event.key==='Enter'){this.blur();_demoApSetHdg(this.value);}"
-                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()"
+                     title="Drag up/down to scrub, click to type. Heading wraps 1–360." />
               <button class="demo-ap-step" onclick="_demoApBumpHdg(10)" title="+10°">▶</button>
             </div>
             <button class="demo-ap-mode" id="demoApHdgMode" onclick="_demoApToggleAxisMode('hdg')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
@@ -39159,10 +39271,12 @@ function rgSendToFlightPlanner() {
             <div class="demo-ap-axis-label">ALT</div>
             <div class="demo-ap-value-row">
               <button class="demo-ap-step" onclick="_demoApBumpAlt(-1000)" title="-1000 ft">◀</button>
-              <input type="number" id="demoApAltInput" min="0" step="500" inputmode="numeric"
+              <input type="number" id="demoApAltInput" min="0" step="100" inputmode="numeric"
                      class="demo-ap-lcd"
+                     onmousedown="_demoApDragStart('alt', event)"
                      onkeydown="if(event.key==='Enter'){this.blur();_demoApSetAlt(this.value);}"
-                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()"
+                     title="Drag up/down to scrub, click to type. Snaps to 100-ft increments; clamped to aircraft service ceiling." />
               <button class="demo-ap-step" onclick="_demoApBumpAlt(1000)" title="+1000 ft">▶</button>
             </div>
             <button class="demo-ap-mode" id="demoApAltMode" onclick="_demoApToggleAxisMode('alt')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
@@ -39174,8 +39288,10 @@ function rgSendToFlightPlanner() {
               <button class="demo-ap-step" onclick="_demoApBumpGs(-10)" title="-10 kt">◀</button>
               <input type="number" id="demoApGsInput" min="0" step="5" inputmode="numeric"
                      class="demo-ap-lcd"
+                     onmousedown="_demoApDragStart('gs', event)"
                      onkeydown="if(event.key==='Enter'){this.blur();_demoApSetGs(this.value);}"
-                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()"
+                     title="Drag up/down to scrub, click to type. Clamped to the aircraft's category min/max." />
               <button class="demo-ap-step" onclick="_demoApBumpGs(10)" title="+10 kt">▶</button>
             </div>
             <button class="demo-ap-mode" id="demoApGsMode" onclick="_demoApToggleAxisMode('gs')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
