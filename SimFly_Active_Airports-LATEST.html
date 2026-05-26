@@ -604,6 +604,33 @@
   .npc-btn-file:hover { background: rgba(255,106,0,0.1); }
   .npc-btn-save   { border-color: var(--accent2); color: var(--accent2); background: rgba(255,106,0,0.15); }
   .npc-btn-save:hover { background: rgba(255,106,0,0.3); }
+  /* v2.97.24 — visible disabled state on every .npc-btn variant. Without
+     this, a disabled save/start button kept its filled accent colour and
+     was visually indistinguishable from the enabled state. Matches both
+     the HTML `disabled` attribute and the .disabled class our refresh
+     functions add. Drops opacity dramatically, strips the filled
+     background, muted border + text, no-allowed cursor, and disables
+     hover. */
+  .npc-btn:disabled,
+  .npc-btn.disabled {
+    opacity: 0.40;
+    cursor: not-allowed;
+    background: transparent !important;
+    border-color: var(--muted) !important;
+    color: var(--muted) !important;
+  }
+  .npc-btn:disabled:hover,
+  .npc-btn.disabled:hover {
+    background: transparent !important;
+    border-color: var(--muted) !important;
+    color: var(--muted) !important;
+  }
+  body.light-mode .npc-btn:disabled,
+  body.light-mode .npc-btn.disabled {
+    /* Match light-mode --muted (#4a6278) but reduce contrast further so the
+       button reads as clearly inactive against the cream surface. */
+    opacity: 0.50;
+  }
 
   /* ── FLIGHT PLAN SETTINGS MODAL ── */
   /* Region map (#regionModal) sits at z-index 9000 — Flight Plan settings modal
@@ -5999,7 +6026,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.97.21';
+const APP_VERSION = '2.97.25';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11801,7 +11828,7 @@ function _demoStart() {
     raw = _demoRawFromSbOfp(_sbOfpLastData);
   }
   if (!raw) {
-    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load or save a flight plan first.', 'err');
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load a flight plan first.', 'err');
     return;
   }
   const acCode = _demoGetSelectedAircraftCode();
@@ -12238,17 +12265,40 @@ function _demoCloseModal() {
   if (m) m.classList.remove('open');
 }
 function _demoRefreshSaveButtonState() {
-  const btn = document.getElementById('demoSavePlanBtn');
-  if (!btn) return;
-  const hasPlan = !!(typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && _sbOfpLastData.origin && _sbOfpLastData.destination);
-  if (hasPlan) {
-    btn.removeAttribute('disabled');
-    btn.classList.remove('disabled');
-    btn.title = 'Save the currently-loaded flight plan to a JSON file for use as a demo plan';
-  } else {
-    btn.setAttribute('disabled', 'disabled');
-    btn.classList.add('disabled');
-    btn.title = 'Load a SimBrief flight plan first to enable Save';
+  // Save (demoSavePlanBtn) requires a SimBrief plan since that's what we
+  // distill into the file. Start (demoStartBtn) accepts either a demo
+  // file loaded from disk OR a SimBrief plan — same as _demoStart's gate.
+  const saveBtn  = document.getElementById('demoSavePlanBtn');
+  const startBtn = document.getElementById('demoStartBtn');
+  const hasSbPlan = !!(typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && _sbOfpLastData.origin && _sbOfpLastData.destination);
+  const hasDemoFile = !!(typeof _demoLoadedPlanRaw !== 'undefined' && _demoLoadedPlanRaw && _demoLoadedPlanRaw.dep && _demoLoadedPlanRaw.dest);
+  const hasAnyPlan = hasSbPlan || hasDemoFile;
+
+  // v2.97.23 — both Save and Start gate on hasAnyPlan now. Save can
+  // re-write a loaded demo file under a new filename, so it no longer
+  // strictly requires a SimBrief plan as its source.
+  if (saveBtn) {
+    if (hasAnyPlan) {
+      saveBtn.removeAttribute('disabled');
+      saveBtn.classList.remove('disabled');
+      saveBtn.title = 'Save the currently-loaded flight plan to a JSON file' +
+        (hasSbPlan ? '' : ' (re-saves the loaded demo file — you can change the filename)');
+    } else {
+      saveBtn.setAttribute('disabled', 'disabled');
+      saveBtn.classList.add('disabled');
+      saveBtn.title = 'Load a flight plan first to enable Save';
+    }
+  }
+  if (startBtn) {
+    if (hasAnyPlan) {
+      startBtn.removeAttribute('disabled');
+      startBtn.classList.remove('disabled');
+      startBtn.title = 'Start the demo with the loaded flight plan';
+    } else {
+      startBtn.setAttribute('disabled', 'disabled');
+      startBtn.classList.add('disabled');
+      startBtn.title = 'Load a flight plan first to enable Start';
+    }
   }
 }
 
@@ -12307,12 +12357,19 @@ function _demoEsc(s) {
 //     browser's default downloads folder. User can still edit the name.
 //   • User cancels either dialog → silent return.
 async function _demoSavePlan() {
-  if (!(typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData)) {
-    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: no flight plan loaded.', 'err');
+  // v2.97.23 — accept either source: a previously-loaded demo file
+  // (lets the user re-save under a new filename) OR the live SimBrief
+  // plan (distilled into the demo shape). Demo file wins when both
+  // exist since that's what the user explicitly loaded into the demo.
+  let raw = (typeof _demoLoadedPlanRaw !== 'undefined' && _demoLoadedPlanRaw) ? _demoLoadedPlanRaw : null;
+  if (!raw && typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
+    raw = _demoRawFromSbOfp(_sbOfpLastData);
+  }
+  if (!raw) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load a flight plan first.', 'err');
     return;
   }
-  const raw = _demoRawFromSbOfp(_sbOfpLastData);
-  if (!raw) {
+  if (!raw.dep || !raw.dest) {
     if (typeof _aaRtToast === 'function') _aaRtToast('Demo: flight plan missing origin/destination.', 'err');
     return;
   }
@@ -29199,8 +29256,8 @@ function rgSendToFlightPlanner() {
         <div class="demo-section-title">Flight Plan</div>
         <div class="demo-loaded-label" id="demoLoadedLabel">No flight plan loaded</div>
         <div class="demo-row">
-          <button class="npc-btn npc-btn-save" id="demoSavePlanBtn" onclick="_demoSavePlan()" disabled>💾 Save Demo Flight Plan</button>
           <button class="npc-btn npc-btn-cancel" id="demoLoadPlanBtn" onclick="_demoLoadPlan()" title="Load a previously-saved demo flight plan from disk">📂 Load Demo Flight Plan</button>
+          <button class="npc-btn npc-btn-save" id="demoSavePlanBtn" onclick="_demoSavePlan()" disabled>💾 Save Demo Flight Plan</button>
           <input type="file" id="demoLoadInput" accept="application/json,.json" style="display:none" onchange="_demoLoadPlanFile(this.files && this.files[0])">
         </div>
         <div class="demo-section-hint">
@@ -29225,7 +29282,7 @@ function rgSendToFlightPlanner() {
         </div>
         <div class="fp-settings-btns">
           <button class="npc-btn npc-btn-cancel" onclick="_demoCloseModal()">Cancel</button>
-          <button class="npc-btn npc-btn-save" onclick="_demoStart()">▶ Start Demo</button>
+          <button class="npc-btn npc-btn-save" id="demoStartBtn" onclick="_demoStart()" disabled>▶ Start Demo</button>
         </div>
       </div>
     </div>
@@ -29699,8 +29756,59 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v2.97.21</span>
+          <span class="release-version">v2.97.25</span>
           <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Demo modal &mdash; Load and Save button order swapped.</strong> <em>📂 Load Demo Flight Plan</em> now comes before <em>💾 Save Demo Flight Plan</em>, matching the natural workflow (you typically load an existing plan before saving a modified copy, and on first run you can only Load since Save needs something to save).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.24</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Disabled state on modal action buttons is now unmistakable.</strong> Pre-v2.97.24 the <code>.npc-btn</code> class had no disabled styling at all — only the browser's default ~50% opacity, which on a filled accent-coloured button still read as "active". The Demo modal's Save / Start buttons were the visible offender. New rule covers every variant (<code>.npc-btn-save</code>, <code>.npc-btn-cancel</code>, <code>.npc-btn-file</code>): when disabled, the button drops to 40% opacity (50% in light mode), strips its filled background, replaces accent border/text with the muted gray-blue, and switches the cursor to <code>not-allowed</code>. Hover is also disabled so a stuck cursor on the button doesn't suggest interactivity. Both <code>:disabled</code> attribute and <code>.disabled</code> class selectors match, so HTML-attribute and JS-class gates both render correctly.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.23</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 <em>Save Demo Flight Plan</em> now accepts a loaded demo file as source.</strong> Pre-v2.97.23 Save required a SimBrief plan since that was the only path that distilled into the demo file shape. But if the user had loaded a demo file from disk (no SimBrief), they couldn't re-save it under a new filename &mdash; even though the data was in memory and ready to write. <code>_demoSavePlan</code> now prefers <code>_demoLoadedPlanRaw</code> when present, falling back to <code>_demoRawFromSbOfp(_sbOfpLastData)</code> &mdash; same source-priority pattern <code>_demoStart</code> uses.</li>
+          <li><strong>Save + Start buttons now share the same gate.</strong> Both enable whenever <em>any</em> plan is loaded (SimBrief OR demo file); both disable in the no-plan state with the same "Load a flight plan first" wording. When only a demo file is loaded the Save tooltip adds a note clarifying that the action re-saves that file (with an editable filename via the Save As dialog).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.22</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode modal &mdash; Start button gates on plan presence.</strong> Pre-v2.97.22 the <em>▶ Start Demo</em> button was always enabled; clicking it with no flight plan loaded fired an error toast. Now the button is properly disabled (with adaptive tooltip) when there's no plan, matching the existing behaviour of the Save Demo Flight Plan button.</li>
+          <li><strong>Distinct gating per axis.</strong> <em>Save</em> still requires a SimBrief plan (since that's what gets distilled into the file). <em>Start</em> accepts either a SimBrief plan OR a previously-loaded demo file from disk &mdash; same gate the underlying <code>_demoStart</code> function uses. Tooltips adapt: <em>Start</em> reads "Load a flight plan first to enable Start" when disabled, "Start the demo with the loaded flight plan" when enabled.</li>
+          <li><strong>Toast message corrected.</strong> The fallback error toast inside <code>_demoStart</code> previously read "load or save a flight plan first" &mdash; misleading, since save doesn't help (save writes a plan to a file, it doesn't load one into the engine). Now reads "load a flight plan first" to match the tooltip wording.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.21</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
