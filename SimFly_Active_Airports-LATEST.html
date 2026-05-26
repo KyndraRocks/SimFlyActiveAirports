@@ -612,6 +612,10 @@
   /* Aircraft-icon picker (Shift-click on Follow A/C) — sits above the
      region map (z-index 9000) like Flight Plan Settings does. */
   #liveAcIconModal { z-index: 9500; }
+
+  /* Flight Demo Mode modal (v2.97.0) — same reason: opened from the Live
+     menu inside the region map, so must sit above the map overlay. */
+  #demoModal { z-index: 9500; }
   .live-ac-icon-grid {
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
@@ -3187,6 +3191,404 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     color:rgba(140,40,180,0.85);
     border-right-color:rgba(140,40,180,0.35);
   }
+
+  /* Flight Demo Mode floating control bar (v2.97.0) — modelled on
+     .rg-meas-floating but anchored to the BOTTOM of the map. Wider than
+     the measurement bar because it carries scrub slider + speed controls
+     + telemetry-loss buttons in a single row. */
+  .demo-floating {
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:1100;
+    display:none;
+    flex-wrap:wrap;
+    gap:0.45rem;
+    align-items:center;
+    background:rgba(8,12,22,0.94);
+    border:1px solid rgba(255,72,180,0.55);
+    padding:0.45rem 0.75rem;
+    border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,0.55);
+    pointer-events:auto;
+    max-width:calc(100vw - 60px);
+  }
+  .demo-floating.show { display:flex; }
+  body.light-mode .demo-floating {
+    background:rgba(248,246,236,0.99);
+    border-color:rgba(204,68,255,0.5);
+    box-shadow:0 6px 22px rgba(0,0,0,0.18);
+  }
+  .demo-floating-label {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.78rem;
+    letter-spacing:0.10em;
+    text-transform:uppercase;
+    color:rgba(255,120,210,0.95);
+    font-weight:700;
+    padding-right:0.45rem;
+    border-right:1px solid rgba(255,120,210,0.35);
+    margin-right:0.15rem;
+  }
+  body.light-mode .demo-floating-label {
+    color:rgba(160,40,180,0.85);
+    border-right-color:rgba(160,40,180,0.35);
+  }
+  .demo-floating .demo-sep {
+    width:1px;
+    align-self:stretch;
+    background:rgba(255,255,255,0.18);
+    margin:0 0.2rem;
+  }
+  body.light-mode .demo-floating .demo-sep { background:rgba(0,0,0,0.18); }
+  .demo-floating .rg-btn { padding:0.35rem 0.6rem; font-size:0.88rem; }
+  .demo-floating .demo-speed-preset {
+    min-width:2.6rem;
+    text-align:center;
+    opacity:0.75;
+  }
+  .demo-floating .demo-speed-preset.active {
+    opacity:1;
+    background:rgba(255,72,180,0.22);
+    border-color:rgba(255,72,180,0.7);
+  }
+  .demo-floating .rg-btn.active {
+    background:rgba(255,72,180,0.25);
+    border-color:rgba(255,72,180,0.7);
+  }
+  .demo-floating .demo-time-label {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.95rem;
+    color:rgba(255,255,255,0.9);
+    min-width:6.2rem;
+    text-align:center;
+    letter-spacing:0.05em;
+  }
+  body.light-mode .demo-floating .demo-time-label { color:rgba(20,20,30,0.85); }
+  .demo-floating .demo-phase-label {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.72rem;
+    letter-spacing:0.12em;
+    color:rgba(255,120,210,0.85);
+    min-width:5rem;
+    text-align:center;
+  }
+  .demo-floating .demo-scrub {
+    width:240px;
+    accent-color:#ff48b4;
+  }
+  .demo-floating .demo-speed-slider {
+    width:140px;
+    accent-color:#ff48b4;
+  }
+  .demo-floating .demo-speed-label-num {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.85rem;
+    color:rgba(255,255,255,0.85);
+    min-width:2.4rem;
+    text-align:right;
+  }
+  body.light-mode .demo-floating .demo-speed-label-num { color:rgba(20,20,30,0.85); }
+
+  /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
+     conventions used by the SimBrief settings modal so the look is
+     consistent across all AA setting modals. */
+  .demo-modal-body { padding:0 0.2rem; }
+  .demo-modal-section {
+    display:flex;
+    flex-direction:column;
+    gap:0.4rem;
+    padding:0.6rem 0;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  body.light-mode .demo-modal-section { border-bottom-color:rgba(0,0,0,0.08); }
+  .demo-modal-section:last-child { border-bottom:none; }
+  .demo-section-title {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.85rem;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:rgba(255,120,210,0.95);
+    font-weight:700;
+  }
+  body.light-mode .demo-section-title { color:rgba(160,40,180,0.85); }
+  .demo-section-hint {
+    font-size:0.85rem;
+    color:rgba(255,255,255,0.65);
+    line-height:1.45;
+  }
+  body.light-mode .demo-section-hint { color:rgba(20,20,30,0.65); }
+  .demo-loaded-label {
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.95rem;
+    color:rgba(255,255,255,0.85);
+    padding:0.35rem 0;
+    letter-spacing:0.04em;
+  }
+  body.light-mode .demo-loaded-label { color:rgba(20,20,30,0.85); }
+  .demo-row {
+    display:flex;
+    gap:0.5rem;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .demo-ac-select {
+    flex:1 1 auto;
+    min-width:240px;
+    padding:0.4rem 0.6rem;
+    font-size:0.95rem;
+    background:rgba(0,0,0,0.35);
+    color:#fff;
+    border:1px solid rgba(255,255,255,0.2);
+    border-radius:5px;
+    font-family:'Rajdhani',sans-serif;
+  }
+  body.light-mode .demo-ac-select {
+    background:rgba(255,255,255,0.8);
+    color:#1a1a2e;
+    border-color:rgba(0,0,0,0.2);
+  }
+
+  /* Autopilot MCP-style strip (v2.97.6). Compact horizontal cluster
+     positioned dynamically above the floating bar via JS so wrapping of
+     the bar doesn't cause overlap. Each axis: tiny label, LCD-style
+     value display with inline ◀/▶ steppers, single MNG/SEL mode toggle
+     below. Window-only — header bar is intentionally minimal. */
+  .demo-ap-panel {
+    position:absolute;
+    bottom:90px;  /* JS overrides at toggle time using the floating bar's actual height */
+    left:50%;
+    transform:translateX(-50%);
+    z-index:1101;
+    display:none;
+    background:linear-gradient(180deg, rgba(10,12,18,0.97) 0%, rgba(14,18,26,0.97) 100%);
+    border:1px solid rgba(80,90,110,0.6);
+    border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+    padding:0.35rem 0.55rem 0.45rem;
+    pointer-events:auto;
+    max-width:calc(100vw - 60px);
+    font-family:'Rajdhani',sans-serif;
+    color:#dde4f0;
+  }
+  .demo-ap-panel.show { display:block; }
+  body.light-mode .demo-ap-panel {
+    background:linear-gradient(180deg, rgba(238,234,224,0.99) 0%, rgba(228,222,210,0.99) 100%);
+    border-color:rgba(120,110,140,0.55);
+    color:#1a1f2e;
+    box-shadow:0 6px 22px rgba(0,0,0,0.22);
+  }
+  .demo-ap-hdr {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:0.3rem;
+    padding-bottom:0.2rem;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  body.light-mode .demo-ap-hdr { border-bottom-color:rgba(0,0,0,0.1); }
+  .demo-ap-hdr-title {
+    font-size:0.7rem;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:rgba(180,200,220,0.9);
+    font-weight:700;
+  }
+  body.light-mode .demo-ap-hdr-title { color:rgba(60,80,120,0.85); }
+  .demo-ap-close {
+    background:none; border:none; cursor:pointer;
+    color:rgba(255,255,255,0.55);
+    font-size:0.85rem; line-height:1; padding:0 0.2rem;
+    transition:color 0.12s;
+  }
+  .demo-ap-close:hover { color:#fff; }
+  body.light-mode .demo-ap-close { color:rgba(20,20,30,0.55); }
+
+  .demo-ap-grid {
+    display:flex; flex-wrap:nowrap;
+    gap:0.4rem;
+    align-items:stretch;
+  }
+  .demo-ap-col {
+    display:flex; flex-direction:column;
+    gap:0.22rem;
+    min-width:6.5rem;
+    padding:0.25rem 0.3rem 0.3rem;
+    background:rgba(0,0,0,0.35);
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:5px;
+  }
+  body.light-mode .demo-ap-col {
+    background:rgba(255,255,255,0.6);
+    border-color:rgba(0,0,0,0.08);
+  }
+  .demo-ap-axis-label {
+    font-size:0.62rem;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:rgba(180,200,220,0.7);
+    font-weight:700;
+    text-align:center;
+    padding-bottom:0.1rem;
+  }
+  body.light-mode .demo-ap-axis-label { color:rgba(40,40,55,0.65); }
+  .demo-ap-direct-icon {
+    color:#ff66c8;
+    font-size:0.95rem;
+    margin-right:0.1rem;
+  }
+  body.light-mode .demo-ap-direct-icon { color:#9b2d9b; }
+
+  .demo-ap-value-row {
+    display:flex; align-items:stretch;
+    gap:0.15rem;
+  }
+  .demo-ap-step {
+    flex-shrink:0;
+    width:1.3rem;
+    background:rgba(255,255,255,0.04);
+    color:#cfd5e0;
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:3px;
+    cursor:pointer;
+    font-size:0.7rem;
+    line-height:1;
+    padding:0;
+    transition:background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .demo-ap-step:hover {
+    background:rgba(255,72,180,0.2);
+    border-color:rgba(255,72,180,0.55);
+    color:#fff;
+  }
+  body.light-mode .demo-ap-step {
+    background:rgba(255,255,255,0.75);
+    color:#1a1f2e;
+    border-color:rgba(0,0,0,0.15);
+  }
+  body.light-mode .demo-ap-step:hover {
+    background:rgba(160,40,180,0.16);
+    border-color:rgba(160,40,180,0.5);
+  }
+
+  /* LCD-style numeric display — green when managed (AUTO/plan),
+     magenta when selected (manual). Border glows in mode color. */
+  .demo-ap-lcd {
+    flex:1 1 auto;
+    min-width:0;
+    background:#000;
+    color:#5dffa1;  /* default = managed = green */
+    border:1px solid rgba(93,255,161,0.55);
+    border-radius:3px;
+    padding:0.15rem 0.25rem;
+    font-family:'Rajdhani',sans-serif;
+    font-size:1.1rem;
+    font-weight:700;
+    letter-spacing:0.06em;
+    text-align:center;
+    text-shadow:0 0 4px rgba(93,255,161,0.45);
+    -moz-appearance:textfield;
+    transition:color 0.18s, border-color 0.18s, text-shadow 0.18s;
+  }
+  .demo-ap-col[data-mode="sel"] .demo-ap-lcd {
+    color:#ff66c8;  /* manual = magenta */
+    border-color:rgba(255,102,200,0.65);
+    text-shadow:0 0 5px rgba(255,102,200,0.55);
+  }
+  .demo-ap-lcd::-webkit-outer-spin-button,
+  .demo-ap-lcd::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .demo-ap-lcd:focus {
+    outline:none;
+    background:#0a0f0a;
+    border-color:#fff;
+  }
+  body.light-mode .demo-ap-lcd {
+    background:#0a1a14;
+    color:#7dffaf;
+    border-color:rgba(93,255,161,0.55);
+  }
+  body.light-mode .demo-ap-col[data-mode="sel"] .demo-ap-lcd {
+    color:#ff8ad6;
+    border-color:rgba(255,102,200,0.65);
+  }
+
+  .demo-ap-direct-select {
+    flex:1 1 auto;
+    min-width:0;
+    background:#000;
+    color:#5dffa1;
+    border:1px solid rgba(93,255,161,0.55);
+    border-radius:3px;
+    padding:0.15rem 0.25rem;
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.85rem;
+    font-weight:700;
+    letter-spacing:0.04em;
+    text-align:left;
+    text-shadow:0 0 4px rgba(93,255,161,0.45);
+  }
+  body.light-mode .demo-ap-direct-select {
+    background:#0a1a14;
+    color:#7dffaf;
+  }
+
+  /* Mode toggle (MNG ↔ SEL) — small flat button below the value.
+     Green when MNG, magenta when SEL. Mirrors the LCD colour. */
+  .demo-ap-mode {
+    width:100%;
+    padding:0.22rem 0.3rem;
+    background:rgba(93,255,161,0.12);
+    color:#a8ffcc;
+    border:1px solid rgba(93,255,161,0.45);
+    border-radius:3px;
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.72rem;
+    letter-spacing:0.04em;
+    font-weight:600;
+    cursor:pointer;
+    transition:background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .demo-ap-mode:hover {
+    background:rgba(93,255,161,0.22);
+    color:#fff;
+  }
+  .demo-ap-col[data-mode="sel"] .demo-ap-mode {
+    background:rgba(255,102,200,0.18);
+    color:#ffd1ee;
+    border-color:rgba(255,102,200,0.55);
+  }
+  .demo-ap-col[data-mode="sel"] .demo-ap-mode:hover {
+    background:rgba(255,102,200,0.28);
+    color:#fff;
+  }
+  body.light-mode .demo-ap-mode {
+    background:rgba(50,160,90,0.18);
+    color:#155a2a;
+    border-color:rgba(50,160,90,0.5);
+  }
+  body.light-mode .demo-ap-col[data-mode="sel"] .demo-ap-mode {
+    background:rgba(160,40,160,0.18);
+    color:#5a1e7a;
+    border-color:rgba(160,40,160,0.55);
+  }
+  .demo-ap-direct-go {
+    background:rgba(255,102,200,0.22);
+    color:#ffd1ee;
+    border-color:rgba(255,102,200,0.55);
+  }
+  .demo-ap-direct-go:hover {
+    background:rgba(255,102,200,0.34);
+    color:#fff;
+  }
+
+  /* Narrow viewport stacking. */
+  @media (max-width: 760px) {
+    .demo-ap-grid { flex-wrap:wrap; }
+    .demo-ap-col { min-width:6rem; }
+  }
+  #demoApBtn.active {
+    background:rgba(255,72,180,0.25);
+    border-color:rgba(255,72,180,0.7);
+  }
   /* Follow A/C button at very narrow widths: keep only the 📍 pin —
      the trailing space is stripped so the button is a tight square. The
      wider .rg-btn-label rule at 1500px also hides the label, but this
@@ -4980,6 +5382,69 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     box-shadow:0 -8px 26px rgba(0,0,0,0.18);
   }
   .afk-dp-menu.open { display:block; }
+
+  /* ELAPSED right-click control menu (v2.97.4). Anchored at cursor, not
+     to the data panel — uses fixed positioning with explicit left/top. */
+  .afk-elapsed-menu {
+    position:fixed;
+    z-index:1100;
+    background:rgba(10,14,26,0.98);
+    border:1px solid rgba(0,200,255,0.45);
+    border-radius:8px;
+    box-shadow:0 6px 22px rgba(0,0,0,0.55);
+    padding:0.5rem 0.55rem;
+    min-width:190px;
+    font-family:'Rajdhani',sans-serif;
+    color:#dde4f0;
+    display:none;
+  }
+  .afk-elapsed-menu.open { display:flex; flex-direction:column; gap:0.3rem; }
+  body.light-mode .afk-elapsed-menu {
+    background:rgba(248,246,236,0.99);
+    border-color:rgba(0,150,200,0.55);
+    color:#1a1f2e;
+    box-shadow:0 6px 22px rgba(0,0,0,0.18);
+  }
+  .afk-elapsed-menu-hdr {
+    font-size:0.72rem;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:#7a8aa0;
+    font-weight:700;
+    padding:0 0.2rem 0.25rem;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  body.light-mode .afk-elapsed-menu-hdr { color:#5a6878; border-bottom-color:rgba(0,0,0,0.1); }
+  .afk-elapsed-menu-btn {
+    text-align:left;
+    background:rgba(255,255,255,0.04);
+    color:#dde4f0;
+    border:1px solid rgba(255,255,255,0.10);
+    border-radius:5px;
+    padding:0.42rem 0.6rem;
+    font-family:'Rajdhani',sans-serif;
+    font-size:0.95rem;
+    cursor:pointer;
+    transition:background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .afk-elapsed-menu-btn:hover:not(:disabled) {
+    background:rgba(0,200,255,0.12);
+    border-color:rgba(0,200,255,0.5);
+    color:#fff;
+  }
+  .afk-elapsed-menu-btn:disabled {
+    opacity:0.45;
+    cursor:not-allowed;
+  }
+  body.light-mode .afk-elapsed-menu-btn {
+    background:rgba(255,255,255,0.6);
+    color:#1a1f2e;
+    border-color:rgba(0,0,0,0.12);
+  }
+  body.light-mode .afk-elapsed-menu-btn:hover:not(:disabled) {
+    background:rgba(0,150,200,0.15);
+    border-color:rgba(0,150,200,0.55);
+  }
   .afk-dp-menu-hdr {
     display:flex; align-items:center; justify-content:space-between;
     font-size:0.78rem; letter-spacing:0.10em; text-transform:uppercase;
@@ -5437,7 +5902,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.96.2';
+const APP_VERSION = '2.97.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9293,7 +9758,11 @@ async function _sbOfpPlot() {
   }
   let pid = _fpGetPid();
   if (!pid) {
-    pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nIt is saved locally so you only enter it once. Shift-click the button later to open Flight Plan settings (Pilot ID, waypoint labels, route color).') || '').trim();
+    // v2.97.12 — Length-cap user input to defang accidental paste of
+    // an entire log file / clipboard contents. Real SimBrief IDs are
+    // numeric and well under 32 chars; 64 leaves headroom for any
+    // future format change.
+    pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nIt is saved locally so you only enter it once. Shift-click the button later to open Flight Plan settings (Pilot ID, waypoint labels, route color).') || '').trim().slice(0, 64);
     if (!pid) return;
     _fpSetPid(pid);
   }
@@ -9626,16 +10095,30 @@ function _liveAcPickIcon(id) {
 
 function _liveAcUpdateFollowBtn() {
   const btn = document.getElementById('liveAcFollowBtn');
-  if (!btn) return;
-  // Show the button only while a live source is active.
-  btn.style.display = _liveAcSource ? '' : 'none';
-  btn.classList.toggle('active', _liveAcFollow);
-  const lbl = btn.querySelector('.rg-btn-label');
-  if (lbl) lbl.textContent = _liveAcFollow ? 'Following A/C' : 'Follow A/C';
-  btn.title = (_liveAcFollow
-    ? 'Map is following the aircraft — click to stop following'
-    : 'Keep the map centred on the live aircraft as it moves')
-    + ' — Shift-click to pick a different aircraft icon';
+  if (btn) {
+    // Show the button only while a live source is active.
+    btn.style.display = _liveAcSource ? '' : 'none';
+    btn.classList.toggle('active', _liveAcFollow);
+    const lbl = btn.querySelector('.rg-btn-label');
+    if (lbl) lbl.textContent = _liveAcFollow ? 'Following A/C' : 'Follow A/C';
+    btn.title = (_liveAcFollow
+      ? 'Map is following the aircraft — click to stop following'
+      : 'Keep the map centred on the live aircraft as it moves')
+      + ' — Shift-click to pick a different aircraft icon';
+  }
+  // v2.97.3 — Mirror state onto the demo floating-bar follow button if it
+  // exists. Centralising the update here means the existing auto-off-on-
+  // map-drag path and any other state change reach both buttons without
+  // any extra plumbing in the demo engine.
+  const dbtn = document.getElementById('demoFollowBtn');
+  if (dbtn) {
+    dbtn.classList.toggle('active', _liveAcFollow);
+    const dlbl = dbtn.querySelector('.rg-btn-label');
+    if (dlbl) dlbl.textContent = _liveAcFollow ? 'Following' : 'Follow';
+    dbtn.title = _liveAcFollow
+      ? 'Map is following the demo aircraft — click to stop'
+      : 'Center and pan the map with the demo aircraft';
+  }
 }
 
 // Aircraft breadcrumb trail — green glow + core polyline of the actual flown
@@ -9696,7 +10179,22 @@ function _liveAcStopOthers(thisSource) {
   if (_liveAcSource && _liveAcSource !== thisSource) {
     if (_liveAcSource === 'stkp')   _stkpStop();
     if (_liveAcSource === 'fsuipc') _fsuipcStop();
+    if (_liveAcSource === 'demo' && typeof _demoStop === 'function') _demoStop();
   }
+}
+
+// v2.97.0 — Downstream "is this a real-time push source" predicate.
+// Both Loss-of-Telemetry gates (eval + ETA) were originally written as
+// `_liveAcSource === 'fsuipc'` because FSUIPC was the only push source
+// whose staleness could be reasoned about (STKP polls every 10 s, which
+// dwarfs the alarm threshold). Flight Demo Mode emits packets at the
+// same 1 Hz cadence as FSUIPC and is built specifically to exercise the
+// telemetry-loss alarm, so it must satisfy the same gate. Wrapping the
+// check in a helper keeps the intent ("downstream behaviour is identical
+// for FSUIPC and Demo sources") explicit and gives one place to update
+// if a fourth push source is added later.
+function _liveSrcIsFsuipcLike() {
+  return _liveAcSource === 'fsuipc' || _liveAcSource === 'demo';
 }
 
 // Aircraft-icon library — four hand-rolled silhouettes the user can pick
@@ -10074,7 +10572,10 @@ function _liveAcTooltipHtml() {
   const spd   = (d.gs  != null && isFinite(d.gs))  ? Math.round(d.gs) + ' kt' : '—';
   const hdg   = (d.hdg != null && isFinite(d.hdg)) ? Math.round(d.hdg) + '°' : '—';
   const route = (d.dep || d.dest) ? `${d.dep || '?'} → ${d.dest || '?'}` : '';
-  const src   = d.source === 'fsuipc' ? 'FSUIPC' : (d.source === 'stkp' ? 'STKP' : '?');
+  const src   = d.source === 'fsuipc' ? 'FSUIPC'
+              : d.source === 'stkp'   ? 'STKP'
+              : d.source === 'demo'   ? 'DEMO'
+              : '?';
   const lines = [];
   lines.push(`<strong>${ident}${af ? '  ·  ' + af : ''}</strong>`);
   if (route) lines.push(`<span class="tip-line">${route}</span>`);
@@ -10114,7 +10615,10 @@ function _stkpStart() {
   if (!_rgMap) { _aaRtToast('Open the map first.', 'err'); return; }
   let token = _stkpGetToken();
   if (!token) {
-    token = (prompt('Enter your SimToolkitPro API token.\n\nGenerate one at: simtoolkitpro.co.uk/account/apikeys\n\nIMPORTANT: STKP\'s server only authorises the token AFTER you click "Start Flight" in the desktop app\'s Flight Planning tab. If you load MSFS mid-air and never click Start Flight, the API will return Authfail even though the desktop map shows your aircraft. Click Start Flight first, then click this button.\n\nThe token is saved locally so you only enter it once. Shift-click the button to change it later.') || '').trim();
+    // v2.97.12 — Length cap (parity with SimBrief PID handling). STKP
+    // tokens are typically ~32-char hex; 256 leaves substantial headroom
+    // for opaque token formats while preventing 10 KB-paste accidents.
+    token = (prompt('Enter your SimToolkitPro API token.\n\nGenerate one at: simtoolkitpro.co.uk/account/apikeys\n\nIMPORTANT: STKP\'s server only authorises the token AFTER you click "Start Flight" in the desktop app\'s Flight Planning tab. If you load MSFS mid-air and never click Start Flight, the API will return Authfail even though the desktop map shows your aircraft. Click Start Flight first, then click this button.\n\nThe token is saved locally so you only enter it once. Shift-click the button to change it later.') || '').trim().slice(0, 256);
     if (!token) return;
     _stkpSetToken(token);
   }
@@ -10169,12 +10673,18 @@ async function _stkpFetchOnce() {
     return;
   }
   const sd = data.Data || {};
+  // v2.97.12 — parseInt('not-a-number') yields NaN; without the isFinite
+  // guard the marker tooltip and _afkPhase altitude buffer would store
+  // NaN, poisoning VS calculations downstream. lat/lng already bail out
+  // in _liveAcRenderMarker, so only alt/gs need the extra guard here.
+  const stkpAltRaw = sd.alt   ? parseInt(sd.alt,   10) : NaN;
+  const stkpGsRaw  = sd.speed ? parseInt(sd.speed, 10) : NaN;
   _liveAcRenderMarker({
     lat:    parseFloat(sd.lat),
     lng:    parseFloat(sd.lon),
     hdg:    parseFloat(sd.head),
-    alt:    sd.alt   ? parseInt(sd.alt, 10)   : null,
-    gs:     sd.speed ? parseInt(sd.speed, 10) : null,
+    alt:    isFinite(stkpAltRaw) ? stkpAltRaw : null,
+    gs:     isFinite(stkpGsRaw)  ? stkpGsRaw  : null,
     ident:  sd.ident || sd.flight || null,
     af:     sd.af    || null,
     phase:  sd.phase || null,
@@ -10406,6 +10916,1503 @@ function _fsuipcScheduleRetry() {
     _fsuipcRetryCount++;
     _fsuipcOpenWs();
   }, _FSUIPC_RECONNECT);
+}
+
+/* ===========================================================================
+   Flight Demo Mode  (v2.97.0)
+   ---------------------------------------------------------------------------
+   Synthetic telemetry driver for demos at locations where MSFS / FSUIPC is
+   unavailable (corporate networks, kiosks, presentations). Generates
+   plausible aircraft state along a saved flight plan and injects it via
+   _liveAcRenderMarker — the same chokepoint FSUIPC uses — so all downstream
+   consumers (AFK alerts, data panel, marker, breadcrumb trail, telemetry
+   loss alarms) behave identically to a real flight.
+
+   Architecture:
+     • A per-SimFly-category performance profile (climb/cruise/descent)
+       is the only aircraft data needed — aircraftDB does not carry per-
+       airframe perf, so we synthesize from simfly_cat.
+     • The plan timeline is precomputed once on Start (taxi → climb → cruise
+       → descent → approach → taxi) so scrub/pause/speed changes are pure
+       functions of simSec.
+     • A real-time setInterval ticks at 1000 ms and advances simSec by
+       speed × realDt. Pause stops advancing; scrub jumps simSec directly.
+   =========================================================================== */
+
+const _DEMO_VERSION = 1;
+
+// Per-SimFly-category performance profile. Climb / descent in fpm, cruise
+// IAS in knots, cruise altitude in feet. Tuned to be visually plausible at
+// 1× speed — not aviation-accurate. Used for every aircraft in that
+// category (per-aircraft overrides intentionally out of scope).
+const _DEMO_PERF = {
+  1: { name:'Light GA',           climbFpm: 700,  cruiseKts: 110, cruiseFt: 4000,  descentFpm: 500  },
+  2: { name:'GA twin / light TP', climbFpm: 1000, cruiseKts: 160, cruiseFt: 9000,  descentFpm: 700  },
+  3: { name:'TP single / press.', climbFpm: 1500, cruiseKts: 220, cruiseFt: 18000, descentFpm: 1000 },
+  4: { name:'Large TP',           climbFpm: 1800, cruiseKts: 250, cruiseFt: 21000, descentFpm: 1200 },
+  5: { name:'Bizjet / regional',  climbFpm: 2500, cruiseKts: 380, cruiseFt: 35000, descentFpm: 1800 },
+  6: { name:'Narrowbody',         climbFpm: 2200, cruiseKts: 420, cruiseFt: 36000, descentFpm: 1500 },
+  7: { name:'Widebody',           climbFpm: 2000, cruiseKts: 470, cruiseFt: 38000, descentFpm: 1500 },
+};
+
+const _DEMO_TAXI_SEC      = 30;      // 30 s on-the-ground at each end (gives AFK alerts time to bind)
+const _DEMO_APPROACH_SEC  = 45;      // last 45 s simulated final approach below cruise (low alt, slower)
+const _DEMO_TICK_MS       = 1000;    // 1 Hz packet cadence — matches FSUIPC flight-phase cadence
+
+let _demoActive          = false;    // engine running (Start clicked, not yet Exit)
+let _demoPaused          = false;
+let _demoSimSec          = 0;        // elapsed simulated seconds along the plan
+let _demoSpeed           = 1.0;      // playback speed multiplier
+let _demoTickTmr         = 0;        // setInterval handle
+let _demoLastReal        = 0;        // performance.now() of last tick (for variable dt)
+let _demoSuspendEmit     = false;    // true → engine ticks but skips _liveAcRenderMarker (stale freeze)
+let _demoPlan            = null;     // {dep, dest, waypoints, segments, timing, acCode, acLabel, perf}
+let _demoLoadedPlanRaw   = null;     // parsed JSON file content (independent of _sbOfpLastData)
+let _demoBarUpdateTmr    = 0;        // setInterval handle for the floating-bar elapsed/total display
+let _demoLockedLiveBtns  = [];       // refs to UI buttons disabled during demo (minimal kiosk lockdown)
+
+// ── Integrating engine state (v2.97.5) ──
+// Pre-2.97.5 the engine was a pure function of simSec — _demoStateAt(t)
+// computed position/heading/alt/gs from the precomputed plan. To support
+// hands-on autopilot control (turn to HDG, climb to ALT, fly DIRECT TO,
+// etc.) the engine now carries integrating aircraft state that advances
+// each tick toward target setpoints. Plan-mode (AUTO) targets still come
+// from _demoStateAt as the reference altitude/speed profile and from the
+// next planned waypoint for the heading. Manual setpoints override per
+// axis without affecting the others. Scrub-slider use snaps the state
+// back to the plan baseline (see _demoScrubTo).
+let _demoAcLat = 0, _demoAcLon = 0;
+let _demoAcHdg = 0;
+let _demoAcAlt = 0;
+let _demoAcGs  = 0;
+let _demoNextWptIdx = 1;             // index into _demoPlan.points the aircraft is heading toward
+
+// Per-axis autopilot mode and setpoints. Each axis is independent —
+// engaging HDG doesn't change ALT/SPD modes.
+const _demoApMode      = { hdg: 'plan', alt: 'plan', gs: 'plan' };
+const _demoApSetpoints = { hdg: 0,      alt: 0,      gs: 0      };
+
+// Per-SimFly-category sanity limits for user-supplied setpoints. A Cat 1
+// Cub can't climb to FL400 or push 500 kt, so the SET buttons clamp.
+const _DEMO_CAT_LIMITS = {
+  1: { gsMin:  60, gsMax: 180, altMax: 18000 },
+  2: { gsMin:  80, gsMax: 220, altMax: 25000 },
+  3: { gsMin: 100, gsMax: 280, altMax: 30000 },
+  4: { gsMin: 120, gsMax: 320, altMax: 30000 },
+  5: { gsMin: 150, gsMax: 480, altMax: 45000 },
+  6: { gsMin: 180, gsMax: 520, altMax: 41000 },
+  7: { gsMin: 200, gsMax: 560, altMax: 43000 },
+};
+function _demoCatLimits() {
+  const ac  = (_demoPlan && _demoPlan.acCode && aircraftDB instanceof Map) ? aircraftDB.get(_demoPlan.acCode) : null;
+  const cat = (ac && ac.simfly_cat) || 6;
+  return _DEMO_CAT_LIMITS[cat] || _DEMO_CAT_LIMITS[6];
+}
+
+// Coordinated-turn rate in deg/sec from current ground speed. Uses the
+// same 25° bank as the path engine; capped at 3°/sec (standard rate
+// turn) so very slow aircraft don't crank-pivot.
+function _demoTurnRateDegPerSec(gsKts) {
+  if (!isFinite(gsKts) || gsKts < 30) return 0;
+  const vMps  = gsKts * 0.5144;
+  const tanB  = Math.tan(_DEMO_BANK_DEG * Math.PI / 180);
+  const omega = (9.81 * tanB / vMps) * 180 / Math.PI;
+  return Math.min(3, omega);
+}
+
+// Integrate aircraft state by dt simulated seconds toward the given
+// target heading / altitude / ground speed.
+function _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs) {
+  if (!isFinite(dt) || dt <= 0) return;
+  const perf = (_demoPlan && _demoPlan.perf) || _DEMO_PERF[6];
+
+  // Heading — coordinated turn at standard rate or perf-limited.
+  let dHdg = tgtHdg - _demoAcHdg;
+  while (dHdg >  180) dHdg -= 360;
+  while (dHdg < -180) dHdg += 360;
+  const maxDhdg = _demoTurnRateDegPerSec(_demoAcGs) * dt;
+  if (Math.abs(dHdg) <= maxDhdg) _demoAcHdg = ((tgtHdg + 360) % 360);
+  else                            _demoAcHdg = ((_demoAcHdg + Math.sign(dHdg) * maxDhdg + 360) % 360);
+
+  // Altitude — climbFpm up, descentFpm down. No "smooth" approach to
+  // target — just steady rate until within rate*dt of target, then snap.
+  let dAlt = tgtAlt - _demoAcAlt;
+  const altRatePerSec = (dAlt > 0 ? perf.climbFpm : perf.descentFpm) / 60;
+  const maxDalt = altRatePerSec * dt;
+  if (Math.abs(dAlt) <= maxDalt) _demoAcAlt = tgtAlt;
+  else                           _demoAcAlt += Math.sign(dAlt) * maxDalt;
+
+  // Speed — generic 2 kt/sec accel/decel. Fine for visual realism at
+  // every category; spool-up nuances out of scope for a demo.
+  const accel = 2.0;
+  let dGs = tgtGs - _demoAcGs;
+  const maxDgs = accel * dt;
+  if (Math.abs(dGs) <= maxDgs) _demoAcGs = tgtGs;
+  else                          _demoAcGs += Math.sign(dGs) * maxDgs;
+  _demoAcGs = Math.max(0, _demoAcGs);
+
+  // Position — walk gs*dt nm along current heading along a great circle.
+  const distNm = (_demoAcGs / 3600) * dt;
+  if (distNm > 1e-9) {
+    const pos = _demoMoveAlong(_demoAcLat, _demoAcLon, _demoAcHdg, distNm);
+    _demoAcLat = pos[0];
+    _demoAcLon = pos[1];
+  }
+}
+
+// Plan-mode AUTO heading: bearing from current position toward the next
+// un-passed planned waypoint. When _demoNextWptIdx has been bumped by a
+// DIRECT TO command, this still works correctly because that command
+// only changes the index.
+function _demoApAutoTargetHdg() {
+  if (!_demoPlan || !_demoPlan.points || _demoPlan.points.length === 0) return _demoAcHdg;
+  const idx = Math.max(0, Math.min(_demoPlan.points.length - 1, _demoNextWptIdx));
+  const wpt = _demoPlan.points[idx];
+  return _demoBearing(_demoAcLat, _demoAcLon, wpt.lat, wpt.lon);
+}
+
+// Advance the next-wpt pointer at the turn-anticipation distance for the
+// upcoming course change, so the aircraft starts banking BEFORE the wpt
+// instead of overshooting it. Falls back to a flat 2 nm threshold when
+// there's no further turn to compute (final wpt).
+function _demoApMaybeAdvanceWpt() {
+  if (!_demoPlan || !_demoPlan.points) return;
+  const pts = _demoPlan.points;
+  if (_demoNextWptIdx >= pts.length - 1) return;
+  const cur  = pts[_demoNextWptIdx];
+  const next = pts[_demoNextWptIdx + 1];
+  const inBear  = _demoBearing(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
+  const outBear = _demoBearing(cur.lat,    cur.lon,    next.lat, next.lon);
+  let delta = outBear - inBear;
+  while (delta >  180) delta -= 360;
+  while (delta < -180) delta += 360;
+  let antDist = 2.0;
+  const absDelta = Math.abs(delta);
+  if (absDelta >= _DEMO_MIN_TURN_DEG) {
+    const R = _demoTurnRadiusNm(Math.max(80, _demoAcGs));
+    antDist = Math.max(2.0, R * Math.abs(Math.tan(_demoToRad(absDelta / 2))));
+  }
+  const distToCur = _demoDistNm(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
+  if (distToCur < antDist) _demoNextWptIdx++;
+}
+
+// Best-effort "which wpt is next" after a scrub. Walks _demoPlan.points
+// and picks the closest. Good enough — the integrator self-corrects on
+// the next few ticks if it picked the wrong neighbour.
+function _demoApFindNextWptFromPos() {
+  if (!_demoPlan || !_demoPlan.points || _demoPlan.points.length < 2) return 1;
+  const pts = _demoPlan.points;
+  let best = 1, bestD = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const d = _demoDistNm(_demoAcLat, _demoAcLon, pts[i].lat, pts[i].lon);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+// AP setter actions called from the UI.
+function _demoApSetHdg(deg) {
+  const v = parseFloat(deg);
+  if (!isFinite(v)) return;
+  _demoApSetpoints.hdg = ((v % 360) + 360) % 360;
+  _demoApMode.hdg = 'manual';
+  _demoUpdateApPanel();
+}
+function _demoApSetAlt(ft) {
+  const lim = _demoCatLimits();
+  let v = parseFloat(ft);
+  if (!isFinite(v)) return;
+  v = Math.max(0, Math.min(lim.altMax, v));
+  _demoApSetpoints.alt = v;
+  _demoApMode.alt = 'manual';
+  _demoUpdateApPanel();
+}
+function _demoApSetGs(kts) {
+  const lim = _demoCatLimits();
+  let v = parseFloat(kts);
+  if (!isFinite(v)) return;
+  v = Math.max(lim.gsMin, Math.min(lim.gsMax, v));
+  _demoApSetpoints.gs = v;
+  _demoApMode.gs = 'manual';
+  _demoUpdateApPanel();
+}
+function _demoApReturnToAuto(axis) {
+  if (_demoApMode[axis]) {
+    _demoApMode[axis] = 'plan';
+    _demoUpdateApPanel();
+  }
+}
+function _demoApDirectTo(wptIdx) {
+  if (!_demoPlan || !_demoPlan.points) return;
+  const i = parseInt(wptIdx, 10);
+  // v2.97.11 — require i >= 1 so DIRECT TO can never target the dep
+  // airport (which would have the aircraft fly backward). The UI
+  // already excludes idx 0 from the pulldown; this is defense in depth
+  // for any future programmatic caller.
+  if (!isFinite(i) || i < 1 || i >= _demoPlan.points.length) return;
+  _demoNextWptIdx = i;
+  _demoApMode.hdg = 'plan';
+  _demoUpdateApPanel();
+  if (typeof _aaRtToast === 'function') {
+    const wpt = _demoPlan.points[i];
+    _aaRtToast('⌖ Direct to ' + (wpt.name || wpt.icao || 'wpt') + ' — heading recomputed.', 'ok');
+  }
+}
+
+// ── Geometry helpers (great-circle) ──
+function _demoToRad(d) { return d * Math.PI / 180; }
+function _demoToDeg(r) { return r * 180 / Math.PI; }
+function _demoDistNm(lat1, lon1, lat2, lon2) {
+  if (!isFinite(lat1) || !isFinite(lon1) || !isFinite(lat2) || !isFinite(lon2)) return 0;
+  const R  = 3440.065; // earth radius in nm
+  const φ1 = _demoToRad(lat1), φ2 = _demoToRad(lat2);
+  const Δφ = _demoToRad(lat2 - lat1), Δλ = _demoToRad(lon2 - lon1);
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+function _demoBearing(lat1, lon1, lat2, lon2) {
+  const φ1 = _demoToRad(lat1), φ2 = _demoToRad(lat2);
+  const Δλ = _demoToRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (_demoToDeg(Math.atan2(y, x)) + 360) % 360;
+}
+// Walk distNm along a great circle from (lat, lon) at given bearing.
+// Used to compute turn entry/exit points and arc centers relative to a
+// waypoint, so the inserted curve sits exactly tangent to the inbound
+// and outbound legs.
+function _demoMoveAlong(lat, lon, bearingDeg, distNm) {
+  const R = 3440.065; // nm
+  const d = distNm / R;
+  const θ  = _demoToRad(bearingDeg);
+  const φ1 = _demoToRad(lat), λ1 = _demoToRad(lon);
+  const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(θ));
+  const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(d) * Math.cos(φ1),
+                              Math.cos(d) - Math.sin(φ1) * Math.sin(φ2));
+  return [_demoToDeg(φ2), _demoToDeg(λ2)];
+}
+
+// Turn radius from a coordinated-turn bank angle and groundspeed.
+// R = V² / (g · tan(bank))  — standard aviation formula, accurate enough
+// for the demo to look right at every speed: ~0.4 nm at GA cruise (110 kt),
+// ~5.5 nm at jet cruise (420 kt). 25° bank is a typical airliner heading-
+// change bank; light GA might bank less but the radius drop from a smaller
+// speed dominates either way.
+const _DEMO_BANK_DEG       = 25;
+const _DEMO_MIN_TURN_DEG   = 3;     // below this, skip the arc (visually a straight)
+const _DEMO_ARC_STEP_DEG   = 2;     // arc point spacing (smaller = smoother visible path)
+const _DEMO_MIN_RADIUS_NM  = 0.15;  // absolute minimum turn radius (below = hard corner)
+const _DEMO_LEG_FIT_FRAC   = 0.48;  // fraction of each adjacent leg available for tangent
+function _demoTurnRadiusNm(speedKts) {
+  if (!isFinite(speedKts) || speedKts < 30) speedKts = 30;
+  const vMps  = speedKts * 0.5144;
+  const tanB  = Math.tan(_demoToRad(_DEMO_BANK_DEG));
+  const rM    = (vMps * vMps) / (9.81 * tanB);
+  return rM / 1852;
+}
+
+// Great-circle interpolation between two points by fraction f∈[0,1].
+function _demoInterp(lat1, lon1, lat2, lon2, f) {
+  const φ1 = _demoToRad(lat1), λ1 = _demoToRad(lon1);
+  const φ2 = _demoToRad(lat2), λ2 = _demoToRad(lon2);
+  const d = _demoDistNm(lat1, lon1, lat2, lon2) / 3440.065; // angular distance
+  if (d < 1e-9) return [lat1, lon1];
+  const A = Math.sin((1 - f) * d) / Math.sin(d);
+  const B = Math.sin(f * d) / Math.sin(d);
+  const x = A * Math.cos(φ1) * Math.cos(λ1) + B * Math.cos(φ2) * Math.cos(λ2);
+  const y = A * Math.cos(φ1) * Math.sin(λ1) + B * Math.cos(φ2) * Math.sin(λ2);
+  const z = A * Math.sin(φ1) + B * Math.sin(φ2);
+  return [_demoToDeg(Math.atan2(z, Math.sqrt(x*x + y*y))), _demoToDeg(Math.atan2(y, x))];
+}
+
+// ── Plan builder ──
+// Build a fully-prepared plan object from raw {dep, dest, waypoints} + an
+// aircraft code. Pre-computes segment list (with bearings + cumulative
+// distance) and the phase timing table so the per-tick state lookup is
+// O(segments) with no trig in the hot path beyond a single Interp call.
+function _demoBuildPlan(raw, acCode) {
+  if (!raw || !raw.dep || !raw.dest) return null;
+  const ac   = (acCode && aircraftDB.has(acCode)) ? aircraftDB.get(acCode) : null;
+  const cat  = ac && ac.simfly_cat ? ac.simfly_cat : 6;
+  const perf = _DEMO_PERF[cat] || _DEMO_PERF[6];
+  const acLabel = ac
+    ? (`Cat ${cat} — ${acCode} — ${ac.label || ac.model || acCode}`)
+    : (`Cat ${cat} — ${perf.name}`);
+
+  // Flatten into an ordered point list: dep → waypoints → dest.
+  // v2.97.9 — each point also carries altFt for the VNAV path (filled in
+  // below by _demoAnnotateVnav).
+  const points = [];
+  points.push({ name: raw.dep.icao || raw.dep.name || 'DEP', lat: parseFloat(raw.dep.lat), lon: parseFloat(raw.dep.lon) });
+  (raw.waypoints || []).forEach(w => {
+    const lat = parseFloat(w.lat), lon = parseFloat(w.lon);
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    const pt = { name: String(w.name || ''), lat, lon };
+    if (isFinite(w.altFt) && w.altFt > 0) pt.altFt = w.altFt;
+    points.push(pt);
+  });
+  points.push({ name: raw.dest.icao || raw.dest.name || 'DEST', lat: parseFloat(raw.dest.lat), lon: parseFloat(raw.dest.lon) });
+
+  // Build straight-line segments + cumulative distance. These straight-line
+  // distances drive the phase timing (taxi/climb/cruise/descent/approach).
+  // The actual position walk uses a separate `track` polyline below that
+  // bakes turn-radius arcs at each interior waypoint.
+  const segments = [];
+  let cum = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i+1];
+    const distNm  = _demoDistNm(a.lat, a.lon, b.lat, b.lon);
+    const bearing = _demoBearing(a.lat, a.lon, b.lat, b.lon);
+    segments.push({ fromLat: a.lat, fromLon: a.lon, toLat: b.lat, toLon: b.lon, distNm, bearing, cumStartNm: cum });
+    cum += distNm;
+  }
+  const totalNm = cum;
+
+  // Field elevations — prefer raw.dep.elev / raw.dest.elev when SimBrief
+  // (or a saved demo plan) provides them, else fall back to airportDB,
+  // else 0. v2.97.9.
+  const depAp  = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dep.icao  || '').toUpperCase()) : null;
+  const destAp = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dest.icao || '').toUpperCase()) : null;
+  const depElev  = isFinite(raw.dep.elev)  ? raw.dep.elev
+                : (depAp  && isFinite(depAp.elevation_ft))  ? depAp.elevation_ft  : 0;
+  const destElev = isFinite(raw.dest.elev) ? raw.dest.elev
+                : (destAp && isFinite(destAp.elevation_ft)) ? destAp.elevation_ft : 0;
+  // Anchor dep/dest altitudes on the points list.
+  points[0].altFt = depElev;
+  points[points.length - 1].altFt = destElev;
+  // Annotate VNAV — fills in altFt for intermediate waypoints that lack
+  // an explicit value by linear-interpolating cumulative-distance between
+  // the nearest specified neighbours. Sets _vnavHasConstraints true if
+  // any raw waypoint actually had altitude data so the engine knows to
+  // engage VNAV rather than fall back to the phase model.
+  const vnavHasConstraints = _demoAnnotateVnav(points);
+
+  // Compute phase timing. Climb/descent distance derived from perf profile;
+  // if route is too short to fit the full vertical profile, we scale both
+  // legs proportionally so the aircraft still reaches a sensible step-cruise
+  // altitude rather than spiking through it.
+  const climbDeltaFt   = Math.max(500, perf.cruiseFt - depElev);
+  const descentDeltaFt = Math.max(500, perf.cruiseFt - destElev);
+  let climbMin   = climbDeltaFt   / perf.climbFpm;        // minutes
+  let descentMin = descentDeltaFt / perf.descentFpm;      // minutes
+  let climbNm   = (climbMin   / 60) * perf.cruiseKts;
+  let descentNm = (descentMin / 60) * perf.cruiseKts;
+  let cruiseFtUsed = perf.cruiseFt;
+  if (climbNm + descentNm > totalNm * 0.9 && totalNm > 0) {
+    // Route can't accommodate full cruise — scale climb+descent into 90 %
+    // of the route and pro-rate cruise altitude so the V-profile fits.
+    const scale = (totalNm * 0.9) / (climbNm + descentNm);
+    climbNm   *= scale;
+    descentNm *= scale;
+    climbMin   *= scale;
+    descentMin *= scale;
+    cruiseFtUsed = depElev + (perf.cruiseFt - depElev) * scale;
+  }
+  const cruiseNm  = Math.max(0, totalNm - climbNm - descentNm);
+  const cruiseMin = (cruiseNm / Math.max(1, perf.cruiseKts)) * 60;
+
+  const climbSec   = climbMin   * 60;
+  const cruiseSec  = cruiseMin  * 60;
+  const descentSec = descentMin * 60;
+  const taxiSec    = _DEMO_TAXI_SEC;
+  const apprSec    = _DEMO_APPROACH_SEC;
+  const totalSec   = taxiSec + climbSec + cruiseSec + descentSec + apprSec + taxiSec;
+
+  // Build the speed-aware track. Each interior waypoint is expanded into a
+  // tangent-circle arc whose radius matches the expected groundspeed at
+  // that point on the route (climb waypoints get tighter arcs, cruise
+  // waypoints get wider ones). _demoStateAt walks this track for both
+  // position and heading, so the marker actually flies the turn instead
+  // of snapping bearings at each waypoint.
+  const speedAtNm = (d) => {
+    if (!isFinite(d) || d <= 0) return perf.cruiseKts * 0.55;
+    if (d < climbNm) {
+      const f = d / Math.max(0.001, climbNm);
+      return perf.cruiseKts * (0.55 + 0.45 * f);
+    }
+    if (d < climbNm + cruiseNm)            return perf.cruiseKts;
+    if (d < climbNm + cruiseNm + descentNm) {
+      const f = (d - climbNm - cruiseNm) / Math.max(0.001, descentNm);
+      return perf.cruiseKts * (1 - 0.30 * f);
+    }
+    return 100; // approach / taxi
+  };
+  const track = _demoBuildTrack(points, speedAtNm);
+
+  return {
+    raw,
+    acCode, acLabel,
+    perf,
+    points,
+    segments,
+    track,
+    totalNm,
+    hasVnav: vnavHasConstraints,
+    timing: {
+      taxiSec, climbSec, cruiseSec, descentSec, apprSec, totalSec,
+      climbNm, cruiseNm, descentNm,
+      depElev, destElev,
+      cruiseFt:  cruiseFtUsed,
+      cruiseKts: perf.cruiseKts,
+    },
+  };
+}
+
+// ── VNAV annotation (v2.97.9) ──
+// Fills in `altFt` on every point in the list. Dep/dest are pre-anchored
+// to their field elevation by the caller; intermediate points either
+// already have altFt (from SimBrief altitude_feet or a saved demo plan)
+// or get one via linear-interpolation along cumulative great-circle
+// distance between the nearest specified neighbours. Returns true if
+// any *raw* intermediate had an altitude constraint so the engine knows
+// to engage VNAV; returns false when only dep/dest are anchored (in
+// which case the simple-triangle phase model from _demoStateAt is the
+// better fallback).
+function _demoAnnotateVnav(points) {
+  if (!points || points.length < 2) return false;
+  // Detect whether any intermediate point arrived with an altitude.
+  let hasRawConstraint = false;
+  for (let i = 1; i < points.length - 1; i++) {
+    if (isFinite(points[i].altFt) && points[i].altFt > 0) { hasRawConstraint = true; break; }
+  }
+  if (!hasRawConstraint) return false;
+  // Cumulative distance per point (used for distance-weighted interp).
+  const cum = [0];
+  for (let i = 1; i < points.length; i++) {
+    cum.push(cum[i - 1] + _demoDistNm(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon));
+  }
+  // Fill in missing intermediates by interpolating between the nearest
+  // points that already have altFt (which always includes dep at index 0
+  // and dest at the last index, since the caller pre-anchors those).
+  for (let i = 1; i < points.length - 1; i++) {
+    if (isFinite(points[i].altFt)) continue;
+    let prev = i - 1; while (prev > 0 && !isFinite(points[prev].altFt)) prev--;
+    let next = i + 1; while (next < points.length - 1 && !isFinite(points[next].altFt)) next++;
+    const denom = cum[next] - cum[prev];
+    if (isFinite(points[prev].altFt) && isFinite(points[next].altFt) && denom > 0) {
+      const f = (cum[i] - cum[prev]) / denom;
+      points[i].altFt = points[prev].altFt + (points[next].altFt - points[prev].altFt) * f;
+    } else {
+      points[i].altFt = isFinite(points[prev].altFt) ? points[prev].altFt
+                      : isFinite(points[next].altFt) ? points[next].altFt
+                      : points[0].altFt;
+    }
+  }
+  return true;
+}
+
+// Managed-mode altitude target. When the plan has waypoint altitude
+// constraints (real VNAV), interpolates the target along the current
+// leg by distance fraction; otherwise falls back to the phase-derived
+// single-triangle altitude from _demoStateAt.
+function _demoVnavManagedAlt(planBase) {
+  const fallback = (planBase && isFinite(planBase.alt)) ? planBase.alt : _demoAcAlt;
+  if (!_demoPlan || !_demoPlan.hasVnav) return fallback;
+  const pts = _demoPlan.points;
+  if (!pts || pts.length < 2) return fallback;
+  // The aircraft is on the leg between pts[idx-1] and pts[idx], where idx
+  // is _demoNextWptIdx (clamped to a valid leg endpoint). Past the last
+  // leg, lock to the dest altitude.
+  const idx = Math.max(1, Math.min(pts.length - 1, _demoNextWptIdx));
+  const fromPt = pts[idx - 1];
+  const toPt   = pts[idx];
+  if (!isFinite(fromPt.altFt) || !isFinite(toPt.altFt)) return fallback;
+  const legDist = _demoDistNm(fromPt.lat, fromPt.lon, toPt.lat, toPt.lon);
+  const distFromStart = _demoDistNm(fromPt.lat, fromPt.lon, _demoAcLat, _demoAcLon);
+  const f = legDist > 0 ? Math.max(0, Math.min(1, distFromStart / legDist)) : 0;
+  return fromPt.altFt + (toPt.altFt - fromPt.altFt) * f;
+}
+
+// ── Track builder (turn-radius arcs at interior waypoints) ──
+// Walks the waypoint list. For each interior point, replaces the hard
+// corner with a tangent-circle arc whose radius comes from the expected
+// groundspeed at that waypoint's straight-line cumulative distance. The
+// returned polyline carries pre-computed cumulative distance + heading
+// per node, so _demoStateAt walks it in O(N) without any trig in the
+// hot path beyond the inter-node interpolation.
+function _demoBuildTrack(points, speedAtFn) {
+  if (!points || points.length < 2) return [];
+
+  // Pre-compute straight-line bearings, leg distances, and cumulative
+  // straight-line distance per waypoint. The cumulative distance is what
+  // we feed into speedAtFn to pick a realistic radius for each turn.
+  const slBearings = [];
+  const slDists    = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    slBearings.push(_demoBearing(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+    slDists.push(_demoDistNm(points[i].lat, points[i].lon, points[i+1].lat, points[i+1].lon));
+  }
+  const slCum = [0];
+  for (let i = 0; i < slDists.length; i++) slCum.push(slCum[slCum.length - 1] + slDists[i]);
+
+  const track = [];
+  track.push({ lat: points[0].lat, lon: points[0].lon, bearing: slBearings[0] });
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const W       = points[i];
+    const inBear  = slBearings[i - 1];
+    const outBear = slBearings[i];
+    // Normalize deflection to [-180, 180]. Positive = right turn, negative = left.
+    let delta = outBear - inBear;
+    while (delta >  180) delta -= 360;
+    while (delta < -180) delta += 360;
+    const absDelta = Math.abs(delta);
+
+    // Below the minimum deflection threshold, the corner is effectively
+    // straight — no arc needed, just pass through W.
+    if (absDelta < _DEMO_MIN_TURN_DEG) {
+      track.push({ lat: W.lat, lon: W.lon, bearing: outBear });
+      continue;
+    }
+
+    // Per-waypoint radius from the expected gs at that point. Floor at
+    // 80 kt so a low-altitude waypoint inside taxi/approach doesn't
+    // produce an absurdly tight arc.
+    const wpKts          = Math.max(80, (speedAtFn && speedAtFn(slCum[i])) || 100);
+    const idealR         = _demoTurnRadiusNm(wpKts);
+    const tanHalfDelta   = Math.abs(Math.tan(_demoToRad(absDelta / 2)));
+    const idealTangent   = idealR * tanHalfDelta;
+
+    // Real flight management systems anticipate turns by R · tan(δ/2). If
+    // the ideal tangent doesn't fit on the adjacent legs (common on dense
+    // SID/STAR sequences), shrink the radius to whatever fits rather than
+    // snapping a hard corner. Bank angle implicitly steepens — visually
+    // the marker still curves through the turn instead of pivoting on a
+    // pin. Only below the absolute minimum radius do we fall back to a
+    // hard corner.
+    const maxTangent = _DEMO_LEG_FIT_FRAC * Math.min(slDists[i - 1], slDists[i]);
+    let R = idealR;
+    if (idealTangent > maxTangent && tanHalfDelta > 1e-6) {
+      R = maxTangent / tanHalfDelta;
+    }
+    if (R < _DEMO_MIN_RADIUS_NM) {
+      track.push({ lat: W.lat, lon: W.lon, bearing: outBear });
+      continue;
+    }
+    const tangentDist = R * tanHalfDelta;
+
+    // Tangent points + circle center.
+    const entry        = _demoMoveAlong(W.lat, W.lon, (inBear + 180 + 360) % 360, tangentDist);
+    const sign         = delta > 0 ? 1 : -1;
+    const perpFromEntry = ((inBear + 90 * sign) + 360) % 360;
+    const center       = _demoMoveAlong(entry[0], entry[1], perpFromEntry, R);
+
+    // Generate arc points. Each node's `bearing` field is the heading
+    // FROM this node toward the next node. For an arc step that's the
+    // tangent at the next step's angular position. The very last arc
+    // node's heading is the outbound leg bearing.
+    const numSteps = Math.max(4, Math.ceil(absDelta / _DEMO_ARC_STEP_DEG));
+    for (let s = 0; s <= numSteps; s++) {
+      const f      = s / numSteps;
+      const radial = ((inBear - 90 * sign) + delta * f + 360) % 360;
+      const pos    = _demoMoveAlong(center[0], center[1], radial, R);
+      const headingHere = (s < numSteps)
+        ? (((inBear + delta * ((s + 1) / numSteps)) + 720) % 360)
+        : outBear;
+      track.push({ lat: pos[0], lon: pos[1], bearing: headingHere });
+    }
+  }
+
+  // Final destination point — heading null since there's no next node.
+  track.push({ lat: points[points.length - 1].lat, lon: points[points.length - 1].lon, bearing: null });
+
+  // Pass 2: cumulative distance along the actual track (with arcs).
+  track[0].cumStartNm = 0;
+  for (let i = 1; i < track.length; i++) {
+    track[i].cumStartNm = track[i - 1].cumStartNm
+      + _demoDistNm(track[i - 1].lat, track[i - 1].lon, track[i].lat, track[i].lon);
+  }
+  return track;
+}
+
+// ── State at simSec ──
+// Pure function — same input always yields same output. Returns a packet
+// shaped identically to FSUIPC / STKP output so _liveAcRenderMarker can
+// consume it without modification.
+function _demoStateAt(simSec) {
+  const p = _demoPlan; if (!p) return null;
+  const T = p.timing;
+  const taxi = T.taxiSec, cl = T.climbSec, cr = T.cruiseSec, de = T.descentSec, ap = T.apprSec;
+  let phase, alt, gs, distAlongRoute;
+  if (simSec < taxi) {
+    phase = 'ground';
+    alt = T.depElev; gs = 0;
+    distAlongRoute = 0;
+  } else if (simSec < taxi + cl) {
+    phase = 'climb';
+    const f = (simSec - taxi) / Math.max(1, cl);
+    alt = T.depElev + (T.cruiseFt - T.depElev) * f;
+    gs  = T.cruiseKts * (0.55 + 0.45 * f); // accelerate from rotation to cruise
+    distAlongRoute = T.climbNm * f;
+  } else if (simSec < taxi + cl + cr) {
+    phase = 'cruise';
+    const t = simSec - taxi - cl;
+    alt = T.cruiseFt; gs = T.cruiseKts;
+    distAlongRoute = T.climbNm + (t / 3600) * T.cruiseKts;
+  } else if (simSec < taxi + cl + cr + de) {
+    phase = 'descent';
+    const f = (simSec - taxi - cl - cr) / Math.max(1, de);
+    alt = T.cruiseFt - (T.cruiseFt - T.destElev - 1500) * f;
+    gs  = T.cruiseKts * (1 - 0.30 * f); // bleed off speed during descent
+    distAlongRoute = T.climbNm + T.cruiseNm + T.descentNm * f;
+  } else if (simSec < taxi + cl + cr + de + ap) {
+    phase = 'approach';
+    const f = (simSec - taxi - cl - cr - de) / Math.max(1, ap);
+    alt = (T.destElev + 1500) - 1500 * f;
+    gs  = 140 - 60 * f; // 140 kt → 80 kt
+    distAlongRoute = p.totalNm;
+  } else {
+    phase = 'ground';
+    alt = T.destElev; gs = 0;
+    distAlongRoute = p.totalNm;
+  }
+
+  // Walk the track (which includes turn-radius arcs at interior waypoints)
+  // to find lat/lon + heading at distAlongRoute. Falls back to straight-line
+  // segments if the track wasn't built (e.g. degenerate two-point plan).
+  //
+  // Heading is *interpolated* between consecutive track nodes — not held
+  // constant per segment — so the marker's icon rotates continuously
+  // through each arc instead of stepping in 2° increments at every node
+  // boundary. With arc-step density of 2°, the result is visually smooth
+  // rotation at every playback speed.
+  let lat = p.points[0].lat, lon = p.points[0].lon, hdg = 0;
+  if (p.track && p.track.length > 1) {
+    let placed = false;
+    for (let i = 0; i < p.track.length - 1; i++) {
+      const a = p.track[i], b = p.track[i + 1];
+      if (distAlongRoute <= b.cumStartNm + 1e-6) {
+        const segDist = b.cumStartNm - a.cumStartNm;
+        const f = segDist > 0 ? (distAlongRoute - a.cumStartNm) / segDist : 0;
+        const ll = _demoInterp(a.lat, a.lon, b.lat, b.lon, Math.max(0, Math.min(1, f)));
+        lat = ll[0]; lon = ll[1];
+        // Linear heading interpolation between a and b, wrap-aware. a.bearing
+        // is the heading from a → next-node (which IS b for arc nodes); for
+        // smooth visual rotation we lerp toward b.bearing across the segment.
+        // If b is the final node (bearing null), hold a's bearing.
+        const aHdg = (a.bearing != null) ? a.bearing : 0;
+        const bHdg = (b.bearing != null) ? b.bearing : aHdg;
+        let dHdg = bHdg - aHdg;
+        while (dHdg >  180) dHdg -= 360;
+        while (dHdg < -180) dHdg += 360;
+        hdg = ((aHdg + dHdg * Math.max(0, Math.min(1, f))) + 720) % 360;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      const last = p.track[p.track.length - 1];
+      const prev = p.track[p.track.length - 2] || last;
+      lat = last.lat; lon = last.lon;
+      hdg = (prev.bearing != null) ? prev.bearing : 0;
+    }
+  } else if (p.segments && p.segments.length) {
+    let placed = false;
+    for (const s of p.segments) {
+      if (distAlongRoute <= s.cumStartNm + s.distNm + 1e-6) {
+        const f = s.distNm > 0 ? (distAlongRoute - s.cumStartNm) / s.distNm : 0;
+        const ll = _demoInterp(s.fromLat, s.fromLon, s.toLat, s.toLon, Math.max(0, Math.min(1, f)));
+        lat = ll[0]; lon = ll[1]; hdg = s.bearing;
+        placed = true; break;
+      }
+    }
+    if (!placed) {
+      const last = p.segments[p.segments.length - 1];
+      lat = last.toLat; lon = last.toLon; hdg = last.bearing;
+    }
+  }
+
+  return {
+    lat, lng: lon, hdg,
+    alt: Math.max(0, alt),
+    gs:  Math.max(0, gs),
+    ias: Math.max(0, gs),
+    ident:  'DEMO',
+    af:     p.acCode || null,
+    phase:  null,                 // Let _afkTick / _afkPhase derive from alt+gs — same as FSUIPC
+    dep:    (p.raw.dep  && p.raw.dep.icao)  || null,
+    dest:   (p.raw.dest && p.raw.dest.icao) || null,
+    source: 'demo',
+    // Engine's internal phase string — used only by the floating bar's phase
+    // label. NOT consumed by AFK / data panel (those still derive from alt+gs
+    // via _afkPhase, exactly as they do for FSUIPC packets).
+    _demoPhase: phase,
+  };
+}
+
+// ── Engine tick (integrating, v2.97.5) ──
+// Each tick: compute target heading/alt/gs (from manual setpoints or plan
+// baseline), integrate state by simulated dt seconds, emit a packet
+// through the FSUIPC-shaped _liveAcRenderMarker chokepoint. simSec keeps
+// advancing so the plan-phase clock (used as AUTO reference for alt/gs)
+// stays correct, and so the scrub slider keeps its semantics.
+function _demoTick() {
+  if (!_demoActive) return;
+  const now    = performance.now();
+  const dtReal = (now - _demoLastReal) / 1000;
+  _demoLastReal = now;
+  if (_demoPaused) { _demoUpdateBar(); return; }
+  const dt = dtReal * _demoSpeed;
+  _demoSimSec = Math.max(0, _demoSimSec + dt);
+  if (_demoSuspendEmit) { _demoUpdateBar(); return; }
+
+  // Plan baseline — provides AUTO references for alt/gs and the demo
+  // phase label. Heading AUTO comes from the next-wpt bearing rather
+  // than the plan track tangent so DIRECT TO works as a simple
+  // index-shift without any extra plumbing.
+  const planBase = _demoStateAt(_demoSimSec) || { alt: 0, gs: 0, _demoPhase: null };
+  const tgtHdg = _demoApMode.hdg === 'manual' ? _demoApSetpoints.hdg : _demoApAutoTargetHdg();
+  const tgtAlt = _demoApMode.alt === 'manual' ? _demoApSetpoints.alt : _demoVnavManagedAlt(planBase);
+  const tgtGs  = _demoApMode.gs  === 'manual' ? _demoApSetpoints.gs  : planBase.gs;
+
+  _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs);
+  _demoApMaybeAdvanceWpt();
+
+  try {
+    _liveAcRenderMarker({
+      lat: _demoAcLat, lng: _demoAcLon, hdg: _demoAcHdg,
+      alt: Math.max(0, _demoAcAlt),
+      gs:  Math.max(0, _demoAcGs),
+      ias: Math.max(0, _demoAcGs),
+      ident:  'DEMO',
+      af:     _demoPlan && _demoPlan.acCode || null,
+      phase:  null,
+      dep:    (_demoPlan && _demoPlan.raw && _demoPlan.raw.dep  && _demoPlan.raw.dep.icao)  || null,
+      dest:   (_demoPlan && _demoPlan.raw && _demoPlan.raw.dest && _demoPlan.raw.dest.icao) || null,
+      source: 'demo',
+      _demoPhase: planBase._demoPhase,
+    });
+  } catch (e) { console.warn('[demo] render error', e); }
+  _demoUpdateBar();
+}
+
+// ── Engine control ──
+function _demoStart() {
+  if (_demoActive) return;
+  // Build plan from raw + selected aircraft. Prefer the loaded demo plan
+  // (file-loaded), then fall back to _sbOfpLastData converted to demo
+  // shape, then refuse if nothing is available.
+  let raw = _demoLoadedPlanRaw;
+  if (!raw && typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
+    raw = _demoRawFromSbOfp(_sbOfpLastData);
+  }
+  if (!raw) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load or save a flight plan first.', 'err');
+    return;
+  }
+  const acCode = _demoGetSelectedAircraftCode();
+  const plan = _demoBuildPlan(raw, acCode);
+  if (!plan || !plan.totalNm || plan.totalNm < 1) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: route is too short — need at least 1 nm.', 'err');
+    return;
+  }
+  _demoPlan          = plan;
+  _demoSimSec        = 0;
+  _demoSpeed         = 1.0;
+  _demoPaused        = false;
+  _demoSuspendEmit   = false;
+  _demoActive        = true;
+  _demoLastReal      = performance.now();
+
+  // v2.97.7 — Block map interaction on the floating bar + AP panel.
+  // Without this, mousedown on the speed/scrub sliders (or any other
+  // dragging control) propagates down to Leaflet, which interprets the
+  // drag as a map pan. Leaflet's helpers stop the relevant pointer +
+  // wheel events at the container so every nested control behaves
+  // correctly. One-shot guarded — re-applying is a no-op.
+  if (typeof L !== 'undefined' && L.DomEvent && !window._demoPanGuardsApplied) {
+    ['demoFloating', 'demoApPanel'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      try {
+        L.DomEvent.disableClickPropagation(el);
+        L.DomEvent.disableScrollPropagation(el);
+      } catch (_) {}
+    });
+    window._demoPanGuardsApplied = true;
+  }
+  // Seed integrating state from the dep airport (v2.97.5+). Heading is
+  // bearing toward the first interior waypoint so the aircraft naturally
+  // accelerates and climbs into the route.
+  if (plan.points && plan.points.length > 1) {
+    _demoAcLat = plan.points[0].lat;
+    _demoAcLon = plan.points[0].lon;
+    _demoAcHdg = _demoBearing(plan.points[0].lat, plan.points[0].lon, plan.points[1].lat, plan.points[1].lon);
+    _demoAcAlt = plan.timing.depElev;
+    _demoAcGs  = 0;
+    _demoNextWptIdx = 1;
+  }
+  _demoApMode.hdg = 'plan'; _demoApMode.alt = 'plan'; _demoApMode.gs = 'plan';
+  _demoApSetpoints.hdg = 0; _demoApSetpoints.alt = 0; _demoApSetpoints.gs = 0;
+  if (typeof _liveAcStopOthers === 'function') _liveAcStopOthers('demo');
+  _liveAcSource = 'demo';
+
+  // Make sure the route is plotted (use the synthesized SimBrief shape so
+  // _sbOfpRender + waypoint alarms work identically to a real plan).
+  try {
+    const sb = _demoToSbOfpShape(raw);
+    _sbOfpLastData = sb;
+    if (typeof _sbOfpRender === 'function') _sbOfpRender(sb, { silent: true });
+  } catch (e) { console.warn('[demo] plan render error', e); }
+
+  // Show the floating control bar; close the config modal.
+  _demoCloseModal();
+  _demoShowFloatingBar(true);
+  _demoApplyLockdown(true);
+
+  // Periodic UI refresh (bar slider + label) at 4 Hz so scrub feels live.
+  if (_demoBarUpdateTmr) clearInterval(_demoBarUpdateTmr);
+  _demoBarUpdateTmr = setInterval(_demoUpdateBar, 250);
+
+  // Engine tick — match FSUIPC's flight cadence (1 Hz) so AFK alerts see
+  // the same packet rate they see in production.
+  if (_demoTickTmr) clearInterval(_demoTickTmr);
+  _demoTickTmr = setInterval(_demoTick, _DEMO_TICK_MS);
+  // Immediate first packet so the marker appears without waiting a full second.
+  _demoTick();
+
+  if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Flight Demo Mode started — ' + plan.acLabel, 'ok');
+}
+
+function _demoStop() {
+  if (_demoTickTmr) { clearInterval(_demoTickTmr); _demoTickTmr = 0; }
+  if (_demoBarUpdateTmr) { clearInterval(_demoBarUpdateTmr); _demoBarUpdateTmr = 0; }
+  _demoActive       = false;
+  _demoPaused       = false;
+  _demoSuspendEmit  = false;
+  _demoSimSec       = 0;
+  _demoPlan         = null;
+  // v2.97.11 — clear .active state on the telemetry-loss buttons so the
+  // next demo doesn't open with stale visual engagement from the previous run.
+  ['demoStaleBtn', 'demoDisconnectBtn'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.classList.remove('active');
+  });
+  if (_liveAcSource === 'demo' && typeof _liveAcClear === 'function') _liveAcClear();
+  _demoShowFloatingBar(false);
+  _demoApplyLockdown(false);
+  if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo stopped.', 'ok');
+}
+
+function _demoTogglePause() {
+  if (!_demoActive) return;
+  _demoPaused = !_demoPaused;
+  _demoLastReal = performance.now();
+  _demoUpdatePauseBtn();
+}
+
+function _demoSetSpeed(s) {
+  if (!_demoActive) return;
+  s = parseFloat(s);
+  if (!isFinite(s) || s <= 0) return;
+  _demoSpeed = Math.max(0.1, Math.min(10, s));
+  _demoUpdateSpeedUI();
+}
+
+function _demoScrubTo(simSec) {
+  if (!_demoActive || !_demoPlan) return;
+  simSec = Math.max(0, Math.min(_demoPlan.timing.totalSec, parseFloat(simSec) || 0));
+  _demoSimSec = simSec;
+  _demoLastReal = performance.now();
+  // Scrub returns the engine to plan-baseline at the new simSec. Manual
+  // AP setpoints are cleared — scrubbing is fundamentally a "show me the
+  // plan at this point" action, so any user-imposed heading/alt/speed
+  // overrides are dropped along with the position snap.
+  _demoApMode.hdg = 'plan'; _demoApMode.alt = 'plan'; _demoApMode.gs = 'plan';
+  // v2.97.11 — also clear any suspended-telemetry state so the marker
+  // reappears at the new position. Without this, scrubbing while in
+  // Stale/Disconnect mode leaves the marker hidden and the user can't
+  // see what they're scrubbing to.
+  _demoSuspendEmit = false;
+  ['demoStaleBtn', 'demoDisconnectBtn'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.classList.remove('active');
+  });
+  const baseline = _demoStateAt(_demoSimSec);
+  if (baseline) {
+    _demoAcLat = baseline.lat;
+    _demoAcLon = baseline.lng;
+    _demoAcHdg = baseline.hdg;
+    _demoAcAlt = baseline.alt;
+    _demoAcGs  = baseline.gs;
+    _demoNextWptIdx = _demoApFindNextWptFromPos();
+    if (!_demoSuspendEmit) {
+      try {
+        _liveAcRenderMarker({
+          lat: _demoAcLat, lng: _demoAcLon, hdg: _demoAcHdg,
+          alt: _demoAcAlt, gs: _demoAcGs, ias: _demoAcGs,
+          ident: 'DEMO', af: _demoPlan.acCode || null, phase: null,
+          dep: _demoPlan.raw.dep.icao, dest: _demoPlan.raw.dest.icao,
+          source: 'demo', _demoPhase: baseline._demoPhase,
+        });
+      } catch (_) {}
+    }
+  }
+  _demoUpdateBar();
+  _demoUpdateApPanel();
+}
+
+// ── Telemetry-loss simulation ──
+// Two flavours, exposed as two buttons on the floating bar:
+//   • Stale freeze   — stop emitting but keep _liveAcMarker / _liveAcSource.
+//                      _liveAcLastUpdate ages out → marker greys after 30 s,
+//                      telemetry-loss alarms trip per their configured threshold.
+//   • Disconnect    — fully clear the live aircraft (mirrors FSUIPC drop).
+//                      _afkSourceChanged() picks this up via _liveAcSource.
+function _demoSimStale() {
+  if (!_demoActive) return;
+  _demoSuspendEmit = !_demoSuspendEmit;
+  const btn = document.getElementById('demoStaleBtn');
+  if (btn) btn.classList.toggle('active', _demoSuspendEmit);
+  if (typeof _aaRtToast === 'function') {
+    _aaRtToast(_demoSuspendEmit
+      ? '📡 Demo: telemetry stream suspended (marker will go stale in ~30 s).'
+      : '📡 Demo: telemetry stream resumed.', 'warn');
+  }
+}
+function _demoSimDisconnect() {
+  if (!_demoActive) return;
+  // Drop the marker entirely. Engine keeps ticking simSec so resume can
+  // pick up from the same place — just call _demoSimDisconnect again to
+  // toggle the marker back on.
+  if (_liveAcMarker) {
+    if (typeof _liveAcClear === 'function') _liveAcClear();
+    _liveAcSource = 'demo'; // _liveAcClear nulls source; restore for our state
+    _demoSuspendEmit = true;
+    const btn = document.getElementById('demoDisconnectBtn');
+    if (btn) btn.classList.add('active');
+    if (typeof _aaRtToast === 'function') _aaRtToast('📡 Demo: live aircraft disconnected.', 'warn');
+  } else {
+    _demoSuspendEmit = false;
+    const btn = document.getElementById('demoDisconnectBtn');
+    if (btn) btn.classList.remove('active');
+    if (typeof _aaRtToast === 'function') _aaRtToast('📡 Demo: live aircraft reconnecting…', 'ok');
+  }
+}
+
+// ── Minimal kiosk lockdown ──
+// Disable Live-source switching (FSUIPC / STKP) and SimBrief import while
+// the demo runs — switching mid-demo would yank the marker out from under
+// our packets. Map/airport interaction stays fully alive.
+function _demoApplyLockdown(on) {
+  const ids = ['fsuipcLiveBtn', 'stkpLiveBtn', 'sbOfpBtn'];
+  ids.forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (on) {
+      btn.dataset.demoLockedTitle = btn.title || '';
+      btn.classList.add('disabled');
+      btn.setAttribute('disabled', 'disabled');
+      btn.title = 'Disabled while Flight Demo Mode is running';
+    } else {
+      btn.classList.remove('disabled');
+      btn.removeAttribute('disabled');
+      if (btn.dataset.demoLockedTitle != null) {
+        btn.title = btn.dataset.demoLockedTitle;
+        delete btn.dataset.demoLockedTitle;
+      }
+    }
+  });
+  _demoLockedLiveBtns = on ? ids : [];
+}
+
+// ── UI: floating control bar ──
+function _demoShowFloatingBar(on) {
+  const bar = document.getElementById('demoFloating');
+  if (!bar) return;
+  bar.classList.toggle('show', !!on);
+  if (on) {
+    _demoUpdatePauseBtn();
+    _demoUpdateSpeedUI();
+    _demoUpdateBar();
+    // Sync the follow button with persisted _liveAcFollow state so the
+    // active class reflects whatever the user last had set for FSUIPC.
+    if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn();
+    _demoApPopulateWaypoints();
+    _demoUpdateApPanel();
+  } else {
+    // Hide the AP panel alongside the floating bar when the demo stops.
+    const panel = document.getElementById('demoApPanel');
+    if (panel) panel.classList.remove('show');
+    const btn = document.getElementById('demoApBtn');
+    if (btn) btn.classList.remove('active');
+  }
+}
+
+// ── Autopilot panel (v2.97.6) ──
+function _demoApPanelToggle() {
+  const panel = document.getElementById('demoApPanel');
+  const btn   = document.getElementById('demoApBtn');
+  if (!panel) return;
+  const willOpen = !panel.classList.contains('show');
+  if (willOpen) _demoApRepositionPanel();
+  panel.classList.toggle('show', willOpen);
+  if (btn) btn.classList.toggle('active', willOpen);
+  if (willOpen) {
+    _demoApPopulateWaypoints();
+    _demoUpdateApPanel();
+  }
+}
+
+// Dynamically position the AP panel directly above the floating bar with a
+// fixed gap, accounting for whatever height the bar happens to be (it
+// wraps to 2 or 3 rows on narrower viewports). Runs every time the panel
+// opens and on bar updates so a viewport resize repositions cleanly.
+function _demoApRepositionPanel() {
+  const panel = document.getElementById('demoApPanel');
+  const bar   = document.getElementById('demoFloating');
+  if (!panel || !bar) return;
+  const barBottomCss = 20;            // matches .demo-floating { bottom:20px }
+  const barHeight    = bar.offsetHeight || 60;
+  const gap          = 10;
+  panel.style.bottom = (barBottomCss + barHeight + gap) + 'px';
+}
+
+// Mode toggle — clicked from the MNG/SEL button beneath each axis. From
+// 'plan' (managed), grabs the current live value as the setpoint and
+// switches to 'manual' (selected). From 'manual', releases back to plan.
+function _demoApToggleAxisMode(axis) {
+  if (axis !== 'hdg' && axis !== 'alt' && axis !== 'gs') return;
+  if (_demoApMode[axis] === 'manual') {
+    _demoApReturnToAuto(axis);
+  } else {
+    // Seed the setpoint from the current live value so the engagement is
+    // a "hold present value" rather than snapping to whatever was last typed.
+    const cur = axis === 'hdg' ? _demoAcHdg : axis === 'alt' ? _demoAcAlt : _demoAcGs;
+    if (axis === 'hdg') _demoApSetHdg(cur);
+    else if (axis === 'alt') _demoApSetAlt(cur);
+    else _demoApSetGs(cur);
+  }
+}
+
+function _demoApPopulateWaypoints() {
+  const sel = document.getElementById('demoApDirectSelect');
+  if (!sel) return;
+  if (!_demoPlan || !_demoPlan.points || _demoPlan.points.length < 2) {
+    sel.innerHTML = '<option value="">— no plan loaded —</option>';
+    return;
+  }
+  const opts = [];
+  _demoPlan.points.forEach((p, i) => {
+    // Skip the dep airport (idx 0) — direct-to-dep doesn't make sense
+    // once the aircraft is flying.
+    if (i === 0) return;
+    const name = p.name || p.icao || ('WPT ' + i);
+    const tag  = (i === _demoPlan.points.length - 1) ? ' (DEST)' : '';
+    opts.push('<option value="' + i + '">' + _demoEsc(name) + tag + '</option>');
+  });
+  // Pre-select the current next-wpt if it's still in the list.
+  sel.innerHTML = opts.join('');
+  if (_demoNextWptIdx >= 1 && _demoNextWptIdx < _demoPlan.points.length) {
+    sel.value = String(_demoNextWptIdx);
+  }
+}
+
+function _demoUpdateApPanel() {
+  // Helper: apply data-mode to the column + set the MNG/SEL button text.
+  const sync = (axis, inputId, modeBtnId, liveVal, manualVal, displayFmt) => {
+    const col = document.querySelector('[data-axis="' + axis + '"]');
+    const inp = document.getElementById(inputId);
+    const btn = document.getElementById(modeBtnId);
+    const isManual = _demoApMode[axis] === 'manual';
+    if (col) col.setAttribute('data-mode', isManual ? 'sel' : 'mng');
+    if (btn) btn.textContent = isManual ? 'Selected' : 'Managed';
+    // Don't clobber the user's typing while the input has focus.
+    if (inp && document.activeElement !== inp) {
+      const v = isManual ? manualVal : liveVal;
+      inp.value = displayFmt ? displayFmt(v) : String(Math.round(v || 0));
+    }
+  };
+  sync('hdg', 'demoApHdgInput', 'demoApHdgMode', _demoAcHdg,         _demoApSetpoints.hdg);
+  sync('alt', 'demoApAltInput', 'demoApAltMode', _demoAcAlt,         _demoApSetpoints.alt);
+  sync('gs',  'demoApGsInput',  'demoApGsMode',  _demoAcGs,          _demoApSetpoints.gs);
+
+  // DIRECT TO — there's no MNG/SEL toggle; the GO button is the action.
+  // We DO keep the dropdown's selected option synced with whatever wpt is
+  // currently next on the route so the user sees what's coming.
+  const sel = document.getElementById('demoApDirectSelect');
+  if (sel && _demoPlan && _demoPlan.points && document.activeElement !== sel) {
+    if (_demoNextWptIdx >= 1 && _demoNextWptIdx < _demoPlan.points.length) {
+      sel.value = String(_demoNextWptIdx);
+    }
+  }
+}
+
+// Stepper helpers — bump the current setpoint (or, when AUTO, seed it
+// from the current value first so the increment is intuitive).
+function _demoApBumpHdg(delta) {
+  if (_demoApMode.hdg !== 'manual') _demoApSetpoints.hdg = _demoAcHdg || 0;
+  _demoApSetHdg(_demoApSetpoints.hdg + delta);
+}
+function _demoApBumpAlt(delta) {
+  if (_demoApMode.alt !== 'manual') _demoApSetpoints.alt = _demoAcAlt || 0;
+  _demoApSetAlt(_demoApSetpoints.alt + delta);
+}
+function _demoApBumpGs(delta) {
+  if (_demoApMode.gs !== 'manual') _demoApSetpoints.gs = _demoAcGs || 0;
+  _demoApSetGs(_demoApSetpoints.gs + delta);
+}
+function _demoUpdatePauseBtn() {
+  const btn = document.getElementById('demoPauseBtn');
+  if (!btn) return;
+  btn.textContent = _demoPaused ? '▶ Play' : '⏸ Pause';
+  btn.title = _demoPaused ? 'Resume demo playback' : 'Pause demo playback';
+}
+function _demoUpdateSpeedUI() {
+  document.querySelectorAll('.demo-speed-preset').forEach(b => {
+    const v = parseFloat(b.dataset.speed);
+    b.classList.toggle('active', Math.abs(v - _demoSpeed) < 0.001);
+  });
+  const slider = document.getElementById('demoSpeedSlider');
+  if (slider && Math.abs(parseFloat(slider.value) - _demoSpeed) > 0.001) {
+    slider.value = String(_demoSpeed);
+  }
+  const lbl = document.getElementById('demoSpeedLabel');
+  if (lbl) lbl.textContent = (_demoSpeed >= 1 ? _demoSpeed.toFixed(_demoSpeed % 1 === 0 ? 0 : 1) : _demoSpeed.toFixed(2)) + '×';
+}
+function _demoUpdateBar() {
+  if (!_demoActive || !_demoPlan) return;
+  // Refresh AP panel display whenever the bar updates (4 Hz) — keeps the
+  // LCD windows live with the integrating aircraft state. Also re-checks
+  // panel positioning so a viewport resize doesn't leave it overlapping
+  // the floating bar.
+  _demoUpdateApPanel();
+  const panel = document.getElementById('demoApPanel');
+  if (panel && panel.classList.contains('show')) _demoApRepositionPanel();
+  const slider = document.getElementById('demoScrubSlider');
+  if (slider) {
+    slider.max = String(Math.round(_demoPlan.timing.totalSec));
+    if (document.activeElement !== slider) slider.value = String(Math.round(_demoSimSec));
+  }
+  const lbl = document.getElementById('demoTimeLabel');
+  if (lbl) {
+    const cur = _demoFmtMmSs(_demoSimSec);
+    const tot = _demoFmtMmSs(_demoPlan.timing.totalSec);
+    lbl.textContent = cur + ' / ' + tot;
+  }
+  const phaseLbl = document.getElementById('demoPhaseLabel');
+  if (phaseLbl) {
+    const s = _demoStateAt(_demoSimSec);
+    phaseLbl.textContent = s ? (s._demoPhase || '').toUpperCase() : '';
+  }
+}
+function _demoFmtMmSs(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? (h + ':' + mm + ':' + ss) : (mm + ':' + ss);
+}
+
+// ── UI: configuration modal ──
+function _demoOpenModal() {
+  const m = document.getElementById('demoModal');
+  if (!m) return;
+  _demoPopulateAircraftSelect();
+  _demoRefreshSaveButtonState();
+  // Show currently-loaded demo plan name (or — if none).
+  const lbl = document.getElementById('demoLoadedLabel');
+  if (lbl) {
+    if (_demoLoadedPlanRaw) {
+      lbl.textContent = (_demoLoadedPlanRaw.name || 'Demo plan')
+        + ' (' + (_demoLoadedPlanRaw.dep && _demoLoadedPlanRaw.dep.icao || '?')
+        + ' → ' + (_demoLoadedPlanRaw.dest && _demoLoadedPlanRaw.dest.icao || '?') + ')';
+    } else if (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && _sbOfpLastData.origin && _sbOfpLastData.destination) {
+      lbl.textContent = 'Currently loaded SimBrief plan ('
+        + (_sbOfpLastData.origin.icao_code || '?') + ' → '
+        + (_sbOfpLastData.destination.icao_code || '?') + ')';
+    } else {
+      lbl.textContent = 'No flight plan loaded';
+    }
+  }
+  m.classList.add('open');
+}
+function _demoCloseModal() {
+  const m = document.getElementById('demoModal');
+  if (m) m.classList.remove('open');
+}
+function _demoRefreshSaveButtonState() {
+  const btn = document.getElementById('demoSavePlanBtn');
+  if (!btn) return;
+  const hasPlan = !!(typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && _sbOfpLastData.origin && _sbOfpLastData.destination);
+  if (hasPlan) {
+    btn.removeAttribute('disabled');
+    btn.classList.remove('disabled');
+    btn.title = 'Save the currently-loaded flight plan to a JSON file for use as a demo plan';
+  } else {
+    btn.setAttribute('disabled', 'disabled');
+    btn.classList.add('disabled');
+    btn.title = 'Load a SimBrief flight plan first to enable Save';
+  }
+}
+
+// Populate the aircraft select with all known aircraft, sorted by
+// SimFly category (1→7) then alphabetically by label. Default to the
+// user's current AA aircraft pick; if none, fall back to the first
+// Cat 6 aircraft in the database.
+function _demoPopulateAircraftSelect() {
+  const sel = document.getElementById('demoAcSelect');
+  if (!sel) return;
+  if (!(aircraftDB instanceof Map) || aircraftDB.size === 0) {
+    sel.innerHTML = '<option value="">Aircraft database not loaded yet</option>';
+    return;
+  }
+  const list = [];
+  aircraftDB.forEach((ac, code) => {
+    const cat = ac && ac.simfly_cat ? ac.simfly_cat : 0;
+    const label = (ac && ac.label) ? ac.label : code;
+    list.push({ code, cat, label });
+  });
+  list.sort((a, b) => {
+    if (a.cat !== b.cat) return a.cat - b.cat;
+    return a.label.localeCompare(b.label);
+  });
+  // Determine default selection.
+  let want = (typeof _acSelectedCode !== 'undefined' && _acSelectedCode) ? _acSelectedCode : null;
+  if (!want || !aircraftDB.has(want)) {
+    // Fall back to first Cat 6 aircraft.
+    const fb = list.find(x => x.cat === 6) || list[0];
+    want = fb ? fb.code : null;
+  }
+  sel.innerHTML = list.map(x =>
+    '<option value="' + x.code + '"' + (x.code === want ? ' selected' : '') + '>'
+    + 'Cat ' + (x.cat || '?') + ' — ' + x.code + ' — ' + _demoEsc(x.label)
+    + '</option>'
+  ).join('');
+}
+function _demoGetSelectedAircraftCode() {
+  const sel = document.getElementById('demoAcSelect');
+  return (sel && sel.value) ? sel.value : null;
+}
+function _demoEsc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── File save / load ──
+// Save = currently-loaded SimBrief plan, distilled to {dep, dest, waypoints}
+// shape, written to a user-chosen file.
+//
+// v2.97.10 — Hybrid save path:
+//   • Chrome / Edge: native showSaveFilePicker dialog (user picks
+//     filename AND folder). Requires a secure context (https/localhost/
+//     file://); silently falls back if unsupported.
+//   • Firefox / Safari (no showSaveFilePicker): prompt() for filename,
+//     then trigger the legacy invisible-anchor blob download to the
+//     browser's default downloads folder. User can still edit the name.
+//   • User cancels either dialog → silent return.
+async function _demoSavePlan() {
+  if (!(typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData)) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: no flight plan loaded.', 'err');
+    return;
+  }
+  const raw = _demoRawFromSbOfp(_sbOfpLastData);
+  if (!raw) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: flight plan missing origin/destination.', 'err');
+    return;
+  }
+  const obj = {
+    version:    _DEMO_VERSION,
+    name:       (raw.dep.icao || '?') + ' → ' + (raw.dest.icao || '?'),
+    savedAt:    new Date().toISOString(),
+    dep:        raw.dep,
+    dest:       raw.dest,
+    waypoints:  raw.waypoints,
+  };
+  const json        = JSON.stringify(obj, null, 2);
+  const defaultName = 'SimFly_Demo_FlightPlan_' + (raw.dep.icao || 'DEP') + '_' + (raw.dest.icao || 'DEST') + '.json';
+
+  // Path A — modern File System Access API. User gets a real OS Save As
+  // dialog: edit filename, browse to any folder, overwrite confirmation
+  // handled by the OS.
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: defaultName,
+        types: [{
+          description: 'SimFly Demo Flight Plan (JSON)',
+          accept: { 'application/json': ['.json'] },
+        }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo flight plan saved to ' + handle.name + '.', 'ok');
+      return;
+    } catch (err) {
+      // User dismissed the picker — that's a normal cancel, not an error.
+      if (err && err.name === 'AbortError') return;
+      // Any other failure (permission, locked file, etc.) falls through
+      // to the prompt+download path below so the user still gets a way
+      // to save. Surface the reason so it's not silently lost.
+      console.warn('[demo] showSaveFilePicker failed, falling back:', err);
+    }
+  }
+
+  // Path B — prompt + invisible-anchor download. Works in every browser.
+  // User can still edit the filename in the prompt; folder is whatever
+  // the browser uses for downloads.
+  let fileName = (window.prompt(
+    'Enter a filename for the demo flight plan:\n\n(File will save to your browser\'s default Downloads folder.)',
+    defaultName
+  ) || '').trim();
+  if (!fileName) return;
+  if (!/\.json$/i.test(fileName)) fileName += '.json';
+
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { try { document.body.removeChild(a); } catch (_) {} URL.revokeObjectURL(url); }, 0);
+  if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo flight plan saved as ' + fileName + '.', 'ok');
+}
+
+function _demoLoadPlan() {
+  const inp = document.getElementById('demoLoadInput');
+  if (inp) { inp.value = ''; inp.click(); }
+}
+function _demoLoadPlanFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let obj;
+    try { obj = JSON.parse(reader.result); }
+    catch (e) { if (typeof _aaRtToast === 'function') _aaRtToast('Demo: invalid JSON — ' + e.message, 'err'); return; }
+    // v2.97.11 — clean validation. Earlier `!Array.isArray(...) === false`
+    // was logically always-false so the error toast never fired. Now
+    // separately validates dep/dest presence and waypoints type, plus
+    // lat/lon ranges on dep + dest before constructing the plan.
+    if (!obj || !obj.dep || !obj.dest) {
+      if (typeof _aaRtToast === 'function') _aaRtToast('Demo: file is missing dep / dest.', 'err');
+      return;
+    }
+    if (obj.waypoints != null && !Array.isArray(obj.waypoints)) {
+      if (typeof _aaRtToast === 'function') _aaRtToast('Demo: waypoints must be an array.', 'err');
+      return;
+    }
+    const dLat = parseFloat(obj.dep.lat),  dLon = parseFloat(obj.dep.lon);
+    const eLat = parseFloat(obj.dest.lat), eLon = parseFloat(obj.dest.lon);
+    if (!isFinite(dLat) || Math.abs(dLat) > 90  || !isFinite(dLon) || Math.abs(dLon) > 180 ||
+        !isFinite(eLat) || Math.abs(eLat) > 90  || !isFinite(eLon) || Math.abs(eLon) > 180) {
+      if (typeof _aaRtToast === 'function') _aaRtToast('Demo: dep / dest coordinates out of range.', 'err');
+      return;
+    }
+    // v2.97.9 — preserve per-waypoint altFt and dep/dest elev when present
+    // so VNAV survives Save / Load round-trips.
+    const depElev  = parseFloat(obj.dep  && obj.dep.elev);
+    const destElev = parseFloat(obj.dest && obj.dest.elev);
+    _demoLoadedPlanRaw = {
+      name: String(obj.name || ''),
+      dep:  {
+        icao: String(obj.dep.icao  || ''),
+        lat:  parseFloat(obj.dep.lat),
+        lon:  parseFloat(obj.dep.lon),
+        elev: isFinite(depElev)  ? depElev  : undefined,
+      },
+      dest: {
+        icao: String(obj.dest.icao || ''),
+        lat:  parseFloat(obj.dest.lat),
+        lon:  parseFloat(obj.dest.lon),
+        elev: isFinite(destElev) ? destElev : undefined,
+      },
+      waypoints: (obj.waypoints || []).map(w => {
+        const wpt = {
+          name: String(w.name || ''),
+          lat:  parseFloat(w.lat),
+          lon:  parseFloat(w.lon),
+        };
+        const altFt = parseFloat(w.altFt);
+        if (isFinite(altFt) && altFt > 0) wpt.altFt = altFt;
+        return wpt;
+      }).filter(w =>
+        isFinite(w.lat) && Math.abs(w.lat) <= 90 &&
+        isFinite(w.lon) && Math.abs(w.lon) <= 180
+      ),
+    };
+    // Render the loaded plan immediately so the user sees it before Start.
+    try {
+      const sb = _demoToSbOfpShape(_demoLoadedPlanRaw);
+      _sbOfpLastData = sb;
+      if (typeof _sbOfpRender === 'function') _sbOfpRender(sb, { silent: true });
+    } catch (_) {}
+    _demoOpenModal();
+    if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo plan loaded: ' + (_demoLoadedPlanRaw.name || 'unnamed'), 'ok');
+  };
+  reader.onerror = () => { if (typeof _aaRtToast === 'function') _aaRtToast('Demo: file read error.', 'err'); };
+  reader.readAsText(file);
+}
+
+// ── Format adapters ──
+// Convert a SimBrief OFP into the demo plan shape (dep/dest/waypoints).
+// v2.97.9 — Also captures altitude_feet per fix and elevation per airport
+// so the engine can use real per-waypoint VNAV altitudes.
+function _demoRawFromSbOfp(sb) {
+  if (!sb || !sb.origin || !sb.destination) return null;
+  const fixesRaw = sb.navlog && sb.navlog.fix;
+  const fixes = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  const waypoints = [];
+  fixes.forEach(f => {
+    const lat = parseFloat(f.pos_lat), lon = parseFloat(f.pos_long);
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    const wpt = { name: String(f.ident || ''), lat, lon };
+    const altFt = parseFloat(f.altitude_feet);
+    if (isFinite(altFt) && altFt > 0) wpt.altFt = altFt;
+    waypoints.push(wpt);
+  });
+  const depElev  = parseFloat(sb.origin.elevation);
+  const destElev = parseFloat(sb.destination.elevation);
+  return {
+    name: (sb.origin.icao_code || '?') + ' → ' + (sb.destination.icao_code || '?'),
+    dep:  {
+      icao: sb.origin.icao_code || '',
+      lat:  parseFloat(sb.origin.pos_lat),
+      lon:  parseFloat(sb.origin.pos_long),
+      elev: isFinite(depElev)  ? depElev  : undefined,
+    },
+    dest: {
+      icao: sb.destination.icao_code || '',
+      lat:  parseFloat(sb.destination.pos_lat),
+      lon:  parseFloat(sb.destination.pos_long),
+      elev: isFinite(destElev) ? destElev : undefined,
+    },
+    waypoints,
+  };
+}
+// Convert demo plan shape → SimBrief-OFP shape so _sbOfpRender draws it.
+// v2.97.9 — Preserves altFt as altitude_feet so the route's waypoint
+// hover tooltip shows the planned cruise altitude per fix.
+function _demoToSbOfpShape(raw) {
+  return {
+    origin: {
+      icao_code: raw.dep.icao,
+      pos_lat:   raw.dep.lat,
+      pos_long:  raw.dep.lon,
+      elevation: isFinite(raw.dep.elev) ? raw.dep.elev : undefined,
+    },
+    destination: {
+      icao_code: raw.dest.icao,
+      pos_lat:   raw.dest.lat,
+      pos_long:  raw.dest.lon,
+      elevation: isFinite(raw.dest.elev) ? raw.dest.elev : undefined,
+    },
+    general: { route: 'DEMO', air_distance: 0, flight_number: '', icao_airline: '' },
+    navlog: {
+      fix: (raw.waypoints || []).map(w => ({
+        pos_lat:        w.lat,
+        pos_long:       w.lon,
+        ident:          w.name,
+        altitude_feet:  isFinite(w.altFt) ? String(Math.round(w.altFt)) : '',
+        via_airway:     '',
+        stage:          '',
+      })),
+    },
+    fetch:   { status: 'OK' },
+    _isDemo: true,
+  };
 }
 
 /* ===========================================================================
@@ -11547,9 +13554,14 @@ function _afkSeedModalDuration(which) {
   if (unitEl) unitEl.style.display = 'none';
 }
 // Read the chosen mode + sec back out — used by the modal save functions.
+// v2.97.12 — Null-guard each DOM lookup so this can't throw if the
+// caller (e.g. a programmatic import path) runs before the modal is
+// rendered. Defaults to indefinite + the user's saved seconds default.
 function _afkReadModalDuration(which) {
-  const mode = document.getElementById('afk' + which + 'DurationMode').value;
-  const secV = parseInt(document.getElementById('afk' + which + 'DurationSec').value, 10);
+  const modeEl = document.getElementById('afk' + which + 'DurationMode');
+  const secEl  = document.getElementById('afk' + which + 'DurationSec');
+  const mode   = modeEl ? modeEl.value : 'indefinite';
+  const secV   = secEl  ? parseInt(secEl.value, 10) : NaN;
   return {
     durationMode: (mode === 'seconds') ? 'seconds' : 'indefinite',
     durationSec:  (isFinite(secV) && secV > 0) ? secV : _afkGetUserDefaultDurationSec(),
@@ -11808,7 +13820,8 @@ const _afkETA = (() => {
     // those fields. Gate scales with the configured threshold so short
     // thresholds still get useful warning time.
     if (alarm.type === 'telemetry-loss') {
-      if (typeof _liveAcSource === 'undefined' || _liveAcSource !== 'fsuipc') return NaN;
+      // v2.97.0 — Demo source is treated as FSUIPC-like (see _liveSrcIsFsuipcLike).
+      if (typeof _liveAcSource === 'undefined' || !_liveSrcIsFsuipcLike()) return NaN;
       let phase = null;
       try { phase = _afkPhase.get(); } catch (_) {}
       if (!phase || phase === 'ground') return NaN;
@@ -13176,8 +15189,10 @@ function _afkEvaluate(alarm, ac) {
 // loss event can fire again).
 function _afkEvalTelemetryLoss(alarm) {
   if (alarm.state && alarm.state.fired) return false;
-  // Only meaningful with FSUIPC. No live source = nothing to be lost.
-  if (typeof _liveAcSource === 'undefined' || _liveAcSource !== 'fsuipc') return false;
+  // Only meaningful with FSUIPC (or Demo, which mimics FSUIPC's 1 Hz cadence).
+  // v2.97.0 — Helper accepts both so the Flight Demo Mode can exercise this
+  // alarm path identically to a real CTD.
+  if (typeof _liveAcSource === 'undefined' || !_liveSrcIsFsuipcLike()) return false;
   // Only fire while in flight. Phase 'ground' (taxi / parked) is excluded
   // so a sim quit while at the gate isn't an alert. Approach counts as
   // in-flight here (a CTD on short final is exactly when you want this).
@@ -13421,17 +15436,157 @@ function _afkSaveTakeoff() {
     else                   localStorage.removeItem(_AFK_LS_TAKEOFF);
   } catch (_) {}
 }
+
+// ---------------------- ELAPSED STATE MACHINE (v2.97.4) -------------------
+// Wraps _afkTakeoffAt with five states so the user can pause/stop/restart/
+// reset from a right-click menu on the data-panel ELAPSED field, and so an
+// automatic landing+taxi completion freezes the displayed value instead of
+// blanking it.
+//
+//   idle    — no flight running, display '—'. Auto-start enabled.
+//   running — _afkTakeoffAt > 0, value ticks. Auto-start ignored.
+//   paused  — frozen by user, value visible. Toggle Pause → resume.
+//   stopped — frozen by user, value visible. Auto-start blocked until
+//             explicit Restart or Reset.
+//   armed   — auto-detected landing complete (60 s sustained gs < 30).
+//             Value frozen and displayed; next takeoff drops the frozen
+//             value and restarts at 0:00:00 (the "armed" point).
+//
+// Persistence: state + frozenSec survive page reload alongside _afkTakeoffAt.
+const _AFK_ELAPSED_IDLE    = 'idle';
+const _AFK_ELAPSED_RUNNING = 'running';
+const _AFK_ELAPSED_PAUSED  = 'paused';
+const _AFK_ELAPSED_STOPPED = 'stopped';
+const _AFK_ELAPSED_ARMED   = 'armed';
+const _AFK_LS_ELAPSED_STATE  = 'simfly_aa_afk_elapsed_state';
+const _AFK_LS_ELAPSED_FROZEN = 'simfly_aa_afk_elapsed_frozen';
+
+let _afkElapsedState = (() => {
+  try {
+    const v = localStorage.getItem(_AFK_LS_ELAPSED_STATE);
+    const valid = [_AFK_ELAPSED_IDLE, _AFK_ELAPSED_RUNNING, _AFK_ELAPSED_PAUSED, _AFK_ELAPSED_STOPPED, _AFK_ELAPSED_ARMED];
+    return (v && valid.indexOf(v) >= 0) ? v : _AFK_ELAPSED_IDLE;
+  } catch (_) { return _AFK_ELAPSED_IDLE; }
+})();
+let _afkElapsedFrozenSec = (() => {
+  try { const v = parseFloat(localStorage.getItem(_AFK_LS_ELAPSED_FROZEN)); return isFinite(v) && v > 0 ? v : 0; }
+  catch (_) { return 0; }
+})();
+// Pre-v2.97.4 backward-compat: if we loaded a takeoff timestamp but the
+// state wasn't persisted, the user is mid-flight from an older build —
+// promote to 'running'.
+if (_afkTakeoffAt > 0 && _afkElapsedState !== _AFK_ELAPSED_RUNNING) {
+  _afkElapsedState = _AFK_ELAPSED_RUNNING;
+  _afkElapsedFrozenSec = 0;
+}
+
+function _afkSaveElapsedState() {
+  try { localStorage.setItem(_AFK_LS_ELAPSED_STATE, _afkElapsedState); } catch (_) {}
+  try {
+    if (_afkElapsedFrozenSec > 0) localStorage.setItem(_AFK_LS_ELAPSED_FROZEN, String(_afkElapsedFrozenSec));
+    else                          localStorage.removeItem(_AFK_LS_ELAPSED_FROZEN);
+  } catch (_) {}
+}
+
+// Convenience: the value (in seconds) the data panel should display.
+// Returns null when state is 'idle' (display '—').
+function _afkElapsedDisplaySec() {
+  if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
+    return (Date.now() - _afkTakeoffAt) / 1000;
+  }
+  if (_afkElapsedState === _AFK_ELAPSED_PAUSED ||
+      _afkElapsedState === _AFK_ELAPSED_STOPPED ||
+      _afkElapsedState === _AFK_ELAPSED_ARMED) {
+    return _afkElapsedFrozenSec;
+  }
+  return null;
+}
+
+// Auto-arm: called when landing+taxi-complete is detected. Freezes the
+// elapsed value at the moment of detection so the user can still see how
+// long the flight took, while marking the field ready for the next takeoff.
+function _afkElapsedArmLanded() {
+  if (_afkTakeoffAt > 0) {
+    _afkElapsedFrozenSec = (Date.now() - _afkTakeoffAt) / 1000;
+  }
+  _afkTakeoffAt = 0;
+  _afkAirborneSince = 0;
+  _afkLastGsAbove40 = 0;
+  _afkLandingCandidateSince = 0;
+  _afkSaveTakeoff();
+  _afkElapsedState = _AFK_ELAPSED_ARMED;
+  _afkSaveElapsedState();
+}
+
+// Manual menu actions (called from the right-click popover).
+function _afkElapsedPauseToggle() {
+  if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
+    _afkElapsedFrozenSec = (Date.now() - _afkTakeoffAt) / 1000;
+    _afkTakeoffAt = 0;
+    _afkSaveTakeoff();
+    _afkElapsedState = _AFK_ELAPSED_PAUSED;
+  } else if (_afkElapsedState === _AFK_ELAPSED_PAUSED) {
+    // Resume from frozen value.
+    _afkTakeoffAt = Date.now() - _afkElapsedFrozenSec * 1000;
+    _afkSaveTakeoff();
+    _afkElapsedState = _AFK_ELAPSED_RUNNING;
+    _afkElapsedFrozenSec = 0;
+  } else if (_afkElapsedState === _AFK_ELAPSED_STOPPED ||
+             _afkElapsedState === _AFK_ELAPSED_ARMED) {
+    // Treat Pause-on-stopped/armed as "freeze where it is, but flag as paused
+    // so a subsequent Pause click resumes from the same value".
+    _afkElapsedState = _AFK_ELAPSED_PAUSED;
+  }
+  _afkSaveElapsedState();
+}
+function _afkElapsedStopAction() {
+  if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
+    _afkElapsedFrozenSec = (Date.now() - _afkTakeoffAt) / 1000;
+  }
+  _afkTakeoffAt = 0;
+  _afkSaveTakeoff();
+  _afkElapsedState = _AFK_ELAPSED_STOPPED;
+  _afkSaveElapsedState();
+}
+function _afkElapsedRestartAction() {
+  _afkTakeoffAt = Date.now();
+  _afkAirborneSince = performance.now();
+  _afkLastGsAbove40 = performance.now();
+  _afkLandingCandidateSince = 0;
+  _afkSaveTakeoff();
+  _afkElapsedState = _AFK_ELAPSED_RUNNING;
+  _afkElapsedFrozenSec = 0;
+  _afkSaveElapsedState();
+}
+
 function _afkResetTakeoff() {
   _afkTakeoffAt = 0;
   _afkAirborneSince = 0;
   _afkLastGsAbove40 = 0;
   _afkLandingCandidateSince = 0;
   _afkSaveTakeoff();
+  _afkElapsedState = _AFK_ELAPSED_IDLE;
+  _afkElapsedFrozenSec = 0;
+  _afkSaveElapsedState();
 }
 function _afkTakeoffTrack(ac) {
   const hasValidGs = (ac.gs != null && isFinite(ac.gs));
   const gs = hasValidGs ? ac.gs : 0;
   const now = performance.now();
+  // v2.97.4 — Auto-takeoff respects the user-controlled elapsed state.
+  // From 'idle' or 'armed' we auto-start (armed will reset frozen value to
+  // 0 as part of the running transition). From 'paused' or 'stopped' we
+  // skip auto-start; the user controls the lifecycle from there.
+  const canAutoStart = (_afkElapsedState === _AFK_ELAPSED_IDLE ||
+                        _afkElapsedState === _AFK_ELAPSED_ARMED);
+  const _enterRunning = () => {
+    _afkTakeoffAt = Date.now();
+    _afkAirborneSince = now;
+    _afkSaveTakeoff();
+    _afkElapsedState = _AFK_ELAPSED_RUNNING;
+    _afkElapsedFrozenSec = 0;
+    _afkSaveElapsedState();
+  };
   // v2.93.0 — Post-reload airborne detection. If the page is reloaded
   // mid-flight (or telemetry resumes after a long disconnect), the
   // 10-second-above-40kt takeoff confirmation will never re-arm because
@@ -13448,31 +15603,25 @@ function _afkTakeoffTrack(ac) {
   // qualifies the same as a FL350 jet cruise. False-positive risk: a
   // bizarre wind-driven gust pushing a parked aircraft over 58 kt
   // ground speed — implausible in any realistic sim setup.
-  if (!_afkTakeoffAt && hasValidGs && gs >= 58) {
-    _afkTakeoffAt = Date.now();
-    _afkAirborneSince = now;
-    _afkSaveTakeoff();
+  if (canAutoStart && !_afkTakeoffAt && hasValidGs && gs >= 58) {
+    _enterRunning();
   }
   if (gs > 40) {
     if (!_afkLastGsAbove40) _afkLastGsAbove40 = now;
-    if (!_afkTakeoffAt && (now - _afkLastGsAbove40) > 10000) {
-      _afkTakeoffAt = Date.now();
-      _afkAirborneSince = now;
-      _afkSaveTakeoff();
+    if (canAutoStart && !_afkTakeoffAt && (now - _afkLastGsAbove40) > 10000) {
+      _enterRunning();
     }
     _afkLandingCandidateSince = 0;
   } else {
     _afkLastGsAbove40 = 0;
-    // v2.87.0 — Landing detection no longer references MSL altitude (it
-    // never satisfied `alt < 500` at high-elevation airports, leaving
-    // _afkTakeoffAt set into the next flight). Require sustained low GS
-    // (60 s of valid gs < 30) so a transient telemetry dropout — which
-    // would have a null/missing gs that we now ignore rather than treat
-    // as 0 — can't reset the in-flight takeoff timestamp.
+    // v2.87.0 — Landing detection no longer references MSL altitude.
+    // v2.97.4 — Instead of zeroing the timestamp (display blanks to '—'),
+    // ARM the field: freeze the value so the user can see how long the
+    // flight took, and the next detected takeoff will reset to 0 and run.
     if (_afkTakeoffAt && hasValidGs && gs < 30) {
       if (!_afkLandingCandidateSince) _afkLandingCandidateSince = now;
       if (now - _afkLandingCandidateSince >= 60000) {
-        _afkResetTakeoff();
+        _afkElapsedArmLanded();
       }
     } else {
       _afkLandingCandidateSince = 0;
@@ -16755,6 +18904,93 @@ function _afkDpRender() {
       '</div>');
   });
   root.innerHTML = parts.join('');
+
+  // v2.97.4 — Attach the right-click menu listener to the ELAPSED field.
+  // Re-runs every render so dragging the field to a new position keeps
+  // the contextmenu wired without any extra plumbing.
+  const elapsedField = root.querySelector('[data-dp-id="elapsed"]');
+  if (elapsedField) {
+    elapsedField.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      _afkElapsedMenuOpen(e.clientX, e.clientY);
+    });
+  }
+}
+
+// ---- ELAPSED right-click control menu (v2.97.4) ---------------------
+// Single popover anchored at the cursor. Closes on outside-click or Esc.
+// Action labels adapt to current state (Pause ↔ Resume).
+function _afkElapsedMenuOpen(x, y) {
+  let m = document.getElementById('afkElapsedMenu');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'afkElapsedMenu';
+    m.className = 'afk-elapsed-menu';
+    document.body.appendChild(m);
+  }
+  const paused  = _afkElapsedState === _AFK_ELAPSED_PAUSED;
+  const running = _afkElapsedState === _AFK_ELAPSED_RUNNING;
+  const stopped = _afkElapsedState === _AFK_ELAPSED_STOPPED;
+  const idle    = _afkElapsedState === _AFK_ELAPSED_IDLE;
+  const pauseLabel = paused ? '▶ Resume' : '⏸ Pause';
+  const pauseEnabled = running || paused;
+  m.innerHTML =
+    '<div class="afk-elapsed-menu-hdr">ELAPSED Controls</div>' +
+    '<button class="afk-elapsed-menu-btn" ' + (pauseEnabled ? '' : 'disabled ') +
+      'onclick="_afkElapsedMenuClick(\'pause\')" title="' +
+      (paused ? 'Resume from the paused value' : 'Freeze the timer, keep value visible') + '">' +
+      pauseLabel + '</button>' +
+    '<button class="afk-elapsed-menu-btn" ' + (stopped ? 'disabled ' : '') +
+      'onclick="_afkElapsedMenuClick(\'stop\')" title="Stop the timer and disable auto-start until Restart or Reset">' +
+      '⏹ Stop</button>' +
+    '<button class="afk-elapsed-menu-btn" ' +
+      'onclick="_afkElapsedMenuClick(\'restart\')" title="Reset value to 0 and start counting from now">' +
+      '↻ Restart</button>' +
+    '<button class="afk-elapsed-menu-btn" ' + (idle ? 'disabled ' : '') +
+      'onclick="_afkElapsedMenuClick(\'reset\')" title="Clear back to — and arm for the next detected takeoff">' +
+      '✕ Reset</button>';
+  // Position the menu — clamp inside the viewport.
+  const w = 200, h = 180; // approx
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const px = Math.max(4, Math.min(x, vw - w - 4));
+  const py = Math.max(4, Math.min(y, vh - h - 4));
+  m.style.left = px + 'px';
+  m.style.top  = py + 'px';
+  m.classList.add('open');
+  // Click-outside / Esc to close.
+  setTimeout(() => {
+    const onDocClick = (e) => {
+      if (m.contains(e.target)) return;
+      _afkElapsedMenuClose();
+      document.removeEventListener('mousedown', onDocClick, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        _afkElapsedMenuClose();
+        document.removeEventListener('mousedown', onDocClick, true);
+        document.removeEventListener('keydown', onKey, true);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick, true);
+    document.addEventListener('keydown',   onKey,      true);
+  }, 0);
+}
+function _afkElapsedMenuClose() {
+  const m = document.getElementById('afkElapsedMenu');
+  if (m) m.classList.remove('open');
+}
+function _afkElapsedMenuClick(action) {
+  if      (action === 'pause')   _afkElapsedPauseToggle();
+  else if (action === 'stop')    _afkElapsedStopAction();
+  else if (action === 'restart') _afkElapsedRestartAction();
+  else if (action === 'reset')   _afkResetTakeoff();
+  _afkElapsedMenuClose();
+  // Force an immediate panel refresh so the new state shows without
+  // waiting for the next telemetry tick.
+  if (typeof _afkUpdateDataPanel === 'function') {
+    try { _afkUpdateDataPanel(_liveAcLastData || { lat: 0, lng: 0, alt: 0, gs: 0 }); } catch (_) {}
+  }
 }
 
 // ---- Show/hide menu --------------------------------------------------
@@ -16988,8 +19224,11 @@ function _afkUpdateDataPanel(ac) {
   const phase = _afkPhase.get();
   _afkDpSet('afkDpPhase', phase ? phase.toUpperCase() : '—');
 
-  // Elapsed
-  if (_afkTakeoffAt > 0) {
+  // Elapsed — five states (v2.97.4). 'running' ticks live; 'paused' /
+  // 'stopped' / 'armed' show the frozen value with a state-specific
+  // tooltip; 'idle' shows the original em-dash. Right-click anywhere on
+  // the field opens the manual-control menu (Pause/Stop/Restart/Reset).
+  if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
     _afkDpSet('afkDpElapsed', _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000), 'afk-dp-value');
     // v2.88.0 — hover reveals the takeoff timestamp in local + Zulu form.
     const t = new Date(_afkTakeoffAt);
@@ -16997,10 +19236,19 @@ function _afkUpdateDataPanel(ac) {
     const utc = String(t.getUTCHours()).padStart(2, '0') + ':' +
                 String(t.getUTCMinutes()).padStart(2, '0') + ':' +
                 String(t.getUTCSeconds()).padStart(2, '0') + 'Z';
-    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff. Takeoff at ' + lcl + ' local · ' + utc + ' Zulu.');
+    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff. Takeoff at ' + lcl + ' local · ' + utc + ' Zulu. Right-click for controls.');
+  } else if (_afkElapsedState === _AFK_ELAPSED_PAUSED) {
+    _afkDpSet('afkDpElapsed', _afkFmtHMS(_afkElapsedFrozenSec), 'afk-dp-value warn');
+    _afkDpSetTitle('afkDpElapsed', 'Paused at ' + _afkFmtHMS(_afkElapsedFrozenSec) + '. Right-click for controls.');
+  } else if (_afkElapsedState === _AFK_ELAPSED_STOPPED) {
+    _afkDpSet('afkDpElapsed', _afkFmtHMS(_afkElapsedFrozenSec), 'afk-dp-value muted');
+    _afkDpSetTitle('afkDpElapsed', 'Stopped at ' + _afkFmtHMS(_afkElapsedFrozenSec) + '. Auto-start disabled until Restart or Reset. Right-click for controls.');
+  } else if (_afkElapsedState === _AFK_ELAPSED_ARMED) {
+    _afkDpSet('afkDpElapsed', _afkFmtHMS(_afkElapsedFrozenSec), 'afk-dp-value muted');
+    _afkDpSetTitle('afkDpElapsed', 'Last flight: ' + _afkFmtHMS(_afkElapsedFrozenSec) + '. Armed — next takeoff resets to 0:00:00. Right-click for controls.');
   } else {
     _afkDpSet('afkDpElapsed', '—', 'afk-dp-value muted');
-    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff — awaiting wheels-up detection.');
+    _afkDpSetTitle('afkDpElapsed', 'Time since takeoff — awaiting wheels-up detection. Right-click for controls.');
   }
 
   // Destination ETA
@@ -18860,8 +21108,15 @@ async function _wxFetch() {
         const d    = (json.data || [])[0];
         if (!d || !d.icao) return;
         const reqRec = lookupICAO(icao);
-        if (reqRec && d.station && d.station.geometry && d.station.geometry.coordinates) {
-          const [lon, lat] = d.station.geometry.coordinates;
+        // v2.97.12 — Validate coordinates is a [lon, lat] pair of finite
+        // numbers before destructuring. A 0- or 1-element array would
+        // produce undefined → NaN propagation into haversine and an
+        // incorrect distance-based cache decision.
+        const coords = d.station && d.station.geometry && d.station.geometry.coordinates;
+        const coordsValid = Array.isArray(coords) && coords.length >= 2 &&
+                            isFinite(coords[0]) && isFinite(coords[1]);
+        if (reqRec && coordsValid) {
+          const [lon, lat] = coords;
           const distNm = _haversineNm(reqRec.latitude, reqRec.longitude, lat, lon);
           if (distNm > WX_NEAREST_MAX_NM) return;
           _wxCacheSet(icao, { data: d, fetchedAt: Date.now(), isNearest: true, nearestIcao: d.icao, nearestDistNm: distNm });
@@ -26764,6 +29019,55 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- Flight Demo Mode configuration modal — v2.97.0 -->
+<div class="modal-overlay" id="demoModal" onclick="if(event.target===this)_demoCloseModal()">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">
+      <span class="modal-title">🎬 &nbsp;Flight Demo Mode</span>
+      <button class="modal-close" onclick="_demoCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body demo-modal-body">
+      <div class="demo-section-hint" style="padding:0.4rem 0 0.6rem;">
+        Drive AA's telemetry and alerting system with a synthetic flight along a saved plan — no MSFS or FSUIPC connection required. Designed for demos at sites where the simulator is unavailable.
+      </div>
+
+      <div class="demo-modal-section">
+        <div class="demo-section-title">Flight Plan</div>
+        <div class="demo-loaded-label" id="demoLoadedLabel">No flight plan loaded</div>
+        <div class="demo-row">
+          <button class="npc-btn npc-btn-save" id="demoSavePlanBtn" onclick="_demoSavePlan()" disabled>💾 Save Demo Flight Plan</button>
+          <button class="npc-btn npc-btn-cancel" id="demoLoadPlanBtn" onclick="_demoLoadPlan()" title="Load a previously-saved demo flight plan from disk">📂 Load Demo Flight Plan</button>
+          <input type="file" id="demoLoadInput" accept="application/json,.json" style="display:none" onchange="_demoLoadPlanFile(this.files && this.files[0])">
+        </div>
+        <div class="demo-section-hint">
+          <strong>Save</strong> takes the currently-loaded SimBrief flight plan and writes a JSON file with the departure, destination, and every waypoint (name + lat/lon). <strong>Load</strong> reads that file back so you can demo at sites that block SimBrief.
+        </div>
+      </div>
+
+      <div class="demo-modal-section">
+        <div class="demo-section-title">Aircraft</div>
+        <div class="demo-row">
+          <select id="demoAcSelect" class="demo-ac-select"></select>
+        </div>
+        <div class="demo-section-hint">
+          Sorted by SimFly category (1 → 7), then alphabetically. The demo synthesizes climb / cruise / descent performance per category — Cat 1 (Light GA) tops out at ~4,000 ft / 110 kt, Cat 7 (widebody) cruises at FL380 / 470 kt. Defaults to your current AA aircraft pick, or a Cat 6 aircraft if none is selected.
+        </div>
+      </div>
+
+      <div class="demo-modal-section">
+        <div class="demo-section-title">Start</div>
+        <div class="demo-section-hint" style="margin-bottom:0.5rem;">
+          Starting the demo loads the floating control bar at the bottom of the map. While running, the FSUIPC / STKP / SimBrief Live-menu buttons are disabled to prevent the marker getting yanked out from under the synthetic packets — the rest of the map stays fully interactive.
+        </div>
+        <div class="fp-settings-btns">
+          <button class="npc-btn npc-btn-cancel" onclick="_demoCloseModal()">Cancel</button>
+          <button class="npc-btn npc-btn-save" onclick="_demoStart()">▶ Start Demo</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Live-aircraft icon picker (Shift-click on 📍 Follow A/C) — v2.77.0 -->
 <div class="modal-overlay" id="liveAcIconModal" onclick="if(event.target===this)_liveAcCloseIconPicker()">
   <div class="modal" style="max-width:520px;">
@@ -26861,6 +29165,40 @@ function rgSendToFlightPlanner() {
             <strong>SimBrief flight plan persists across reload</strong> &mdash; the most recently plotted plan is saved to <code>localStorage</code> on every successful fetch (v2.75.1+). On the next page load it re-renders silently at map-init time &mdash; the route line, origin/destination rings, waypoint markers, and any waypoint-alarm rings all reappear without re-clicking <em>SimBrief Flight Plan</em>. The reload-restore path skips the success toast and the auto-fit reframe so it doesn't override your last viewport. Clicking <em>✕ Clear Flight Plan</em> wipes the cache.<br/><br/>
 
             <strong>Active alarm visuals persist across reload</strong> &mdash; geofence rings + labels and waypoint highlight rings now reappear automatically on the next page load (v2.75.1+). Alarms themselves already survived reloads in <code>localStorage</code>, but their map visuals didn't render because the map wasn't initialised when <code>_afkInit</code> ran; the visuals are now restored at map-init time as well.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">🎬</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Flight Demo Mode</div>
+          <div class="help-feature-desc">
+            For demos and presentations at locations where MSFS / FSUIPC connections are unavailable (corporate networks, kiosks, conference rooms that block flight-sim sites). Drives AA's telemetry display and the full alerting system with a synthetic flight along a saved plan &mdash; everything that lights up during a real FSUIPC flight lights up the same way during a demo.<br/><br/>
+
+            <strong>Open from <em>🔌 Live → 🎬 Flight Demo Mode</em></strong> in the map header. The configuration modal has three sections:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>Flight Plan</strong> &mdash; <em>Save Demo Flight Plan</em> writes the currently-loaded SimBrief plan to a JSON file (departure, destination, every waypoint as name + lat/lon). <em>Load Demo Flight Plan</em> reads one back from disk. Save is disabled until a flight plan is loaded.</li>
+              <li><strong>Aircraft</strong> &mdash; pulldown lists every aircraft in the database, grouped by SimFly category (1 &rarr; 7) and sorted alphabetically within each. Defaults to your current AA aircraft pick, or a Cat 6 aircraft if none is selected.</li>
+              <li><strong>Start</strong> &mdash; kicks off the demo with the selected aircraft and plan.</li>
+            </ul>
+
+            <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it.<br/><br/>
+
+            <strong>Floating control bar</strong> &mdash; while the demo is running, a control bar appears at the bottom of the map with:
+            <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
+              <li><strong>⏸ Pause / ▶ Play</strong> and <strong>⏮ Restart</strong></li>
+              <li><strong>Scrub slider</strong> &mdash; drag to jump to any point along the flight</li>
+              <li><strong>Phase label</strong> &mdash; current synthetic phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH)</li>
+              <li><strong>Speed presets</strong> &mdash; 0.25× / 0.5× / 1× / 2× / 3×, plus a free-slider for arbitrary 0.1× &ndash; 10× playback</li>
+              <li><strong>📡✖ Stale</strong> &mdash; stops emitting packets but keeps the marker. After 30 s the icon greys out and any configured Loss-of-Telemetry alarms trip per their thresholds. Click again to resume the stream.</li>
+              <li><strong>⛓✖ Disconnect</strong> &mdash; clears the live-aircraft marker entirely (mirrors a full FSUIPC drop). Click again to reconnect.</li>
+              <li><strong>✕ Exit</strong> &mdash; end the demo and clear the synthetic aircraft.</li>
+            </ul>
+
+            <strong>Telemetry seam</strong> &mdash; the demo engine emits packets through the same <code>_liveAcRenderMarker</code> function the FSUIPC integration uses, so every downstream consumer (AFK alerts, data panel, breadcrumb trail, follow-aircraft mode, stale-check, mobile alerts) behaves identically to a real flight. The only thing that knows it's a demo is the engine itself.<br/><br/>
+
+            <strong>Minimal kiosk lockdown</strong> &mdash; while the demo runs, the <em>🔌 FSUIPC Live</em>, <em>🛩 STKP Live</em>, and <em>✈ SimBrief Flight Plan</em> buttons are disabled to prevent the marker getting yanked out from under the synthetic packets. Everything else &mdash; panning the map, opening airport tooltips, the alerts panel, the data panel &mdash; stays fully interactive so you can walk an audience through features during playback.
           </div>
         </div>
       </div>
@@ -27195,10 +29533,207 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.97.12</span>
+          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>App-wide validation hardening pass.</strong> Audited every <code>JSON.parse</code>, <code>localStorage.getItem</code>, <code>fetch</code>, <code>parseInt</code>/<code>parseFloat</code>, <code>getElementById</code>, <code>prompt()</code>, and <code>.value</code> call site outside the demo namespace. 14 candidates surfaced; 9 were false positives (already defended by existing try/catch + shape checks). 5 needed defensive work, all surgical no-disruption fixes.</li>
+          <li><strong>SimBrief Pilot ID + SimToolkitPro token prompts now cap input length.</strong> Both prompts previously accepted arbitrary text — a careless paste of clipboard contents could persist a multi-kilobyte string into <code>localStorage</code>. Real PIDs are numeric and well under 32 chars; real STKP tokens are ~32-char hex. Caps set to 64 chars and 256 chars respectively (substantial headroom for any future format change) plus a <code>trim()</code> to strip stray whitespace.</li>
+          <li><strong>STKP <code>alt</code> / <code>gs</code> NaN guard before marker render.</strong> <code>parseInt('garbage', 10)</code> yields <code>NaN</code>; without a guard the live-aircraft marker would store NaN altitude / ground speed in <code>_liveAcLastData</code>, poisoning the <code>_afkPhase</code> altitude buffer and VS computation downstream. <code>lat</code> / <code>lng</code> already bail in <code>_liveAcRenderMarker</code>'s <code>!isFinite</code> guard, so only alt / gs needed the extra check.</li>
+          <li><strong><code>_afkReadModalDuration</code> null-guards DOM lookups.</strong> The function previously did <code>document.getElementById(...).value</code> with no null check. In practice the modal is always rendered when the function is called, but a programmatic caller (e.g. a future import path) could trip the lookup. Now uses optional access with sensible defaults (<em>indefinite</em> mode, user's saved seconds default) when either element is missing.</li>
+          <li><strong>Nearest-METAR GeoJSON coordinates validated before destructuring.</strong> The aviation weather API returns <code>geometry.coordinates</code> as a <code>[lon, lat]</code> pair; a malformed response with a 0- or 1-element array would have destructured <code>undefined</code> values, propagating <code>NaN</code> through <code>_haversineNm</code> and producing an incorrect distance-based cache decision. Now validates array length and that both elements are finite numbers before reading.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.97.11</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; bug + validation pass (no FSUIPC regressions).</strong> Audit of the demo engine surface flagged five issues:</li>
+          <li><strong>(1) Broken file-validation condition in <code>_demoLoadPlanFile</code>.</strong> Pre-v2.97.11 the check <code>!Array.isArray(...) === false && !Array.isArray(...)</code> evaluated to <code>false</code> for any input — the error toast for malformed waypoints was dead code. Replaced with clean two-stage validation: explicit dep / dest presence check, then waypoints-must-be-an-array check.</li>
+          <li><strong>(2) Lat / lon range validation on demo file load.</strong> Pre-v2.97.11 any numeric value was accepted (so <code>lat: 999</code> in a hand-edited file would load and produce nonsense great-circle math). Now rejects with a toast when dep/dest coords are out of <code>|lat| &le; 90</code> / <code>|lon| &le; 180</code> ranges. Per-waypoint filter also tightened from <code>isFinite</code> to range-checked.</li>
+          <li><strong>(3) Telemetry-loss buttons retained <code>.active</code> state across demo runs.</strong> Clicking <em>📡✖ Stale</em> or <em>⛓✖ Disconnect</em>, then <em>✕ Exit</em>, then starting a fresh demo: the buttons still appeared engaged even though <code>_demoSuspendEmit</code> was reset to <code>false</code>. <code>_demoStop</code> now also clears the <code>.active</code> class on both buttons.</li>
+          <li><strong>(4) Scrub-while-suspended hid the marker.</strong> Scrubbing the slider while in Stale / Disconnect mode jumped the aircraft to the new position but kept the marker hidden, so the user couldn't see what they were scrubbing to. <code>_demoScrubTo</code> now clears <code>_demoSuspendEmit</code> + both button states, on the rationale that scrubbing is fundamentally a "show me the plan at this point" action that should resume visibility.</li>
+          <li><strong>(5) DIRECT TO accepted index 0 (dep airport).</strong> The UI already excludes index 0 from the pulldown, but <code>_demoApDirectTo</code> only checked <code>i &ge; 0</code> — a programmatic caller could send the aircraft flying back to the dep airport. Tightened to <code>i &ge; 1</code> as defense in depth.</li>
+          <li><strong>Regression check on real FSUIPC tracking: clean.</strong> Six sites outside the demo namespace were touched across v2.97.0&ndash;v2.97.10 (<code>_liveAcStopOthers</code> branch addition, <code>_liveSrcIsFsuipcLike</code> helper, <code>_liveAcUpdateFollowBtn</code> demo-button mirror, <code>_liveAcTooltipHtml</code> demo source, <code>_afkResetTakeoff</code> elapsed-state clear, <code>_afkTakeoffTrack</code> state-respect + arm-on-landing). Each change is either additive (new branch / new helper / new field) or a strict superset of the original behaviour. STKP correctly remains rejected for telemetry-loss alarms (regression test confirmed). FSUIPC takeoff / landing / staleness detection unaltered. The ELAPSED arm-on-landing is the explicitly requested behaviour change &mdash; previous flights' time now stays visible during taxi-in instead of blanking to <em>&mdash;</em>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.10</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; Save Demo Flight Plan now uses a real Save As dialog.</strong> Pre-v2.97.10 the Save button fired a fixed-name download to the browser's default Downloads folder with no user input. Now uses the File System Access API's <code>showSaveFilePicker</code> on Chrome / Edge so the user gets a real OS Save As dialog &mdash; edit the filename, pick any folder, OS-level overwrite confirmation. The auto-generated name (<code>SimFly_Demo_FlightPlan_&lt;DEP&gt;_&lt;DEST&gt;.json</code>) is suggested but the user can change it to anything.</li>
+          <li><strong>Graceful fallback for Firefox / Safari.</strong> Browsers without <code>showSaveFilePicker</code> get a <code>prompt()</code> with the suggested filename pre-filled &mdash; user can edit the name (location is still the default Downloads folder due to browser sandboxing). Filenames without a <code>.json</code> extension get one appended automatically. Both paths show a confirmation toast naming the final filename.</li>
+          <li><strong>Cancel is silent.</strong> Dismissing either dialog (modern picker's Cancel button, or empty prompt) returns silently without falling through to the other path or showing an error toast.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.97.9</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; real per-waypoint VNAV from SimBrief altitudes.</strong> Pre-v2.97.9 the demo's Managed ALT mode used a single-triangle phase profile (one climb segment to cruise FL, one cruise level-off, one descent to dest) regardless of how the route was structured. The SimBrief OFP actually carries an <code>altitude_feet</code> field on every navlog fix &mdash; the planned cruise altitude at that point &mdash; that we were silently discarding. Now captured at OFP-import time and used as a real VNAV altitude target per leg.</li>
+          <li><strong>VNAV path: linear interpolation by distance fraction between adjacent constrained fixes.</strong> The engine knows which leg the aircraft is on (via the same <code>_demoNextWptIdx</code> pointer LNAV uses), computes the fraction of the leg already traversed, and lerps between <code>fromPt.altFt</code> and <code>toPt.altFt</code>. So a SimBrief plan with TOC at FL120 over OLM, step-climb to FL360 by BTG, cruise across CONUS, TOD at MEMPHIS, descent into KJFK now produces a realistic step-climb + cruise + step-descent VNAV profile instead of a generic triangle. Aircraft still <em>integrates</em> toward those targets at category climb/descent FPM, so a Cat 1 Cub asked to climb to FL120 still takes the time it should.</li>
+          <li><strong>Waypoint constraint backfill.</strong> Not every navlog fix gets an altitude from SimBrief &mdash; SID/STAR transitions sometimes leave it blank. <code>_demoAnnotateVnav</code> fills in any missing intermediate <code>altFt</code> by linear-interpolating along cumulative great-circle distance between the nearest specified neighbours, anchored on dep/dest field elevation. So the engine always has a target at every point on the route.</li>
+          <li><strong>Dep / dest elevation now sourced from the OFP.</strong> Pre-v2.97.9 these came only from <code>airportDB</code>; the OFP's <code>origin.elevation</code> and <code>destination.elevation</code> are now preferred (more authoritative for some non-mainstream fields). Falls back to airportDB then to 0.</li>
+          <li><strong>Save / Load Demo Flight Plan preserves VNAV.</strong> The JSON file format now stores <code>altFt</code> on each waypoint and <code>elev</code> on dep/dest. Older v1 demo plans (no altFt) load fine &mdash; the engine sees no VNAV constraints and falls back to the phase model, exactly as v2.97.5&ndash;v2.97.8 did.</li>
+          <li><strong>Fallback to phase model when no VNAV data.</strong> If the loaded plan has no waypoint altitudes (e.g. a v1 demo file, or a hand-constructed plan), Managed ALT keeps using the existing single-triangle profile so the demo still flies a sensible vertical path. The transition is automatic and invisible &mdash; <code>plan.hasVnav</code> is set true only when at least one raw intermediate waypoint had a real altitude.</li>
+          <li><strong>Speed VNAV not addressed.</strong> SimBrief doesn't expose a useful per-fix speed target, so Managed SPD continues to use the phase model (cruise speed during cruise, decel through descent and approach). The MCP knob is still there for hands-on speed control.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.8</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; AP mode toggle labels expanded.</strong> The MCP-abbreviated <em>MNG</em> / <em>SEL</em> button labels are now spelled out <em>Managed</em> / <em>Selected</em> &mdash; clearer for users not steeped in Airbus FCU jargon. <code>text-transform:uppercase</code> dropped (mixed-case reads better at small font sizes), letter-spacing relaxed from 0.16 em to 0.04 em so the longer words don't crowd the column.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.97.7</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; sliders no longer pan the map.</strong> Dragging the speed slider on the floating bar (and, less visibly, the scrub slider and any future input drag) panned the underlying Leaflet map instead of moving the thumb. Root cause: <code>mousedown</code> on the slider thumb bubbled down through the absolutely-positioned floating bar into the map container, where Leaflet's drag handler interpreted it as a pan-start. Fix: applied <code>L.DomEvent.disableClickPropagation</code> + <code>disableScrollPropagation</code> to <code>#demoFloating</code> and <code>#demoApPanel</code> on first demo start. Leaflet's helpers <code>stopPropagation</code> on the relevant pointer + wheel events at the container boundary, so every nested control (sliders, steppers, inputs, dropdowns, buttons) behaves correctly without per-control wiring. One-shot guarded; re-applying on a second demo run is a no-op.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.6</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; ✈ AUTOPILOT panel redesigned (compact + true MCP).</strong> v2.97.5's panel had 4 stacked rows per axis (label, value+stepper, SET+AUTO, state-line) and was anchored at a fixed <code>bottom: 84px</code>, which caused visible overlap with the floating control bar whenever the bar wrapped to a second row. Redesigned to mimic a real Airbus FCU / Boeing MCP: single LCD-style numeric window per axis with inline <code>◀</code>/<code>▶</code> steppers, one mode toggle below (<em>MNG</em> = managed/follow-plan ↔ <em>SEL</em> = selected/manual). LCD glows green for MNG, magenta for SEL &mdash; matching real FCU semantics. Editable display: click the number, type a new value, Enter to commit. Min column width dropped from 9 rem to 6.5 rem, padding tightened throughout. Panel total height roughly halved.</li>
+          <li><strong>Dynamic positioning above the floating bar.</strong> New <code>_demoApRepositionPanel()</code> measures the floating bar's current <code>offsetHeight</code> and sets the AP panel's <code>bottom</code> = <code>20 + barHeight + 10 px</code>. Called on toggle, on every 4 Hz bar update, and on viewport resize via the existing bar refresh. So however the floating bar wraps (one row on wide displays, two rows on mid, three rows on narrow), the AP panel always sits cleanly above it with a 10 px gap and never overlaps. No more "AP panel hides the Pause button" issue.</li>
+          <li><strong>SET buttons removed &mdash; Enter commits.</strong> v2.97.5 had separate SET and AUTO buttons for each axis. Real MCPs don't have SET buttons; you turn a knob to dial in the value and push it to engage. We approximate: <code>◀</code>/<code>▶</code> steppers and direct typing both commit instantly (the steppers seed manual mode with the current live value first, so a single click does the intuitive thing). The single MNG/SEL toggle below each axis serves as both the engage and release control. Net result: each axis goes from 4 vertical elements down to 3.</li>
+          <li><strong>State-line removed &mdash; LCD colour is the state.</strong> v2.97.5 had a separate sub-line per axis (<em>AUTO &mdash; 142°</em>, <em>CAPTURE FL350</em>) explaining the current state. Redundant once the LCD itself colour-codes the mode. The line is gone; column total height drops another ~14 px.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.97.5</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; ✈ AUTOPILOT panel for hands-on demo flying.</strong> New <em>✈ AP</em> button on the floating control bar opens a compact MCP-style panel above the bar with four columns: <em>HDG</em>, <em>ALT</em>, <em>SPD</em>, and <em>⌖ DIRECT</em>. Each axis carries a setpoint display, ▼/▲ steppers (10° / 1000 ft / 10 kt), a <em>SET</em> button that commits the entered value, and an <em>AUTO</em> button that releases the axis back to the plan baseline. DIRECT TO has a waypoint pulldown of every plan waypoint (excluding the dep airport) with a snazzy <em>⌖ GO</em> button using the aviation direct-to glyph. Engaged setpoints glow magenta; AUTO axes show the current live value with a cyan tint.</li>
+          <li><strong>Engine restructure: integrating model.</strong> Pre-v2.97.5 the engine was a pure function of simSec &mdash; <code>_demoStateAt(t)</code> looked up position/heading/alt/gs from the precomputed plan, which made hands-on control impossible (the next tick would always snap back to the plan). New per-tick integrator carries live aircraft state (lat, lon, hdg, alt, gs) and advances each tick by simulated dt seconds toward the target HDG / ALT / SPD. Plan-mode (AUTO) targets still come from <code>_demoStateAt</code> for alt/gs and from the next-wpt bearing for heading, so a demo with no autopilot input behaves identically to v2.97.4 &mdash; arcs, phase transitions, climb/cruise/descent profiles all unchanged. Once <em>any</em> axis is engaged, its target is the user setpoint until the user clicks AUTO or Restart.</li>
+          <li><strong>Coordinated-turn heading integration.</strong> Heading advances toward target at the same standard-rate cap (3°/sec) and 25° bank as the precomputed arc engine, so the visual feel matches whether the aircraft is auto-tracking the plan or hand-flown via the HDG knob. Altitude and speed integrate at the aircraft's category-derived climb / descent / accel rates &mdash; a Cat 1 Cub asked to climb to FL180 won't get there in 30 seconds; an A320 asked for FL360 climbs at 2200 fpm just like the plan would have.</li>
+          <li><strong>Per-category sanity limits on user setpoints.</strong> SPD and ALT inputs clamp to the selected aircraft's category: Cat 1 caps at 180 kt / 18 000 ft, Cat 7 at 560 kt / FL430. Heading wraps 0&ndash;359. So a "set speed to 500" on a Cub silently becomes "set to 180" rather than producing impossible physics.</li>
+          <li><strong>Direct-to as a next-wpt index shift.</strong> DIRECT TO &lt;wpt&gt; sets the engine's next-wpt pointer to the chosen waypoint and clears any manual HDG; the heading AUTO logic then targets the bearing from current position to that waypoint. After reaching it, the plan resumes from that point automatically. No extra state to manage, no second LNAV mode to maintain.</li>
+          <li><strong>Turn anticipation.</strong> The integrator advances the next-wpt pointer at the tangent-distance for the upcoming course change (<code>R · tan(δ/2)</code>) rather than waiting until the aircraft is on top of the waypoint. The arc onset matches what the precomputed track produced &mdash; the aircraft starts banking before the waypoint instead of overshooting it.</li>
+          <li><strong>Scrub slider snaps back to plan baseline.</strong> Moving the scrub slider now resets all three AP axes to AUTO and snaps the live aircraft state to whatever the plan says it should be at that simSec. "Scrub to here" remains a pure plan-view action; any manual setpoints drop along with the position change.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.4</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>⏱ ELAPSED &mdash; state machine + right-click controls + auto-arm on landing.</strong> Pre-v2.97.4 the data-panel ELAPSED field had only two states: <em>not set</em> (shown as <em>—</em>) and <em>ticking from takeoff</em>. Landing detection zeroed it to <em>—</em>, telemetry drops and demo-mode runs left it stuck ticking forever, and there was no manual way to pause, stop, restart, or reset. New five-state machine: <em>idle / running / paused / stopped / armed</em>, persisted to <code>simfly_aa_afk_elapsed_state</code> + <code>simfly_aa_afk_elapsed_frozen</code> so it survives reloads.</li>
+          <li><strong>Auto-arm instead of auto-blank on landing.</strong> The existing 60-second-sustained-gs&nbsp;&lt;&nbsp;30 landing detector now calls <code>_afkElapsedArmLanded()</code> instead of <code>_afkResetTakeoff()</code>. The field freezes at the actual flight time (e.g. <em>1:32:47</em>) and shows it in muted style with a "Last flight — armed, next takeoff resets to 0:00:00" tooltip. As soon as the next telemetry stream re-triggers wheels-up detection, the frozen value drops, ELAPSED restarts from zero, and ticks normally. So you can see how long your last leg took while waiting on the tarmac, AND the timer is ready for the next leg without any manual intervention.</li>
+          <li><strong>Right-click the ELAPSED field for manual controls.</strong> Popover anchored at the cursor with four actions: <em>⏸ Pause</em> (toggles to <em>▶ Resume</em> when paused — value frozen visible, will resume from same value on next toggle); <em>⏹ Stop</em> (value frozen visible, auto-start blocked until Restart or Reset); <em>↻ Restart</em> (reset value to 0 and start counting from now, regardless of telemetry); <em>✕ Reset</em> (clear to <em>—</em> and arm for the next detected takeoff). Disabled states adapt to current state &mdash; Pause is disabled when the field is idle/stopped/armed, Reset is disabled when already idle. Click outside or press <em>Esc</em> to close.</li>
+          <li><strong>Takeoff detection now respects state.</strong> Auto-takeoff (the 58 kt single-tick path AND the 10-second-above-40 kt sustained path) only fires from <em>idle</em> or <em>armed</em>. From <em>paused</em> or <em>stopped</em>, the user controls the lifecycle &mdash; no surprise auto-resume on a stray telemetry blip. The armed→running transition resets the frozen value to zero as part of becoming live again.</li>
+          <li><strong>Backward-compat migration on load.</strong> If <code>_afkTakeoffAt</code> was previously persisted but the new state key is missing (pre-v2.97.4 mid-flight reload), the load path promotes to <em>running</em> so the field continues ticking exactly as before. Existing flights aren't disturbed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.3</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; 📍 Follow button on the floating control bar.</strong> Mirrors the <em>📍 Follow A/C</em> behaviour available in the Live menu for real FSUIPC tracking: clicking the button toggles map-follows-aircraft mode for the synthetic demo flight. State is shared with the existing Live-menu button (both use the same <code>_liveAcFollow</code> global and the same <code>_liveAcToggleFollow</code> handler), so persistence across sessions, auto-disable on manual map drag, and the icon-picker shift-click are all inherited for free. <code>_liveAcUpdateFollowBtn</code> extended to mirror the active state onto both buttons whenever it fires &mdash; no separate sync plumbing in the demo engine.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.2</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; visibly smooth turns.</strong> v2.97.1's arc engine was correct in principle but produced visible "snaps" at waypoints in practice for two reasons. (1) The 45 % leg-fit rule was rejecting most arcs on dense SimBrief routes &mdash; SID / STAR transitions with 5&ndash;15 nm leg lengths can't fit a 5.5 nm cruise turn radius, so the engine fell back to a hard corner exactly where the user expects to see a curve. New <em>shrink-to-fit</em> rule: always emit an arc unless the absolute minimum radius (0.15 nm) can't fit either &mdash; the bank angle implicitly steepens for tighter turns, mirroring what a real FMS does when ATC instructs a tight intercept. (2) Heading was held constant per track sub-segment, so the icon stepped in 5° increments at each arc node boundary. <code>_demoStateAt</code> now <em>linearly interpolates</em> heading between adjacent track nodes (wrap-aware across the 0°/360° seam), so the icon rotation is continuous through the entire arc. Arc step density bumped from 5° to 2° so even the discrete heading samples are buttery smooth. Maximum per-tick heading delta dropped from ~5° to under 2.5° at the steepest spot.</li>
+          <li><strong>Minimum-turn threshold lowered from 5° to 3°.</strong> A 4° course change with no arc still produces a visible kink at cruise scale; the lower threshold means a gentle airway-to-airway transition now also renders as a smooth curve.</li>
+          <li><strong>New constants: <code>_DEMO_MIN_RADIUS_NM</code> = 0.15 and <code>_DEMO_LEG_FIT_FRAC</code> = 0.48.</strong> Pulled out of the build code so the limits can be tuned in one place. The 0.15 nm floor stops degenerate situations (180° back-track on a 0.5 nm leg) from emitting a pirouette that overshoots the route entirely.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.97.1</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; speed-based turn radii at waypoints.</strong> v2.97.0's engine snapped the marker bearing instantly at each waypoint, producing visibly fake corners. The route walker now expands every interior waypoint into a coordinated-turn arc using the standard <code>R = V² / (g &middot; tan(bank))</code> formula at 25° bank, with per-waypoint radius derived from the expected groundspeed at that point on the route &mdash; ~0.4 nm for a Light GA cruise pass, ~5.5 nm for jet cruise. The marker actually flies the arc (heading changes continuously, position follows the circle), not just rotates. Below 5° of deflection the arc is skipped (no visible turn anyway); turns too tight to fit on either adjacent leg fall back to a hard corner rather than overshooting the route.</li>
+          <li><strong>Internal engine restructure: <code>segments</code> &rarr; <code>track</code>.</strong> Plan-build now produces a denser polyline that bakes the turn arcs into the geometry (arc step spacing 5°, minimum 4 nodes per arc), with cumulative distance and heading pre-computed per node. <code>_demoStateAt</code> walks the track in a single pass with no trig in the hot path beyond the inter-node great-circle interpolation it already did. Straight-line segments are still computed and stored as the fallback for degenerate two-point plans.</li>
+          <li><strong>Demo modal z-index fix.</strong> v2.97.0's <code>#demoModal</code> inherited the default <code>.modal-overlay</code> z-index (1000), which sat below the region map's 9000 &mdash; opening the modal from the Live menu while the map was visible put it behind the map. Now explicitly set to 9500, matching <code>fpSettingsModal</code> and <code>liveAcIconModal</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.97.0</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎬 Flight Demo Mode &mdash; drive AA's telemetry &amp; alerts from a synthetic flight.</strong> New <em>🔌 Live &rarr; 🎬 Flight Demo Mode</em> menu item opens a configuration modal for running AA at sites where MSFS / FSUIPC is unavailable (corporate networks, kiosks, presentations). Pick an aircraft, supply a flight plan (Save the currently-loaded SimBrief plan to a JSON file, or Load one previously saved), and click Start.</li>
+          <li><strong>Design principle: downstream systems can't tell it apart from FSUIPC.</strong> The synthetic engine emits packets through the same <code>_liveAcRenderMarker</code> chokepoint FSUIPC uses, at the same 1 Hz cadence, with the same field shape. AFK alerts, data panel, breadcrumb trail, follow-aircraft mode, stale-check, NEXT ALERT / ALERT ETA fields, mobile-alerts dispatch, and the Loss-of-Telemetry alarm all behave identically to a real flight. Two gating sites that previously hard-coded <code>_liveAcSource === 'fsuipc'</code> (the <em>telemetry-loss</em> eval and its <em>_afkETA.compute</em> branch) now run through a new <code>_liveSrcIsFsuipcLike()</code> helper that accepts both <em>fsuipc</em> and <em>demo</em> &mdash; so the floating bar's 📡✖ <em>Stale</em> button actually trips the CTD alarm in the demo, not just greys the icon. The tooltip source row reads <em>DEMO</em> when in demo mode (was previously <em>?</em>).</li>
+          <li><strong>Per-SimFly-category performance profiles.</strong> The engine synthesizes climb / cruise / descent from the selected aircraft's SimFly category (1 &rarr; 7), not per-airframe data. Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Routes shorter than the full climb + descent profile auto-scale the V to fit so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. Aircraft pulldown is sorted by category then alphabetically, displayed as <code>Cat N &mdash; ICAO &mdash; Name</code>.</li>
+          <li><strong>Save / Load Demo Flight Plan to disk.</strong> Save distills the currently-loaded SimBrief flight plan to a compact JSON file containing departure, destination, and every waypoint (name + lat/lon). Load reads it back and renders the route immediately. Save is disabled until a SimBrief plan is loaded. File names follow <code>SimFly_Demo_FlightPlan_&lt;DEP&gt;_&lt;DEST&gt;.json</code>.</li>
+          <li><strong>Floating playback control bar.</strong> While the demo is running, a control bar appears at the bottom of the map (modelled on the Measurement bar but anchored low instead of high). Carries ⏸ Pause / ▶ Play, ⏮ Restart, a scrub slider for jumping anywhere along the flight, current phase label, speed presets (0.25× / 0.5× / 1× / 2× / 3×) <em>plus</em> a free-slider for arbitrary 0.1× &ndash; 10× playback, and an elapsed / total time readout.</li>
+          <li><strong>Two telemetry-loss simulation buttons.</strong> <em>📡✖ Stale</em> stops emitting packets but keeps the marker on the map &mdash; after 30 s the icon greys out and any configured Loss-of-Telemetry alarms trip per their threshold, exactly as they would during a real FSUIPC stall. <em>⛓✖ Disconnect</em> clears the live-aircraft marker entirely (mirrors a full FSUIPC drop). Both toggle on/off, so you can demonstrate the alarm tripping AND the recovery in one session.</li>
+          <li><strong>Minimal kiosk lockdown.</strong> While the demo runs, the <em>🔌 FSUIPC Live</em>, <em>🛩 STKP Live</em>, and <em>✈ SimBrief Flight Plan</em> buttons are disabled to prevent the marker getting yanked out from under the synthetic packets. Everything else &mdash; panning, airport tooltips, alerts panel, data panel, scenery library &mdash; stays fully interactive so you can walk an audience through any feature during playback.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.96.2</span>
-          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-date">May 25, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -36029,6 +38564,8 @@ function rgSendToFlightPlanner() {
                  redundant. Clear Aircraft Track stays — there's no load
                  counterpart for the breadcrumb trail. -->
             <button class="rg-btn rg-pulldown-row" id="rgClearTrackBtn" onclick="if(this.classList.contains('disabled'))return;_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). For demos at sites where the simulator is unavailable.">🎬 <span class="rg-btn-label">Flight Demo Mode…</span></button>
           </div>
         </div>
 
@@ -36161,6 +38698,102 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <button class="rg-btn" id="rgRulerExitBtn" onclick="_rgToggleMeasure()" title="Exit measurement mode">✕ Exit</button>
+      </div>
+
+      <!-- Flight Demo Mode floating control bar (v2.97.0) — shown only while
+           a demo is running. Models the measurement bar's structure but
+           anchors to the bottom of the map and carries playback controls. -->
+      <div class="demo-floating" id="demoFloating">
+        <span class="demo-floating-label">🎬 Demo</span>
+        <button class="rg-btn" id="demoPauseBtn" onclick="_demoTogglePause()" title="Pause / resume demo playback">⏸ Pause</button>
+        <button class="rg-btn" onclick="_demoScrubTo(0)" title="Jump to the beginning of the demo flight">⏮ Restart</button>
+        <button class="rg-btn" id="demoFollowBtn" onclick="_liveAcToggleFollow(event)" title="Center and pan the map with the demo aircraft">📍 <span class="rg-btn-label">Follow</span></button>
+        <button class="rg-btn" id="demoApBtn" onclick="_demoApPanelToggle()" title="Open the autopilot panel — turn to heading, climb / descend to altitude, change speed, proceed direct to a waypoint">✈ <span class="rg-btn-label">AP</span></button>
+        <span class="demo-sep"></span>
+        <span class="demo-phase-label" id="demoPhaseLabel">—</span>
+        <input type="range" class="demo-scrub" id="demoScrubSlider" min="0" max="100" value="0" step="1"
+               oninput="_demoScrubTo(this.value)"
+               title="Drag to jump anywhere along the demo flight">
+        <span class="demo-time-label" id="demoTimeLabel">00:00 / 00:00</span>
+        <span class="demo-sep"></span>
+        <button class="rg-btn demo-speed-preset" data-speed="0.25" onclick="_demoSetSpeed(0.25)" title="Quarter speed">0.25×</button>
+        <button class="rg-btn demo-speed-preset" data-speed="0.5"  onclick="_demoSetSpeed(0.5)"  title="Half speed">0.5×</button>
+        <button class="rg-btn demo-speed-preset active" data-speed="1" onclick="_demoSetSpeed(1)"  title="Normal speed">1×</button>
+        <button class="rg-btn demo-speed-preset" data-speed="2"    onclick="_demoSetSpeed(2)"    title="Double speed">2×</button>
+        <button class="rg-btn demo-speed-preset" data-speed="3"    onclick="_demoSetSpeed(3)"    title="Triple speed">3×</button>
+        <input type="range" class="demo-speed-slider" id="demoSpeedSlider" min="0.1" max="10" step="0.1" value="1"
+               oninput="_demoSetSpeed(this.value)"
+               title="Fine-tune playback speed (0.1× – 10×)">
+        <span class="demo-speed-label-num" id="demoSpeedLabel">1×</span>
+        <span class="demo-sep"></span>
+        <button class="rg-btn" id="demoStaleBtn" onclick="_demoSimStale()" title="Simulate a stale telemetry feed — packets stop emitting and the marker greys after 30 s, tripping any configured Loss-of-Telemetry alarms. Click again to resume.">📡✖ Stale</button>
+        <button class="rg-btn" id="demoDisconnectBtn" onclick="_demoSimDisconnect()" title="Simulate a full live-aircraft disconnect — clears the marker entirely. Click again to reconnect.">⛓✖ Disconnect</button>
+        <span class="demo-sep"></span>
+        <button class="rg-btn" onclick="_demoStop()" title="Exit Flight Demo Mode and clear the synthetic aircraft">✕ Exit</button>
+      </div>
+
+      <!-- Autopilot panel (v2.97.6) — compact MCP-style strip, opens above
+           the floating bar when ✈ AP is clicked. Each axis: tiny label,
+           LCD-style value display with inline ◀/▶ steppers, single mode
+           toggle (MNG = managed/follow-plan ↔ SEL = selected/manual) that
+           doubles as the engage / release button. Click the value to
+           type a new setpoint, Enter to commit. Color: green = MNG,
+           magenta = SEL — matching real FCU semantics. -->
+      <div class="demo-ap-panel" id="demoApPanel">
+        <div class="demo-ap-hdr">
+          <span class="demo-ap-hdr-title">✈ AUTOPILOT</span>
+          <button class="demo-ap-close" onclick="_demoApPanelToggle()" title="Hide panel">✕</button>
+        </div>
+        <div class="demo-ap-grid">
+
+          <div class="demo-ap-col" data-axis="hdg">
+            <div class="demo-ap-axis-label">HDG</div>
+            <div class="demo-ap-value-row">
+              <button class="demo-ap-step" onclick="_demoApBumpHdg(-10)" title="-10°">◀</button>
+              <input type="number" id="demoApHdgInput" min="0" max="359" step="1" inputmode="numeric"
+                     class="demo-ap-lcd"
+                     onkeydown="if(event.key==='Enter'){this.blur();_demoApSetHdg(this.value);}"
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+              <button class="demo-ap-step" onclick="_demoApBumpHdg(10)" title="+10°">▶</button>
+            </div>
+            <button class="demo-ap-mode" id="demoApHdgMode" onclick="_demoApToggleAxisMode('hdg')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
+          </div>
+
+          <div class="demo-ap-col" data-axis="alt">
+            <div class="demo-ap-axis-label">ALT</div>
+            <div class="demo-ap-value-row">
+              <button class="demo-ap-step" onclick="_demoApBumpAlt(-1000)" title="-1000 ft">◀</button>
+              <input type="number" id="demoApAltInput" min="0" step="500" inputmode="numeric"
+                     class="demo-ap-lcd"
+                     onkeydown="if(event.key==='Enter'){this.blur();_demoApSetAlt(this.value);}"
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+              <button class="demo-ap-step" onclick="_demoApBumpAlt(1000)" title="+1000 ft">▶</button>
+            </div>
+            <button class="demo-ap-mode" id="demoApAltMode" onclick="_demoApToggleAxisMode('alt')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
+          </div>
+
+          <div class="demo-ap-col" data-axis="gs">
+            <div class="demo-ap-axis-label">SPD</div>
+            <div class="demo-ap-value-row">
+              <button class="demo-ap-step" onclick="_demoApBumpGs(-10)" title="-10 kt">◀</button>
+              <input type="number" id="demoApGsInput" min="0" step="5" inputmode="numeric"
+                     class="demo-ap-lcd"
+                     onkeydown="if(event.key==='Enter'){this.blur();_demoApSetGs(this.value);}"
+                     onblur="_demoApUpdatePanel && _demoUpdateApPanel()" />
+              <button class="demo-ap-step" onclick="_demoApBumpGs(10)" title="+10 kt">▶</button>
+            </div>
+            <button class="demo-ap-mode" id="demoApGsMode" onclick="_demoApToggleAxisMode('gs')" title="Toggle between Managed (follow plan) and Selected (hold setpoint)">Managed</button>
+          </div>
+
+          <div class="demo-ap-col demo-ap-direct-col">
+            <div class="demo-ap-axis-label"><span class="demo-ap-direct-icon">⌖</span> DIRECT</div>
+            <div class="demo-ap-value-row">
+              <select id="demoApDirectSelect" class="demo-ap-direct-select"></select>
+            </div>
+            <button class="demo-ap-mode demo-ap-direct-go" onclick="_demoApDirectTo(document.getElementById('demoApDirectSelect').value)" title="Proceed direct to the selected waypoint">⌖ GO</button>
+          </div>
+
+        </div>
       </div>
     </div>
     <div id="afkDataPanel">

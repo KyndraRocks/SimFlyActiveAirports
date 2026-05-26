@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.96.2**
+**Current version: v2.97.12**
 
 ---
 
@@ -265,6 +265,32 @@ The modal validates required fields, includes a **▶ Test** button that fires a
 - **Group cascade now an enforcement, not an aspiration.** Pre-v2.87.1 the cascade lived only in the dismiss path, so a sibling alarm whose own conditions later satisfied could fire independently before the user dismissed the original. The eval-time check now blocks every sibling for the entire window the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible.
 
 **Load from File behaviour** (v2.87.1+) — importing an alarm file always produces a ready-to-fire configuration: every imported alarm comes in **enabled** regardless of the saved value, and per-type transient state is freshly seeded so the next tick treats each alarm as just-armed. **Airborne import warning**: if the aircraft is actively flying (live source connected and groundspeed > 30 kt, or |VS| > 100 fpm, or wheels-up confirmed), a confirmation dialog appears before the import is applied — some alarm types can fire on the first tick post-load if current state already satisfies their conditions (e.g. a Cruise alarm with a target altitude below your current FL). Cancel or Load Anyway. Quiet at the gate.
+
+### 🎬 Flight Demo Mode
+For demos and presentations at locations where MSFS / FSUIPC is unavailable (corporate networks, kiosks, conference rooms that block flight-sim sites), AA can run on synthetic telemetry — driving the full alerting system, data panel, breadcrumb trail, and aircraft marker without any live sim connection. Open from **🔌 Live → 🎬 Flight Demo Mode** in the map header.
+
+**Save / Load demo flight plans to disk** — the configuration modal's *Save Demo Flight Plan* button distills the currently-loaded SimBrief plan into a compact JSON file containing departure, destination, and every waypoint (name + lat/lon). *Load Demo Flight Plan* reads one back so you can carry a library of demo routes between machines or to sites that block SimBrief.
+
+**Per-SimFly-category performance profiles** — the aircraft pulldown lists every aircraft in the database, sorted by SimFly category (1 → 7) then alphabetically. The engine synthesizes climb / cruise / descent from the chosen aircraft's category (Cat 1: 4,000 ft / 110 kt up to Cat 7: FL380 / 470 kt), so any aircraft in a category gets the right kind of profile. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. Defaults to your current AA aircraft pick; if none is selected, falls back to a Cat 6 aircraft.
+
+**Real per-waypoint VNAV from SimBrief altitudes** — when the loaded plan came from SimBrief, every navlog fix's planned cruise altitude (`altitude_feet`) is captured and used as a real VNAV altitude target. The Managed ALT mode interpolates linearly between adjacent constrained fixes along the current leg, so a route with TOC at FL120 over the first waypoint, step-climb to FL360 by mid-flight, TOD over the descent fix, and step-descent into the destination produces a realistic profile instead of a single climb→cruise→descend triangle. Missing intermediate altitudes are back-filled by interpolating from nearest specified neighbours. Save/Load Demo Flight Plan JSON preserves the altitude constraints round-trip. Falls back to the single-triangle phase model when no waypoint has altitude data.
+
+**Realistic turn radii at waypoints** — instead of snapping the marker bearing at each waypoint, the engine expands every interior waypoint into a coordinated-turn arc sized by the aviation formula `R = V² / (g · tan(25°))`. Per-waypoint radius uses the expected groundspeed at that point on the route, so Light GA waypoints get tight ~0.4 nm turns and jet cruise waypoints get realistic ~5.5 nm arcs. The marker actually flies the arc; heading changes continuously rather than stepping. Turns too tight to fit on either adjacent leg fall back to a hard corner.
+
+**Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (0.25× / 0.5× / 1× / 2× / 3×) plus a free-slider for arbitrary 0.1× – 10× playback, and an elapsed / total time readout.
+
+**✈ Autopilot panel — hands-on demo flying** — clicking the AP button opens a compact MCP-style panel above the floating bar with four columns:
+
+- **HDG** — turn to any heading (0–359°). ▼/▲ steppers in 10° increments, numeric input, SET to commit, AUTO to release back to the plan-driven heading.
+- **ALT** — climb or descend to any altitude. ±1000 ft steppers, clamped to the aircraft's category service ceiling.
+- **SPD** — change speed. ±10 kt steppers, clamped to the aircraft's category min/max.
+- **⌖ DIRECT** — pulldown of every plan waypoint with a ⌖ GO button (aviation direct-to glyph) to fly direct to the selected one. After reaching it, the plan resumes from that point.
+
+Engaged setpoints glow magenta; AUTO axes show the current live value with a cyan tint. The engine integrates aircraft state toward the targets using coordinated-turn rates (3°/sec at 25° bank), category-derived climb / descent fpm, and realistic acceleration — a Cub asked to climb to FL180 takes the time it should. Scrubbing the slider snaps the aircraft back to the plan baseline and releases all axes to AUTO.
+
+**Telemetry-loss simulation** — two buttons on the floating bar let you demo the alerting behaviour for telemetry interruptions: **📡✖ Stale** stops emitting packets while keeping the marker on the map (after 30 s the icon greys out and any Loss-of-Telemetry alarms trip per their threshold). **⛓✖ Disconnect** clears the marker entirely (mirrors a full FSUIPC drop). Both toggle on/off so the alarm trip AND the recovery can be demoed in a single session.
+
+**Minimal kiosk lockdown** — while running, the *🔌 FSUIPC Live*, *🛩 STKP Live*, and *✈ SimBrief Flight Plan* buttons are disabled to prevent the marker getting yanked out from under the synthetic packets. The rest of the map — panning, airport tooltips, alerts panel, data panel, scenery library, measurement tool — stays fully interactive so you can walk an audience through any feature during playback.
 
 ### Aircraft Data Panel
 A persistent strip at the bottom of the map that streams live flight parameters in real time. As of v2.80.0 the panel is **fully customisable** — every field can be shown, hidden, reordered, or surrounded by vertical-bar spacers entirely under your control.
