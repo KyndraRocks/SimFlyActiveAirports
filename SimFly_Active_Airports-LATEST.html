@@ -5437,7 +5437,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.95.0';
+const APP_VERSION = '2.96.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11796,6 +11796,35 @@ const _afkETA = (() => {
       if (!t) return NaN;
       return Math.max(0, (t - Date.now()) / 1000);
     }
+    // v2.96.1 — telemetry-loss is also aircraft-state-independent (its
+    // input is the staleness of the FSUIPC fix stream, not the aircraft's
+    // position). Must be evaluated before the !ac bail below, otherwise
+    // card-side callers that pass ac=null (the card subtitle live-update
+    // path) get NaN and the countdown silently never appears.
+    //
+    // Gating mirrors _afkEvalTelemetryLoss, plus a staleness gate so a
+    // healthy stream doesn't park threshold on NEXT ALERT / ALERT ETA
+    // and a restored stream (staleSec falls back near 0) cleanly clears
+    // those fields. Gate scales with the configured threshold so short
+    // thresholds still get useful warning time.
+    if (alarm.type === 'telemetry-loss') {
+      if (typeof _liveAcSource === 'undefined' || _liveAcSource !== 'fsuipc') return NaN;
+      let phase = null;
+      try { phase = _afkPhase.get(); } catch (_) {}
+      if (!phase || phase === 'ground') return NaN;
+      const thresholdSec = parseFloat(alarm.params && alarm.params.thresholdSec);
+      // v2.96.2 — Threshold floor raised from 10 s to 30 s. The 10 s gate
+      // below means anything shorter would fire before any countdown could
+      // appear, which is misleading.
+      if (!isFinite(thresholdSec) || thresholdSec < 30) return NaN;
+      if (typeof _liveAcLastUpdate === 'undefined' || !_liveAcLastUpdate) return NaN;
+      const staleSec = (performance.now() - _liveAcLastUpdate) / 1000;
+      // v2.96.2 — Flat 10 s gate (was Math.min(30, thresholdSec * 0.5)).
+      // FSUIPC pushes faster than 10 s during normal flight, so anything
+      // above 10 s is "telemetry has actually stopped" rather than a blip.
+      if (staleSec < 10) return NaN;
+      return Math.max(0, thresholdSec - staleSec);
+    }
     if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
     const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
     if (alarm.type === 'geofence') {
@@ -11887,6 +11916,7 @@ const _afkETA = (() => {
       if (distToTOD <= 0)                            return NaN; // already past TOD
       return (distToTOD / gs) * 3600;
     }
+    // telemetry-loss handled above (aircraft-state-independent path).
     // phase-change — not ETA-predictable from instantaneous state
     return NaN;
   }
@@ -12196,6 +12226,15 @@ const _afkAlarms = (() => {
           // Reset transient state on reload
           a.status = a.status === 'tripped' ? 'armed' : a.status;
           a.state = a.state || {};
+          // v2.96.2 — telemetry-loss floor raised from 10 s to 30 s.
+          // Silently upgrade any stored value below the new floor so a
+          // pre-v2.96.2 alarm with thresholdSec=10 doesn't quietly stop
+          // firing (compute + eval both reject anything below 30 now).
+          if (a.type === 'telemetry-loss' && a.params &&
+              isFinite(parseFloat(a.params.thresholdSec)) &&
+              parseFloat(a.params.thresholdSec) < 30) {
+            a.params.thresholdSec = 30;
+          }
           return a;
         });
     } catch (_) {}
@@ -13149,8 +13188,11 @@ function _afkEvalTelemetryLoss(alarm) {
   // can't produce a constant-firing alarm.
   // v2.91.0 — Floor lowered from 30 s to 10 s now that seconds-unit input
   // is supported. The 15 s watchdog cycle adds latency on top either way.
+  // v2.96.2 — Floor raised back to 30 s. The 10 s pre-trip display gate
+  // (in _afkETA.compute) eats the entire countdown window for anything
+  // shorter, which makes the "trips in H:MM:SS" readout pointless.
   const thresholdSec = parseFloat(alarm.params && alarm.params.thresholdSec);
-  if (!isFinite(thresholdSec) || thresholdSec < 10) return false;
+  if (!isFinite(thresholdSec) || thresholdSec < 30) return false;
   const thresholdMs = thresholdSec * 1000;
   // v2.90.2 — Require a fresh fix to have arrived under the current source
   // session before staleness is meaningful. _liveAcClear() resets
@@ -14320,7 +14362,16 @@ function _afkAlarmShortDescription(a, includeTitle) {
     const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
     const u    = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
     const display = (u === 'seconds') ? (tSec + ' s') : (Math.max(1, Math.round(tSec / 60)) + ' min');
-    return title + 'No FSUIPC telemetry for ' + display + ' while airborne (CTD canary)';
+    let s = title + 'No FSUIPC telemetry for ' + display + ' while airborne (CTD canary)';
+    // v2.96.0 — Live grace countdown, same H:MM:SS format the data panel
+    // uses for ALERT ETA. _afkETA.compute returns NaN unless FSUIPC is the
+    // active source, airborne, and a baseline fix has arrived — so the
+    // suffix self-suppresses on the ground / pre-flight / wrong source.
+    try {
+      const eta = _afkETA.compute(a, null);
+      if (isFinite(eta)) s += ' · trips in ' + _afkETA.fmt(eta);
+    } catch (_) {}
+    return s;
   }
   if (a.type === 'conditional') {
     const allRows = (a.params && Array.isArray(a.params.conditions)) ? a.params.conditions : [];
@@ -15466,16 +15517,19 @@ function _afkRenderEditor(a) {
     // in the input. Seconds mode allows down to 10 s (the watchdog runs
     // every 15 s so detection latency is at least one watchdog cycle
     // regardless of threshold — documented in the title attribute).
+    // v2.96.2 — Seconds-mode floor raised from 10 s to 30 s. The pre-trip
+    // countdown has a 10 s display gate, so any threshold below 30 s would
+    // fire with little or no visible countdown — misleading.
     const tSec  = parseInt((a.params && a.params.thresholdSec) || 300, 10);
     const tUnit = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
     const tVal  = (tUnit === 'seconds')
-      ? Math.max(10, Math.round(tSec))
+      ? Math.max(30, Math.round(tSec))
       : Math.max(1,  Math.round(tSec / 60));
-    const tMin  = (tUnit === 'seconds') ? 10 : 1;
+    const tMin  = (tUnit === 'seconds') ? 30 : 1;
     const tMax  = (tUnit === 'seconds') ? 600 : 60;
     body =
       '<div class="afk-edit-row"><span class="afk-edit-label">Trip after</span>' +
-        '<input type="number" class="afk-input" style="width:80px;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 10 s, but note that the watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold.">' +
+        '<input type="number" class="afk-input" style="width:80px;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 30 s (the pre-trip countdown has a 10 s display gate, so anything shorter would fire with little or no visible countdown). The watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold.">' +
         '<select class="afk-select" style="width:auto" onchange="_afkSetTelemetryLossUnit(' + a.id + ', this.value)" title="Switch between minutes and seconds.">' +
           '<option value="minutes"' + (tUnit === 'minutes' ? ' selected' : '') + '>minutes</option>' +
           '<option value="seconds"' + (tUnit === 'seconds' ? ' selected' : '') + '>seconds</option>' +
@@ -15773,6 +15827,16 @@ function _afkUpdateTimerCardLive(a) {
   }
 }
 
+// v2.96.0 — Same idea for the CTD canary card. Subtitle now carries a
+// live grace countdown that needs a 1 Hz nudge to tick even while no
+// editor field is being touched and no FSUIPC fix is being processed.
+function _afkUpdateTelemetryLossCardLive(a) {
+  const card = document.querySelector('.afk-card[data-afk-id="' + a.id + '"]');
+  if (!card) return;
+  const sub = card.querySelector('.afk-card-desc-sub');
+  if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+}
+
 // v2.91.0 — Conditional alarm setters. Each one mutates the alarm's
 // params.conditions array (creating it if missing) and persists. Most
 // re-render the alarm list so the editor reflects the change; the
@@ -15918,7 +15982,8 @@ function _afkSetTelemetryLossThreshold(id, v) {
   const num  = parseFloat(v);
   if (!isFinite(num)) return;
   if (unit === 'seconds') {
-    a.params.thresholdSec = Math.max(10, Math.round(num));
+    // v2.96.2 — Floor raised from 10 s to 30 s; see _afkEvalTelemetryLoss.
+    a.params.thresholdSec = Math.max(30, Math.round(num));
   } else {
     a.params.thresholdSec = Math.max(60, Math.round(num) * 60);
   }
@@ -15930,14 +15995,15 @@ function _afkSetTelemetryLossThreshold(id, v) {
   }
 }
 // Switch units on the fly. The stored thresholdSec stays the same — only
-// the display (and edit) unit changes. Caps re-clamped: seconds → ≥ 10 s,
-// minutes → ≥ 60 s (so the input never displays a fractional minute).
+// the display (and edit) unit changes. Caps re-clamped: seconds → ≥ 30 s
+// (v2.96.2; was 10 s), minutes → ≥ 60 s (so the input never displays a
+// fractional minute).
 function _afkSetTelemetryLossUnit(id, u) {
   const a = _afkAlarms.get(id); if (!a) return;
   const next = (u === 'seconds') ? 'seconds' : 'minutes';
   a.params.thresholdUnit = next;
   let sec = parseInt(a.params.thresholdSec || 300, 10);
-  if (next === 'seconds' && sec < 10) sec = 10;
+  if (next === 'seconds' && sec < 30) sec = 30;
   if (next === 'minutes' && sec < 60) sec = 60;
   a.params.thresholdSec = sec;
   _afkAlarms.update(id, { params: a.params });
@@ -17164,6 +17230,9 @@ function _afkInit() {
         document.getElementById('afkConfigModal').classList.contains('open')) {
       _afkAlarms.list().forEach(a => {
         if (a.type === 'timer') _afkUpdateTimerCardLive(a);
+        // v2.96.0 — telemetry-loss subtitle now carries a live grace
+        // countdown ("trips in 0:04:58"); tick it on the same cadence.
+        if (a.type === 'telemetry-loss') _afkUpdateTelemetryLossCardLive(a);
       });
     }
   }, 1000);
@@ -27126,10 +27195,51 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.96.2</span>
+          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; pre-trip display gate lowered to a flat 10 s.</strong> v2.96.1 gated the countdown at <code>min(30 s, thresholdSec * 0.5)</code>, which meant a 5-minute threshold sat blind for the first 30 s of any telemetry interruption before the panel and card lit up. New gate is a flat 10 s: FSUIPC pushes faster than 10 s during normal flight, so anything above 10 s is "telemetry has actually stopped" rather than a blip, and the readout now engages noticeably sooner. Sub-10 s pause-menu micro-trips still self-suppress so the panel doesn&rsquo;t flash a value.</li>
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; <em>Trip after</em> minimum raised from 10 s to 30 s.</strong> With the 10 s display gate above, any threshold below 30 s would fire with little or no visible countdown &mdash; the alarm would trip before "trips in H:MM:SS" had a chance to mean anything. Enforced in five places: <code>_afkETA.compute</code> guard, <code>_afkEvalTelemetryLoss</code> guard, <code>_afkSetTelemetryLossThreshold</code> clamp, <code>_afkSetTelemetryLossUnit</code> seconds-mode clamp, and the card editor&rsquo;s seconds-mode input <code>min</code>. Tooltip rewritten to explain why the floor is 30 s. Minutes mode unchanged (still ≥ 1 min).</li>
+          <li><strong>Silent load-time migration for stored sub-30 s thresholds.</strong> <code>_afkAlarms._load()</code> now upgrades any persisted <code>telemetry-loss</code> alarm with <code>thresholdSec &lt; 30</code> to <code>30</code> on read. Pre-v2.96.2 alarms saved at the old 10 s minimum would otherwise be silently rejected by both eval and compute under the new floor (they&rsquo;d never fire and never show a countdown). No toast or modal &mdash; the upgrade is invisible to the user and the alarm just keeps working at the new floor on first reload.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.96.1</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; countdown now appears on the alarm card.</strong> v2.96.0&rsquo;s card-side countdown silently never appeared. Root cause: <code>_afkETA.compute</code> had a <code>!ac</code> early-bail above the new <code>telemetry-loss</code> branch, and the card live-update path calls <code>compute(a, null)</code> &mdash; so the function returned NaN before it ever evaluated the staleness window. Moved the <code>telemetry-loss</code> branch up next to the <code>timer</code> branch (both are aircraft-state-independent &mdash; their inputs are wall-clock and FSUIPC fix staleness, not aircraft position), so the card subtitle now picks up the countdown as expected. Subtitle is rendered inside the always-visible card header row, so the countdown shows whether the card is collapsed or expanded.</li>
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; NEXT ALERT / ALERT ETA clear when telemetry is restored.</strong> v2.96.0 parked the threshold value (e.g. <em>5:00</em>) on the telemetry panel any time conditions were met, so a healthy stream made the panel claim a CTD trip was always 5 minutes away. Added a staleness gate: <code>_afkETA.compute</code> only returns a finite ETA once <code>staleSec</code> exceeds <code>min(30 s, thresholdSec * 0.5)</code>. Below the gate (normal telemetry or restored telemetry after a brief blip) the function returns NaN and both fields revert to <em>&mdash;</em> (or to the next-soonest alarm). Above the gate (telemetry has been quiet long enough to be a real interruption) the countdown ticks down to the trip moment. Restoration before the alarm fires &mdash; a fresh fix lands &mdash; instantly drops <code>staleSec</code> back near zero and the fields clear.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.96.0</span>
+          <span class="release-date">May 25, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📡 Loss of Telemetry (CTD) &mdash; live grace countdown everywhere.</strong> The CTD canary now surfaces a live <em>"trips in H:MM:SS"</em> readout in three places: appended to its alarm card subtitle, in the telemetry panel&rsquo;s <em>NEXT ALERT</em> field (when it&rsquo;s the soonest-tripping armed alarm), and in <em>ALERT ETA</em>. With FSUIPC pushing fixes normally the value parks near the configured threshold (each fresh fix resets the staleness clock); during a real CTD it ticks down in real time, so you can see the exact moment the alarm is about to fire instead of just waiting and hoping. Same H:MM:SS format every other ETA-predictable alarm uses, so the panel layout stays steady.</li>
+          <li><strong><code>_afkETA.compute</code> now handles <code>telemetry-loss</code>.</strong> Returns <code>thresholdSec − staleSec</code>, gated by the same conditions as <code>_afkEvalTelemetryLoss</code>: FSUIPC must be the active source, the aircraft must be airborne (any phase except ground), and at least one fresh fix must have arrived under the current source session. On the ground, pre-flight, or with no live source, the function returns NaN and the countdown self-suppresses from every surface &mdash; no misleading <em>"5:00 until trip"</em> while parked at the gate.</li>
+          <li><strong>1 Hz card heartbeat extended.</strong> The existing 1 Hz <code>setInterval</code> that re-ticks visible Timer card subtitles now also ticks Loss-of-Telemetry cards (new <code>_afkUpdateTelemetryLossCardLive</code> helper), so the in-card countdown advances smoothly even when no FSUIPC fix is being processed and the user isn&rsquo;t touching any input.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.95.0</span>
-          <span class="release-date">May 25, 2026 &middot; Current</span>
+          <span class="release-date">May 25, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
