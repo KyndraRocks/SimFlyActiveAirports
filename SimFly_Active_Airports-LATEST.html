@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.98.10';
+const APP_VERSION = '2.98.11';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14610,6 +14610,7 @@ const _AFK_LS_DUR_SEC    = 'simfly_aa_afk_alarm_duration_sec'; // user's preferr
 const _AFK_LS_CARDS_COLL = 'simfly_aa_afk_collapsed_cards';    // Array<number> of card ids
 const _AFK_LS_CRUISE_ALT = 'simfly_aa_afk_cruise_alt_text';    // last-entered cruise altitude (v2.76.0+)
 const _AFK_LS_GROUPS     = 'simfly_aa_afk_groups';             // alarm groups (v2.83.0+)
+const _AFK_LS_MULTITAB   = 'simfly_aa_afk_multitab_toast';     // multi-tab sync toast on/off (v2.98.11+)
 let _afkAlarmIdSeq       = 1;
 let _afkGroupIdSeq       = 1;
 
@@ -14830,6 +14831,17 @@ function _afkSetUserDefaultCruiseAltText(v) {
     if (v) localStorage.setItem(_AFK_LS_CRUISE_ALT, v);
     else   localStorage.removeItem(_AFK_LS_CRUISE_ALT);
   } catch (_) {}
+}
+
+// v2.98.11 — Multi-tab sync toast preference. Default ON (matches the
+// pre-v2.98.11 behaviour). Stored as '0' or '1' under the localStorage
+// key so absence-of-value reads as enabled.
+function _afkGetShowMultiTabToast() {
+  try { return localStorage.getItem(_AFK_LS_MULTITAB) !== '0'; }
+  catch (_) { return true; }
+}
+function _afkSetShowMultiTabToast(on) {
+  try { localStorage.setItem(_AFK_LS_MULTITAB, on ? '1' : '0'); } catch (_) {}
 }
 
 // Per-alarm auto-dismiss timers when mode='seconds'. Stored by alarm id.
@@ -15284,7 +15296,9 @@ function _afkCrossTabReload(keys) {
       try { _afkUpdateBtnState(); } catch (_) {}
       try { _afkUpdateBadge(); } catch (_) {}
       try { _afkSyncTripOverlay(); } catch (_) {}
-      try { _aaRtToast('🔁 Synced changes from another AA tab.', 'ok'); } catch (_) {}
+      // v2.98.11 — Toast is opt-out via the Alerts modal's
+      // "Show multi-tab sync toast" checkbox (default ON).
+      try { if (_afkGetShowMultiTabToast()) _aaRtToast('🔁 Synced changes from another AA tab.', 'ok'); } catch (_) {}
     } catch (_) {}
   }, 250);
 }
@@ -15672,9 +15686,12 @@ const _AFK_COND_PARAMS = [
   { id: 'gs',        label: 'Ground speed',            unit: 'kt',  defaultVal: 400,   evalFn: (ac) => (ac && ac.gs  != null && isFinite(ac.gs )) ? ac.gs  : null },
   { id: 'vs',        label: 'Vertical speed (±fpm)',   unit: 'fpm', defaultVal: 500,   evalFn: () => { try { const v = _afkPhase.vsFpm(); return isFinite(v) ? v : null; } catch (_) { return null; } } },
   { id: 'distDest',  label: 'Distance to destination', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination || !isFinite(parseFloat(fp.destination.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)); return isFinite(d) ? d : null; } },
+  { id: 'distDep',   label: 'Distance from departure', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.origin || !isFinite(parseFloat(fp.origin.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.origin.pos_lat), parseFloat(fp.origin.pos_long)); return isFinite(d) ? d : null; } },
+  { id: 'distNext',  label: 'Distance to next waypoint', unit: 'nm', defaultVal: 10,   evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); return nx ? nx.distNm : null; } },
   { id: 'distWp',    label: 'Distance to waypoint',    unit: 'nm',  defaultVal: 20,    needsWp: true, evalFn: (ac, c, fp) => { if (!ac || !c.wp || !fp || !fp.navlog) return null; const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix]; const w = fixes.find(f => f && f.ident === c.wp); if (!w || !isFinite(parseFloat(w.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(w.pos_lat), parseFloat(w.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'trkRem',    label: 'Track miles remaining',   unit: 'nm',  defaultVal: 100,   evalFn: (ac, c, fp) => { if (!ac || !fp) return null; const v = _afkTrackMilesRemaining(ac, fp); return isFinite(v) ? v : null; } },
   { id: 'remTime',   label: 'Remaining time',          unit: 'sec', defaultVal: 30,   isTime: true, defaultUnit: 'minutes', defaultValSec: 1800, evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination) return null; const trk = _afkTrackMilesRemaining(ac, fp); const dest = isFinite(trk) ? trk : (fp.destination ? _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)) : null); if (!isFinite(dest) || !ac.gs || ac.gs <= 5) return null; return (dest / ac.gs) * 3600; } },
+  { id: 'etaNext',   label: 'ETA to next waypoint',    unit: 'sec', defaultVal: 5,    isTime: true, defaultUnit: 'minutes', defaultValSec: 300,  evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); if (!nx || !ac.gs || ac.gs <= 5) return null; return (nx.distNm / ac.gs) * 3600; } },
   { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'minutes', defaultValSec: 3600, evalFn: () => (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null },
   { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'seconds', defaultValSec: 60,   evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
 ];
@@ -17082,6 +17099,10 @@ function _afkOpenConfig() {
   if (!m) return;
   m.classList.add('open');
   _afkRenderAlarmList();
+  // v2.98.11 — Reflect the persisted multi-tab toast preference each
+  // time the modal opens, in case another tab toggled it.
+  const cb = document.getElementById('afkMultiTabToastCb');
+  if (cb) cb.checked = _afkGetShowMultiTabToast();
 }
 function _afkCloseConfig() {
   const m = document.getElementById('afkConfigModal');
@@ -19616,6 +19637,46 @@ function _afkFmtHMS(secs) {
 // the aircraft sum closest to the leg's own length — i.e. the aircraft is
 // most nearly on that line. Robust to small lateral deviations and route
 // doglegs. Tied legs keep the EARLIER index so a fix that lies near two
+// v2.98.11 — Returns the next un-passed waypoint on the SimBrief route
+// and the great-circle distance from the aircraft to it. Used by the
+// DIST TO NEXT / ETA NEXT data-panel fields and the matching conditional
+// alarm parameters. Picks the leg the aircraft is most plausibly on
+// (same scoring as _afkTrackMilesRemaining: smallest excess over the
+// leg's straight-line distance) and returns the END of that leg as the
+// "next" waypoint. Returns null if telemetry or the plan isn't usable.
+function _afkNextWptInfo(ac, fp) {
+  if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return null;
+  if (!fp || !fp.origin || !fp.destination) return null;
+  const oLat = parseFloat(fp.origin.pos_lat),       oLng = parseFloat(fp.origin.pos_long);
+  const dLat = parseFloat(fp.destination.pos_lat),  dLng = parseFloat(fp.destination.pos_long);
+  if (!isFinite(oLat) || !isFinite(oLng) || !isFinite(dLat) || !isFinite(dLng)) return null;
+  const fixesRaw = fp.navlog && fp.navlog.fix;
+  const fixes    = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  const pts = [{ lat: oLat, lng: oLng, ident: (fp.origin.icao_code || 'ORIG') }];
+  fixes.forEach(f => {
+    const la = parseFloat(f.pos_lat), ln = parseFloat(f.pos_long);
+    if (isFinite(la) && isFinite(ln)) pts.push({ lat: la, lng: ln, ident: (f.ident || '') });
+  });
+  pts.push({ lat: dLat, lng: dLng, ident: (fp.destination.icao_code || 'DEST') });
+  if (pts.length < 2) return null;
+  let bestIdx = 0;
+  let bestScore = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i], B = pts[i + 1];
+    const dA  = _afkDistNm(ac.lat, ac.lng, A.lat, A.lng);
+    const dB  = _afkDistNm(ac.lat, ac.lng, B.lat, B.lng);
+    const dAB = _afkDistNm(A.lat, A.lng, B.lat, B.lng);
+    if (!isFinite(dA) || !isFinite(dB) || !isFinite(dAB)) continue;
+    const excess = (dA + dB) - dAB;
+    if (excess < bestScore) { bestScore = excess; bestIdx = i; }
+  }
+  const nxt = pts[bestIdx + 1];
+  if (!nxt) return null;
+  const distNm = _afkDistNm(ac.lat, ac.lng, nxt.lat, nxt.lng);
+  if (!isFinite(distNm)) return null;
+  return { lat: nxt.lat, lon: nxt.lng, ident: nxt.ident, distNm };
+}
+
 // legs (a sharp turn) routes the aircraft to the next one ahead.
 function _afkTrackMilesRemaining(ac, fp) {
   if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng) || !fp || !fp.origin || !fp.destination) return NaN;
@@ -19682,6 +19743,13 @@ const _AFK_DP_ELEMENTS = {
                title:"Great-circle nautical miles directly from your current position to the destination airport — straight line, ignores the planned route's dogleg." },
   trkRem:    { label:'TRK MILES REM',group:'Distance',  valueId:'afkDpTrkRem',    minWidth:'5.5em',
                title:'Track miles remaining along the SimBrief route — from your current position to the next un-passed waypoint, plus the sum of all remaining legs to the destination. Drives the REMAINING / ETA estimates.' },
+  // v2.98.11 — Three new fields, all hidden by default. Toggle on via the ⚙ menu.
+  distDep:   { label:'DIST FROM DEP', group:'Distance', valueId:'afkDpDistDep',   minWidth:'5.5em',
+               title:'Great-circle nautical miles from the departure airport to your current position. Useful for monitoring how far you have traveled along the planned route.' },
+  distNext:  { label:'DIST TO NEXT',  group:'Distance', valueId:'afkDpDistNext',  minWidth:'5.5em',
+               title:'Great-circle nautical miles from your current position to the next un-passed waypoint on the SimBrief route. Requires a SimBrief flight plan loaded.' },
+  etaNext:   { label:'ETA NEXT',      group:'Time',     valueId:'afkDpEtaNext',   minWidth:'4.5em',
+               title:'Time-to-next-waypoint, computed from DIST TO NEXT and your current ground speed. Requires a SimBrief flight plan loaded and GS > 5 kt.' },
   nextAlarm: { label:'NEXT ALERT',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
   nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
 };
@@ -20173,6 +20241,65 @@ function _afkUpdateDataPanel(ac) {
     if (etaUEl) { etaUEl.textContent = '—'; etaUEl.className = 'afk-dp-value muted'; }
     _afkDpSetTitle('afkDpDistRem', null);
     _afkDpSetTitle('afkDpTrkRem',  null);
+  }
+
+  // v2.98.11 — DIST FROM DEP / DIST TO NEXT / ETA NEXT. All three are
+  // hidden by default in the data panel layout (not present in
+  // _AFK_DP_DEFAULT_CONFIG); _afkDpSet is null-safe so these writes are
+  // no-ops when the field isn't currently on the panel.
+  const distDepEl  = document.getElementById('afkDpDistDep');
+  const distNextEl = document.getElementById('afkDpDistNext');
+  const etaNextEl  = document.getElementById('afkDpEtaNext');
+  // DIST FROM DEP — needs the origin from the SimBrief plan; falls
+  // back to em-dash when no plan is loaded.
+  if (fp && fp.origin && isFinite(parseFloat(fp.origin.pos_lat))) {
+    const origLat = parseFloat(fp.origin.pos_lat);
+    const origLng = parseFloat(fp.origin.pos_long);
+    const dFromDep = _afkDistNm(ac.lat, ac.lng, origLat, origLng);
+    if (distDepEl) {
+      if (isFinite(dFromDep)) {
+        distDepEl.textContent = dFromDep.toFixed(1) + ' nm';
+        distDepEl.className = 'afk-dp-value';
+        _afkDpSetTitle('afkDpDistDep',
+          'Distance from departure: ' + dFromDep.toFixed(1) + ' nm · ' + (dFromDep * 1.852).toFixed(1) + ' km.');
+      } else {
+        distDepEl.textContent = '—';
+        distDepEl.className = 'afk-dp-value muted';
+        _afkDpSetTitle('afkDpDistDep', null);
+      }
+    }
+  } else if (distDepEl) {
+    distDepEl.textContent = '—';
+    distDepEl.className = 'afk-dp-value muted';
+    _afkDpSetTitle('afkDpDistDep', null);
+  }
+  // DIST TO NEXT + ETA NEXT — need a plan AND a usable next-wpt result.
+  // (Local name picked to avoid colliding with the `nx` const further
+  // down that holds the _afkETA.next() result for NEXT ALERT / ALERT ETA.)
+  const nextWpt = (fp && fp.origin && fp.destination) ? _afkNextWptInfo(ac, fp) : null;
+  if (nextWpt) {
+    if (distNextEl) {
+      distNextEl.textContent = nextWpt.distNm.toFixed(1) + ' nm';
+      distNextEl.className = 'afk-dp-value';
+      _afkDpSetTitle('afkDpDistNext',
+        'Distance to next waypoint (' + (nextWpt.ident || '—') + '): ' + nextWpt.distNm.toFixed(1) + ' nm · ' + (nextWpt.distNm * 1.852).toFixed(1) + ' km.');
+    }
+    if (etaNextEl) {
+      if (isFinite(ac.gs) && ac.gs > 5) {
+        const etaSec = (nextWpt.distNm / ac.gs) * 3600;
+        etaNextEl.textContent = _afkFmtHMS(etaSec);
+        etaNextEl.className = 'afk-dp-value';
+        _afkDpSetTitle('afkDpEtaNext',
+          'Time to next waypoint (' + (nextWpt.ident || '—') + ') at current ground speed: ' + _afkFmtHMS(etaSec) + '.');
+      } else {
+        etaNextEl.textContent = '—';
+        etaNextEl.className = 'afk-dp-value muted';
+        _afkDpSetTitle('afkDpEtaNext', null);
+      }
+    }
+  } else {
+    if (distNextEl) { distNextEl.textContent = '—'; distNextEl.className = 'afk-dp-value muted'; _afkDpSetTitle('afkDpDistNext', null); }
+    if (etaNextEl)  { etaNextEl.textContent  = '—'; etaNextEl.className  = 'afk-dp-value muted'; _afkDpSetTitle('afkDpEtaNext',  null); }
   }
 
   // Next alarm
@@ -30867,10 +30994,31 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.98.11</span>
+          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Three new telemetry fields (hidden by default).</strong> All toggleable from the data panel's <strong>⚙</strong> menu:
+            <ul style="margin:0.3rem 0 0.3rem 1.2rem;padding:0;">
+              <li><strong>DIST FROM DEP</strong> — great-circle nautical miles from the departure airport to your current position. Pairs nicely with the existing DIST TO DEST for a full picture of how far along the planned trip you are.</li>
+              <li><strong>DIST TO NEXT</strong> — distance to the next un-passed waypoint on the SimBrief route. Uses the same leg-detection logic as TRK MILES REM (pick the leg whose endpoints best bracket the aircraft, target the end of that leg).</li>
+              <li><strong>ETA NEXT</strong> — time-to-next-waypoint, computed from DIST TO NEXT and current ground speed. Hides when GS &le; 5 kt (taxi / stopped).</li>
+            </ul>
+            All three fields hover-tooltip with km equivalents and the next-waypoint ident where applicable.
+          </li>
+          <li><strong>Three matching conditional-alarm parameters.</strong> The <strong>🧩 Conditional</strong> alarm type now accepts <em>Distance from departure</em>, <em>Distance to next waypoint</em>, and <em>ETA to next waypoint</em> as comparison parameters. ETA is treated as a time-unit param with the same seconds/minutes/hours picker the other time params use. Build alerts like "ETA to next waypoint &lt; 2 minutes" for an inbound-fix heads-up or "Distance from departure &gt; 100 nm" for a milestone notification.</li>
+          <li><strong>Multi-tab sync toast is now opt-out.</strong> The <em>🔁 Synced changes from another AA tab</em> toast that fires when another open AA tab persists an alarm-related change can be suppressed via the <strong>Sync toast</strong> checkbox in the Alerts modal footer. Default is on (matches pre-2.98.11 behaviour); uncheck to silence. Persisted in <code>localStorage</code> under key <code>simfly_aa_afk_multitab_toast</code>.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.98.10</span>
-          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -39997,6 +40145,11 @@ function rgSendToFlightPlanner() {
         <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save to File</button>
         <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
+        <!-- v2.98.11 — Inline toggle for the multi-tab sync toast. Default ON. -->
+        <label class="afk-toggle" id="afkMultiTabToastWrap" style="display:inline-flex;align-items:center;gap:0.35rem;margin-left:0.4rem;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:var(--muted);cursor:pointer;" title="When multiple AA tabs are open and one persists a change (alarm edit, group rename, history dismissal), the others auto-resync. Untick to suppress the &quot;🔁 Synced changes from another AA tab&quot; toast.">
+          <input type="checkbox" id="afkMultiTabToastCb" onchange="_afkSetShowMultiTabToast(this.checked)">
+          <span>Sync toast</span>
+        </label>
         <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-secondary" onclick="_afkEnableAll()" title="Enable every configured alert at once — useful for re-arming after a Disable All or after importing a saved alert set.">Enable All</button>
         <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alert, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
