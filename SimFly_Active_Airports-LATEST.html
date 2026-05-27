@@ -1569,14 +1569,14 @@
   }
   .dist-map-info-card + .dist-map-info-card { border-left: 1px solid var(--border); }
   .dist-map-info-card-lbl {
-    font-family: 'Orbitron', monospace;
-    /* v2.87.14 — final size 1.44rem (v2.87.13 bumped 0.6rem → 2.4rem at
-       +300%, then dialled back -40% per visual review). Still ~2.4× the
-       original 0.6rem so the section header reads as a header, just not
-       overpoweringly so. Per-card colour overrides live just below. */
-    font-size: 1.44rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    /* v2.99.5 — restyled to match the main-screen "Departure Airport Owner"
+       / "Arrival Airport Owner" labels (.dist-label--owner): Apple system
+       font, 1.658rem (= base × 1.7), regular weight, mixed case. Per-card
+       cyan / orange color overrides (which already match the owner label
+       colors) live just below. */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.658rem;
+    font-weight: 400;
     color: var(--muted);
     margin-bottom: 0.5rem;
     line-height: 1.0;
@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.99.3';
+const APP_VERSION = '2.99.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11312,8 +11312,17 @@ function _demoApAutoTargetHdg() {
     _demoDepRwyDone = true;
   }
 
-  // Arr runway lock — applies once the aircraft is within alignNm of dest.
-  if (isFinite(_demoPlan.destRwyHdg)) {
+  // Arr runway lock — applies once the aircraft is within alignNm of dest
+  // AND is already on the final leg (i.e. has progressed through every
+  // intermediate waypoint). The final-leg precondition is critical: without
+  // it, the lock would fire on lateral distance alone — meaning any
+  // intermediate STAR fix that happens to be within 5 nm of the runway
+  // (BOOSR/RALEE for KPDX, NOTAM-defined arrivals everywhere) would cause
+  // the aircraft to grab the runway heading from the wrong angle and
+  // teardrop trying to capture it. v2.99.6 — added the index gate; also
+  // restored normal navigation through STAR fixes via the dest-side skip
+  // removal in _demoApSkipBubbleFwd.
+  if (isFinite(_demoPlan.destRwyHdg) && _demoNextWptIdx >= pts.length - 1) {
     const distFromDest = _demoDistNm(_demoAcLat, _demoAcLon, dest.lat, dest.lon);
     if (distFromDest <= alignNm) return _demoPlan.destRwyHdg;
   }
@@ -11331,22 +11340,33 @@ function _demoApAutoTargetHdg() {
 
 // v2.98.9 — Shared helper used by both the heading function and the
 // advance function. Walks forward from `startIdx` skipping any wpt that
-// lies within the runway-alignment bubble around either dep or dest. By
-// having both code paths use the SAME helper, the advance pointer can't
-// drift out of sync with the heading target (which had been computing
+// lies within the runway-alignment bubble around dep. By having both
+// code paths use the SAME helper, the advance pointer can't drift out
+// of sync with the heading target (which had been computing
 // turn-anticipation against `pts[idx+1]` even when that wpt was in the
 // bubble and would be skipped by the heading function — yielding a
 // wildly wrong outBear and a too-large antDist).
+//
+// v2.99.6 — Removed the dest-side skip. The original goal was to avoid
+// the aircraft cornering toward a STAR fix during runway-aligned final
+// approach, but the dest-side bubble caused real STAR transition fixes
+// (e.g. KPDX's BOOSR/RALEE arrivals) to be silently jumped over —
+// aircraft headed direct to the airport from the start of the STAR,
+// teardropped trying to capture the runway heading from the wrong
+// angle, and "landed" at whatever intermediate fix it happened to be
+// at when the time-based phase machine fired 'ground'. Dest-side
+// alignment is now handled exclusively by the runway lock in
+// _demoApAutoTargetHdg, which is itself gated on having reached the
+// final leg (see comment there).
 function _demoApSkipBubbleFwd(startIdx) {
   if (!_demoPlan || !_demoPlan.points) return startIdx;
   const pts = _demoPlan.points;
-  const dep = pts[0], dest = pts[pts.length - 1];
+  const dep = pts[0];
   let idx = Math.max(0, Math.min(pts.length - 1, startIdx));
   while (idx < pts.length - 1) {
     const w = pts[idx];
     const dDep  = _demoDistNm(w.lat, w.lon, dep.lat,  dep.lon);
-    const dDest = _demoDistNm(w.lat, w.lon, dest.lat, dest.lon);
-    if (dDep < _DEMO_RWY_ALIGN_NM || dDest < _DEMO_RWY_ALIGN_NM) { idx++; continue; }
+    if (dDep < _DEMO_RWY_ALIGN_NM) { idx++; continue; }
     break;
   }
   return idx;
@@ -11354,8 +11374,18 @@ function _demoApSkipBubbleFwd(startIdx) {
 
 // Advance the next-wpt pointer at the turn-anticipation distance for the
 // upcoming course change, so the aircraft starts banking BEFORE the wpt
-// instead of overshooting it. Falls back to a flat 2 nm threshold when
+// instead of overshooting it. Falls back to a 0.1 nm threshold when
 // there's no further turn to compute (final wpt).
+//
+// v2.99.5 — the prior 2.0 nm floor on antDist dominated the tan-based
+// anticipation formula for every realistic turn (at 250 kt with 25° bank
+// R ≈ 1.95 nm, and even a 90° turn's tan-formula value of 1.95 nm got
+// pushed back up to the 2.0 floor). The aircraft therefore started its
+// turn ~2 nm before EVERY waypoint regardless of how shallow, cut the
+// corner aggressively, and never crossed the waypoint — looking like it
+// was flying direct to the next waypoint. Lowered the floor to 0.1 nm so
+// the tan-formula governs as designed: shallow turns get tiny lead,
+// 90° turns get R-distance lead, sharper turns are capped at R.
 function _demoApMaybeAdvanceWpt() {
   if (!_demoPlan || !_demoPlan.points) return;
   const pts = _demoPlan.points;
@@ -11383,7 +11413,7 @@ function _demoApMaybeAdvanceWpt() {
   let delta = outBear - inBear;
   while (delta >  180) delta -= 360;
   while (delta < -180) delta += 360;
-  let antDist = 2.0;
+  let antDist = 0.1;
   const absDelta = Math.abs(delta);
   if (absDelta >= _DEMO_MIN_TURN_DEG) {
     const R = _demoTurnRadiusNm(Math.max(80, _demoAcGs));
@@ -11398,7 +11428,19 @@ function _demoApMaybeAdvanceWpt() {
     // tightest geometric anticipation (one turn radius) and the
     // aircraft accepts a mild overshoot rather than starting the turn
     // many nm in advance.
-    antDist = Math.max(2.0, Math.min(R, R * Math.abs(Math.tan(_demoToRad(absDelta / 2)))));
+    //
+    // v2.99.5 — Floor lowered from 2.0 nm to 0.1 nm. The 2.0 floor was
+    // dominating the tan-formula for nearly every realistic turn (a 30°
+    // turn at 250 kt has tan-formula 0.52 nm; a 60° turn 1.13 nm; even
+    // a 90° turn 1.95 nm — all forced up to 2.0). Result: aircraft
+    // anticipated ~2 nm out for every waypoint regardless of how shallow,
+    // cut every corner aggressively, never crossed the waypoint, and
+    // looked like it was flying direct to the next waypoint. 0.1 nm
+    // floor lets the tan-formula govern as designed — shallow turns get
+    // tiny lead, 90° turns get R-distance lead — while still preventing
+    // the advance check from being so tight that integrator tick size
+    // could skip it.
+    antDist = Math.max(0.1, Math.min(R, R * Math.abs(Math.tan(_demoToRad(absDelta / 2)))));
   }
   const distToCur = _demoDistNm(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
   if (distToCur < antDist) _demoNextWptIdx++;
@@ -27082,11 +27124,18 @@ function _rgCancelDraw() {
 // the three dot-rendering inclusion gates so the OR-of-AND-pairs semantics
 // stay in lockstep across `_rgDotPassesMapFilters` and the dep/arr loops
 // in `_rgHighlightDots`. Returns false when the compound array is empty.
+//
+// A tuple's `ownerName` or `locType` (with its `locKey`) may be null,
+// representing a wildcard on that side — set by `+single-axis` activators
+// when compound is already active, so the new single-axis search adds to
+// the visible union ("any owner in X" or "X anywhere"). Both sides null
+// would match everything; we avoid creating such tuples.
 function _rgCompoundPasses(icao, rec, ownerName) {
   if (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length) return false;
   const own = ownerName || '';
   for (const cf of _rgMapCompoundFilter) {
-    if (own !== cf.ownerName) continue;
+    if (cf.ownerName !== null && own !== cf.ownerName) continue;
+    if (cf.locType === null) return true; // owner-only tuple, owner matched
     if (!rec) continue;
     const locOk =
       (cf.locType === 'continent' && _rgRecContinent(rec) === cf.locKey) ||
@@ -27102,15 +27151,21 @@ function _rgCompoundPasses(icao, rec, ownerName) {
 // breadcrumb chip strip — they're the union of all references in the
 // compound array, nothing more. Called by `_rgApplyMapFilter` whenever
 // a tuple is dropped so orphan chips disappear immediately.
+//
+// Wildcard sides (null ownerName or null locType) contribute nothing to
+// their axis — a tuple {ownerName: null, locType: 'country', locKey: 'US'}
+// only puts US in the country Set; no owner is added.
 function _rgRebuildPerAxisFromCompound() {
   _rgMapOwnerFilter     = null;
   _rgMapCountryFilter   = null;
   _rgMapRegionFilter    = null;
   _rgMapContinentFilter = null;
   if (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length) return;
-  _rgMapOwnerFilter = new Set();
   for (const cf of _rgMapCompoundFilter) {
-    _rgMapOwnerFilter.add(cf.ownerName);
+    if (cf.ownerName !== null) {
+      if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
+      _rgMapOwnerFilter.add(cf.ownerName);
+    }
     if (cf.locType === 'continent') {
       if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
       _rgMapContinentFilter.add(cf.locKey);
@@ -27122,6 +27177,18 @@ function _rgRebuildPerAxisFromCompound() {
       _rgMapRegionFilter.add(cf.locKey);
     }
   }
+}
+
+// Append a compound tuple, deduping on (ownerName, locType, locKey). If
+// compound is currently null/empty, this becomes the first tuple. Used
+// both by the compound additive path and by single-axis additive paths
+// (which append wildcard-other-side tuples when compound is already
+// active).
+function _rgMapCompoundAppend(tuple) {
+  if (!_rgMapCompoundFilter) _rgMapCompoundFilter = [];
+  const dup = _rgMapCompoundFilter.some(t =>
+    t.ownerName === tuple.ownerName && t.locType === tuple.locType && t.locKey === tuple.locKey);
+  if (!dup) _rgMapCompoundFilter.push(tuple);
 }
 
 function _rgDotPassesMapFilters(icao, rec, ownerName) {
@@ -27677,6 +27744,15 @@ function _rgPayoutTickDragStart(idx, downEvt, previewEl, tickWrap, handleEl) {
       tw.style.left = safe + '%';
       tw.title = 'Stop #' + (i + 1) + ' at ' + s.pct + '%. Drag horizontally to reposition; right-click to delete.';
     });
+    // v2.99.5 — also live-update the % number input on the dragged stop's
+    // row so the user sees the value change as they drag. (Without this
+    // the input stays stale until mouseup triggers _rgPayoutPaletteRender.)
+    const stopsList = document.getElementById('rgPayoutPaletteStops');
+    if (stopsList) {
+      const row = stopsList.querySelector('[data-idx="' + idx + '"]');
+      const pctInput = row && row.querySelector('input[type="number"]');
+      if (pctInput && pctInput.value !== String(stop.pct)) pctInput.value = String(stop.pct);
+    }
   }
   function end() {
     document.removeEventListener('mousemove', move, true);
@@ -27832,7 +27908,7 @@ function _rgPayoutPaletteRender() {
     // the user types a pct that re-sorts the stop above/below a neighbour.
     pctIn.addEventListener('change', () => { _rgPayoutPaletteRender(); });
     const pctLbl = document.createElement('span');
-    pctLbl.textContent = '%';
+    pctLbl.textContent = '% pilot payout';
     pctLbl.style.cssText = 'color:rgba(255,255,255,0.55);font-size:0.85rem;';
     const del = document.createElement('button');
     del.textContent = '✕';
@@ -29749,8 +29825,12 @@ function _rgApplyMapFilter() {
   if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
     const before = _rgMapCompoundFilter.length;
     _rgMapCompoundFilter = _rgMapCompoundFilter.filter(cf => {
-      const ownerStill = _rgMapOwnerFilter && _rgMapOwnerFilter.has(cf.ownerName);
-      let locStill = false;
+      // Null sides are wildcards — always "still present"; only the
+      // concrete side has to remain in its per-axis Set for the tuple
+      // to survive.
+      const ownerStill = cf.ownerName === null ||
+        !!(_rgMapOwnerFilter && _rgMapOwnerFilter.has(cf.ownerName));
+      let locStill = cf.locType === null;
       if      (cf.locType === 'continent') locStill = !!(_rgMapContinentFilter && _rgMapContinentFilter.has(cf.locKey));
       else if (cf.locType === 'country')   locStill = !!(_rgMapCountryFilter   && _rgMapCountryFilter.has(cf.locKey));
       else if (cf.locType === 'region')    locStill = !!(_rgMapRegionFilter    && _rgMapRegionFilter.has(cf.locKey));
@@ -30454,6 +30534,13 @@ function _rgMapSrFilterToOwner(ownerName) {
   if (_rgMapSrAdditive) {
     if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
     _rgMapOwnerFilter.add(ownerName);
+    // If compound is active, also append a wildcard-location tuple so the
+    // new owner contributes to the visible union (compound gate replaces
+    // the OR inclusion gate when set; without this, the new owner would
+    // be in the chip set but invisible on the map).
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      _rgMapCompoundAppend({ ownerName, locType: null, locKey: null, locName: null });
+    }
   } else {
     _rgClearAllSearchFilters();
     _rgMapOwnerFilter = new Set([ownerName]);
@@ -30480,6 +30567,9 @@ function _rgMapSrFilterToCountry(iso, displayName) {
   if (_rgMapSrAdditive) {
     if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
     _rgMapCountryFilter.add(iso);
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      _rgMapCompoundAppend({ ownerName: null, locType: 'country', locKey: iso, locName: displayName || iso });
+    }
   } else {
     _rgClearAllSearchFilters();
     _rgMapCountryFilter = new Set([iso]);
@@ -30504,6 +30594,9 @@ function _rgMapSrFilterToRegion(code, name) {
   if (_rgMapSrAdditive) {
     if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set();
     _rgMapRegionFilter.add(code);
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      _rgMapCompoundAppend({ ownerName: null, locType: 'region', locKey: code, locName: name || code });
+    }
   } else {
     _rgClearAllSearchFilters();
     _rgMapRegionFilter = new Set([code]);
@@ -30526,6 +30619,9 @@ function _rgMapSrFilterToContinent(code, name) {
   if (_rgMapSrAdditive) {
     if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
     _rgMapContinentFilter.add(code);
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      _rgMapCompoundAppend({ ownerName: null, locType: 'continent', locKey: code, locName: name || code });
+    }
   } else {
     _rgClearAllSearchFilters();
     _rgMapContinentFilter = new Set([code]);
@@ -31380,10 +31476,55 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.99.6</span>
+          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot landing &mdash; aircraft no longer &ldquo;lands&rdquo; at an intermediate STAR fix.</strong> Symptom: a KSEA&rarr;KPDX flight teardropped at BOOSR (a STAR fix ~8&nbsp;nm NE of KPDX) and stopped there instead of continuing through RALEE to the KPDX runway. Two bugs combined:
+            <ul style="margin:0.3rem 0 0.3rem 1.2rem;padding:0;">
+              <li><strong>Skip-bubble was eating STAR fixes.</strong> <code>_demoApSkipBubbleFwd</code> skipped any waypoint within 5&nbsp;nm of dep <em>or</em> dest. The dep-side skip is correct (keeps the aircraft on the extended-runway centerline during initial climb, ignoring SID fixes inside that 5&nbsp;nm cone), but the dest-side skip caused real STAR transition fixes &mdash; RALEE for KPDX, similar approach fixes elsewhere &mdash; to be silently jumped over. Aircraft then headed direct from BOOSR to the airport at a strange angle. Dest-side skip removed; arrivals are flown waypoint-by-waypoint as published.</li>
+              <li><strong>Runway lock fired on lateral distance alone, ignoring leg position.</strong> The arrival runway-heading capture in <code>_demoApAutoTargetHdg</code> fired the moment the aircraft was within 5&nbsp;nm of the destination from <em>any</em> angle, including while still on intermediate STAR fixes that happened to be geographically near the airport. Result: aircraft grabbed the runway heading from the wrong angle and teardropped trying to capture it. Now gated on <code>_demoNextWptIdx &gt;= pts.length - 1</code> &mdash; the lock only fires once the aircraft has progressed through every intermediate waypoint and is on the final leg to the airport.</li>
+            </ul>
+            Combined effect: arrivals now follow the published STAR through every fix, and the runway capture only engages on the actual final approach segment. Verified against a synthetic plan where RALEE sits 4.5&nbsp;nm from KPDX (well inside the old skip bubble) &mdash; aircraft now flies KSEA &rarr; ANGOO &rarr; BOOSR &rarr; RALEE &rarr; KPDX, with the runway lock firing only at RALEE&rarr;KPDX transition. <em>Note:</em> if the simulation&rsquo;s elapsed-time phase machine still occasionally fires &ldquo;landed&rdquo; while the integrator is a fraction of a nm short of the airport, that&rsquo;s a separate concern; please report any &ldquo;lands a mile from the runway&rdquo; symptoms after this fix and we can extend the phase machine to wait on physical arrival.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.99.5</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot turn anticipation — fixed the &ldquo;turns too soon&rdquo; symptom.</strong> v2.98.9 added a 2.0&nbsp;nm floor on the turn-anticipation distance, but that floor ended up dominating the tan-based formula for nearly every realistic turn. At 250&nbsp;kt with 25° bank, R ≈ 1.95&nbsp;nm, so a 30° turn&rsquo;s tan-formula value of 0.52&nbsp;nm got pushed to 2.0, a 60° turn&rsquo;s 1.13&nbsp;nm went to 2.0, even a 90° turn&rsquo;s 1.95&nbsp;nm went to 2.0. Result: the aircraft anticipated ~2&nbsp;nm out for every waypoint regardless of how shallow, cut every corner aggressively, never crossed the waypoint, and visually appeared to be flying direct to the next waypoint instead of tracking the planned line. Floor lowered to 0.1&nbsp;nm — the tan-formula now governs as designed: shallow turns get tiny lead (~0.1&nbsp;nm for ≤10°), 30° gets 0.52, 60° gets 1.13, 90° gets 1.95, and sharper turns are still capped at R for stability.</li>
+          <li><strong>Payout palette &mdash; the % input on the dragged stop&rsquo;s row now updates live during the drag.</strong> Previously the number input only refreshed on mouseup (when the full editor re-rendered), so you couldn&rsquo;t see the % change while sliding the tick. Now the input value follows the drag in real time.</li>
+          <li><strong>Payout palette &mdash; per-stop label clarified.</strong> The &ldquo;%&rdquo; label after each row&rsquo;s percentage input now reads &ldquo;<em>% pilot payout</em>&rdquo;, so a row with 60 in the input clearly reads as &ldquo;60 % pilot payout.&rdquo;</li>
+          <li><strong>Payout palette &mdash; persistence footer rewritten.</strong> &ldquo;Persisted in this browser&rdquo; replaced with the friendlier &ldquo;Your settings will be saved automatically&rdquo;.</li>
+          <li><strong>Airport info cards (below the matrix) &mdash; DEP / ARR headers restyled.</strong> The &ldquo;<em>DEPARTURE ▶</em>&rdquo; and &ldquo;<em>▶ ARRIVAL</em>&rdquo; card headers were rendered in Orbitron uppercase at 1.44&nbsp;rem. They now match the style of the main-screen &ldquo;<em>Departure Airport Owner</em>&rdquo; / &ldquo;<em>Arrival Airport Owner</em>&rdquo; labels: Apple system font, 1.658&nbsp;rem, regular weight, mixed case &mdash; so the headers read as &ldquo;Departure ▶&rdquo; / &ldquo;▶ Arrival&rdquo; in the same visual language as the owner labels above. Per-card cyan / orange colours preserved (they already matched the owner-label colours).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.99.4</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Compound search now composes with single-axis <code>+</code>.</strong> v2.99.2 / v2.99.3 added compound stacking and removal, but mixing a single-axis additive query (e.g. <em>+United States</em>) on top of an active compound filter (e.g. <em>Kyndra &amp; Europe</em>) silently failed — the new owner / country / region / continent showed up as a breadcrumb chip but contributed zero airports because the compound gate replaced the per-axis OR gate and only honoured tuples that referenced both an owner AND a location. Fix: compound tuples now support wildcard sides — <code>ownerName: null</code> means "any owner," <code>locType: null</code> means "any location." When a single-axis <code>+</code> fires while compound is active, the activator appends a wildcard-other-side tuple (e.g. <em>{ownerName: null, locType: 'country', locKey: 'US'}</em>) so the new search contributes to the visible union as the user intended. Example: <em>Kyndra &amp; Europe</em> then <em>+United States</em> now correctly shows Kyndra&rsquo;s 3 European airports PLUS every SimFly airport in the US. <em>-</em> single-axis removal continues to work via the existing auto-clear path: removing US from the country chip drops the matching wildcard tuple from compound, leaving the original Kyndra &amp; Europe intersection.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v2.99.3</span>
-          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -40910,7 +41051,7 @@ function rgSendToFlightPlanner() {
           <button id="rgPayoutPaletteAdd" onclick="_rgPayoutPaletteAddStop()" title="Add another color stop (up to 5 total)" style="background:rgba(0,200,255,0.10);border:1px solid rgba(0,200,255,0.5);color:#7ee0ff;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">+ Add stop</button>
           <button onclick="_rgPayoutPaletteReset()" title="Restore the default palette" style="background:rgba(255,140,40,0.10);border:1px solid rgba(255,140,40,0.45);color:#ffaa55;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">↺ Reset</button>
         </div>
-        <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 stops with colors and % positions. Drag a swatch onto the gradient bar to set its position, OR drag a tick bar directly along the gradient. Rows auto-sort low → high after every edit. The 0% no-data color is fixed grey. Persisted in this browser.</div>
+        <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 stops with colors and % positions. Drag a swatch onto the gradient bar to set its position, OR drag a tick bar directly along the gradient. Rows auto-sort low → high after every edit. The 0% no-data color is fixed grey. Your settings will be saved automatically.</div>
       </div>
 
       <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.99.3**
+**Current version: v2.99.6**
 
 ---
 
@@ -98,6 +98,8 @@ A **Map category filter** in the header bar hides entire airport categories from
 **Stacking compound queries with `+`** (v2.99.2+) — prefixing a compound search with `+` appends it to the active compound filter instead of replacing it, so you can build a union of multiple (owner, place) intersections one query at a time. Start with *Kyndra @ Europe*, then add *+jmribe @ Europe*, then *+CapitanCabal @ Europe* — the map now shows all three pilots' European airports together. Mix destinations the same way: *Kyndra @ Europe* then *+Kyndra @ USA* shows Kyndra's European and US airports side by side. X-ing out an owner or location chip drops only the compound entries that referenced it; orphan chips (owners or places no longer in any compound entry) disappear automatically.
 
 **Removing a stacked compound with `-`** (v2.99.3+) — the exact inverse of `+` stacking. Prefix a compound query with `-` to drop the matching tuple from the active union. With *Kyndra @ Europe* + *+jmribe @ Europe* + *+CapitanCabal @ Europe* active, typing *-jmribe @ Europe* removes jmribe's European entry and the map snaps to Kyndra + CapitanCabal in Europe. The dropdown automatically filters to show only currently-active compound entries when `-` is the prefix, so you can't accidentally click a row that wouldn't remove anything. Removing the last surviving tuple clears the compound filter entirely.
+
+**Mixing compound with single-axis `+`** (v2.99.4+) — single-axis additive searches now compose correctly with an active compound filter. With *Kyndra @ Europe* (3 of Kyndra's airports), typing *+United States* adds every SimFly airport in the US to the visible union — 3 + 211 = 214 airports. Same for *+jmribe* (adds jmribe's airports everywhere), *+California* (adds California state), *+Europe* (adds the continent), etc. X-ing out the new chip drops only its contribution; the original compound stays intact. Combined with the stacking and removal features above, you can fluidly build any combination of (owner, place) intersections AND single-axis unions in either order.
 
 **METAR on route assignment** — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (with a nearest-station fallback). When the data arrives, the airport's dot tooltip on the map gains a compact weather row beneath the existing scenery / developer rows: a colored *VFR / MVFR / IFR / LIFR* pill, wind in *DDD°/KKkt* form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.
 
