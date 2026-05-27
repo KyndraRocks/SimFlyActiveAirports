@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.98.11';
+const APP_VERSION = '2.99.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -23934,6 +23934,20 @@ let _rgRegionNameToCode = new Map(); // 'california' → 'US-CA'
 let _rgMapSrAdditive    = false;     // true when last search was prefixed with '+'
 let _rgMapSrNegative    = false;     // true when last search was prefixed with '-'
 
+// Compound "owner @ location" filter — an array of {ownerName, locType,
+// locKey, locName} tuples. When non-empty, the per-axis OR inclusion gate
+// is replaced by an OR-of-AND-pairs check: an airport passes if it matches
+// at least ONE tuple's (owner AND location) pair. Single-tuple form gives
+// the intersection (Kyndra @ Europe = Kyndra's Europe airports). Multiple
+// tuples stack as a union (Kyndra @ Europe followed by +jmribe @ Europe =
+// Kyndra's Europe airports ∪ jmribe's Europe airports). Per-axis filter
+// Sets are populated to mirror the union of all tuples' references so the
+// breadcrumb chip strip renders correctly; `_rgApplyMapFilter` keeps them
+// in sync — when the user X's a chip, any tuple referencing the removed
+// owner/location is dropped, and surviving tuples drive a rebuild of the
+// per-axis sets so orphan chips disappear.
+let _rgMapCompoundFilter = null; // Array<{ownerName, locType, locKey, locName}> | null
+
 // Continent name lookups — hardcoded
 const _RG_CONTINENT_NAMES = {'AF':'Africa','AN':'Antarctica','AS':'Asia','EU':'Europe','NA':'North America','OC':'Oceania','SA':'South America'};
 const _RG_CONTINENT_NAME_TO_CODE = Object.fromEntries(Object.entries(_RG_CONTINENT_NAMES).map(([k,v])=>[v.toLowerCase(),k]));
@@ -25290,7 +25304,12 @@ function _rgHighlightDots() {
   // Active dep airports — sorted by catNum so stacking order matches background layer
   const depSorted = [..._rgDepAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of depSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      const isPinned = _rgPinnedIcaos.has(a.icao.toUpperCase());
+      if (!isPinned) {
+        if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+      }
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
@@ -25359,7 +25378,12 @@ function _rgHighlightDots() {
   // Active arr airports — sorted by catNum so stacking order matches background layer
   const arrSorted = [..._rgArrAirports].sort((a, b) => _hiCatOf(a.icao) - _hiCatOf(b.icao));
   for (const a of arrSorted) {
-    if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
+    if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+      const isPinned = _rgPinnedIcaos.has(a.icao.toUpperCase());
+      if (!isPinned) {
+        if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
+      }
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
@@ -27053,6 +27077,53 @@ function _rgCancelDraw() {
 // region circles should appear in the matrix). Per-region cat/owner filters
 // — which are part of the matrix sidebar UI — stay in _rgRefreshFilteredAirports
 // since they don't affect dot visibility.
+// Shared compound-gate predicate — true if the (owner, location) of this
+// airport matches at least one tuple in `_rgMapCompoundFilter`. Used by
+// the three dot-rendering inclusion gates so the OR-of-AND-pairs semantics
+// stay in lockstep across `_rgDotPassesMapFilters` and the dep/arr loops
+// in `_rgHighlightDots`. Returns false when the compound array is empty.
+function _rgCompoundPasses(icao, rec, ownerName) {
+  if (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length) return false;
+  const own = ownerName || '';
+  for (const cf of _rgMapCompoundFilter) {
+    if (own !== cf.ownerName) continue;
+    if (!rec) continue;
+    const locOk =
+      (cf.locType === 'continent' && _rgRecContinent(rec) === cf.locKey) ||
+      (cf.locType === 'country'   && _rgRecCountry(rec)   === cf.locKey) ||
+      (cf.locType === 'region'    && _rgRecRegion(rec)    === cf.locKey);
+    if (locOk) return true;
+  }
+  return false;
+}
+
+// Rebuild per-axis filter sets to mirror the active compound tuples. When
+// compound is in play, the per-axis Sets exist purely to drive the
+// breadcrumb chip strip — they're the union of all references in the
+// compound array, nothing more. Called by `_rgApplyMapFilter` whenever
+// a tuple is dropped so orphan chips disappear immediately.
+function _rgRebuildPerAxisFromCompound() {
+  _rgMapOwnerFilter     = null;
+  _rgMapCountryFilter   = null;
+  _rgMapRegionFilter    = null;
+  _rgMapContinentFilter = null;
+  if (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length) return;
+  _rgMapOwnerFilter = new Set();
+  for (const cf of _rgMapCompoundFilter) {
+    _rgMapOwnerFilter.add(cf.ownerName);
+    if (cf.locType === 'continent') {
+      if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
+      _rgMapContinentFilter.add(cf.locKey);
+    } else if (cf.locType === 'country') {
+      if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
+      _rgMapCountryFilter.add(cf.locKey);
+    } else if (cf.locType === 'region') {
+      if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set();
+      _rgMapRegionFilter.add(cf.locKey);
+    }
+  }
+}
+
 function _rgDotPassesMapFilters(icao, rec, ownerName) {
   if (!rec) return false;
   const icaoUp = icao.toUpperCase();
@@ -27062,14 +27133,23 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
   // un-categorized airports still render.
   const catNum = +(categoryDB && categoryDB.get(icaoUp)) || 0;
   if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
-  // Inclusion gate: if any include-set is active, the airport must match at
-  // least one (or be pinned). When no include-set is active, every airport
-  // passes this gate. Developer is part of the same OR chain — a `+Orbx`
-  // search adds Orbx airports alongside whatever else is included.
-  if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
+  // Compound "owner @ location" gate — OR of AND-pairs. When the compound
+  // array has one tuple, this is the intersection (owner AND location).
+  // When it has multiple tuples (additive `+X @ Y` queries), it's the union
+  // of those intersections. Replaces the per-axis OR inclusion gate below;
+  // pinned airports still bypass (explicit user pin always wins, matching
+  // non-compound behavior).
+  if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+    if (!isPinned && !_rgCompoundPasses(icao, rec, ownerName)) return false;
+  } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
       _rgMapDeveloperFilter !== null ||
       (_rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
+    // Inclusion gate: if any include-set is active, the airport must match
+    // at least one (or be pinned). When no include-set is active, every
+    // airport passes this gate. Developer is part of the same OR chain —
+    // a `+Orbx` search adds Orbx airports alongside whatever else is
+    // included.
     const country     = _rgRecCountry(rec);
     const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
     const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(country);
@@ -29658,6 +29738,29 @@ function _rgUpdateMapOwnerBtn() {
 // visibility, rebuilds the dep/arr owner dropdowns (so they only offer
 // currently-visible owners), and re-renders the matrix.
 function _rgApplyMapFilter() {
+  // Compound auto-clear + rebuild. Each tuple requires BOTH its owner side
+  // AND its location side to still be present in the per-axis sets — if
+  // the user X'd a chip, drop every tuple that referenced the removed
+  // owner/location. When tuples are dropped, rebuild the per-axis sets
+  // from the survivors so orphan chips (owners/locations no longer in
+  // any compound tuple) disappear. When the array goes empty, the array
+  // is cleared and the survivor — if any — reverts to standard OR-gate
+  // behavior automatically via the existing inclusion gate.
+  if (_rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+    const before = _rgMapCompoundFilter.length;
+    _rgMapCompoundFilter = _rgMapCompoundFilter.filter(cf => {
+      const ownerStill = _rgMapOwnerFilter && _rgMapOwnerFilter.has(cf.ownerName);
+      let locStill = false;
+      if      (cf.locType === 'continent') locStill = !!(_rgMapContinentFilter && _rgMapContinentFilter.has(cf.locKey));
+      else if (cf.locType === 'country')   locStill = !!(_rgMapCountryFilter   && _rgMapCountryFilter.has(cf.locKey));
+      else if (cf.locType === 'region')    locStill = !!(_rgMapRegionFilter    && _rgMapRegionFilter.has(cf.locKey));
+      return ownerStill && locStill;
+    });
+    if (!_rgMapCompoundFilter.length) _rgMapCompoundFilter = null;
+    if ((_rgMapCompoundFilter ? _rgMapCompoundFilter.length : 0) < before) {
+      _rgRebuildPerAxisFromCompound();
+    }
+  }
   if (_rgPhase === 'results') {
     _rgRefreshFilteredAirports();
     _rgBuildOwnerDropdown();
@@ -29772,7 +29875,182 @@ function _rgMapSrInput(q) {
   _rgMapSrNegative = !_rgMapSrAdditive && raw.startsWith('-');
   const search = (_rgMapSrAdditive || _rgMapSrNegative) ? raw.slice(1).trim() : raw;
   if (!search) { _rgMapSrClose(); return; }
-  _rgMapSrRender(search);
+  const compound = _rgMapSrParseCompound(search);
+  _rgMapSrRender(search, compound);
+}
+
+// Compound "owner @ location" parser. Returns { left, right } when the input
+// is a compound query, or null otherwise. Accepts either '@' or '&' as the
+// delimiter — interchangeable, same semantics for both. Two acceptance rules:
+//   1. Strict — whitespace on both sides of the delimiter ("user @ Texas",
+//      "user & Texas"). Always wins; lets emails on either side coexist
+//      with the compound delimiter.
+//   2. Forgiving — bare delimiter with no whitespace, but only if the right
+//      side doesn't contain a dot (which would make it look like an email
+//      domain). Lets "Kyndra@TX" / "Kyndra&TX" work without typing spaces,
+//      while still treating "user@hotmail.com" as a single owner search.
+// When the strict rule matches inside a string that also contains other
+// delimiters (e.g. "user@hotmail.com @ Texas"), search() finds the FIRST
+// occurrence of "\s[@&]\s", which is exactly the desired split point.
+function _rgMapSrParseCompound(raw) {
+  if (!raw) return null;
+  if (raw.indexOf('@') < 0 && raw.indexOf('&') < 0) return null;
+  const strict = raw.search(/\s[@&]\s/);
+  if (strict >= 0) {
+    const left  = raw.slice(0, strict).trim();
+    const right = raw.slice(strict + 3).trim();
+    if (left && right) return { left, right };
+    return null;
+  }
+  const at = raw.search(/[@&]/);
+  if (at <= 0 || at >= raw.length - 1) return null;
+  const left  = raw.slice(0, at).trim();
+  const right = raw.slice(at + 1).trim();
+  if (!left || !right) return null;
+  if (right.indexOf('.') >= 0) return null;
+  return { left, right };
+}
+
+// Country-name qualifier for a region code like "US-TX" → "United States".
+// Used as the disambiguator chip on compound rows so "Punjab (India)" and
+// "Punjab (Pakistan)" — or "Georgia (United States)" vs "Georgia (country)"
+// — read clearly in the dropdown.
+function _rgRegionCountryQualifier(regionCode) {
+  if (!regionCode) return '';
+  const parts = regionCode.split('-');
+  if (parts.length !== 2) return '';
+  return _rgCountryIsoToName.get(parts[0]) || parts[0];
+}
+
+// Common country abbreviations the OurAirports CSV doesn't carry as
+// alternate names. Kept tiny on purpose — only abbreviations users
+// reflexively type for major-volume countries. Anything more exotic
+// should be typed as the full name or 2-letter ISO.
+const _RG_COUNTRY_ALIASES = { 'USA': 'US', 'UK': 'GB', 'UAE': 'AE' };
+
+// Resolve a token against the geographic indexes — continents, countries,
+// sub-national regions. Order-independent (caller passes either side of the
+// compound query). Accepts:
+//   • full names ("Texas", "United States", "Europe")
+//   • ISO codes ("US", "EU", "TX" → US-TX, "JP-13")
+//   • common abbreviations ("USA", "UK", "UAE")
+// Two-stage match: exact first (canonical names + ISO codes + aliases),
+// then a prefix fallback only when exact returned nothing. The ISO-suffix
+// rule for short region codes ("TX" → US-TX) is restricted to 2-char
+// tokens AND gated behind "no exact match" to keep "Cal" from being
+// hijacked by CO-CAL and "US" from dragging in CZ-US / SV-US.
+function _rgMapSrLocationMatches(token) {
+  if (!token) return [];
+  const tl = token.toLowerCase().trim();
+  const tu = token.toUpperCase().trim();
+  const out = [];
+  const seen = new Set();
+  const add = (type, key, name, qualifier) => {
+    const dk = type + ':' + key;
+    if (seen.has(dk)) return;
+    seen.add(dk);
+    out.push({ type, key, name, qualifier });
+  };
+  // CONTINENT — exact name or 2-letter code
+  for (const [code, name] of Object.entries(_RG_CONTINENT_NAMES)) {
+    if (name.toLowerCase() === tl || code === tu) add('continent', code, name, 'continent');
+  }
+  // COUNTRY — alias, exact name, or 2-letter ISO
+  const aliasIso = _RG_COUNTRY_ALIASES[tu];
+  if (aliasIso && _rgCountryIsoToName.has(aliasIso)) {
+    add('country', aliasIso, _rgCountryIsoToName.get(aliasIso), 'country');
+  }
+  for (const [nameLower, iso] of _rgCountryNameToIso) {
+    if (nameLower === tl) add('country', iso, _rgCountryIsoToName.get(iso) || iso, 'country');
+  }
+  if (tu.length === 2 && _rgCountryIsoToName.has(tu)) {
+    add('country', tu, _rgCountryIsoToName.get(tu), 'country');
+  }
+  // REGION — exact name, then full code ("US-TX"), then 2-letter suffix
+  // ("TX") if nothing exact has matched yet. The suffix rule is suppressed
+  // when the token already resolved as continent/country to keep
+  // "US"→ United States from also dragging in CZ-US / SV-US obscure regions.
+  for (const [nameLower, code] of _rgRegionNameToCode) {
+    if (nameLower === tl) add('region', code, _rgRegionCodeToName.get(code) || code, _rgRegionCountryQualifier(code));
+  }
+  if (/^[A-Z]{2}-[A-Z0-9]{1,3}$/.test(tu) && _rgRegionCodeToName.has(tu)) {
+    add('region', tu, _rgRegionCodeToName.get(tu), _rgRegionCountryQualifier(tu));
+  }
+  if (out.length === 0 && tu.length === 2) {
+    for (const [code, name] of _rgRegionCodeToName) {
+      const parts = code.split('-');
+      if (parts.length === 2 && parts[1] === tu) {
+        add('region', code, name, _rgRegionCountryQualifier(code));
+      }
+    }
+  }
+  // Prefix fallback — only when nothing exact resolved, so "Tex" finds
+  // Texas but "Georgia" doesn't get diluted with prefix matches.
+  if (out.length === 0 && tl.length >= 2) {
+    for (const [nameLower, iso] of _rgCountryNameToIso) {
+      if (nameLower.startsWith(tl)) add('country', iso, _rgCountryIsoToName.get(iso) || iso, 'country');
+    }
+    for (const [nameLower, code] of _rgRegionNameToCode) {
+      if (nameLower.startsWith(tl)) add('region', code, _rgRegionCodeToName.get(code) || code, _rgRegionCountryQualifier(code));
+    }
+    for (const [code, name] of Object.entries(_RG_CONTINENT_NAMES)) {
+      if (name.toLowerCase().startsWith(tl)) add('continent', code, name, 'continent');
+    }
+  }
+  return out;
+}
+
+// Count an owner's SimFly airports that fall inside a given location filter.
+// Mirrors the resolution chain used by `_rgDotPassesMapFilters` so the row
+// count in the dropdown matches what the user actually sees after activation.
+function _rgMapSrCountOwnerInLocation(ownerName, locType, locKey) {
+  const ownerData = _getOwnerData();
+  if (!ownerData || !airportDB) return 0;
+  const owner = ownerData.find(o => o.name === ownerName);
+  if (!owner) return 0;
+  let count = 0;
+  for (const ap of (owner.airports || [])) {
+    const rec = lookupICAO(ap.icao);
+    if (!rec) continue;
+    if (locType === 'continent' && _rgRecContinent(rec) === locKey) count++;
+    else if (locType === 'country' && _rgRecCountry(rec) === locKey) count++;
+    else if (locType === 'region' && _rgRecRegion(rec) === locKey) count++;
+  }
+  return count;
+}
+
+// Cross-product of owner candidates × location candidates from both sides
+// of the @. Order-independent: tests both (left=owner, right=location) and
+// (left=location, right=owner) assignments. Drops rows with count 0 — no
+// point offering "Kyndra in Antarctica · 0 airports". Sorted by count desc,
+// then owner name, then location name. Capped at 6 to keep the dropdown
+// from exploding when both sides are ambiguous.
+function _rgMapSrCompoundQuery(left, right) {
+  const leftOwners  = _rgMapSrOwnerQuery(left);
+  const rightOwners = _rgMapSrOwnerQuery(right);
+  const leftLocs    = _rgMapSrLocationMatches(left);
+  const rightLocs   = _rgMapSrLocationMatches(right);
+  const rows = [];
+  const seen = new Set();
+  const addPairs = (owners, locs) => {
+    for (const o of owners) {
+      for (const loc of locs) {
+        const dk = o.name + ':' + loc.type + ':' + loc.key;
+        if (seen.has(dk)) continue;
+        seen.add(dk);
+        const count = _rgMapSrCountOwnerInLocation(o.name, loc.type, loc.key);
+        if (count > 0) {
+          rows.push({ owner: o.name, locType: loc.type, locKey: loc.key, locName: loc.name, locQualifier: loc.qualifier, count });
+        }
+      }
+    }
+  };
+  addPairs(leftOwners, rightLocs);
+  addPairs(rightOwners, leftLocs);
+  rows.sort((a, b) => b.count - a.count
+    || a.owner.localeCompare(b.owner)
+    || a.locName.localeCompare(b.locName));
+  return rows.slice(0, 6);
 }
 
 function _rgMapSrOwnerQuery(q) {
@@ -29916,9 +30194,52 @@ function _rgMapSrContinentQuery(q) {
   return results;
 }
 
-function _rgMapSrRender(q) {
+function _rgMapSrRender(q, compound) {
   const res = document.getElementById('rgMapSearchResults');
   if (!res) return;
+  const esc     = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const escAttr = s => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  // Compound "owner @ location" mode — render only compound rows. Skips the
+  // per-category lanes because the user's intent is explicit, and mixing in
+  // single-side lanes would dilute the result list. If no compound matches,
+  // show a syntax hint so the user knows what shape of query works.
+  if (compound) {
+    let rows = _rgMapSrCompoundQuery(compound.left, compound.right);
+    // Negative compound (`-X @ Y`) removes a tuple from the active compound
+    // stack. Only show rows for tuples that are currently in the array —
+    // anything else would be a confusing no-op click. If nothing's active
+    // to remove, the hint below explains.
+    if (_rgMapSrNegative) {
+      const active = _rgMapCompoundFilter || [];
+      rows = rows.filter(r => active.some(t =>
+        t.ownerName === r.owner && t.locType === r.locType && t.locKey === r.locKey));
+    }
+    if (!rows.length) {
+      const hint = _rgMapSrNegative
+        ? 'Nothing to remove. Type <code>-owner @ place</code> matching an active compound entry to drop it from the union.'
+        : 'Format: <code>owner @ place</code> or <code>owner &amp; place</code> (either order) — e.g. <code>Kyndra @ Texas</code>';
+      const header = _rgMapSrNegative ? 'No active compound entry matches' : 'No owner + location match';
+      res.innerHTML =
+        '<div class="rg-map-search-none">' + header +
+        '<div style="margin-top:0.25rem;font-size:0.78rem;opacity:0.6;">' + hint + '</div>' +
+        '</div>';
+      res.classList.add('open');
+      return;
+    }
+    const actionText = _rgMapSrNegative ? 'Remove from union &rarr;' : 'Filter map &rarr;';
+    let cIdx = 0;
+    const compRows = rows.map(r => {
+      const qual = r.locQualifier ? ` <span class="rg-map-sr-city">(${esc(r.locQualifier)})</span>` : '';
+      return `<div class="rg-map-sr rg-map-sr-owner" data-type="compound" data-owner="${escAttr(r.owner)}" data-loc-type="${escAttr(r.locType)}" data-loc-key="${escAttr(r.locKey)}" data-loc-name="${escAttr(r.locName)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${cIdx++})">` +
+        `<span class="rg-map-sr-icao">⊙</span>` +
+        `<span class="rg-map-sr-info">${esc(r.owner)} <span class="rg-map-sr-city">in</span> ${esc(r.locName)}${qual} <span class="rg-map-sr-city">· ${r.count} airport${r.count !== 1 ? 's' : ''}</span></span>` +
+        `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+        `</div>`;
+    });
+    res.innerHTML = compRows.join('');
+    res.classList.add('open');
+    return;
+  }
   const owners     = _rgMapSrOwnerQuery(q);
   const countries  = _rgMapSrCountryQuery(q);
   const regions    = _rgMapSrRegionQuery(q);
@@ -29930,8 +30251,6 @@ function _rgMapSrRender(q) {
     res.classList.add('open');
     return;
   }
-  const esc     = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const escAttr = s => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const actionText = _rgMapSrNegative ? 'Exclude &rarr;' : 'Filter map &rarr;';
   let rowIdx = 0;
   const ownerRows = owners.map(o =>
@@ -30011,12 +30330,75 @@ function _rgMapSrQuery(q) {
 }
 
 function _rgMapSrActivateEl(el) {
-  if (el.dataset.type === 'owner')          _rgMapSrFilterToOwner(el.dataset.owner);
+  if (el.dataset.type === 'compound')       _rgMapSrFilterToCompound(el.dataset.owner, el.dataset.locType, el.dataset.locKey, el.dataset.locName);
+  else if (el.dataset.type === 'owner')     _rgMapSrFilterToOwner(el.dataset.owner);
   else if (el.dataset.type === 'continent') _rgMapSrFilterToContinent(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'country')   _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else if (el.dataset.type === 'region')    _rgMapSrFilterToRegion(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'developer') _rgMapSrFilterToDeveloper(el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
+}
+
+// Compound "owner @ location" activation. Sets both the owner filter AND the
+// appropriate location filter atomically (single `_rgApplyMapFilter` call) so
+// the dot rebuild AND-combines them via `_rgDotPassesMapFilters`. Always
+// clears prior filters first — compound queries are a fresh intent, never
+// additive. +/- prefix modifiers are ignored for compound queries in v1.
+function _rgMapSrFilterToCompound(ownerName, locType, locKey, locName) {
+  if (!ownerName || !locType || !locKey) return;
+  const tuple = { ownerName, locType, locKey, locName };
+  if (_rgMapSrNegative) {
+    // NEGATIVE: remove the matching tuple from the compound array. Removal
+    // is the exact inverse of the additive `+X @ Y` stacking — pop one of
+    // the OR'd intersections out of the union. We do NOT promote a missing
+    // tuple to a separate exclusion set: the user's mental model is "undo
+    // a +query," not "subtract a region." Empty compound or missing tuple
+    // → no-op (defensive guard; the dropdown's "Nothing to remove" hint
+    // normally prevents reaching this path via UI click).
+    if (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length) {
+      _rgMapSrClear();
+      return;
+    }
+    _rgMapCompoundFilter = _rgMapCompoundFilter.filter(t =>
+      !(t.ownerName === ownerName && t.locType === locType && t.locKey === locKey));
+    if (!_rgMapCompoundFilter.length) _rgMapCompoundFilter = null;
+    _rgRebuildPerAxisFromCompound();
+  } else if (_rgMapSrAdditive && _rgMapCompoundFilter && _rgMapCompoundFilter.length) {
+    // ADDITIVE: append the new tuple to the existing compound array and
+    // augment the per-axis sets. Each compound tuple is an independent
+    // (owner AND location) intersection; multiple tuples form a union.
+    // Dedupe — re-adding an identical tuple is a no-op.
+    const dup = _rgMapCompoundFilter.some(t =>
+      t.ownerName === ownerName && t.locType === locType && t.locKey === locKey);
+    if (!dup) {
+      _rgMapCompoundFilter.push(tuple);
+      if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
+      _rgMapOwnerFilter.add(ownerName);
+      if (locType === 'continent') {
+        if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set();
+        _rgMapContinentFilter.add(locKey);
+      } else if (locType === 'country') {
+        if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set();
+        _rgMapCountryFilter.add(locKey);
+      } else if (locType === 'region') {
+        if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set();
+        _rgMapRegionFilter.add(locKey);
+      }
+    }
+  } else {
+    // REPLACE: clear all prior filters and start a fresh compound array.
+    _rgClearAllSearchFilters();
+    _rgMapOwnerFilter = new Set([ownerName]);
+    if (locType === 'continent')    _rgMapContinentFilter = new Set([locKey]);
+    else if (locType === 'country') _rgMapCountryFilter   = new Set([locKey]);
+    else if (locType === 'region')  _rgMapRegionFilter    = new Set([locKey]);
+    _rgMapCompoundFilter = [tuple];
+  }
+  _rgBuildMapOwnerList();
+  _rgUpdateMapOwnerBtn();
+  _rgApplyMapFilter();
+  _rgFitAllVisibleAirports();
+  _rgMapSrClear();
 }
 
 // Fit the map to all currently-visible airport dots after a search action.
@@ -30046,6 +30428,7 @@ function _rgClearAllSearchFilters() {
   _rgMapRegionFilter    = null;
   _rgMapContinentFilter = null;
   _rgMapDeveloperFilter = null;
+  _rgMapCompoundFilter  = null;
   _rgPinnedIcaos.clear();
   _rgExcludedOwners.clear();
   _rgExcludedCountries.clear();
@@ -30776,6 +31159,9 @@ function rgSendToFlightPlanner() {
             <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, region / state / province name (<em>California</em>, <em>Bavaria</em>, <em>Ontario</em>, …), or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), country rows (<strong>🌍</strong>), and region rows (<strong>📍</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it. <strong>After every search action the map zooms to fit every currently-visible airport</strong> — typing <em>KSEA</em> then <em>+KPDX</em> frames both pinned airports together; adding more pins or filters expands the view as needed.<br/><br/>
             <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+California</em> to also include California airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, region, continent, and pinned filters and replaces them with the new result.<br/><br/>
             <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
+            <strong>Owner &times; location search (&ldquo;@&rdquo; or &ldquo;&amp;&rdquo; delimiter)</strong> — find all of an owner&rsquo;s SimFly airports inside a single state, province, region, country, or continent by joining the two with <code>@</code> or <code>&amp;</code> (the two delimiters are interchangeable). Examples: <em>Kyndra @ Texas</em>, <em>Kyndra &amp; Texas</em>, <em>Kyndra @ United States</em>, <em>Kyndra @ Europe</em>, <em>Kyndra @ TX</em>, <em>Kyndra @ EU</em>. <strong>Order doesn&rsquo;t matter</strong> &mdash; <em>Texas @ Kyndra</em> works exactly the same. Each result row shows the owner, the resolved place, and the airport count; clicking activates both filters at once. When a place name is ambiguous (e.g. <em>Georgia</em> = US state <em>and</em> country; <em>Punjab</em> = India and Pakistan; <em>Washington</em> = state and D.C.) the dropdown lists each interpretation with a parenthetical qualifier so you can pick the right one. The delimiter must have whitespace on both sides to be treated as a compound split <em>or</em>, if no spaces, the right side must not look like an email domain &mdash; so <em>user123@hotmail.com</em> still searches as a single owner name, but <em>user123@hotmail.com&nbsp;@&nbsp;Texas</em> works as a compound query.<br/><br/>
+            <strong>Stacking compound queries with <code>+</code></strong> — prefixing a compound search with <code>+</code> appends it to the active compound filter instead of replacing it, so you can build a union of multiple (owner, place) intersections one query at a time. Start with <em>Kyndra @ Europe</em>, then add <em>+jmribe @ Europe</em>, then <em>+CapitanCabal @ Europe</em> — the map now shows all three pilots&rsquo; European airports together. Mix destinations the same way: <em>Kyndra @ Europe</em> then <em>+Kyndra @ USA</em> shows Kyndra&rsquo;s European and US airports side by side. X&rsquo;ing out an owner or location chip drops only the compound entries that referenced it; orphan chips (owners or places no longer in any compound entry) disappear automatically. A compound query <em>without</em> the <code>+</code> prefix wipes prior filters and starts fresh.<br/><br/>
+            <strong>Removing a stacked compound with <code>-</code></strong> — the exact inverse of <code>+</code> stacking. Prefix a compound query with <code>-</code> to drop the matching tuple from the active union. Example: after stacking the three Europe queries above, typing <em>-jmribe @ Europe</em> removes jmribe&rsquo;s European entry and the map snaps to Kyndra + CapitanCabal in Europe. The dropdown automatically filters to show only currently-active compound entries when <code>-</code> is the prefix, so you can&rsquo;t accidentally click a row that wouldn&rsquo;t remove anything. Removing the last surviving tuple clears the compound filter entirely.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle, a resize arrow over an edge handle, and a pointer over the close ✕ badge. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map. A plain <strong>right-click on an empty part of the map</strong> also exits measurement mode (right-click drag still pans; right-clicking a dot still opens its Quick-Rate popover).<br/><br/>
@@ -30996,8 +31382,61 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v2.98.11</span>
+          <span class="release-version">v2.99.3</span>
           <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Compound search supports <code>-</code> to remove from the stack.</strong> Exact inverse of v2.99.2&rsquo;s <code>+</code> stacking. Prefix a compound query with <code>-</code> to drop the matching tuple from the active compound union. Example: with <em>Kyndra @ Europe</em> + <em>+jmribe @ Europe</em> + <em>+CapitanCabal @ Europe</em> active (3 stacked tuples, ~22 airports visible), typing <em>-jmribe @ Europe</em> drops jmribe&rsquo;s European intersection and the map snaps to the remaining ~11 airports. Removing the last surviving tuple clears the compound filter entirely.</li>
+          <li><strong>Smart negative dropdown.</strong> When <code>-</code> is the prefix, the dropdown filters to show <em>only</em> compound tuples currently in the active stack — typing <em>-CapitanCabal @ USA</em> when no such tuple is loaded shows a &ldquo;Nothing to remove&rdquo; hint instead of a clickable row that would be a confusing no-op. Action text on negative-mode rows reads &ldquo;Remove from union →&rdquo; so the consequence of clicking is unambiguous.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.99.2</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Compound search stacks with <code>+</code>.</strong> Prefixing a compound query with <code>+</code> now appends it to the active compound filter instead of replacing it. Build a multi-pilot/multi-region union one query at a time: <em>Kyndra @ Europe</em> shows Kyndra&rsquo;s 3 European airports; add <em>+jmribe @ Europe</em> to also include jmribe&rsquo;s European airports; add <em>+CapitanCabal @ Europe</em>; and so on. Each query stays as its own (owner AND location) intersection; the visible map is the union of those intersections. Mixing destinations works the same way — <em>Kyndra @ Europe</em> then <em>+Kyndra @ USA</em> shows Kyndra&rsquo;s European and US airports together. A compound query without the <code>+</code> prefix still wipes prior filters and starts fresh, as before. Re-typing an already-active compound query is a no-op (deduped on owner+location key).</li>
+          <li><strong>X&rsquo;ing a chip drops only the compound rows that referenced it.</strong> When the active compound array has multiple tuples, X&rsquo;ing out one of the owner or location chips removes only the compound entries that depended on that chip — surviving tuples continue to filter. Any orphan chips (owners or locations no longer referenced by any compound tuple after the drop) disappear automatically so the breadcrumb strip stays in sync with what&rsquo;s actually visible.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.99.1</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Compound `owner @ place` search now actually intersects.</strong> v2.99.0 set the owner filter and the matching country / region / continent filter side-by-side, but the existing dot-rendering inclusion gate OR-combines those axes (intentionally — that&rsquo;s how the additive <code>+</code> prefix accumulates filters). Result: the dropdown row read &ldquo;Kyndra in Europe · 3 airports&rdquo; but clicking it showed every airport in Europe (the union, not the intersection). Fix: new dedicated <code>_rgMapCompoundFilter</code> slot replaces the OR inclusion gate with an AND check at all three gate sites (<code>_rgDotPassesMapFilters</code> + both dep/arr highlight loops). Per-axis filter Sets are still populated so the breadcrumb chips render unchanged — and the slot auto-clears in <code>_rgApplyMapFilter</code> the moment the user X&rsquo;s either chip, reverting the surviving filter to standard OR-gate behavior.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.99.0</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map search: find all of an owner&rsquo;s airports inside a place.</strong> Type any owner and any place into the map search box joined by <code>@</code> or <code>&amp;</code> — e.g. <em>Kyndra @ Texas</em>, <em>CapitanCabal &amp; Europe</em>, <em>Kyndra @ USA</em>. The two delimiters are interchangeable. <strong>Order doesn&rsquo;t matter</strong> — <em>Texas @ Kyndra</em> works the same. The dropdown shows one row per (owner, place) match with the airport count; clicking activates both the owner filter <em>and</em> the corresponding country / region / continent filter atomically.</li>
+          <li><strong>Place side accepts every geographic level.</strong> Continents (<em>Europe</em> / <em>EU</em> / <em>North America</em> / <em>NA</em>), countries (<em>United States</em> / <em>US</em> / <em>USA</em>, <em>United Kingdom</em> / <em>UK</em>, <em>Germany</em> / <em>DE</em>, <em>Japan</em> / <em>JP</em>), and sub-national admin units of every flavour — states, provinces, oblasts, prefectures, regions — by full name (<em>Texas</em>, <em>Bavaria</em>, <em>Ontario</em>, <em>T&#333;ky&#333; Prefecture</em>), 2-letter suffix (<em>TX</em>), or full ISO code (<em>US-TX</em>, <em>JP-13</em>). Small alias list handles <em>USA</em>, <em>UK</em>, <em>UAE</em>.</li>
+          <li><strong>Ambiguous places get disambiguated by qualifier chips.</strong> <em>Kyndra @ Georgia</em> can mean the US state or the country — the dropdown lists every interpretation that has matching airports with a parenthetical: &ldquo;Georgia (United States)&rdquo; vs &ldquo;Georgia (country)&rdquo;. Same for <em>Washington</em> (state vs D.C.), <em>Punjab</em> (India vs Pakistan), and any other cross-level or cross-country collision.</li>
+          <li><strong>Email-safe delimiter handling.</strong> A bare <code>@</code> with no surrounding whitespace is only treated as a compound split if the right side doesn&rsquo;t look like an email domain (no dot). So <em>user123@hotmail.com</em> still searches as a single owner name, but <em>user123@hotmail.com&nbsp;@&nbsp;Texas</em> works as a compound query. The <code>&amp;</code> delimiter follows the same rules for consistency.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.98.11</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -40519,7 +40958,8 @@ function rgSendToFlightPlanner() {
       <div class="rg-nm-label" id="rgNmLabel"></div>
       <div class="rg-map-search-wrap" id="rgMapSearchWrap">
         <div class="rg-map-search-input-row">
-          <input type="text" id="rgMapSearch" class="rg-map-search" placeholder="Search ICAO, name, owner…"
+          <input type="text" id="rgMapSearch" class="rg-map-search" placeholder="Search ICAO, name, owner, or owner @ place…"
+                 title="Search ICAO, airport name, owner, country, region, continent, or scenery developer. Use 'owner @ place' (or 'owner & place') in either order to combine — e.g. 'Kyndra @ Texas' or 'Kyndra & Texas'."
                  oninput="_rgMapSrInput(this.value)" onkeydown="_rgMapSrKey(event)"
                  autocomplete="off" spellcheck="false" tabindex="-1">
           <button class="rg-map-search-xclear" id="rgMapSearchXClear" onclick="_rgMapSrClear()" title="Clear search" tabindex="-1">✕</button>

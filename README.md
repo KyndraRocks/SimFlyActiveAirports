@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.98.11**
+**Current version: v2.99.3**
 
 ---
 
@@ -92,6 +92,12 @@ A **Map category filter** in the header bar hides entire airport categories from
 **Additive search** — prefix any search with `+` to add its results to the existing map filter rather than replacing it. For example: search *Kyndra* to show Kyndra's airports; then *+StarVen* to also show StarVen's airports; then *+California* to also include California airports; then *+Germany* to also show all SimFly airports in Germany; then *+Orbx* to also include Orbx-developed airports; then *+EGLL* to also pin EGLL as a gray dot. Each active filter gets its own breadcrumb chip. A non-prefixed search replaces all active filters.
 
 **Negation search** — prefix any search with `-` to exclude rather than include. *-Germany* removes all German airports; *-California* removes all California airports; *-Europe* removes all European airports; *-Kyndra* removes Kyndra's airports from the owner filter (or adds her to an excluded-owners set); *-Orbx* hides all Orbx-developed airports; *-EGLL* removes EGLL from the pinned set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.
+
+**Owner × location search** (v2.99.0+) — find all of an owner's airports inside a single state, province, region, country, or continent by joining the two with `@` or `&` (the two delimiters are interchangeable). Examples: *Kyndra @ Texas*, *Kyndra & Texas*, *Kyndra @ United States*, *Kyndra @ Europe*, *Kyndra @ TX*, *Kyndra @ EU*. **Order doesn't matter** — *Texas @ Kyndra* works exactly the same. Each result row shows the owner, the resolved place, and the airport count; clicking activates both filters at once. Ambiguous place names (e.g. *Georgia* = US state AND country; *Punjab* = India AND Pakistan; *Washington* = state AND D.C.) are listed with a parenthetical qualifier so you can pick the right one. The delimiter must have whitespace on both sides to be treated as a compound split — or, if no spaces, the right side must not look like an email domain (no dot) — so *user123@hotmail.com* still searches as a single owner name, but *user123@hotmail.com @ Texas* works as a compound query.
+
+**Stacking compound queries with `+`** (v2.99.2+) — prefixing a compound search with `+` appends it to the active compound filter instead of replacing it, so you can build a union of multiple (owner, place) intersections one query at a time. Start with *Kyndra @ Europe*, then add *+jmribe @ Europe*, then *+CapitanCabal @ Europe* — the map now shows all three pilots' European airports together. Mix destinations the same way: *Kyndra @ Europe* then *+Kyndra @ USA* shows Kyndra's European and US airports side by side. X-ing out an owner or location chip drops only the compound entries that referenced it; orphan chips (owners or places no longer in any compound entry) disappear automatically.
+
+**Removing a stacked compound with `-`** (v2.99.3+) — the exact inverse of `+` stacking. Prefix a compound query with `-` to drop the matching tuple from the active union. With *Kyndra @ Europe* + *+jmribe @ Europe* + *+CapitanCabal @ Europe* active, typing *-jmribe @ Europe* removes jmribe's European entry and the map snaps to Kyndra + CapitanCabal in Europe. The dropdown automatically filters to show only currently-active compound entries when `-` is the prefix, so you can't accidentally click a row that wouldn't remove anything. Removing the last surviving tuple clears the compound filter entirely.
 
 **METAR on route assignment** — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (with a nearest-station fallback). When the data arrives, the airport's dot tooltip on the map gains a compact weather row beneath the existing scenery / developer rows: a colored *VFR / MVFR / IFR / LIFR* pill, wind in *DDD°/KKkt* form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.
 
