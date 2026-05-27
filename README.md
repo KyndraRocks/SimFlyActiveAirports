@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.97.26**
+**Current version: v2.98.9**
 
 ---
 
@@ -112,6 +112,7 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 
 | Chip | When shown | Click action |
 |---|---|---|
+| **⊗ Clear All** | Any filter applied (v2.98.0+) | One-click reset of every applied filter back to the two-default state (color + scenery) |
 | **Category Colors (N)** / **Payout Colors (N)** | Always | Toggle between color modes |
 | **Pilot Payout ≥ N%** | Threshold > 0 (any color mode) | ✕ clears the threshold |
 | **No Scenery Indicator** | Always (scenery off) | Turn on Highlight overlay |
@@ -131,6 +132,8 @@ The strip clips automatically when it nears the right edge of the map and never 
 
 ### Pilot Payout Map
 Click **💰 Payout** in the toolbar to overlay pilot payout percentages on every airport dot. Dots use a piecewise color scale designed around the SimFly membership tiers: 0% = mid-grey; 1–20% = red through orange-red (the non-premium cap); 20–50% = orange through amber; 50% = pure yellow; 60%+ = pure green. The 50%–60% range gets the most hue separation — a full yellow-to-green shift — making it easy to spot airports where premium pilots have set higher-than-minimum payouts. Tooltip payout labels match the dot color. The payout percentage is shown in every airport tooltip on both the dot hover tooltip and the matrix/distance map tooltips.
+
+**Custom palette** (v2.98.0+) — **right-click the gradient bar** in the legend to open a palette editor. Place 2–10 color stops at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to map dots, the matrix, the legend bar, and the gradient preview, and persists in your browser so it survives reloads. **Drag a swatch onto the gradient bar** to set its position by drop point; rows auto-sort low → high after every edit. **Tick bars on the preview are themselves draggable** — grab any one and drag horizontally to reposition that stop directly. The colored chevron above each tick is the stop's own color so overlapping ticks stay distinguishable. **Right-click any tick to delete its stop** (2-stop floor preserved). A **Reset** button restores the original red → orange → amber → yellow → green default. The 0% no-data grey is fixed and is not a user stop.
 
 A **legend** appears in the top-right corner of the map showing the gradient bar and the 0% / 60%+ endpoints. The legend also serves as a **filter slider** — drag anywhere on the gradient bar to set a minimum payout threshold. Airports below the threshold disappear from both the map dots and the distance matrix instantly, and a **"Hide < N%"** label shows the active cutoff. Drag back to 0 to clear the filter.
 
@@ -269,7 +272,7 @@ The modal validates required fields, includes a **▶ Test** button that fires a
 ### 🎬 Flight Demo Mode
 For demos and presentations at locations where MSFS / FSUIPC is unavailable (corporate networks, kiosks, conference rooms that block flight-sim sites), AA can run on synthetic telemetry — driving the full alerting system, data panel, breadcrumb trail, and aircraft marker without any live sim connection. Open from **🔌 Live → 🎬 Flight Demo Mode** in the map header.
 
-**Save / Load demo flight plans to disk** — the configuration modal's *Save Demo Flight Plan* button distills the currently-loaded SimBrief plan into a compact JSON file containing departure, destination, and every waypoint (name + lat/lon). *Load Demo Flight Plan* reads one back so you can carry a library of demo routes between machines or to sites that block SimBrief.
+**Save / Load demo flight plans to disk** — the configuration modal's *Save Demo Flight Plan* button distills the currently-loaded SimBrief plan into a compact JSON file containing departure, destination, and every waypoint (name + lat/lon). *Load Demo Flight Plan* reads one back so you can carry a library of demo routes between machines or to sites that block SimBrief. The suggested filename and saved content always track the **currently selected** SimBrief plan (v2.98.8+), so changing the SimBrief plan after loading a demo file produces a save that reflects the new airports rather than the stale ones.
 
 **Per-SimFly-category performance profiles** — the aircraft pulldown lists every aircraft in the database, sorted by SimFly category (1 → 7) then alphabetically. The engine synthesizes climb / cruise / descent from the chosen aircraft's category (Cat 1: 4,000 ft / 110 kt up to Cat 7: FL380 / 470 kt), so any aircraft in a category gets the right kind of profile. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. Defaults to your current AA aircraft pick; if none is selected, falls back to a Cat 6 aircraft.
 
@@ -277,16 +280,18 @@ For demos and presentations at locations where MSFS / FSUIPC is unavailable (cor
 
 **Realistic turn radii at waypoints** — instead of snapping the marker bearing at each waypoint, the engine expands every interior waypoint into a coordinated-turn arc sized by the aviation formula `R = V² / (g · tan(25°))`. Per-waypoint radius uses the expected groundspeed at that point on the route, so Light GA waypoints get tight ~0.4 nm turns and jet cruise waypoints get realistic ~5.5 nm arcs. The marker actually flies the arc; heading changes continuously rather than stepping. Turns too tight to fit on either adjacent leg fall back to a hard corner.
 
-**Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (0.25× / 0.5× / 1× / 2× / 3×) plus a free-slider for arbitrary 0.1× – 10× playback, and an elapsed / total time readout.
+**Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (0.25× / 0.5× / 1× / 3× / 5×) plus a free-slider for arbitrary 0.1× – 25× playback (v2.98.0+), and an elapsed / total time readout.
+
+**Runway-aligned takeoff and landing** (v2.98.0+, accuracy improved v2.98.7+) — the demo aircraft holds the dep-runway heading for the first 5 nm after takeoff and the arr-runway heading for the last 5 nm before landing, so the simulated track lines up with the satellite-scenery runway centerline instead of cornering directly toward the first or last waypoint. The runway end is picked using each runway's published true heading (sub-degree accuracy from the OurAirports database) and matched against the actual bearing of the route leaving / approaching the airport. Waypoints that fall inside the 5 nm bubble are skipped so a SID or STAR fix near the airport doesn't pull the aircraft off the runway-extended centerline before the alignment ends.
 
 **✈ Autopilot panel — hands-on demo flying** — clicking the AP button opens a compact MCP-style panel above the floating bar with four columns:
 
-- **HDG** — turn to any heading (0–359°). ▼/▲ steppers in 10° increments, numeric input, SET to commit, AUTO to release back to the plan-driven heading.
-- **ALT** — climb or descend to any altitude. ±1000 ft steppers, clamped to the aircraft's category service ceiling.
-- **SPD** — change speed. ±10 kt steppers, clamped to the aircraft's category min/max.
+- **HDG** — turn to any heading (1–360°, magnetic). ▼/▲ steppers in 10° increments, drag the LCD up/down to scrub, numeric input, Enter to commit, Managed/Selected toggle to release back to the plan-driven heading.
+- **ALT** — climb or descend to any altitude. ±1000 ft steppers, drag-to-scrub, clamped to the aircraft's category service ceiling. Snaps to whole 100-ft increments.
+- **SPD** — change speed. ±10 kt steppers, drag-to-scrub, clamped to the aircraft's category min/max.
 - **⌖ DIRECT** — pulldown of every plan waypoint with a ⌖ GO button (aviation direct-to glyph) to fly direct to the selected one. After reaching it, the plan resumes from that point.
 
-Engaged setpoints glow magenta; AUTO axes show the current live value with a cyan tint. The engine integrates aircraft state toward the targets using coordinated-turn rates (3°/sec at 25° bank), category-derived climb / descent fpm, and realistic acceleration — a Cub asked to climb to FL180 takes the time it should. Scrubbing the slider snaps the aircraft back to the plan baseline and releases all axes to AUTO.
+The panel **shows the target the autopilot is currently chasing** (Managed = auto-derived target; Selected = user setpoint), not the live integrating telemetry — so it reads as a true MCP. Live telemetry continues to display in the floating data panel. HDG is rendered in **magnetic** reference, matching chart and runway-number conventions, and always in **whole degrees**. The engine integrates aircraft state toward the targets using coordinated-turn rates (3°/sec at 25° bank), category-derived climb / descent fpm, and realistic acceleration — a Cub asked to climb to FL180 takes the time it should. Scrubbing the slider snaps the aircraft back to the plan baseline and releases all axes to Managed.
 
 **Telemetry-loss simulation** — two buttons on the floating bar let you demo the alerting behaviour for telemetry interruptions: **📡✖ Stale** stops emitting packets while keeping the marker on the map (after 30 s the icon greys out and any Loss-of-Telemetry alarms trip per their threshold). **⛓✖ Disconnect** clears the marker entirely (mirrors a full FSUIPC drop). Both toggle on/off so the alarm trip AND the recovery can be demoed in a single session.
 

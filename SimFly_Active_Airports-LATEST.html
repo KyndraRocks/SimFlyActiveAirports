@@ -3084,6 +3084,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-bc:hover { background:rgba(30,45,80,0.95); border-color:rgba(255,255,255,0.38); color:#fff; }
   .rg-bc-x { opacity:0.5; font-size:0.81rem; line-height:1; padding:0 0.1rem; margin-left:0.08rem; }
   .rg-bc-x:hover { opacity:1; }
+  /* v2.98.0 — Clear-all chip: circled ⊗ glyph, slightly warmer border so
+     it reads as the special "remove everything" affordance rather than a
+     normal toggle. Hover brightens. */
+  .rg-bc.rg-bc-clear { color:#ffb1b1; border-color:rgba(255,120,120,0.55); font-weight:700; }
+  .rg-bc.rg-bc-clear:hover { background:rgba(80,20,25,0.92); border-color:#ff8c8c; color:#fff; }
   /* Category-data unavailable warning — shown only when both Gist fetch and localStorage cache fail */
   .rg-cat-warning { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.5rem; padding:0.45rem 0.9rem; background:rgba(80,30,0,0.94); border:1px solid rgba(255,160,60,0.6); border-radius:6px; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:#ffd9a0; pointer-events:all; max-width:80%; box-shadow:0 2px 10px rgba(0,0,0,0.45); }
   .rg-cat-warning.visible { display:flex; }
@@ -4669,6 +4674,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      `indeterminate` rendering is browser-specific. */
   .afk-group-toggle { flex:0 0 auto; }
   .afk-group-toggle.mixed input { accent-color:#ffaa55; }
+  /* v2.98.0 — Right-side actions cluster on the group header. Mirrors
+     .afk-card-actions on standalone alert cards so the master toggle
+     and group-delete X sit in the same visual position the user
+     already trained on for standalone alerts. */
+  .afk-group-actions { display:inline-flex; align-items:center; gap:0.4rem; margin-left:auto; flex:0 0 auto; }
   .afk-group-name {
     flex:1 1 auto;
     font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600;
@@ -6030,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.97.26';
+const APP_VERSION = '2.98.9';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6275,6 +6285,19 @@ function loadAirportDB() {
       const rwIdxClosed  = rw('closed');
       const rwIdxLe      = rw('le_ident');
       const rwIdxHe      = rw('he_ident');
+      // v2.98.7 — Capture each runway end's published TRUE heading (and its
+      // threshold lat/lon for any future "start the demo aircraft at the
+      // actual threshold" follow-up). Pre-2.98.7 the demo derived heading
+      // from runway-number × 10 (mag, 10° quantized) and pushed it through
+      // a dipole-approximation mag-variation model — two compounding
+      // sources of error. Using le_heading_degT / he_heading_degT directly
+      // is sub-degree accurate.
+      const rwIdxLeHdg   = rw('le_heading_degT');
+      const rwIdxHeHdg   = rw('he_heading_degT');
+      const rwIdxLeLat   = rw('le_latitude_deg');
+      const rwIdxLeLon   = rw('le_longitude_deg');
+      const rwIdxHeLat   = rw('he_latitude_deg');
+      const rwIdxHeLon   = rw('he_longitude_deg');
 
       if (rwIdxAirport >= 0) {
         for (let i = 1; i < rwLines.length; i++) {
@@ -6291,8 +6314,23 @@ function loadAirportDB() {
           const widthFt  = parseInt(cols[rwIdxWidth] || '0', 10) || 0;
           const surface  = (cols[rwIdxSurface] || '').replace(/^\"|\"$/g, '').trim();
           const lighted  = (cols[rwIdxLighted] || '').replace(/^\"|\"$/g, '').trim();
+          // Heading + threshold lat/lon — kept as Number where parseable;
+          // NaN when ourairports lacks the value (the picker has a
+          // fallback to the legacy ident*10 approach in that case).
+          const _toNum = (idx) => {
+            if (idx < 0) return NaN;
+            const s = (cols[idx] || '').replace(/^\"|\"$/g, '').trim();
+            const n = parseFloat(s);
+            return isFinite(n) ? n : NaN;
+          };
+          const leHdgT = _toNum(rwIdxLeHdg);
+          const heHdgT = _toNum(rwIdxHeHdg);
+          const leLat  = _toNum(rwIdxLeLat);
+          const leLon  = _toNum(rwIdxLeLon);
+          const heLat  = _toNum(rwIdxHeLat);
+          const heLon  = _toNum(rwIdxHeLon);
           if (!runwayDB.has(airIdent)) runwayDB.set(airIdent, []);
-          runwayDB.get(airIdent).push({ leIdent, heIdent, lengthFt, widthFt, surface, lighted });
+          runwayDB.get(airIdent).push({ leIdent, heIdent, lengthFt, widthFt, surface, lighted, leHdgT, heHdgT, leLat, leLon, heLat, heLon });
         }
       }
 
@@ -11093,6 +11131,12 @@ const _DEMO_PERF = {
 const _DEMO_TAXI_SEC      = 30;      // 30 s on-the-ground at each end (gives AFK alerts time to bind)
 const _DEMO_APPROACH_SEC  = 45;      // last 45 s simulated final approach below cruise (low alt, slower)
 const _DEMO_TICK_MS       = 1000;    // 1 Hz packet cadence — matches FSUIPC flight-phase cadence
+// v2.98.0 — Runway alignment radius. The auto-heading logic holds the
+// dep runway heading for this many nm after takeoff, and the arr runway
+// heading for this many nm before landing, so the simulated track lines
+// up with the satellite scenery's runway centerline instead of cornering
+// toward (or away from) the first/last waypoint.
+const _DEMO_RWY_ALIGN_NM  = 5;
 
 let _demoActive          = false;    // engine running (Start clicked, not yet Exit)
 let _demoPaused          = false;
@@ -11121,6 +11165,9 @@ let _demoAcHdg = 0;
 let _demoAcAlt = 0;
 let _demoAcGs  = 0;
 let _demoNextWptIdx = 1;             // index into _demoPlan.points the aircraft is heading toward
+// v2.98.0 — Latch so the dep-runway-alignment hold only applies once per
+// flight. Reset on every _demoStart and _demoScrubTo back to t=0.
+let _demoDepRwyDone = false;
 
 // Per-axis autopilot mode and setpoints. Each axis is independent —
 // engaging HDG doesn't change ALT/SPD modes.
@@ -11142,6 +11189,45 @@ function _demoCatLimits() {
   const ac  = (_demoPlan && _demoPlan.acCode && aircraftDB instanceof Map) ? aircraftDB.get(_demoPlan.acCode) : null;
   const cat = (ac && ac.simfly_cat) || 6;
   return _DEMO_CAT_LIMITS[cat] || _DEMO_CAT_LIMITS[6];
+}
+
+// v2.98.1 — Magnetic-variation helpers. All user-facing headings (AP
+// panel HDG display + input, runway alignment, demo runway picker) are
+// expressed in MAGNETIC reference so they match the published runway
+// numbers on charts and scenery. Internally the integrator and bearing
+// math still work in TRUE because _demoBearing returns great-circle
+// (true) bearings; conversion happens at the I/O boundaries via the
+// two functions below. The model is a centred-dipole approximation of
+// the Earth's magnetic field — accurate to roughly ±5–10° at populated
+// latitudes (degrades near the geomagnetic poles and the South
+// Atlantic Anomaly). Good enough for the demo's visual realism; not a
+// substitute for the WMM in actual flight planning.
+function _demoMagVar(lat, lon) {
+  if (!isFinite(lat) || !isFinite(lon)) return 0;
+  const dToR = Math.PI / 180;
+  // Geomagnetic North Pole 2025 epoch.
+  const phiP = 80.7  * dToR;
+  const lamP = -72.7 * dToR;
+  const phi  = lat * dToR;
+  const lam  = lon * dToR;
+  const dLam = lam - lamP;
+  const num  = Math.cos(phiP) * Math.sin(dLam);
+  const den  = Math.cos(phi) * Math.sin(phiP) - Math.sin(phi) * Math.cos(phiP) * Math.cos(dLam);
+  return Math.atan2(num, den) * 180 / Math.PI;
+}
+function _demoTrueToMag(trueDeg, lat, lon) {
+  if (!isFinite(trueDeg)) return 0;
+  const useLat = isFinite(lat) ? lat : _demoAcLat;
+  const useLon = isFinite(lon) ? lon : _demoAcLon;
+  const v = _demoMagVar(useLat, useLon);
+  return ((trueDeg - v) % 360 + 360) % 360;
+}
+function _demoMagToTrue(magDeg, lat, lon) {
+  if (!isFinite(magDeg)) return 0;
+  const useLat = isFinite(lat) ? lat : _demoAcLat;
+  const useLon = isFinite(lon) ? lon : _demoAcLon;
+  const v = _demoMagVar(useLat, useLon);
+  return ((magDeg + v) % 360 + 360) % 360;
 }
 
 // Coordinated-turn rate in deg/sec from current ground speed. Uses the
@@ -11199,11 +11285,69 @@ function _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs) {
 // un-passed planned waypoint. When _demoNextWptIdx has been bumped by a
 // DIRECT TO command, this still works correctly because that command
 // only changes the index.
+// v2.98.0 — Runway-alignment override. Within the dep-align radius
+// (5 nm of dep, while still on initial climb / not yet past the inner
+// waypoints) the AUTO heading is the chosen dep runway heading; same
+// for arr in the last 5 nm. Makes the path align visually with the
+// satellite scenery runway rather than cornering straight to the
+// first/last waypoint.
 function _demoApAutoTargetHdg() {
   if (!_demoPlan || !_demoPlan.points || _demoPlan.points.length === 0) return _demoAcHdg;
-  const idx = Math.max(0, Math.min(_demoPlan.points.length - 1, _demoNextWptIdx));
-  const wpt = _demoPlan.points[idx];
+  const pts = _demoPlan.points;
+  const dep = pts[0];
+  const dest = pts[pts.length - 1];
+  const alignNm = _DEMO_RWY_ALIGN_NM;
+
+  // Dep runway lock — applies until the aircraft is more than alignNm
+  // from the dep airport. Uses a small ground-distance hysteresis: once
+  // past the radius, never re-engages even if the aircraft loops back.
+  // v2.98.7 — plan.depRwyHdg / destRwyHdg are now stored in TRUE frame
+  // (sourced from ourairports le_heading_degT / he_heading_degT), so
+  // they're returned to the integrator as-is. No more dipole-mag-var
+  // round-trip — the integrator works in true and gets the picker's
+  // sub-degree result directly.
+  if (isFinite(_demoPlan.depRwyHdg) && !_demoDepRwyDone) {
+    const distFromDep = _demoDistNm(_demoAcLat, _demoAcLon, dep.lat, dep.lon);
+    if (distFromDep <= alignNm) return _demoPlan.depRwyHdg;
+    _demoDepRwyDone = true;
+  }
+
+  // Arr runway lock — applies once the aircraft is within alignNm of dest.
+  if (isFinite(_demoPlan.destRwyHdg)) {
+    const distFromDest = _demoDistNm(_demoAcLat, _demoAcLon, dest.lat, dest.lon);
+    if (distFromDest <= alignNm) return _demoPlan.destRwyHdg;
+  }
+
+  // Otherwise fly toward the next waypoint, skipping any that fall inside
+  // the dep/arr exclusion zones (so a SID/STAR fix within 5 nm doesn't
+  // pull the aircraft off the runway-extended centerline before/after
+  // alignment).
+  const idx = _demoApSkipBubbleFwd(_demoNextWptIdx);
+  const wpt = pts[idx];
   return _demoBearing(_demoAcLat, _demoAcLon, wpt.lat, wpt.lon);
+}
+
+// v2.98.9 — Shared helper used by both the heading function and the
+// advance function. Walks forward from `startIdx` skipping any wpt that
+// lies within the runway-alignment bubble around either dep or dest. By
+// having both code paths use the SAME helper, the advance pointer can't
+// drift out of sync with the heading target (which had been computing
+// turn-anticipation against `pts[idx+1]` even when that wpt was in the
+// bubble and would be skipped by the heading function — yielding a
+// wildly wrong outBear and a too-large antDist).
+function _demoApSkipBubbleFwd(startIdx) {
+  if (!_demoPlan || !_demoPlan.points) return startIdx;
+  const pts = _demoPlan.points;
+  const dep = pts[0], dest = pts[pts.length - 1];
+  let idx = Math.max(0, Math.min(pts.length - 1, startIdx));
+  while (idx < pts.length - 1) {
+    const w = pts[idx];
+    const dDep  = _demoDistNm(w.lat, w.lon, dep.lat,  dep.lon);
+    const dDest = _demoDistNm(w.lat, w.lon, dest.lat, dest.lon);
+    if (dDep < _DEMO_RWY_ALIGN_NM || dDest < _DEMO_RWY_ALIGN_NM) { idx++; continue; }
+    break;
+  }
+  return idx;
 }
 
 // Advance the next-wpt pointer at the turn-anticipation distance for the
@@ -11214,8 +11358,20 @@ function _demoApMaybeAdvanceWpt() {
   if (!_demoPlan || !_demoPlan.points) return;
   const pts = _demoPlan.points;
   if (_demoNextWptIdx >= pts.length - 1) return;
-  const cur  = pts[_demoNextWptIdx];
-  const next = pts[_demoNextWptIdx + 1];
+  // v2.98.6 — Skip past any in-bubble wpts so _demoNextWptIdx tracks
+  // the wpt the heading function is actually targeting.
+  // v2.98.9 — Now uses the shared skip helper so both code paths agree.
+  _demoNextWptIdx = _demoApSkipBubbleFwd(_demoNextWptIdx);
+  if (_demoNextWptIdx >= pts.length - 1) return;
+  const cur     = pts[_demoNextWptIdx];
+  // v2.98.9 — outBear must be computed against the wpt the heading
+  // function will actually fly to AFTER this advance — i.e., the first
+  // non-bubble wpt at-or-after (_demoNextWptIdx + 1). Pre-2.98.9 we
+  // used pts[_demoNextWptIdx + 1] directly, which produced a wildly
+  // wrong outBear (and a wildly wrong antDist) whenever that raw next
+  // wpt was an in-bubble STAR fix the heading would have skipped.
+  const nextIdx = _demoApSkipBubbleFwd(_demoNextWptIdx + 1);
+  const next    = pts[nextIdx];
   const inBear  = _demoBearing(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
   const outBear = _demoBearing(cur.lat,    cur.lon,    next.lat, next.lon);
   let delta = outBear - inBear;
@@ -11225,7 +11381,18 @@ function _demoApMaybeAdvanceWpt() {
   const absDelta = Math.abs(delta);
   if (absDelta >= _DEMO_MIN_TURN_DEG) {
     const R = _demoTurnRadiusNm(Math.max(80, _demoAcGs));
-    antDist = Math.max(2.0, R * Math.abs(Math.tan(_demoToRad(absDelta / 2))));
+    // v2.98.9 — Cap antDist at R (one turn radius). The geometric
+    // R·tan(δ/2) formula is correct for an arc that exactly tangents
+    // both legs, but tan grows superlinearly past 45°: δ=120° gives
+    // 1.73R, δ=150° gives 3.73R, and δ→180° blows up to infinity. For
+    // any turn sharper than ~90° we'd start anticipating absurdly far
+    // out — the symptom the user reported as "initiating turns FAR too
+    // soon." Capping at R means up-to-90° turns are unchanged (the
+    // formula already produces ≤R there); sharper turns now use the
+    // tightest geometric anticipation (one turn radius) and the
+    // aircraft accepts a mild overshoot rather than starting the turn
+    // many nm in advance.
+    antDist = Math.max(2.0, Math.min(R, R * Math.abs(Math.tan(_demoToRad(absDelta / 2)))));
   }
   const distToCur = _demoDistNm(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
   if (distToCur < antDist) _demoNextWptIdx++;
@@ -11254,10 +11421,16 @@ function _demoApFindNextWptFromPos() {
 function _demoNormHdg360(deg) {
   return ((deg - 1) % 360 + 360) % 360 + 1;
 }
+// v2.98.1 — Setpoint is stored MAGNETIC. The integrator converts to
+// TRUE at use time (_demoTick), and the AP display reads the setpoint
+// as-is for the user-facing magnetic readout.
+// v2.98.5 — Round to whole degrees at storage time. Avoids fractional
+// HDG setpoints from drag/scroll/programmatic seeding leaking into the
+// AP readout; HDG is always shown without decimals on real-world MCPs.
 function _demoApSetHdg(deg) {
   const v = parseFloat(deg);
   if (!isFinite(v)) return;
-  _demoApSetpoints.hdg = _demoNormHdg360(v);
+  _demoApSetpoints.hdg = _demoNormHdg360(Math.round(v));
   _demoApMode.hdg = 'manual';
   _demoUpdateApPanel();
 }
@@ -11305,7 +11478,10 @@ function _demoApDragStart(axis, e) {
   _demoApDragMoved    = false;
   _demoApDragLastSet  = null;
   // Seed start value from manual setpoint if engaged, else current live state.
-  if (axis === 'hdg') _demoApDragStartVal = (_demoApMode.hdg === 'manual') ? _demoApSetpoints.hdg : _demoAcHdg;
+  // v2.98.1 — HDG seed: live state is TRUE; setpoint is MAGNETIC. Convert
+  // the live-state seed so dragging from managed-mode picks up at the
+  // user-visible magnetic value rather than jumping by the local variation.
+  if (axis === 'hdg') _demoApDragStartVal = (_demoApMode.hdg === 'manual') ? _demoApSetpoints.hdg : _demoTrueToMag(_demoAcHdg);
   else if (axis === 'alt') _demoApDragStartVal = (_demoApMode.alt === 'manual') ? _demoApSetpoints.alt : _demoAcAlt;
   else if (axis === 'gs')  _demoApDragStartVal = (_demoApMode.gs  === 'manual') ? _demoApSetpoints.gs  : _demoAcGs;
   document.addEventListener('mousemove', _demoApDragMove, true);
@@ -11455,6 +11631,71 @@ function _demoInterp(lat1, lon1, lat2, lon2, f) {
 // aircraft code. Pre-computes segment list (with bearings + cumulative
 // distance) and the phase timing table so the per-tick state lookup is
 // O(segments) with no trig in the hot path beyond a single Interp call.
+// v2.98.7 — Pick the runway end at `icao` whose TRUE heading is closest
+// to `desiredHdgTrue` (the great-circle bearing the aircraft will fly
+// to or from the airport, in true frame). Returns the chosen end's TRUE
+// heading in degrees (0-359.99), or null if no runway data is available.
+//
+// Per-end TRUE heading comes from ourairports' le_heading_degT /
+// he_heading_degT columns (sub-degree precision). Pre-2.98.7 the demo
+// derived heading from runway-number × 10 mag and then ran it through a
+// dipole magnetic-variation model — two compounding sources of error
+// that together could push the picker past the midpoint between the two
+// runway ends and have it choose the WRONG end. With per-end true
+// headings the comparison is apples-to-apples in the same frame the
+// integrator already works in.
+//
+// Fallback: if the CSV row didn't have a parseable true heading
+// (uncommon — happens for some helipads / waterways / data gaps),
+// reconstruct one from the runway ident × 10 (mag) and convert via the
+// dipole model. Worse but better than nothing.
+function _demoPickRwyHdg(icao, desiredHdgTrue) {
+  if (!isFinite(desiredHdgTrue)) return null;
+  const key = (icao || '').toUpperCase();
+  if (!key) return null;
+  const rwys = (runwaySupplementDB && runwaySupplementDB.get(key))
+            || (runwayDB && runwayDB.get(key)) || [];
+  if (!rwys || rwys.length === 0) return null;
+  const refLat = (rwys[0] && isFinite(rwys[0].leLat)) ? rwys[0].leLat : NaN;
+  const refLon = (rwys[0] && isFinite(rwys[0].leLon)) ? rwys[0].leLon : NaN;
+  // Each end of every runway is a candidate. Keep the source ident
+  // alongside so we can fall back when the published true heading is
+  // missing.
+  const cands = [];
+  for (const r of rwys) {
+    const ends = [
+      { ident: r.leIdent, hdgT: r.leHdgT },
+      { ident: r.heIdent, hdgT: r.heHdgT },
+    ];
+    ends.forEach(e => {
+      if (isFinite(e.hdgT)) {
+        cands.push(((e.hdgT % 360) + 360) % 360);
+        return;
+      }
+      // Fallback: ident × 10 → mag → true via dipole.
+      if (!e.ident) return;
+      const m = String(e.ident).match(/^(\d+)/);
+      if (!m) return;
+      const n = parseInt(m[1], 10);
+      if (!isFinite(n) || n < 1 || n > 36) return;
+      const mag = (n * 10) % 360;
+      const trueHdg = isFinite(refLat) && isFinite(refLon)
+        ? _demoMagToTrue(mag, refLat, refLon)
+        : mag;
+      cands.push(trueHdg);
+    });
+  }
+  if (cands.length === 0) return null;
+  // Smallest angular distance from desiredHdgTrue, wrapped through ±180.
+  let best = cands[0], bestDelta = 360;
+  for (const h of cands) {
+    let d = Math.abs(h - desiredHdgTrue);
+    if (d > 180) d = 360 - d;
+    if (d < bestDelta) { bestDelta = d; best = h; }
+  }
+  return best;
+}
+
 function _demoBuildPlan(raw, acCode) {
   if (!raw || !raw.dep || !raw.dest) return null;
   const ac   = (acCode && aircraftDB.has(acCode)) ? aircraftDB.get(acCode) : null;
@@ -11564,6 +11805,39 @@ function _demoBuildPlan(raw, acCode) {
   };
   const track = _demoBuildTrack(points, speedAtNm);
 
+  // v2.98.0 — Pre-compute runway headings to align with on departure /
+  // arrival. The "desired" bearing is taken from the first / last point
+  // outside the alignment radius (skipping any SID/STAR fixes that sit
+  // inside the bubble), so we pick the runway end whose heading best
+  // matches the real route segment leaving / approaching the airport.
+  const _findOutsideIdx = (fromDep) => {
+    if (points.length < 2) return null;
+    if (fromDep) {
+      for (let i = 1; i < points.length; i++) {
+        if (_demoDistNm(points[0].lat, points[0].lon, points[i].lat, points[i].lon) > _DEMO_RWY_ALIGN_NM) return i;
+      }
+      return points.length - 1;
+    } else {
+      const lastIdx = points.length - 1;
+      for (let i = lastIdx - 1; i >= 0; i--) {
+        if (_demoDistNm(points[lastIdx].lat, points[lastIdx].lon, points[i].lat, points[i].lon) > _DEMO_RWY_ALIGN_NM) return i;
+      }
+      return 0;
+    }
+  };
+  const depOutIdx  = _findOutsideIdx(true);
+  const destInIdx  = _findOutsideIdx(false);
+  // v2.98.7 — Picker now compares TRUE headings throughout. Feed it the
+  // route's true bearing directly; no mag conversion at this layer.
+  // depRwyHdg / destRwyHdg are stored in TRUE frame and the integrator
+  // (which also works in TRUE) consumes them as-is — no more conversion
+  // round-trip and no more dipole-approximation error compounding with
+  // the prior 10° runway-ident quantization.
+  const desiredDepHdg  = (depOutIdx  != null) ? _demoBearing(points[0].lat, points[0].lon, points[depOutIdx].lat, points[depOutIdx].lon) : NaN;
+  const desiredDestHdg = (destInIdx != null) ? _demoBearing(points[destInIdx].lat, points[destInIdx].lon, points[points.length - 1].lat, points[points.length - 1].lon) : NaN;
+  const depRwyHdg  = _demoPickRwyHdg((raw.dep  && raw.dep.icao)  || '', desiredDepHdg);
+  const destRwyHdg = _demoPickRwyHdg((raw.dest && raw.dest.icao) || '', desiredDestHdg);
+
   return {
     raw,
     acCode, acLabel,
@@ -11573,6 +11847,8 @@ function _demoBuildPlan(raw, acCode) {
     track,
     totalNm,
     hasVnav: vnavHasConstraints,
+    depRwyHdg,
+    destRwyHdg,
     timing: {
       taxiSec, climbSec, cruiseSec, descentSec, apprSec, totalSec,
       climbNm, cruiseNm, descentNm,
@@ -11886,7 +12162,10 @@ function _demoTick() {
   // than the plan track tangent so DIRECT TO works as a simple
   // index-shift without any extra plumbing.
   const planBase = _demoStateAt(_demoSimSec) || { alt: 0, gs: 0, _demoPhase: null };
-  const tgtHdg = _demoApMode.hdg === 'manual' ? _demoApSetpoints.hdg : _demoApAutoTargetHdg();
+  // v2.98.1 — Manual HDG setpoint is stored MAGNETIC; convert to TRUE
+  // here so the integrator (which works in true) gets a consistent
+  // target. The managed auto-target is already true.
+  const tgtHdg = _demoApMode.hdg === 'manual' ? _demoMagToTrue(_demoApSetpoints.hdg) : _demoApAutoTargetHdg();
   const tgtAlt = _demoApMode.alt === 'manual' ? _demoApSetpoints.alt : _demoVnavManagedAlt(planBase);
   const tgtGs  = _demoApMode.gs  === 'manual' ? _demoApSetpoints.gs  : planBase.gs;
 
@@ -11962,10 +12241,18 @@ function _demoStart() {
   if (plan.points && plan.points.length > 1) {
     _demoAcLat = plan.points[0].lat;
     _demoAcLon = plan.points[0].lon;
-    _demoAcHdg = _demoBearing(plan.points[0].lat, plan.points[0].lon, plan.points[1].lat, plan.points[1].lon);
+    // v2.98.0 — Seed heading from the dep runway if one was matched,
+    // otherwise fall back to bearing-toward-next-waypoint (legacy path).
+    // v2.98.7 — plan.depRwyHdg is now TRUE (sourced from
+    // ourairports le_heading_degT / he_heading_degT), so no conversion
+    // is needed at the integrator boundary.
+    _demoAcHdg = isFinite(plan.depRwyHdg)
+      ? plan.depRwyHdg
+      : _demoBearing(plan.points[0].lat, plan.points[0].lon, plan.points[1].lat, plan.points[1].lon);
     _demoAcAlt = plan.timing.depElev;
     _demoAcGs  = 0;
     _demoNextWptIdx = 1;
+    _demoDepRwyDone = false;
   }
   _demoApMode.hdg = 'plan'; _demoApMode.alt = 'plan'; _demoApMode.gs = 'plan';
   _demoApSetpoints.hdg = 0; _demoApSetpoints.alt = 0; _demoApSetpoints.gs = 0;
@@ -12030,7 +12317,7 @@ function _demoSetSpeed(s) {
   if (!_demoActive) return;
   s = parseFloat(s);
   if (!isFinite(s) || s <= 0) return;
-  _demoSpeed = Math.max(0.1, Math.min(10, s));
+  _demoSpeed = Math.max(0.1, Math.min(25, s));
   _demoUpdateSpeedUI();
 }
 
@@ -12061,6 +12348,14 @@ function _demoScrubTo(simSec) {
     _demoAcAlt = baseline.alt;
     _demoAcGs  = baseline.gs;
     _demoNextWptIdx = _demoApFindNextWptFromPos();
+    // v2.98.0 — Re-arm the dep-runway-alignment latch when scrub jumps
+    // back inside the dep alignment radius. Past it, leave it latched
+    // off so a scrub forward + back doesn't snap the heading back to
+    // the runway after the aircraft has already departed.
+    if (_demoPlan.points && _demoPlan.points.length > 0) {
+      const d0 = _demoDistNm(_demoAcLat, _demoAcLon, _demoPlan.points[0].lat, _demoPlan.points[0].lon);
+      if (d0 <= _DEMO_RWY_ALIGN_NM) _demoDepRwyDone = false;
+    }
     if (!_demoSuspendEmit) {
       try {
         _liveAcRenderMarker({
@@ -12203,8 +12498,9 @@ function _demoApToggleAxisMode(axis) {
   } else {
     // Seed the setpoint from the current live value so the engagement is
     // a "hold present value" rather than snapping to whatever was last typed.
+    // v2.98.1 — HDG live value is TRUE; setpoint storage is MAGNETIC. Convert.
     const cur = axis === 'hdg' ? _demoAcHdg : axis === 'alt' ? _demoAcAlt : _demoAcGs;
-    if (axis === 'hdg') _demoApSetHdg(cur);
+    if (axis === 'hdg') _demoApSetHdg(_demoTrueToMag(cur));
     else if (axis === 'alt') _demoApSetAlt(cur);
     else _demoApSetGs(cur);
   }
@@ -12234,8 +12530,21 @@ function _demoApPopulateWaypoints() {
 }
 
 function _demoUpdateApPanel() {
+  // v2.98.1 — Panel now ALWAYS shows the autopilot target, never the
+  // live integrating telemetry. Live values are displayed in the
+  // floating data panel; the AP panel is for the target the autopilot
+  // is currently chasing. In Managed mode the target comes from the
+  // plan-baseline auto-target functions (same path _demoTick uses to
+  // drive the integrator); in Selected mode it's the user setpoint.
+  const planBase = (_demoActive && _demoPlan)
+    ? (_demoStateAt(_demoSimSec) || { alt: 0, gs: 0 })
+    : { alt: 0, gs: 0 };
+  const autoHdg = (_demoActive && _demoPlan) ? _demoApAutoTargetHdg() : 0;
+  const autoAlt = (_demoActive && _demoPlan) ? _demoVnavManagedAlt(planBase) : 0;
+  const autoGs  = planBase.gs || 0;
+
   // Helper: apply data-mode to the column + set the MNG/SEL button text.
-  const sync = (axis, inputId, modeBtnId, liveVal, manualVal, displayFmt) => {
+  const sync = (axis, inputId, modeBtnId, autoVal, manualVal, displayFmt) => {
     const col = document.querySelector('[data-axis="' + axis + '"]');
     const inp = document.getElementById(inputId);
     const btn = document.getElementById(modeBtnId);
@@ -12244,13 +12553,23 @@ function _demoUpdateApPanel() {
     if (btn) btn.textContent = isManual ? 'Selected' : 'Managed';
     // Don't clobber the user's typing while the input has focus.
     if (inp && document.activeElement !== inp) {
-      const v = isManual ? manualVal : liveVal;
+      const v = isManual ? manualVal : autoVal;
       inp.value = displayFmt ? displayFmt(v) : String(Math.round(v || 0));
     }
   };
-  sync('hdg', 'demoApHdgInput', 'demoApHdgMode', _demoAcHdg,         _demoApSetpoints.hdg);
-  sync('alt', 'demoApAltInput', 'demoApAltMode', _demoAcAlt,         _demoApSetpoints.alt);
-  sync('gs',  'demoApGsInput',  'demoApGsMode',  _demoAcGs,          _demoApSetpoints.gs);
+  // HDG display: render in 1-360 MAGNETIC reference (v2.98.1). Setpoints
+  // are stored in MAG frame; the managed auto-target comes from
+  // great-circle math (TRUE) so it's converted here. The integrator
+  // (which advances _demoAcHdg in true) is fed the mag→true converted
+  // setpoint inside _demoTick, so the two sides stay consistent.
+  const autoHdgMag = _demoTrueToMag(autoHdg);
+  // v2.98.5 — Round to whole degrees so the managed-mode auto-target
+  // (which comes from continuous great-circle math) reads without a
+  // decimal tail. Setpoints are already integer-stored.
+  const hdgFmt = v => String(_demoNormHdg360(Math.round(v || 0)));
+  sync('hdg', 'demoApHdgInput', 'demoApHdgMode', autoHdgMag, _demoApSetpoints.hdg, hdgFmt);
+  sync('alt', 'demoApAltInput', 'demoApAltMode', autoAlt, _demoApSetpoints.alt);
+  sync('gs',  'demoApGsInput',  'demoApGsMode',  autoGs,  _demoApSetpoints.gs);
 
   // DIRECT TO — there's no MNG/SEL toggle; the GO button is the action.
   // We DO keep the dropdown's selected option synced with whatever wpt is
@@ -12266,7 +12585,8 @@ function _demoUpdateApPanel() {
 // Stepper helpers — bump the current setpoint (or, when AUTO, seed it
 // from the current value first so the increment is intuitive).
 function _demoApBumpHdg(delta) {
-  if (_demoApMode.hdg !== 'manual') _demoApSetpoints.hdg = _demoAcHdg || 0;
+  // v2.98.1 — Setpoint storage is MAGNETIC; _demoAcHdg is TRUE.
+  if (_demoApMode.hdg !== 'manual') _demoApSetpoints.hdg = _demoTrueToMag(_demoAcHdg || 0);
   _demoApSetHdg(_demoApSetpoints.hdg + delta);
 }
 function _demoApBumpAlt(delta) {
@@ -12453,11 +12773,21 @@ function _demoEsc(s) {
 async function _demoSavePlan() {
   // v2.97.23 — accept either source: a previously-loaded demo file
   // (lets the user re-save under a new filename) OR the live SimBrief
-  // plan (distilled into the demo shape). Demo file wins when both
-  // exist since that's what the user explicitly loaded into the demo.
-  let raw = (typeof _demoLoadedPlanRaw !== 'undefined' && _demoLoadedPlanRaw) ? _demoLoadedPlanRaw : null;
-  if (!raw && typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
+  // plan (distilled into the demo shape).
+  // v2.98.8 — Priority flipped: the current SimBrief plan now wins over
+  // a previously-loaded demo file. Was the other way around, which
+  // meant the suggested filename + saved content kept reflecting the
+  // dep/dest of a stale demo file even after the user had loaded a new
+  // SimBrief plan with different airports. The "re-save loaded file
+  // under a new name" workflow still works whenever no SimBrief plan is
+  // loaded — which is the only case where the demo file is unambiguously
+  // the current intent.
+  let raw = null;
+  if (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
     raw = _demoRawFromSbOfp(_sbOfpLastData);
+  }
+  if (!raw && typeof _demoLoadedPlanRaw !== 'undefined' && _demoLoadedPlanRaw) {
+    raw = _demoLoadedPlanRaw;
   }
   if (!raw) {
     if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load a flight plan first.', 'err');
@@ -16965,9 +17295,6 @@ function _afkRenderGroupHtml(gid, members) {
   return '<div class="afk-group' + collapsedCls + trippedCls + '" data-group-id="' + gid + '">' +
     '<div class="afk-group-header">' +
       '<button class="afk-group-collapse" onclick="event.stopPropagation();_afkGroupToggleCollapse(\'' + gid + '\')" title="Expand / collapse the whole group">' + (g.collapsed ? '▶' : '▼') + '</button>' +
-      '<label class="afk-toggle afk-group-toggle' + mixedClass + '" title="Enable / disable every alarm in this group at once. A mixed state (some on, some off) toggles to ALL enabled on click." onclick="event.stopPropagation()">' +
-        '<input type="checkbox" id="afkGrpTog_' + gid + '" data-group-toggle="' + gid + '"' + (allEnabled ? ' checked' : '') + ' onchange="_afkGroupToggleAll(\'' + gid + '\', this.checked)">' +
-      '</label>' +
       '<span class="afk-group-icon" title="Group of ' + members.length + ' alarms — they fire together; dismissing any one dismisses + disables all">⛓</span>' +
       '<span class="afk-group-name" contenteditable="true" spellcheck="false" ' +
             'data-placeholder="' + placeholder + '" ' +
@@ -16991,6 +17318,15 @@ function _afkRenderGroupHtml(gid, members) {
         return '<button class="afk-group-mode" data-mode="' + _m + '" onclick="event.stopPropagation();_afkGroupToggleMode(\'' + gid + '\')" title="' + _tip.replace(/"/g, '&quot;') + '">' + _label + '</button>';
       })() +
       '<button class="afk-group-ungroup" onclick="event.stopPropagation();_afkGroupUngroup(\'' + gid + '\')" title="Ungroup — members become standalone alarms again">⛓ Ungroup</button>' +
+      // v2.98.0 — right-side actions: master toggle + delete X. Mirrors
+      // .afk-card-actions on standalone alerts so the two controls live
+      // in the same visual position the user already trained on.
+      '<div class="afk-group-actions">' +
+        '<label class="afk-toggle afk-group-toggle' + mixedClass + '" title="Enable / disable every alarm in this group at once. A mixed state (some on, some off) toggles to ALL enabled on click." onclick="event.stopPropagation()">' +
+          '<input type="checkbox" id="afkGrpTog_' + gid + '" data-group-toggle="' + gid + '"' + (allEnabled ? ' checked' : '') + ' onchange="_afkGroupToggleAll(\'' + gid + '\', this.checked)">' +
+        '</label>' +
+        '<button class="afk-icon-btn danger" onclick="event.stopPropagation();_afkGroupDelete(\'' + gid + '\')" title="Delete this group and every alarm in it. This cannot be undone.">✕</button>' +
+      '</div>' +
     '</div>' +
     '<div class="afk-group-body">' +
       members.map(_afkRenderCardHtml).join('') +
@@ -17440,6 +17776,36 @@ function _afkGroupUngroup(gid) {
   _afkGroups.ungroup(gid);
   _afkRenderAlarmList();
 }
+// v2.98.0 — Delete an entire group + every member alarm in one shot.
+// Mirrors the standalone _afkRemoveAlarm one-click + toast pattern (no
+// confirm dialog) — the X is now visually identical to the per-alarm
+// X, so the same "click to delete" muscle memory applies. Toast counts
+// members so the user knows how many alarms went away.
+function _afkGroupDelete(gid) {
+  const members = _afkAlarms.list().filter(a => a.groupId === gid);
+  if (members.length === 0) {
+    // Empty (or already-ungrouped) group — just garbage-collect.
+    try { _afkGroups._gc(); } catch (_) {}
+    _afkRenderAlarmList();
+    return;
+  }
+  const n = members.length;
+  members.forEach(m => {
+    _afkClearAlarmTimer(m.id);
+    _afkCancelTimerSchedule(m.id);
+    if (_afkSelectedIds.has(m.id)) _afkSelectedIds.delete(m.id);
+    _afkAlarms.remove(m.id);
+  });
+  try { _afkGroups._gc(); } catch (_) {}
+  _afkRenderAlarmList();
+  _afkUpdateBadge();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+  _afkSyncTripOverlay();
+  if (typeof _aaRtToast === 'function') {
+    _aaRtToast('Group deleted (' + n + ' alarm' + (n === 1 ? '' : 's') + ' removed)', 'ok');
+  }
+}
 // v2.91.0 — Flip group mode. v2.92.0 — three-way cycle through the
 // three modes:  cascade → concurrent → sequential → cascade.
 function _afkGroupToggleMode(gid) {
@@ -17840,7 +18206,7 @@ function _afkRenderEditor(a) {
       '</div>';
     const altRow = (mode === 'specific')
       ? '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
-          '<input type="text" class="afk-input" style="width:130px;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" title="Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350).">' +
+          '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'cruise\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'cruise\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.">' +
           '<span class="afk-altmin-hint" id="afkCruiseAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + (cAltFt > 0 ? _afkFmtAltDisplay(cAltFt) : '(enter a target altitude above)') + '</span>' +
         '</div>'
       : '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
@@ -17859,7 +18225,7 @@ function _afkRenderEditor(a) {
         '</select>' +
       '</div>' +
       '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
-        '<input type="text" class="afk-input" style="width:130px;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200)">' +
+        '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'altMin\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'altMin\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.">' +
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
       '</div>';
   }
@@ -17923,7 +18289,7 @@ function _afkRenderEditor(a) {
             '<option value=">"' + (op === '>' ? ' selected' : '') + '>&gt;</option>' +
             '<option value="<"' + (op === '<' ? ' selected' : '') + '>&lt;</option>' +
           '</select>' +
-          '<input type="text" class="afk-input afk-cond-val" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 30' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)" title="' + (def.isTime ? 'Numeric value in the chosen unit. Pick the unit (seconds / minutes / hours) from the pulldown to the right. Power-user formats H:MM:SS, M:SS, and "1h 30m" are also accepted and bypass the unit.' : (def.id === 'alt' ? 'Accepts feet or FL form.' : 'Numeric ' + def.unit + ' value.')) + '">' +
+          '<input type="text" class="afk-input afk-cond-val" style="cursor:ns-resize;" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 30' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)"' + (def.id === 'alt' ? ' onwheel="_afkCondAltWheel(event,' + a.id + ',' + idx + ')"' : '') + ' onmousedown="_afkCondValDragStart(event,' + a.id + ',' + idx + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="' + (def.isTime ? 'Numeric value in the chosen unit. Pick the unit (seconds / minutes / hours) from the pulldown to the right. Power-user formats H:MM:SS, M:SS, and "1h 30m" are also accepted and bypass the unit. Click and drag up/down to scrub.' : (def.id === 'alt' ? 'Accepts feet or FL form. Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.' : 'Numeric ' + def.unit + ' value. Click and drag up/down to scrub.')) + '">' +
           unitPullDown +
           '<span class="afk-cond-unit">' + (def.isTime ? '= ' : (def.unit + ' ')) + '<span class="afk-cond-hint" id="afkCondHint_' + a.id + '_' + idx + '">' + hint + '</span></span>';
       if (def.needsWp) {
@@ -18144,6 +18510,146 @@ function _afkToggleWaypointPick(id, ident, on) {
 }
 // Parse altitude input — accepts "10000", "10,000", "FL350", "FL 350", etc.
 // Returns ft as a number, or NaN if unparseable.
+// v2.98.0 — Mouse-wheel adjust for altitude text inputs. Each wheel
+// notch = ±100 ft; holding shift bumps in 1000-ft increments to match
+// the AP panel's ◀/▶ steppers. Snaps to the nearest 100 ft via
+// _afkSnapAlt100 — same rule as _demoApSetAlt — so the displayed value
+// is always a clean hundred. Preserves the FL/feet text form of the
+// input so a value originally typed as "FL350" stays in flight-level
+// notation when scrolled.
+function _afkSnapAlt100(ft) {
+  if (!isFinite(ft)) return 0;
+  return Math.max(0, Math.round(ft / 100) * 100);
+}
+function _afkAltWheel(event, id, kind) {
+  if (!event || !event.deltaY) return;
+  event.preventDefault();
+  const inp = event.target;
+  if (!inp) return;
+  // Negative deltaY = wheel up = increase. Each notch = 100 ft baseline;
+  // shift-modifier multiplies by 10 (1000 ft) for fast traversal.
+  const stepFt = (event.shiftKey ? 1000 : 100);
+  const dir    = event.deltaY < 0 ? 1 : -1;
+  const cur    = _afkParseAlt(inp.value);
+  const base   = isFinite(cur) ? cur : 0;
+  const next   = _afkSnapAlt100(base + dir * stepFt);
+  // Preserve the FL/feet display form. If the user typed an FL value and
+  // the new altitude is >= 18,000 ft on a whole 100, keep FL notation;
+  // otherwise show plain feet.
+  const wasFL  = /^FL/i.test(String(inp.value).trim());
+  const nextTxt = (wasFL && next >= 18000 && next % 100 === 0)
+    ? ('FL' + (next / 100))
+    : String(next);
+  inp.value = nextTxt;
+  if (kind === 'cruise')      _afkSetCruiseAlt(id, nextTxt);
+  else if (kind === 'altMin') _afkSetAltMin(id, nextTxt);
+}
+// v2.98.1 — Click-and-drag scrub for alert inputs. Mirrors the AP
+// panel's drag-to-scrub gesture: hold mouse on the input and drag up
+// to increase / down to decrease. Linear up to 20 px, accelerates 3×
+// after that. ALL alert altitude AND value inputs use this so a user
+// who drags down expecting the AP-style scrub gets the scrub instead
+// of the alarm-card's drag-reorder gesture. Card-drag is stopped on
+// these inputs via event.stopPropagation in the inline onmousedown,
+// plus an ondragstart blocker on every wired input.
+function _afkInputDragStart(event, opts) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const inp = (opts && opts.input) || event.currentTarget || event.target;
+  if (!inp) return;
+  const startY = event.clientY;
+  const parse  = (opts && opts.parse) || (s => { const v = parseFloat(s); return isFinite(v) ? v : 0; });
+  const startV = parse(inp.value);
+  let moved = false;
+  let lastSet = null;
+  const stepSize  = (opts && opts.step)  || 1;
+  const pxPerStep = (opts && opts.pxPerStep) || 4;
+  const accelPx   = 20;
+
+  function move(e) {
+    const dy = e.clientY - startY;
+    if (!moved) {
+      if (Math.abs(dy) < 3) return;
+      moved = true;
+    }
+    const dragPx = -dy;
+    const sign   = Math.sign(dragPx);
+    const absPx  = Math.abs(dragPx);
+    let steps;
+    if (absPx <= accelPx) steps = absPx / pxPerStep;
+    else                  steps = (accelPx / pxPerStep) + ((absPx - accelPx) * 3 / pxPerStep);
+    steps = sign * Math.round(steps);
+    let v = startV + steps * stepSize;
+    if (opts && opts.snap) v = opts.snap(v);
+    if (opts && isFinite(opts.min)) v = Math.max(opts.min, v);
+    if (opts && isFinite(opts.max)) v = Math.min(opts.max, v);
+    if (v === lastSet) return;
+    lastSet = v;
+    // Preserve FL prefix on alt inputs (step 100 is the alt fingerprint).
+    const wasFL = stepSize === 100 && /^FL/i.test(String(inp.value).trim());
+    const nextTxt = (wasFL && v >= 18000 && v % 100 === 0)
+      ? ('FL' + (v / 100))
+      : String(v);
+    inp.value = nextTxt;
+    if (opts && typeof opts.commit === 'function') opts.commit(nextTxt);
+  }
+  function end() {
+    document.removeEventListener('mousemove', move, true);
+    document.removeEventListener('mouseup',   end,  true);
+    document.body.style.cursor = '';
+    // Mouseup without movement = treat as click → focus the input for typing.
+    if (!moved && inp && typeof inp.focus === 'function') {
+      try { inp.focus(); if (typeof inp.select === 'function') inp.select(); } catch (_) {}
+    }
+  }
+  document.addEventListener('mousemove', move, true);
+  document.addEventListener('mouseup',   end,  true);
+  document.body.style.cursor = 'ns-resize';
+}
+function _afkAltDragStart(event, id, kind) {
+  _afkInputDragStart(event, {
+    step: 100,
+    parse: _afkParseAlt,
+    snap:  _afkSnapAlt100,
+    min:   0,
+    commit: v => kind === 'cruise' ? _afkSetCruiseAlt(id, v) : _afkSetAltMin(id, v),
+  });
+}
+function _afkCondValDragStart(event, alarmId, idx) {
+  const a = (typeof _afkAlarms !== 'undefined') ? _afkAlarms.get(alarmId) : null;
+  const c = (a && a.params && Array.isArray(a.params.conditions)) ? a.params.conditions[idx] : null;
+  const isAlt = (c && c.param === 'alt');
+  _afkInputDragStart(event, {
+    step:  isAlt ? 100 : 1,
+    parse: isAlt ? _afkParseAlt : (s => { const v = parseFloat(s); return isFinite(v) ? v : 0; }),
+    snap:  isAlt ? _afkSnapAlt100 : null,
+    commit: v => _afkSetCondValue(alarmId, idx, v),
+  });
+}
+
+// v2.98.0 — Conditional-alarm altitude-condition wheel handler. Same
+// rules as _afkAltWheel but writes through _afkSetCondValue so the
+// canonical numeric value, hint label, and "awaiting data" diagnostics
+// all stay in sync.
+function _afkCondAltWheel(event, alarmId, idx) {
+  if (!event || !event.deltaY) return;
+  event.preventDefault();
+  const inp = event.target;
+  if (!inp) return;
+  const stepFt = (event.shiftKey ? 1000 : 100);
+  const dir    = event.deltaY < 0 ? 1 : -1;
+  const cur    = _afkParseAlt(inp.value);
+  const base   = isFinite(cur) ? cur : 0;
+  const next   = _afkSnapAlt100(base + dir * stepFt);
+  const wasFL  = /^FL/i.test(String(inp.value).trim());
+  const nextTxt = (wasFL && next >= 18000 && next % 100 === 0)
+    ? ('FL' + (next / 100))
+    : String(next);
+  inp.value = nextTxt;
+  if (typeof _afkSetCondValue === 'function') _afkSetCondValue(alarmId, idx, nextTxt);
+}
+
 function _afkParseAlt(text) {
   if (text == null) return NaN;
   const t = text.toString().trim().replace(/,/g, '').toUpperCase();
@@ -26736,38 +27242,414 @@ function _rgCatOf(icao) {
   return cat ? (_RG_CAT_COLORS[+cat] || null) : null;
 }
 
-// Returns a hue-sweep fill for payout mode.
-// Anchored so 50% = yellow (hue 60°) and 60% = green (hue 120°) for maximum discrimination
-// at the premium-member cap where most airports cluster.
-// 0%      → mid-grey
-// 1–20%   → red → orange-red     (hue   0°–20°) — full non-premium range
-// 20–40%  → orange-red → amber   (hue  20°–45°)
-// 40–50%  → amber → yellow       (hue  45°–60°) — transition into the key zone
-// 50–60%+ → yellow → green       (hue  60°–120°) — 60° spread on 10 pct points
+// v2.98.0 — Payout palette is now user-editable. Stops are { pct, color }
+// pairs sorted ascending; 2-5 stops allowed; persisted to localStorage.
+// pct === 0 is reserved as "no data" → fixed grey #7a7a90 and is NOT a
+// user stop. The visible gradient + the per-airport color both interpolate
+// linearly in RGB between the two bracketing stops. Default palette
+// reproduces the prior hardcoded HSL sweep within visual tolerance.
+const _RG_PAYOUT_PALETTE_KEY     = 'simfly_aa_payout_palette';
+const _RG_PAYOUT_PALETTE_MAX     = 10;
+const _RG_PAYOUT_ZERO_COLOR      = '#7a7a90';
+const _RG_PAYOUT_DEFAULT_PALETTE = [
+  { pct: 1,  color: '#ff2424' },
+  { pct: 20, color: '#ff591a' },
+  { pct: 40, color: '#ffc20a' },
+  { pct: 50, color: '#ffff00' },
+  { pct: 60, color: '#00e500' },
+];
+let _rgPayoutPalette = null;
+
+function _rgPayoutPaletteLoad() {
+  if (_rgPayoutPalette) return _rgPayoutPalette;
+  try {
+    const raw = localStorage.getItem(_RG_PAYOUT_PALETTE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length >= 2) {
+        const sane = arr
+          .map(s => ({ pct: Math.max(0, Math.min(100, Number(s.pct))), color: _rgPayoutSanitizeHex(s.color) }))
+          .filter(s => isFinite(s.pct) && s.color)
+          .sort((a, b) => a.pct - b.pct)
+          .slice(0, _RG_PAYOUT_PALETTE_MAX);
+        if (sane.length >= 2) { _rgPayoutPalette = sane; return _rgPayoutPalette; }
+      }
+    }
+  } catch (_) {}
+  _rgPayoutPalette = _RG_PAYOUT_DEFAULT_PALETTE.map(s => ({ ...s }));
+  return _rgPayoutPalette;
+}
+function _rgPayoutPaletteSave() {
+  try { localStorage.setItem(_RG_PAYOUT_PALETTE_KEY, JSON.stringify(_rgPayoutPalette || [])); } catch (_) {}
+}
+function _rgPayoutSanitizeHex(c) {
+  if (!c) return null;
+  const m = String(c).trim().match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!m) return null;
+  let hex = m[1];
+  if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
+  return '#' + hex.toLowerCase();
+}
+function _rgPayoutHexToRgb(hex) {
+  const h = (_rgPayoutSanitizeHex(hex) || '#000000').slice(1);
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function _rgPayoutColorAtPct(pct) {
+  if (!isFinite(pct) || pct <= 0) return _RG_PAYOUT_ZERO_COLOR;
+  const stops = _rgPayoutPaletteLoad();
+  if (pct <= stops[0].pct) return stops[0].color;
+  if (pct >= stops[stops.length - 1].pct) return stops[stops.length - 1].color;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (pct >= a.pct && pct <= b.pct) {
+      const span = b.pct - a.pct;
+      const t = span > 0 ? (pct - a.pct) / span : 0;
+      const ca = _rgPayoutHexToRgb(a.color);
+      const cb = _rgPayoutHexToRgb(b.color);
+      const r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+      const g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+      const bl= Math.round(ca[2] + (cb[2] - ca[2]) * t);
+      return 'rgb(' + r + ',' + g + ',' + bl + ')';
+    }
+  }
+  return stops[stops.length - 1].color;
+}
+// CSS gradient string for the visible gradient bar. Stops are positioned
+// across 0-100% of the bar width by mapping their pct (0-60+) onto the bar
+// span. The legend's bar covers pct 0-60+, so the bar's left edge = stop
+// at min pct and right edge = stop at max pct, with the user's other
+// stops positioned proportionally.
+function _rgPayoutGradientCss() {
+  const stops = _rgPayoutPaletteLoad();
+  if (!stops || stops.length < 2) return 'linear-gradient(to right,#ff2424,#00e500)';
+  const minP = stops[0].pct, maxP = stops[stops.length - 1].pct;
+  const span = Math.max(1, maxP - minP);
+  const parts = stops.map(s => s.color + ' ' + Math.round(((s.pct - minP) / span) * 100) + '%');
+  return 'linear-gradient(to right,' + parts.join(',') + ')';
+}
+
 function _rgPayoutColor(icao) {
   if (!payoutDB) return null;
   const pct = payoutDB.get((icao || '').toUpperCase()) ?? 0;
-  if (pct === 0) return '#7a7a90';
-  const p = Math.min(pct, 60);
-  let hue, lit;
-  if (p <= 20) {
-    const t = p / 20;
-    hue = t * 20;              // 0° → 20°
-    lit = 57 - t * 2;          // 57% → 55%
-  } else if (p <= 40) {
-    const t = (p - 20) / 20;
-    hue = 20 + t * 25;         // 20° → 45°
-    lit = 55 - t * 3;          // 55% → 52%
-  } else if (p <= 50) {
-    const t = (p - 40) / 10;
-    hue = 45 + t * 15;         // 45° → 60°  (amber → yellow)
-    lit = 52 - t * 2;          // 52% → 50%
-  } else {
-    const t = (p - 50) / 10;
-    hue = 60 + t * 60;         // 60° → 120°  (yellow → green, 60° on 10 pct points)
-    lit = 50 - t * 5;          // 50% → 45%
+  if (pct === 0) return _RG_PAYOUT_ZERO_COLOR;
+  return _rgPayoutColorAtPct(pct);
+}
+
+// v2.98.0 — Repaint the legend's gradient bar with the current user palette.
+function _rgPayoutSyncBarGrad() {
+  const el = document.getElementById('rgPayoutBarGrad');
+  if (el) el.style.background = _rgPayoutGradientCss();
+}
+
+// v2.98.0 — Open the palette editor anchored near the gradient bar that
+// fired the contextmenu. Positions inside the same map container so it
+// stacks above the legend without escaping the viewport.
+function _rgPayoutPaletteOpen(event) {
+  const ed  = document.getElementById('rgPayoutPaletteEditor');
+  const leg = document.getElementById('rgPayoutLegend');
+  if (!ed) return;
+  _rgPayoutPaletteLoad();
+  _rgPayoutPaletteRender();
+  ed.style.display = 'block';
+  // Anchor: top-right corner of the legend (so it sits just to the left
+  // of the legend) for predictable placement that doesn't depend on
+  // exact cursor coordinates.
+  if (leg) {
+    const r = leg.getBoundingClientRect();
+    const mapEl = ed.parentElement;
+    const mapRect = mapEl ? mapEl.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth };
+    const desiredW = 320;
+    const left = Math.max(8, r.left - mapRect.left - desiredW - 10);
+    const top  = Math.max(8, r.top  - mapRect.top);
+    ed.style.left = left + 'px';
+    ed.style.top  = top + 'px';
   }
-  return `hsl(${Math.round(hue)},100%,${Math.round(lit)}%)`;
+  // Click-outside dismiss — one-shot listener added on next tick so the
+  // opening contextmenu doesn't immediately fire it.
+  setTimeout(() => {
+    const dismiss = (e) => {
+      if (!ed.contains(e.target)) {
+        document.removeEventListener('mousedown', dismiss, true);
+        _rgPayoutPaletteClose();
+      }
+    };
+    document.addEventListener('mousedown', dismiss, true);
+    ed._dismissHandler = dismiss;
+  }, 0);
+}
+function _rgPayoutPaletteClose() {
+  const ed = document.getElementById('rgPayoutPaletteEditor');
+  if (!ed) return;
+  if (ed._dismissHandler) { document.removeEventListener('mousedown', ed._dismissHandler, true); ed._dismissHandler = null; }
+  ed.style.display = 'none';
+}
+// v2.98.3 — Live drag of a tick on the payout palette preview bar.
+// Uses mousedown→mousemove→mouseup (not HTML5 DnD) because we want the
+// tick to follow the cursor live and the active tick to stay
+// highlighted on top of any overlapping ticks. The dragged stop is
+// tracked by REFERENCE rather than by array index, so a mid-drag pass
+// through another stop's pct doesn't invalidate the handle.
+function _rgPayoutTickDragStart(idx, downEvt, previewEl, tickWrap, handleEl) {
+  const stop = _rgPayoutPalette[idx];
+  if (!stop || !previewEl) return;
+  const rect = previewEl.getBoundingClientRect();
+  // Highlight the active tick — lift z-index, brighten the colored
+  // handle's outline so it reads above any overlapping ticks.
+  tickWrap.style.zIndex = '50';
+  if (handleEl) {
+    handleEl.style.outline = '2px solid #ffd84a';
+    handleEl.style.outlineOffset = '1px';
+    handleEl.style.boxShadow = '0 0 8px rgba(255,216,74,0.85)';
+  }
+  document.body.style.cursor = 'ew-resize';
+
+  function pctFromClientX(clientX) {
+    const frac = (clientX - rect.left) / Math.max(1, rect.width);
+    return Math.max(1, Math.min(100, Math.round(Math.max(0, Math.min(1, frac)) * 100)));
+  }
+
+  function move(e) {
+    const newPct = pctFromClientX(e.clientX);
+    if (newPct === stop.pct) return;
+    stop.pct = newPct;
+    // Update gradient + every tick's left% in place — no re-sort, no
+    // commit yet. The dragged tick is the same DOM node we're updating
+    // here, so it follows the cursor smoothly through any overlap.
+    const live = _rgPayoutPalette;
+    const parts = live.map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%');
+    previewEl.style.background = 'linear-gradient(to right,' + parts.join(',') + ')';
+    previewEl.querySelectorAll('.rg-payout-tick').forEach(tw => {
+      const i = parseInt(tw.dataset.stopIdx, 10);
+      const s = live[i];
+      if (!s) return;
+      const safe = Math.max(0, Math.min(100, s.pct));
+      tw.style.left = safe + '%';
+      tw.title = 'Stop #' + (i + 1) + ' at ' + s.pct + '%. Drag horizontally to reposition; right-click to delete.';
+    });
+  }
+  function end() {
+    document.removeEventListener('mousemove', move, true);
+    document.removeEventListener('mouseup',   end,  true);
+    document.body.style.cursor = '';
+    // Now commit: this sorts the array, persists, repaints the map +
+    // legend, and the full re-render below rebuilds the rows in the new
+    // order with the new tick handle elements. Any z-index / outline we
+    // set above is discarded by the rebuild.
+    _rgPayoutPaletteCommit();
+    _rgPayoutPaletteRender();
+  }
+  // Snap to the initial cursor x so the tick centres under the click
+  // even if the user grabbed near an edge of the handle.
+  move(downEvt);
+  document.addEventListener('mousemove', move, true);
+  document.addEventListener('mouseup',   end,  true);
+}
+
+function _rgPayoutPaletteRender() {
+  const stops = _rgPayoutPaletteLoad();
+  const preview = document.getElementById('rgPayoutPalettePreview');
+  if (preview) {
+    // v2.98.2 — Preview uses the absolute-pct layout (each stop at its
+    // own pct on a 0-100 bar) rather than the legend's minP-maxP layout,
+    // so dropping a swatch on the bar maps the x-position 1:1 to the
+    // new stop pct. Markers above the bar show each stop's current
+    // position. CSS extends the first / last stop's color outside the
+    // stop range automatically, so the gradient still fills the bar.
+    preview.innerHTML = '';
+    preview.style.position = 'relative';
+    preview.style.cursor   = 'copy';
+    preview.style.overflow = 'visible';
+    const parts = stops.map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%');
+    preview.style.background = 'linear-gradient(to right,' + parts.join(',') + ')';
+    // v2.98.3 — Each tick is now a draggable handle. The vertical line
+    // shows position; the colored chevron above it is the grab target.
+    // Mousedown→mousemove→mouseup pattern (not HTML5 drag-and-drop) so
+    // the tick follows the cursor live and overlapping ticks stay
+    // distinguishable. The dragged tick is highlighted with a gold
+    // outline and lifted via z-index. Sorting + persistence only happen
+    // on mouseup so the active stop's index stays stable while another
+    // stop's pct is "passed through" mid-drag.
+    stops.forEach((s, idx) => {
+      const safePct = Math.max(0, Math.min(100, s.pct));
+      // Container so the chevron + vertical bar can be positioned as a unit.
+      const tickWrap = document.createElement('div');
+      tickWrap.dataset.stopIdx = String(idx);
+      tickWrap.className = 'rg-payout-tick';
+      tickWrap.style.cssText = 'position:absolute;top:-9px;bottom:-9px;left:' + safePct + '%;width:14px;transform:translateX(-50%);cursor:ew-resize;z-index:2;pointer-events:auto;touch-action:none;';
+      tickWrap.title = 'Stop #' + (idx + 1) + ' at ' + s.pct + '%. Drag horizontally to reposition; right-click to delete.';
+      // Vertical bar (the visible tick line).
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute;left:50%;top:9px;bottom:9px;width:2px;background:#fff;transform:translateX(-50%);box-shadow:0 0 4px rgba(0,0,0,0.85);pointer-events:none;';
+      tickWrap.appendChild(bar);
+      // Colored chevron handle at top of tick, in the stop's own color so
+      // overlapping ticks remain distinguishable side-by-side rather than
+      // collapsing into one indistinct white line.
+      const handle = document.createElement('div');
+      const safeColor = _rgPayoutSanitizeHex(s.color) || '#ffffff';
+      handle.style.cssText = 'position:absolute;left:50%;top:-1px;width:12px;height:12px;background:' + safeColor + ';border:1.5px solid #fff;border-radius:3px;transform:translateX(-50%);box-shadow:0 1px 3px rgba(0,0,0,0.7);pointer-events:none;';
+      tickWrap.appendChild(handle);
+      // Mousedown starts a drag.
+      tickWrap.addEventListener('mousedown', e => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        _rgPayoutTickDragStart(idx, e, preview, tickWrap, handle);
+      });
+      // v2.98.4 — Right-click deletes this stop (same semantics as the X
+      // on the row). 2-stop floor preserved; the floor case suppresses
+      // the browser menu silently because acting would leave an invalid
+      // palette.
+      tickWrap.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (_rgPayoutPalette.length <= 2) return;
+        _rgPayoutPalette.splice(idx, 1);
+        _rgPayoutPaletteCommit();
+        _rgPayoutPaletteRender();
+      });
+      preview.appendChild(tickWrap);
+    });
+    // Drop target.
+    preview.ondragover = e => {
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    };
+    preview.ondrop = e => {
+      e.preventDefault();
+      const idxStr = e.dataTransfer.getData('text/x-aa-palette-idx');
+      const idx = parseInt(idxStr, 10);
+      if (!isFinite(idx) || idx < 0 || idx >= _rgPayoutPalette.length) return;
+      const rect = preview.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+      const pct  = Math.max(1, Math.min(100, Math.round(frac * 100)));
+      _rgPayoutPalette[idx].pct = pct;
+      _rgPayoutPaletteCommit();   // sorts + persists + repaints map
+      _rgPayoutPaletteRender();   // rebuilds the rows so they reflect the new order
+    };
+  }
+  const list = document.getElementById('rgPayoutPaletteStops');
+  if (!list) return;
+  list.innerHTML = '';
+  stops.forEach((s, i) => {
+    const row = document.createElement('div');
+    // v2.98.2 — row is also a fallback drop target so swatches can be
+    // reordered by dropping onto another row (in case the user misses
+    // the bar). But the primary affordance is the bar drop.
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    row.dataset.idx = String(i);
+    // ── Drag handle ──
+    // Wraps the color swatch so the colored square IS the drag handle.
+    // The native color input continues to open the picker on click; drag
+    // only fires when the mouse actually moves before mouseup.
+    const swatchWrap = document.createElement('div');
+    swatchWrap.style.cssText = 'position:relative;width:36px;height:26px;flex:0 0 auto;cursor:grab;';
+    swatchWrap.title = 'Drag the color swatch onto the gradient bar above to set its % position. Click to change the color.';
+    swatchWrap.draggable = true;
+    swatchWrap.addEventListener('dragstart', e => {
+      try {
+        e.dataTransfer.setData('text/x-aa-palette-idx', String(i));
+        e.dataTransfer.effectAllowed = 'move';
+      } catch (_) {}
+      swatchWrap.style.cursor = 'grabbing';
+      row.style.opacity = '0.55';
+    });
+    swatchWrap.addEventListener('dragend', () => {
+      swatchWrap.style.cursor = 'grab';
+      row.style.opacity = '';
+    });
+    const colorIn = document.createElement('input');
+    colorIn.type = 'color';
+    colorIn.value = _rgPayoutSanitizeHex(s.color) || '#ffffff';
+    colorIn.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:1px solid rgba(255,255,255,0.25);border-radius:3px;background:none;padding:0;cursor:pointer;';
+    colorIn.title = 'Stop color';
+    colorIn.addEventListener('input', () => { _rgPayoutPalette[i].color = _rgPayoutSanitizeHex(colorIn.value) || s.color; _rgPayoutPaletteCommit(); });
+    swatchWrap.appendChild(colorIn);
+
+    const pctIn = document.createElement('input');
+    pctIn.type = 'number';
+    pctIn.min = 1; pctIn.max = 100; pctIn.step = 1; pctIn.value = s.pct;
+    pctIn.style.cssText = 'width:60px;background:rgba(255,255,255,0.07);color:#fff;border:1px solid rgba(255,255,255,0.18);border-radius:3px;padding:0.18rem 0.35rem;font-family:Rajdhani,sans-serif;font-size:0.92rem;';
+    pctIn.title = 'Stop position (1–100 %). 0 % is reserved for no-data grey.';
+    pctIn.addEventListener('input', () => {
+      let v = parseInt(pctIn.value, 10);
+      if (!isFinite(v)) return;
+      v = Math.max(1, Math.min(100, v));
+      _rgPayoutPalette[i].pct = v;
+      _rgPayoutPaletteCommit();
+    });
+    // v2.98.2 — Direct-type commit re-renders so the row order updates if
+    // the user types a pct that re-sorts the stop above/below a neighbour.
+    pctIn.addEventListener('change', () => { _rgPayoutPaletteRender(); });
+    const pctLbl = document.createElement('span');
+    pctLbl.textContent = '%';
+    pctLbl.style.cssText = 'color:rgba(255,255,255,0.55);font-size:0.85rem;';
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.title = stops.length <= 2 ? 'A palette needs at least 2 stops' : 'Delete this stop';
+    del.disabled = stops.length <= 2;
+    del.style.cssText = 'margin-left:auto;background:none;border:1px solid rgba(255,80,80,0.45);color:#ff8080;padding:0.18rem 0.5rem;border-radius:3px;cursor:' + (del.disabled ? 'not-allowed' : 'pointer') + ';font-size:0.82rem;opacity:' + (del.disabled ? '0.35' : '1') + ';';
+    del.addEventListener('click', () => {
+      if (_rgPayoutPalette.length <= 2) return;
+      _rgPayoutPalette.splice(i, 1);
+      _rgPayoutPaletteCommit();
+      _rgPayoutPaletteRender();
+    });
+    row.appendChild(swatchWrap);
+    row.appendChild(pctIn);
+    row.appendChild(pctLbl);
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+  const addBtn = document.getElementById('rgPayoutPaletteAdd');
+  if (addBtn) {
+    const atMax = stops.length >= _RG_PAYOUT_PALETTE_MAX;
+    addBtn.disabled = atMax;
+    addBtn.style.opacity = atMax ? '0.4' : '1';
+    addBtn.style.cursor  = atMax ? 'not-allowed' : 'pointer';
+    addBtn.title = atMax ? 'Maximum 5 stops' : 'Add another color stop (up to 5 total)';
+  }
+}
+function _rgPayoutPaletteAddStop() {
+  const stops = _rgPayoutPaletteLoad();
+  if (stops.length >= _RG_PAYOUT_PALETTE_MAX) return;
+  // Insert a new stop halfway between the largest gap so the user gets
+  // a sensible default position rather than always appending at 100 %.
+  let bestIdx = stops.length - 1, bestGap = 0;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const gap = stops[i + 1].pct - stops[i].pct;
+    if (gap > bestGap) { bestGap = gap; bestIdx = i; }
+  }
+  const a = stops[bestIdx], b = stops[bestIdx + 1] || { pct: 100, color: a.color };
+  const newPct = Math.round((a.pct + b.pct) / 2);
+  // Halfway color too — linear-interp the two neighbours so the new stop
+  // visually slots in without changing the curve before the user tweaks it.
+  const ca = _rgPayoutHexToRgb(a.color);
+  const cb = _rgPayoutHexToRgb(b.color);
+  const mid = [(ca[0]+cb[0])>>1, (ca[1]+cb[1])>>1, (ca[2]+cb[2])>>1];
+  const hex = '#' + mid.map(n => n.toString(16).padStart(2, '0')).join('');
+  stops.splice(bestIdx + 1, 0, { pct: newPct, color: hex });
+  _rgPayoutPaletteCommit();
+  _rgPayoutPaletteRender();
+}
+function _rgPayoutPaletteReset() {
+  _rgPayoutPalette = _RG_PAYOUT_DEFAULT_PALETTE.map(s => ({ ...s }));
+  _rgPayoutPaletteCommit();
+  _rgPayoutPaletteRender();
+}
+// Commit the current in-memory palette: sort, persist, repaint legend,
+// and re-render the map dots + matrix so the new colors propagate
+// everywhere they're used.
+function _rgPayoutPaletteCommit() {
+  _rgPayoutPalette.sort((a, b) => a.pct - b.pct);
+  _rgPayoutPaletteSave();
+  _rgPayoutSyncBarGrad();
+  const preview = document.getElementById('rgPayoutPalettePreview');
+  if (preview) preview.style.background = _rgPayoutGradientCss();
+  if (_rgPayoutMode) {
+    try { _rgRenderDots(); } catch (_) {}
+    try { _rgHighlightDots(); } catch (_) {}
+    if (_rgPhase === 'results' && typeof _rgRenderMatrix === 'function') { try { _rgRenderMatrix(); } catch (_) {} }
+  }
 }
 
 // Toggle payout color mode. `preserveFilter` lets soft mode-switches (the
@@ -26782,6 +27664,8 @@ function _rgTogglePayoutMode(preserveFilter) {
   if (btn) btn.classList.toggle('active', _rgPayoutMode);
   const legend = document.getElementById('rgPayoutLegend');
   if (legend) legend.style.display = _rgPayoutMode ? '' : 'none';
+  // v2.98.0 — keep the gradient bar painted from the user's palette.
+  if (_rgPayoutMode) _rgPayoutSyncBarGrad();
   if (!_rgPayoutMode && !preserveFilter && _rgPayoutFilter > 0) {
     _rgPayoutFilter = 0;
     const sl = document.getElementById('rgPayoutSlider');
@@ -27599,6 +28483,72 @@ function _rgGetVisibleDotCount() {
   return seen.size;
 }
 
+// v2.98.0 — Returns true if any clearable filter is currently active.
+// "Clearable" = anything the ⊗ chip removes. The color mode and the
+// scenery indicator are display toggles, not filters, so they don't
+// count even though they always render chips.
+function _rgAnyFilterActive() {
+  if (_rgPayoutFilter > 0) return true;
+  if (_rgStarFilterMode && _rgStarFilter > 0) return true;
+  if (_slDeveloperFilter) return true;
+  if (_globalCatFilter && _globalCatFilter.size < 7) return true;
+  if (_rgMapOwnerFilter !== null) return true;
+  if (_rgMapCountryFilter !== null) return true;
+  if (_rgMapRegionFilter !== null) return true;
+  if (_rgMapContinentFilter !== null) return true;
+  if (_rgMapDeveloperFilter !== null) return true;
+  if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) return true;
+  if (_rgExcludedOwners && _rgExcludedOwners.size > 0) return true;
+  if (_rgExcludedCountries && _rgExcludedCountries.size > 0) return true;
+  if (_rgExcludedRegions && _rgExcludedRegions.size > 0) return true;
+  if (_rgExcludedContinents && _rgExcludedContinents.size > 0) return true;
+  if (_rgExcludedIcaos && _rgExcludedIcaos.size > 0) return true;
+  if (_rgExcludedDevelopers && _rgExcludedDevelopers.size > 0) return true;
+  return false;
+}
+
+// v2.98.0 — Wipe every applied filter in one shot. Mirrors each individual
+// chip's ✕ handler but skips display toggles (color mode, scenery mode)
+// because those are not filters — they're the two default chips that
+// always render.
+function _rgClearAllFilters() {
+  // Pilot Payout threshold
+  if (_rgPayoutFilter > 0 && typeof _rgPayoutSliderInput === 'function') _rgPayoutSliderInput(0);
+  // Scenery Rating threshold
+  if (_rgStarFilterMode && typeof _rgToggleStarFilter === 'function') _rgToggleStarFilter();
+  // Scenery Developer
+  if (_slDeveloperFilter && typeof _slSetDeveloperFilter === 'function') _slSetDeveloperFilter('');
+  // Category filter — restore all 7
+  if (_globalCatFilter && _globalCatFilter.size < 7 && typeof _rgAllGlobalCats === 'function') _rgAllGlobalCats();
+  // Owner / country / region / continent / developer includes
+  if (_rgMapOwnerFilter !== null) {
+    if (typeof _rgHideOwnerLegend === 'function') _rgHideOwnerLegend();
+    _rgMapOwnerFilter = null;
+    document.querySelectorAll('#rgMapOwnerList .rg-owner-row').forEach(r => r.classList.add('active'));
+    if (typeof _rgUpdateMapOwnerBtn === 'function') _rgUpdateMapOwnerBtn();
+    if (typeof _rgApplyMapOwnerFilter === 'function') _rgApplyMapOwnerFilter();
+  }
+  if (_rgMapCountryFilter !== null)   _rgMapCountryFilter = null;
+  if (_rgMapRegionFilter !== null)    _rgMapRegionFilter  = null;
+  if (_rgMapContinentFilter !== null) _rgMapContinentFilter = null;
+  if (_rgMapDeveloperFilter !== null) {
+    if (typeof _rgHideDeveloperLegend === 'function') _rgHideDeveloperLegend();
+    _rgMapDeveloperFilter = null;
+  }
+  // Pinned ICAOs
+  if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) _rgPinnedIcaos.clear();
+  // Exclude sets
+  if (_rgExcludedOwners      && _rgExcludedOwners.size      > 0) _rgExcludedOwners.clear();
+  if (_rgExcludedCountries   && _rgExcludedCountries.size   > 0) _rgExcludedCountries.clear();
+  if (_rgExcludedRegions     && _rgExcludedRegions.size     > 0) _rgExcludedRegions.clear();
+  if (_rgExcludedContinents  && _rgExcludedContinents.size  > 0) _rgExcludedContinents.clear();
+  if (_rgExcludedIcaos       && _rgExcludedIcaos.size       > 0) _rgExcludedIcaos.clear();
+  if (_rgExcludedDevelopers  && _rgExcludedDevelopers.size  > 0) _rgExcludedDevelopers.clear();
+  if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
+  _rgUpdateBreadcrumbs();
+  if (typeof _aaRtToast === 'function') _aaRtToast('Filters cleared', 'ok');
+}
+
 function _rgUpdateBreadcrumbs() {
   const container = document.getElementById('rgBreadcrumbs');
   if (!container) return;
@@ -27625,6 +28575,23 @@ function _rgUpdateBreadcrumbs() {
       chip.appendChild(x);
     }
     return chip;
+  }
+
+  // v2.98.0 — Clear-all chip. Sits at the very front of the strip when any
+  // clearable filter is active; one click removes every applied filter and
+  // returns the strip to its two-default-chip state (color mode + scenery).
+  // The color mode chip and the scenery chip remain because they're not
+  // filters — they're permanent display toggles.
+  if (_rgAnyFilterActive()) {
+    const clearChip = document.createElement('span');
+    clearChip.className = 'rg-bc rg-bc-clear';
+    clearChip.title = 'Clear every applied filter and return to default display (color + scenery only)';
+    clearChip.textContent = '⊗';
+    clearChip.style.fontSize = '1.05rem';
+    clearChip.style.padding = '0.05rem 0.55rem';
+    clearChip.style.lineHeight = '1.1';
+    clearChip.addEventListener('click', _rgClearAllFilters);
+    container.appendChild(clearChip);
   }
 
   // 1. Display Mode — always visible; clicking cycles color mode. The trailing
@@ -29500,12 +30467,16 @@ function rgSendToFlightPlanner() {
 
             <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it.<br/><br/>
 
+            <strong>Runway alignment (v2.98.0)</strong> &mdash; the demo holds the dep-runway heading for the first 5&nbsp;nm after takeoff and the arr-runway heading for the last 5&nbsp;nm before landing, so the simulated track lines up with the satellite-scenery runway centerline. The runway end is picked from the airport's published runways by matching against the actual bearing the route takes leaving / approaching the airport. Waypoints that fall inside the 5-nm exclusion bubble are skipped so a SID or STAR fix near the airport doesn't pull the aircraft off the runway-extended centerline before alignment ends. All heading work (v2.98.1+) is in <strong>magnetic</strong> reference &mdash; AP display, AP input, runway pick &mdash; matching published runway numbers and chart headings; the integrator math still runs in true and converts at every I/O boundary via a centred-dipole magnetic-variation model.<br/><br/>
+
+            <strong>AP target vs live (v2.98.1)</strong> &mdash; the AP panel HDG / ALT / SPD readouts show the value the autopilot is <em>chasing</em>, not the current live integrator state. Managed = the auto-derived target (next-wpt bearing / VNAV alt / plan-baseline gs); Selected = the user setpoint. Live telemetry remains visible in the floating data panel.<br/><br/>
+
             <strong>Floating control bar</strong> &mdash; while the demo is running, a control bar appears at the bottom of the map with:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>⏸ Pause / ▶ Play</strong> and <strong>⏮ Restart</strong></li>
               <li><strong>Scrub slider</strong> &mdash; drag to jump to any point along the flight</li>
               <li><strong>Phase label</strong> &mdash; current synthetic phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH)</li>
-              <li><strong>Speed presets</strong> &mdash; 0.25× / 0.5× / 1× / 2× / 3×, plus a free-slider for arbitrary 0.1× &ndash; 10× playback</li>
+              <li><strong>Speed presets</strong> &mdash; 0.25× / 0.5× / 1× / 3× / 5×, plus a free-slider for arbitrary 0.1× &ndash; 25× playback (v2.98.0)</li>
               <li><strong>📡✖ Stale</strong> &mdash; stops emitting packets but keeps the marker. After 30 s the icon greys out and any configured Loss-of-Telemetry alarms trip per their thresholds. Click again to resume the stream.</li>
               <li><strong>⛓✖ Disconnect</strong> &mdash; clears the live-aircraft marker entirely (mirrors a full FSUIPC drop). Click again to reconnect.</li>
               <li><strong>✕ Exit</strong> &mdash; end the demo and clear the synthetic aircraft.</li>
@@ -29684,7 +30655,10 @@ function rgSendToFlightPlanner() {
             The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
             A legend in the lower-left corner of the map shows the gradient scale while the mode is active. Click the button again to return to standard category/owner coloring.<br/><br/>
             <strong>Quick toggle for 0% airports</strong> &mdash; click the gray dot on the legend to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue. The slider can still be used for any other threshold above 1%.<br/><br/>
-            Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.
+            Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.<br/><br/>
+            <strong>Custom palette (v2.98.0).</strong> Right-click the gradient bar in the legend to open a small palette editor. Place 2&ndash;5 color stops at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to the legend bar, the map dots, and the matrix, and persists in <code>localStorage</code> (key <code>simfly_aa_payout_palette</code>) so it survives across sessions. A <em>Reset</em> button restores the original red &rarr; orange &rarr; amber &rarr; yellow &rarr; green default. The 0% no-data grey is fixed and is not a user stop.<br/><br/>
+            <strong>Drag-to-position (v2.98.2).</strong> Each swatch in the editor is draggable &mdash; drop it anywhere on the preview gradient and the stop's % snaps to that x-position. Rows auto-sort low &rarr; high after each drop. Clicking a swatch (without dragging) still opens the native color picker.<br/><br/>
+            <strong>Tick bars are draggable too (v2.98.3).</strong> Each tick on the preview gradient is a grab-target in its own right &mdash; mousedown and drag horizontally to reposition the stop directly. The colored chevron above each tick is the stop's own color so overlapping ticks stay distinguishable. The active drag lifts above siblings (gold outline + z-index) and re-sorts only on release. Maximum stops raised to 10 (was 5).
           </div>
         </div>
       </div>
@@ -29695,6 +30669,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter Status Strip</div>
           <div class="help-feature-desc">
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
+            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied. One click removes every applied filter at once (payout threshold, scenery rating, category filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) and returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
@@ -29848,10 +30823,144 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.98.9</span>
+          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft no longer initiates turns far too soon &mdash; two related math bugs in the wpt-advance logic.</strong>
+            <ul style="margin:0.3rem 0 0 1.2rem;padding:0;">
+              <li><strong>Turn-anticipation distance was unbounded for sharp turns.</strong> The geometric formula <code>antDist = R · tan(δ/2)</code> is correct for an arc that exactly tangents both legs, but <code>tan</code> grows superlinearly past 45°. At cruise (R&nbsp;≈&nbsp;3.9&nbsp;nm at 353&nbsp;kt), a 90° turn gives 3.9&nbsp;nm of anticipation, a 120° turn gives 6.75&nbsp;nm, a 150° turn gives <strong>14.6&nbsp;nm</strong>, and δ&rarr;180° blows up to infinity. Capped at R (one turn radius). Up-to-90° turns are unchanged (the formula already produces ≤R there); sharper turns now use the tightest geometric anticipation and the aircraft accepts a mild overshoot rather than starting the turn an absurd distance in advance.</li>
+              <li><strong>outBear was computed against in-bubble wpts the heading function would skip.</strong> <code>_demoApMaybeAdvanceWpt</code> used <code>pts[idx+1]</code> directly for the outgoing bearing, but <code>_demoApAutoTargetHdg</code> skips over any wpt inside the 5&nbsp;nm dep/dest bubble. When the raw next wpt was an in-bubble STAR fix, the advance computed the turn against a wpt the aircraft would never actually fly toward &mdash; giving a wildly wrong δ and a wildly wrong antDist. Both functions now use a shared <code>_demoApSkipBubbleFwd</code> helper, so they can't drift apart and turn anticipation always reflects the wpt that's actually next on the aircraft's flight path.</li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.98.8</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Save Demo Flight Plan &mdash; suggested filename now reflects the current dep/dest.</strong> Pre-2.98.8 the save logic preferred any previously-loaded demo file over the active SimBrief plan, which meant after you'd loaded a demo file then later loaded a different SimBrief plan, both the suggested filename AND the saved content kept reflecting the stale demo file's airports. Priority flipped: the current SimBrief plan now wins, so saves track whichever airports are currently in play. The "re-save a loaded demo file under a new filename" workflow from v2.97.23 still works whenever no SimBrief plan is loaded &mdash; that's the only case where the loaded demo file is unambiguously the current intent.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.98.7</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway alignment now uses ourairports' published true headings.</strong> Pre-2.98.7 the picker derived each runway end's heading from the runway identifier &times; 10&deg; (mag, quantized to 10&deg;) and then pushed it through a centred-dipole magnetic-variation model. Two compounding error sources &mdash; in regions with significant declination, the combined error could push the "closest end" calculation past the midpoint between LE and HE and have it choose the wrong end, sending the demo aircraft off in roughly the opposite direction from where the route wants to go. v2.98.7 captures <code>le_heading_degT</code> / <code>he_heading_degT</code> (and the threshold lat/lon for a future "start at threshold" follow-up) from the ourairports runways CSV at load time, and the picker now compares against those true headings directly. Sub-degree precision, no quantization, no magnetic-variation guesswork. The picker reliably chooses the right runway end, and the 5 nm boundary transition from runway heading to route heading becomes a small course correction instead of a wide recovery turn.</li>
+          <li><strong>Internal simplification.</strong> Drops three mag&hArr;true round-trips that previously sat between the picker, the integrator seed, and the runway override path &mdash; everything now stays in TRUE from the picker through the integrator. The AP HDG display still converts true&rarr;mag at the user-facing boundary, so the cockpit readout convention is unchanged. Graceful fallback: if a CSV row lacks the heading column (uncommon, mostly helipads / waterways), we reconstruct from ident&nbsp;&times;&nbsp;10 mag and dipole-convert just like the old path.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.98.6</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft no longer wanders off the flight plan when wpts sit inside the 5-nm dep/dest bubble.</strong> The v2.98.0 runway-alignment feature added wpt-skipping in <code>_demoApAutoTargetHdg</code> (don&rsquo;t target a SID/STAR fix that&rsquo;s within 5 nm of the airport &mdash; that would pull the aircraft off the runway-extended centerline). But <code>_demoApMaybeAdvanceWpt</code> was still tracking the un-skipped <code>_demoNextWptIdx</code>, so when the aircraft was flying direct to the first wpt OUTSIDE the bubble, the advance check kept measuring distance to a wpt the aircraft wasn&rsquo;t even targeting. The aircraft would overshoot its real target, then the heading function would swing it back to chase the now-behind wpt &mdash; classic wander. Fix: <code>_demoApMaybeAdvanceWpt</code> now applies the same in-bubble skip to <code>_demoNextWptIdx</code> before its turn-anticipation check, keeping the advance pointer in lockstep with the heading target. Unrelated note: the magnetic-conversion (v2.98.1) and whole-degree rounding (v2.98.5) don&rsquo;t affect tracking &mdash; the integrator math works in true bearing internally and the round-trip is lossless; those are purely display/input concerns.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.98.5</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Autopilot HDG now reads in whole degrees.</strong> The managed-mode auto-target (continuous great-circle bearing converted to magnetic) and the selected-mode setpoint (drag / scroll / programmatic seed from live state) both round to the nearest integer degree before display. Matches the real-world MCP convention &mdash; no more <em>91.5&deg;</em> on the readout. Rounding happens at storage time for setpoints and inside the display formatter for the auto-target, so the readout is always integer regardless of source.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.98.4</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Right-click a tick bar to delete its stop.</strong> Same semantics as clicking the row's ✕ &mdash; the 2-stop floor is preserved (right-click is silently a no-op when only two stops remain, so you can't end up with an invalid palette). The native context menu is suppressed on tick bars only; right-click elsewhere in the editor still does whatever the browser does by default.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.98.3</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout palette tick bars are now directly draggable.</strong> Each tick on the preview gradient is now a grab-target in its own right &mdash; mousedown and drag horizontally to reposition that stop without going back to the swatch row. The tick handle is rendered in the stop&rsquo;s own color (white-outlined chevron above the gradient + white bar) so overlapping ticks remain distinguishable side-by-side rather than collapsing into one indistinct line. While dragging, the active tick lifts above any overlapping siblings via z-index and gains a gold outline + glow so you always know which one you&rsquo;re moving. Sorting and persistence run only on mouseup &mdash; the dragged stop is tracked by reference (not array index) so passing through another stop&rsquo;s % mid-drag doesn&rsquo;t lose the handle. After release, rows re-sort and the legend / map / matrix repaint as usual.</li>
+          <li><strong>Maximum stops raised from 5 to 10.</strong> The palette editor accepts up to 10 color stops now, persisted under the same <code>simfly_aa_payout_palette</code> localStorage key. <em>Add stop</em> remains the same; the cap just doubles.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.98.2</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pilot Payout palette &mdash; drag swatches onto the gradient bar to set their position.</strong> Each row's color swatch is now a draggable handle. Drop it anywhere on the preview gradient and the stop's % is set to that x-position (mapped 1:1 over the 0&ndash;100 % bar). After the drop, the rows in the editor auto-rearrange so they're always listed low → high by %. The preview gradient now uses an absolute-pct layout (each stop sits at its own % position on a 0&ndash;100 bar) and shows small white tick markers above the bar at each stop's location, so you can see where every stop currently lives. The native color picker still opens on click of a swatch &mdash; drag only fires when the mouse actually moves before release. The bar height was bumped slightly (26 px) for an easier drop target. Typed pct changes also re-render the row order so the list stays sorted.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.98.1</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Autopilot panel now shows the <em>target</em>, not live telemetry.</strong> HDG / ALT / SPD on the AP strip are the values the autopilot is currently chasing &mdash; in Managed mode the auto-target (next-wpt bearing / VNAV alt / plan-baseline gs), in Selected mode the user setpoint. Live telemetry continues to show in the floating data panel where it always did. Makes the AP strip a true setpoint display rather than a slow-tracking mirror of the live state.</li>
+          <li><strong>Alert modal &mdash; click-and-drag now scrubs alt and speed fields instead of dragging the card.</strong> All altitude inputs (Cruise Reached, Altitude crossing, conditional altitude conditions) and every conditional value field (IAS, GS, VS, distances, time thresholds) now use the AP-style drag gesture: mousedown and drag vertically to bump the value (up = increase). Linear 1 step per 4 px for the first 20 px, then 3&times; acceleration above. Steps are 100 ft on altitude fields (snapped to whole 100s, with FL/feet display preserved) and 1 unit on every other field. Mouseup without movement still focuses the input for typing. Card-drag reorder no longer hijacks the input &mdash; <code>onmousedown</code> and <code>ondragstart</code> are both stopped at the input boundary. Cursor switches to <code>ns-resize</code> over each wired input.</li>
+          <li><strong>Demo headings are now MAGNETIC.</strong> Every user-facing heading in Flight Demo Mode &mdash; the AP panel HDG display and input, the runway-alignment picker (TO/LDG), and the runway-aligned departure seed &mdash; is now in magnetic reference, matching published runway numbers and chart headings. The integrator math keeps working in true bearing (because great-circle <code>_demoBearing</code> returns true) and the conversion happens at every I/O boundary via new <code>_demoMagVar(lat,lon)</code> / <code>_demoMagToTrue()</code> / <code>_demoTrueToMag()</code> helpers. The magnetic-variation model is a centred-dipole approximation of Earth's field (geomagnetic north pole 80.7&deg;N / 72.7&deg;W) &mdash; accurate to roughly &plusmn;5&ndash;10&deg; at populated latitudes, which is enough for the demo's visual alignment with satellite scenery. Setpoints stored in mag frame; conversion to true happens once per tick when feeding the integrator.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v2.98.0</span>
+          <span class="release-date">May 26, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot &mdash; align with the actual runway on takeoff and landing.</strong> The AUTO heading now holds the dep-runway heading for the first 5&nbsp;nm after takeoff and the arr-runway heading for the last 5&nbsp;nm before landing, so the simulated track lines up with the satellite-scenery runway centerline instead of cornering directly toward the first/last waypoint. The runway end is picked by matching the airport's published runway headings against the actual bearing the route takes leaving / approaching the airport (the closest match wins). Waypoints that fall inside the 5-nm exclusion bubble are skipped so a SID or STAR fix near the airport doesn't pull the aircraft off the runway-extended centerline. Initial seed heading also comes from the dep runway, so the aircraft starts pointed correctly down the strip.</li>
+          <li><strong>Map breadcrumb strip &mdash; one-click clear-all.</strong> When any filter is applied, a <strong>&#8855;</strong> chip appears at the front of the breadcrumb strip. Clicking it removes every applied filter (payout threshold, scenery rating, category filter, owner / country / region / continent / developer includes, all exclusion sets, pinned ICAOs) in one shot and returns the strip to its two-default state: color mode + scenery indicator. Toast confirms.</li>
+          <li><strong>Alert altitude inputs &mdash; mouse-wheel scrub.</strong> Every altitude input in the Alerts modal (Cruise Reached, Altitude crossing, and altitude-type conditions inside Conditional alarms) now accepts mouse-wheel input. Each notch = &plusmn;100&nbsp;ft; hold Shift for &plusmn;1000&nbsp;ft. Snaps to the nearest whole 100&nbsp;ft and preserves FL/feet display form (a value originally typed as <em>FL350</em> stays in flight-level notation when scrolled).</li>
+          <li><strong>Alert groups &mdash; checkbox + delete X moved to the right, matching standalone alerts.</strong> The group master toggle (enable/disable every member at once) and a new group-delete <strong>✕</strong> now sit on the right side of the group header in the same cluster pattern standalone alert cards use. The delete X removes the entire group AND every alarm in it in one click; a toast confirms how many alarms were removed. The Ungroup button still does what it always did (members become standalone alarms again).</li>
+          <li><strong>Demo speed presets and slider range &mdash; bigger acceleration headroom.</strong> The three "main" speed buttons are now <strong>1&times;</strong> / <strong>3&times;</strong> / <strong>5&times;</strong> (was 1&times;/2&times;/3&times;); the fine-tune slider now goes up to <strong>25&times;</strong> (was 10&times;). The 0.25&times; and 0.5&times; slow-mo buttons are unchanged.</li>
+          <li><strong>Pilot Payout &mdash; custom palette editor.</strong> Right-click on the payout gradient bar in the legend to open a palette editor. Place 2&ndash;5 color stops along the gradient at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to map dots, the matrix, the legend bar, and the gradient preview, and the palette persists to <code>localStorage</code> (key <code>simfly_aa_payout_palette</code>) so it survives across sessions. A <em>Reset</em> button restores the original five-stop default. The 0% no-data grey is fixed (not a user stop).</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v2.97.26</span>
-          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -39137,6 +40246,25 @@ function rgSendToFlightPlanner() {
         <span class="sl-map-banner-hint">· Shift+click works anytime without this mode</span>
         <button class="sl-map-banner-done" onclick="_slExitMapMode()" title="Exit scenery edit mode (Shift+click still works without it)">✕ Done</button>
       </div>
+      <!-- v2.98.0 — Payout palette editor. Hidden by default; opened by
+           right-clicking the payout gradient bar. Positioned absolutely
+           inside the same map container as the legend so it floats over
+           the map. Click outside (via document-level dismiss listener) or
+           the X button to close. -->
+      <div id="rgPayoutPaletteEditor" style="display:none;position:absolute;z-index:1002;background:rgba(15,20,35,0.97);border:1px solid rgba(255,255,255,0.22);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;min-width:280px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:0.92rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PAYOUT PALETTE</span>
+          <button onclick="_rgPayoutPaletteClose()" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+        </div>
+        <div id="rgPayoutPalettePreview" style="width:100%;height:26px;border-radius:4px;border:1px solid rgba(255,255,255,0.18);margin-bottom:10px;"></div>
+        <div id="rgPayoutPaletteStops" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <button id="rgPayoutPaletteAdd" onclick="_rgPayoutPaletteAddStop()" title="Add another color stop (up to 5 total)" style="background:rgba(0,200,255,0.10);border:1px solid rgba(0,200,255,0.5);color:#7ee0ff;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">+ Add stop</button>
+          <button onclick="_rgPayoutPaletteReset()" title="Restore the default palette" style="background:rgba(255,140,40,0.10);border:1px solid rgba(255,140,40,0.45);color:#ffaa55;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">↺ Reset</button>
+        </div>
+        <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 stops with colors and % positions. Drag a swatch onto the gradient bar to set its position, OR drag a tick bar directly along the gradient. Rows auto-sort low → high after every edit. The 0% no-data color is fixed grey. Persisted in this browser.</div>
+      </div>
+
       <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span>
@@ -39145,10 +40273,10 @@ function rgSendToFlightPlanner() {
         <div style="display:flex;align-items:center;gap:10px;">
           <div id="rgPayoutZeroDot" onclick="_rgPayoutToggleZero()" title="Click to hide airports with 0% payout" style="width:21px;height:21px;border-radius:50%;background:#7a7a90;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;cursor:pointer;transition:box-shadow 0.12s,opacity 0.12s;"></div>
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">0%</span>
-          <div style="position:relative;width:120px;height:15px;flex-shrink:0;border-radius:4px;">
-            <div style="position:absolute;inset:0;border-radius:4px;background:linear-gradient(to right,hsl(0,100%,57%),hsl(20,100%,55%) 33%,hsl(45,100%,52%) 67%,hsl(60,100%,50%) 83%,hsl(120,100%,45%));"></div>
+          <div id="rgPayoutBarWrap" style="position:relative;width:120px;height:15px;flex-shrink:0;border-radius:4px;" oncontextmenu="event.preventDefault();event.stopPropagation();_rgPayoutPaletteOpen(event);return false;" title="Drag to set a minimum payout. Right-click the gradient to customize the palette.">
+            <div id="rgPayoutBarGrad" style="position:absolute;inset:0;border-radius:4px;background:linear-gradient(to right,hsl(0,100%,57%),hsl(20,100%,55%) 33%,hsl(45,100%,52%) 67%,hsl(60,100%,50%) 83%,hsl(120,100%,45%));"></div>
             <div id="rgPayoutFilteredZone" style="position:absolute;top:0;left:0;bottom:0;width:0;background:rgba(0,0,0,0.62);border-radius:4px 0 0 4px;pointer-events:none;"></div>
-            <input type="range" id="rgPayoutSlider" min="0" max="60" value="0" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0;padding:0;" oninput="_rgPayoutSliderInput(this.value)" title="Drag to set a minimum payout — airports below the threshold are hidden from the map and matrix">
+            <input type="range" id="rgPayoutSlider" min="0" max="60" value="0" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0;padding:0;" oninput="_rgPayoutSliderInput(this.value)" oncontextmenu="event.preventDefault();event.stopPropagation();_rgPayoutPaletteOpen(event);return false;" title="Drag to set a minimum payout — right-click to customize the palette.">
             <div id="rgPayoutThumb" style="position:absolute;top:-2px;bottom:-2px;left:0;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 6px rgba(0,0,0,0.9);pointer-events:none;display:none;"></div>
           </div>
           <span style="font-size:1.05rem;color:#aaa;flex-shrink:0;">60%+</span>
@@ -39225,11 +40353,11 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn demo-speed-preset" data-speed="0.25" onclick="_demoSetSpeed(0.25)" title="Quarter speed">0.25×</button>
         <button class="rg-btn demo-speed-preset" data-speed="0.5"  onclick="_demoSetSpeed(0.5)"  title="Half speed">0.5×</button>
         <button class="rg-btn demo-speed-preset active" data-speed="1" onclick="_demoSetSpeed(1)"  title="Normal speed">1×</button>
-        <button class="rg-btn demo-speed-preset" data-speed="2"    onclick="_demoSetSpeed(2)"    title="Double speed">2×</button>
         <button class="rg-btn demo-speed-preset" data-speed="3"    onclick="_demoSetSpeed(3)"    title="Triple speed">3×</button>
-        <input type="range" class="demo-speed-slider" id="demoSpeedSlider" min="0.1" max="10" step="0.1" value="1"
+        <button class="rg-btn demo-speed-preset" data-speed="5"    onclick="_demoSetSpeed(5)"    title="5× speed">5×</button>
+        <input type="range" class="demo-speed-slider" id="demoSpeedSlider" min="0.1" max="25" step="0.1" value="1"
                oninput="_demoSetSpeed(this.value)"
-               title="Fine-tune playback speed (0.1× – 10×)">
+               title="Fine-tune playback speed (0.1× – 25×)">
         <span class="demo-speed-label-num" id="demoSpeedLabel">1×</span>
         <span class="demo-sep"></span>
         <button class="rg-btn" id="demoStaleBtn" onclick="_demoSimStale()" title="Simulate a stale telemetry feed — packets stop emitting and the marker greys after 30 s, tripping any configured Loss-of-Telemetry alarms. Click again to resume.">📡✖ Stale</button>
