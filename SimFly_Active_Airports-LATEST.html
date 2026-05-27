@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.98.9';
+const APP_VERSION = '2.98.10';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11322,9 +11322,11 @@ function _demoApAutoTargetHdg() {
   // the dep/arr exclusion zones (so a SID/STAR fix within 5 nm doesn't
   // pull the aircraft off the runway-extended centerline before/after
   // alignment).
+  // v2.98.10 — Rhumb bearing so the aircraft tracks the displayed
+  // straight-line polyline; see _demoRhumbBearing comment.
   const idx = _demoApSkipBubbleFwd(_demoNextWptIdx);
   const wpt = pts[idx];
-  return _demoBearing(_demoAcLat, _demoAcLon, wpt.lat, wpt.lon);
+  return _demoRhumbBearing(_demoAcLat, _demoAcLon, wpt.lat, wpt.lon);
 }
 
 // v2.98.9 — Shared helper used by both the heading function and the
@@ -11372,8 +11374,12 @@ function _demoApMaybeAdvanceWpt() {
   // wpt was an in-bubble STAR fix the heading would have skipped.
   const nextIdx = _demoApSkipBubbleFwd(_demoNextWptIdx + 1);
   const next    = pts[nextIdx];
-  const inBear  = _demoBearing(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
-  const outBear = _demoBearing(cur.lat,    cur.lon,    next.lat, next.lon);
+  // v2.98.10 — Rhumb bearings to match _demoApAutoTargetHdg, so the
+  // turn-anticipation angle is the actual heading change the integrator
+  // will execute (not the great-circle initial-bearing change, which
+  // diverges from rhumb on legs with east/west bias).
+  const inBear  = _demoRhumbBearing(_demoAcLat, _demoAcLon, cur.lat, cur.lon);
+  const outBear = _demoRhumbBearing(cur.lat,    cur.lon,    next.lat, next.lon);
   let delta = outBear - inBear;
   while (delta >  180) delta -= 360;
   while (delta < -180) delta += 360;
@@ -11578,6 +11584,44 @@ function _demoBearing(lat1, lon1, lat2, lon2) {
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return (_demoToDeg(Math.atan2(y, x)) + 360) % 360;
 }
+// v2.98.10 — Rhumb-line bearing (constant compass heading) from
+// (lat1, lon1) to (lat2, lon2). This is the bearing the demo aircraft
+// must hold to track along the Mercator-projection straight line that
+// L.polyline draws between two waypoints. Used by the wpt-to-wpt
+// navigation in _demoApAutoTargetHdg / _demoApMaybeAdvanceWpt; runway
+// alignment continues to use true headings sourced from ourairports,
+// and the integrator's per-tick position walk still uses great-circle
+// math (the difference over a 1-second integration step is negligible).
+//
+// Why rhumb instead of great-circle: the SimBrief route polyline is
+// rendered by `L.polyline(coords)` which draws each segment as a
+// STRAIGHT line in screen space. Under Web Mercator that screen-space
+// straight line corresponds to a rhumb line on the earth, not the
+// great-circle shortest path. If the demo aircraft tracks the
+// great-circle initial bearing recomputed each tick (the old behaviour
+// via _demoBearing), it bows toward the pole on any leg with
+// east/west bias — visually drifting "above" the displayed polyline
+// (NORTH and EAST on a SW-bound leg in the northern hemisphere). The
+// magnitude is small per leg (1-3 nm at mid-latitudes for ~50 nm
+// legs) but accumulates across multiple legs and is very visible on a
+// zoomed-in scenery view. Following rhumb keeps the aircraft on the
+// polyline the user sees.
+function _demoRhumbBearing(lat1, lon1, lat2, lon2) {
+  const φ1 = _demoToRad(lat1), φ2 = _demoToRad(lat2);
+  let Δλ   = _demoToRad(lon2 - lon1);
+  // Normalize Δλ through the shorter way around the globe.
+  while (Δλ >  Math.PI) Δλ -= 2 * Math.PI;
+  while (Δλ < -Math.PI) Δλ += 2 * Math.PI;
+  // Mercator projection: φ_proj = ln(tan(φ/2 + π/4)). The difference of
+  // projected latitudes is the y-component of the rhumb-line vector in
+  // Mercator space; Δλ is the x-component. atan2 gives the constant
+  // compass heading along the rhumb.
+  const Δψ = Math.log(Math.tan(φ2 / 2 + Math.PI / 4) / Math.tan(φ1 / 2 + Math.PI / 4));
+  // Guard against the degenerate same-latitude case (Δψ = 0) — then the
+  // rhumb is exactly east or west and atan2(Δλ, 0) handles it.
+  return ((_demoToDeg(Math.atan2(Δλ, Δψ)) % 360) + 360) % 360;
+}
+
 // Walk distNm along a great circle from (lat, lon) at given bearing.
 // Used to compute turn entry/exit points and arc centers relative to a
 // waypoint, so the inserted curve sits exactly tangent to the inbound
@@ -30825,8 +30869,20 @@ function rgSendToFlightPlanner() {
 
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v2.98.9</span>
+          <span class="release-version">v2.98.10</span>
           <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft now tracks the displayed magenta route polyline accurately.</strong> Symptom: on legs with any east/west bias the aircraft track drifted off the polyline by 1&ndash;3 nm at mid-leg, ending up "well east of" (or west of) the next waypoint instead of crossing through it. Root cause: the SimBrief route polyline is rendered with <code>L.polyline</code>, which draws each segment as a straight line in screen space &mdash; that's a <strong>rhumb line</strong> (constant compass heading) on the earth under Web Mercator. But the demo aircraft was navigating by great-circle &mdash; <code>_demoBearing</code> returns the initial great-circle bearing, recomputed every tick. On any leg that isn't exactly N&ndash;S or E&ndash;W, the great-circle bows toward the nearer pole, so the aircraft's track sat NORTH+EAST of the displayed polyline on a SW-bound leg in the northern hemisphere (and similarly elsewhere). Magnitude: ~1&ndash;3 nm at mid-leg for a 50 nm leg at mid-latitudes &mdash; small per leg, but very visible on a zoomed-in scenery view and large enough that the turn-anticipation advance could fire while the aircraft was still off the line, leaving it permanently offset. Fix: new <code>_demoRhumbBearing</code> helper (Mercator-projected atan2). The wpt-to-wpt heading function and the turn-anticipation in <code>_demoApMaybeAdvanceWpt</code> now both use rhumb bearings, so the aircraft tracks the same straight-segment line the user sees. Runway alignment continues to use true headings from ourairports; the integrator's per-tick position walk is still great-circle (the difference over a 1 sec integration step is well below 0.001 nm).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.98.9</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
