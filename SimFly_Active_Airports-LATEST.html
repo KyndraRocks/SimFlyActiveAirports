@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '2.99.6';
+const APP_VERSION = '3.1.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10889,31 +10889,62 @@ const _FSUIPC_INTERVAL_FLIGHT = 1000;
 const _FSUIPC_INTERVAL_INITIAL = _FSUIPC_INTERVAL_GROUND; // safe default before phase is known
 const _FSUIPC_RECONNECT = 15000;      // v2.88.0 — silent retry every 15 s while button is active (was 10 s)
 const _FSUIPC_DEBUG     = true;       // set false to silence the console log on each push
+// v3.1.0 — Auto-resume across reloads. _FSUIPC_WANTED_LS persists the
+// user's connect-intent so a page refresh / crash recovery can silently
+// re-open the socket. The auto-resume retry loop is capped at 2 minutes
+// (_FSUIPC_AUTORESUME_CAP_MS) so a machine with no FSUIPC (e.g. AA opened
+// on a laptop instead of the sim PC) doesn't retry localhost forever.
+const _FSUIPC_WANTED_LS        = 'simfly_aa_fsuipc_wanted';
+const _FSUIPC_AUTORESUME_CAP_MS = 120000;
 let _fsuipcWs           = null;
 let _fsuipcReconnectTmr = 0;
 let _fsuipcUserActive   = false;      // true while user wants tracking; survives reconnects
 let _fsuipcCurInterval  = 0;          // ms — most-recently-requested push interval; 0 = not yet subscribed
 let _fsuipcRetryCount   = 0;          // how many silent retries since the last successful open
+let _fsuipcAutoResume      = false;   // v3.1.0 — true during a reload-initiated reconnect, until first success or the 2-min cap
+let _fsuipcAutoResumeStart = 0;       // v3.1.0 — Date.now() when the current auto-resume began
+
+// v3.1.0 — Persisted connect-intent helpers. Written '1' on _fsuipcStart,
+// removed on _fsuipcStop and when the auto-resume cap is hit. Read at
+// map-init to decide whether to auto-reconnect.
+function _fsuipcGetWanted() {
+  try { return localStorage.getItem(_FSUIPC_WANTED_LS) === '1'; } catch (_) { return false; }
+}
+function _fsuipcSetWanted(on) {
+  try {
+    if (on) localStorage.setItem(_FSUIPC_WANTED_LS, '1');
+    else    localStorage.removeItem(_FSUIPC_WANTED_LS);
+  } catch (_) {}
+}
 
 function _fsuipcButtonClick() {
   if (_fsuipcUserActive) { _fsuipcStop(); return; }
   _fsuipcStart();
 }
 
-function _fsuipcStart() {
-  if (!_rgMap) { _aaRtToast('Open the map first.', 'err'); return; }
-  if (typeof WebSocket === 'undefined') { _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
+// v3.1.0 — `auto` is true only for the reload-initiated auto-resume path
+// (see the map-init hook). Auto mode suppresses the connecting / retry /
+// failure toasts and caps background retries at 2 minutes; a manual click
+// (auto falsy) behaves exactly as before — toasts on, uncapped retries.
+function _fsuipcStart(auto) {
+  if (!_rgMap) { if (!auto) _aaRtToast('Open the map first.', 'err'); return; }
+  if (typeof WebSocket === 'undefined') { if (!auto) _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
   _liveAcStopOthers('fsuipc');
   _liveAcSource = 'fsuipc';
   _fsuipcUserActive = true;
   _fsuipcRetryCount = 0; // v2.88.0 — reset so the next failure still surfaces a toast
+  _fsuipcSetWanted(true); // v3.1.0 — persist intent so a reload auto-resumes
+  _fsuipcAutoResume      = !!auto;
+  _fsuipcAutoResumeStart = auto ? Date.now() : 0;
   _fsuipcUpdateButtonState(true);
-  _aaRtToast('🔌 Connecting to FSUIPC at ' + _FSUIPC_WS_URL + '…', 'ok');
+  if (!auto) _aaRtToast('🔌 Connecting to FSUIPC at ' + _FSUIPC_WS_URL + '…', 'ok');
   _fsuipcOpenWs();
 }
 
 function _fsuipcStop() {
   _fsuipcUserActive = false;
+  _fsuipcAutoResume = false;
+  _fsuipcSetWanted(false); // v3.1.0 — explicit user disconnect: do not auto-resume on the next reload
   if (_fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; }
   if (_fsuipcWs) {
     try { _fsuipcWs.close(); } catch (_) {}
@@ -10966,7 +10997,7 @@ function _fsuipcOpenWs() {
     // v2.88.0 — silent retry: only the very first attempt may toast (handled
     // in _fsuipcStart's connecting toast). Subsequent failures schedule a
     // background retry without surfacing a toast on each one.
-    if (_fsuipcRetryCount === 0) {
+    if (!_fsuipcAutoResume && _fsuipcRetryCount === 0) {
       _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'err');
     }
     _fsuipcScheduleRetry();
@@ -11018,7 +11049,13 @@ function _fsuipcOpenWs() {
       return;
     }
     _fsuipcRetryCount = 0;
-    _aaRtToast('🔌 Tracking via FSUIPC (cadence adapts to flight phase).', 'ok');
+    // v3.1.0 — first successful open lifts the auto-resume cap, so a later
+    // mid-flight socket drop retries with the normal uncapped behaviour.
+    const _wasAuto = _fsuipcAutoResume;
+    _fsuipcAutoResume = false;
+    _aaRtToast(_wasAuto
+      ? '🔌 Reconnected to FSUIPC after reload.'
+      : '🔌 Tracking via FSUIPC (cadence adapts to flight phase).', 'ok');
   };
   _fsuipcWs.onmessage = (ev) => {
     let msg;
@@ -11071,7 +11108,7 @@ function _fsuipcOpenWs() {
     // AND retryCount=0) still surfaces a toast so the user knows tracking
     // didn't start; every subsequent retry is silent so a long-running
     // disconnect doesn't spam the toast stack.
-    if (!_liveAcMarker && _fsuipcRetryCount === 0) {
+    if (!_fsuipcAutoResume && !_liveAcMarker && _fsuipcRetryCount === 0) {
       _aaRtToast('✕ FSUIPC WebSocket couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'warn');
     }
     _fsuipcScheduleRetry();
@@ -11083,6 +11120,22 @@ function _fsuipcOpenWs() {
 // constructor failures too.
 function _fsuipcScheduleRetry() {
   if (_fsuipcReconnectTmr) return;
+  // v3.1.0 — Auto-resume cap. When the reconnect was started automatically
+  // after a page reload (never a manual click) and we still haven't
+  // connected once after 2 minutes, give up silently and clear the
+  // persisted intent — this stops a machine with no FSUIPC from retrying
+  // localhost:2048 forever and from re-trying on every future reload. A
+  // manual connect, or any connection that has succeeded at least once
+  // this session (which clears _fsuipcAutoResume), is never capped.
+  if (_fsuipcAutoResume && (Date.now() - _fsuipcAutoResumeStart) >= _FSUIPC_AUTORESUME_CAP_MS) {
+    _fsuipcAutoResume = false;
+    _fsuipcUserActive = false;
+    _fsuipcSetWanted(false);
+    _fsuipcCurInterval = 0;
+    if (_liveAcSource === 'fsuipc') _liveAcSource = null;
+    _fsuipcUpdateButtonState(false);
+    return;
+  }
   _fsuipcReconnectTmr = setTimeout(() => {
     _fsuipcReconnectTmr = 0;
     if (!_fsuipcUserActive) return;
@@ -11119,24 +11172,36 @@ const _DEMO_VERSION = 1;
 // 1× speed — not aviation-accurate. Used for every aircraft in that
 // category (per-aircraft overrides intentionally out of scope).
 const _DEMO_PERF = {
-  1: { name:'Light GA',           climbFpm: 700,  cruiseKts: 110, cruiseFt: 4000,  descentFpm: 500  },
-  2: { name:'GA twin / light TP', climbFpm: 1000, cruiseKts: 160, cruiseFt: 9000,  descentFpm: 700  },
-  3: { name:'TP single / press.', climbFpm: 1500, cruiseKts: 220, cruiseFt: 18000, descentFpm: 1000 },
-  4: { name:'Large TP',           climbFpm: 1800, cruiseKts: 250, cruiseFt: 21000, descentFpm: 1200 },
-  5: { name:'Bizjet / regional',  climbFpm: 2500, cruiseKts: 380, cruiseFt: 35000, descentFpm: 1800 },
-  6: { name:'Narrowbody',         climbFpm: 2200, cruiseKts: 420, cruiseFt: 36000, descentFpm: 1500 },
-  7: { name:'Widebody',           climbFpm: 2000, cruiseKts: 470, cruiseFt: 38000, descentFpm: 1500 },
+  1: { name:'Light GA',           climbFpm: 700,  cruiseKts: 110, cruiseFt: 4000,  descentFpm: 500,  approachKts:  65 },
+  2: { name:'GA twin / light TP', climbFpm: 1000, cruiseKts: 160, cruiseFt: 9000,  descentFpm: 700,  approachKts:  80 },
+  3: { name:'TP single / press.', climbFpm: 1500, cruiseKts: 220, cruiseFt: 18000, descentFpm: 1000, approachKts: 100 },
+  4: { name:'Large TP',           climbFpm: 1800, cruiseKts: 250, cruiseFt: 21000, descentFpm: 1200, approachKts: 110 },
+  5: { name:'Bizjet / regional',  climbFpm: 2500, cruiseKts: 380, cruiseFt: 35000, descentFpm: 1800, approachKts: 130 },
+  6: { name:'Narrowbody',         climbFpm: 2200, cruiseKts: 420, cruiseFt: 36000, descentFpm: 1500, approachKts: 140 },
+  7: { name:'Widebody',           climbFpm: 2000, cruiseKts: 470, cruiseFt: 38000, descentFpm: 1500, approachKts: 150 },
 };
 
-const _DEMO_TAXI_SEC      = 30;      // 30 s on-the-ground at each end (gives AFK alerts time to bind)
-const _DEMO_APPROACH_SEC  = 45;      // last 45 s simulated final approach below cruise (low alt, slower)
-const _DEMO_TICK_MS       = 1000;    // 1 Hz packet cadence — matches FSUIPC flight-phase cadence
+const _DEMO_TAXI_SEC           = 30;   // 30 s on-the-ground at each end (gives AFK alerts time to bind)
+const _DEMO_APPROACH_SEC       = 45;   // last 45 s simulated final approach below cruise (low alt, slower)
+const _DEMO_TICK_MS            = 1000; // 1 Hz packet cadence — matches FSUIPC flight-phase cadence
+// Arrival threshold: remaining route miles (nm) below which the integrator is
+// considered to have reached the destination. Used by the arrival-guard in
+// _demoTick via _demoRemainingRouteNm() — track miles via planned waypoints,
+// not straight-line — to avoid stopping the aircraft short when the time-phase
+// machine fires before the integrator has physically navigated to the runway.
+const _DEMO_ARRIVAL_THRESH_NM  = 0.3;
 // v2.98.0 — Runway alignment radius. The auto-heading logic holds the
 // dep runway heading for this many nm after takeoff, and the arr runway
 // heading for this many nm before landing, so the simulated track lines
 // up with the satellite scenery's runway centerline instead of cornering
 // toward (or away from) the first/last waypoint.
 const _DEMO_RWY_ALIGN_NM  = 5;
+const _DEMO_FAF_NM                    = 8;    // nm outbound from landing threshold for the virtual FAF
+// Max degrees a runway approach heading may deviate from the inbound route bearing
+// before it is rejected by the runway selector. Prevents selecting a headwind runway
+// whose FAF is on the opposite side of the airport (e.g. choosing runway 10 when
+// approaching Portland from the NE, which would require a 154° course reversal).
+const _DEMO_FAF_MAX_COURSE_CHANGE_DEG = 40;
 
 let _demoActive          = false;    // engine running (Start clicked, not yet Exit)
 let _demoPaused          = false;
@@ -11167,7 +11232,15 @@ let _demoAcGs  = 0;
 let _demoNextWptIdx = 1;             // index into _demoPlan.points the aircraft is heading toward
 // v2.98.0 — Latch so the dep-runway-alignment hold only applies once per
 // flight. Reset on every _demoStart and _demoScrubTo back to t=0.
-let _demoDepRwyDone = false;
+let _demoDepRwyDone   = false;
+// v3.0.12 — Hard landing termination flag. Set true by _demoTick when
+// the aircraft crosses the threshold along the runway centerline at
+// below 500 ft AGL. Once true, _demoTick freezes the aircraft at the
+// destination and skips all integration so the demo cannot enter the
+// "circle past the airport forever" state. Cleared on _demoLaunch and
+// every _demoScrubTo (since scrubbing rewinds the flight).
+let _demoLanded       = false;
+let _demoPendingStart = false;  // true while async weather fetch is in-flight; blocks double-start
 
 // Per-axis autopilot mode and setpoints. Each axis is independent —
 // engaging HDG doesn't change ALT/SPD modes.
@@ -11312,19 +11385,44 @@ function _demoApAutoTargetHdg() {
     _demoDepRwyDone = true;
   }
 
-  // Arr runway lock — applies once the aircraft is within alignNm of dest
-  // AND is already on the final leg (i.e. has progressed through every
-  // intermediate waypoint). The final-leg precondition is critical: without
-  // it, the lock would fire on lateral distance alone — meaning any
-  // intermediate STAR fix that happens to be within 5 nm of the runway
-  // (BOOSR/RALEE for KPDX, NOTAM-defined arrivals everywhere) would cause
-  // the aircraft to grab the runway heading from the wrong angle and
-  // teardrop trying to capture it. v2.99.6 — added the index gate; also
-  // restored normal navigation through STAR fixes via the dest-side skip
-  // removal in _demoApSkipBubbleFwd.
+  // Arr centerline capture — Active once the aircraft is on the final leg
+  // (past the FAF — _demoNextWptIdx has reached the last point). Uses
+  // pure cross-track-error proportional control to capture and hold the
+  // extended runway centerline, just like a real ILS localizer.
+  //
+  // Pre-3.0.12 this was a flat "heading = destRwyHdg, only within 5 nm of
+  // dest" — it set the right heading but did not correct lateral offset.
+  // If the FAF turn was even slightly wide, the aircraft would parallel
+  // the centerline, fly past the airport, then 180° back toward dest
+  // when it exited the 5 nm bubble, then turn back to runway heading
+  // when it re-entered — circling forever and never crossing the
+  // threshold. The XTE-prop term steers the aircraft back to the
+  // centerline at a localizer-style intercept angle (saturated at 45°),
+  // so even a wide FAF turn captures the centerline cleanly before
+  // reaching the threshold.
   if (isFinite(_demoPlan.destRwyHdg) && _demoNextWptIdx >= pts.length - 1) {
-    const distFromDest = _demoDistNm(_demoAcLat, _demoAcLon, dest.lat, dest.lon);
-    if (distFromDest <= alignNm) return _demoPlan.destRwyHdg;
+    const rwyHdg       = _demoPlan.destRwyHdg;
+    const brgFromDest  = _demoBearing(dest.lat, dest.lon, _demoAcLat, _demoAcLon);
+    const distFromDest = _demoDistNm(dest.lat, dest.lon, _demoAcLat, _demoAcLon);
+    let ang = brgFromDest - ((rwyHdg + 180) % 360);
+    while (ang >  180) ang -= 360;
+    while (ang < -180) ang += 360;
+    // Signed cross-track distance (nm). Positive = LEFT of centerline
+    // looking down the approach direction; negative = right.
+    const xtErrNm     = distFromDest * Math.sin(ang * Math.PI / 180);
+    // Along-track distance (nm). Positive = before threshold, negative = past.
+    const alongTrackNm = distFromDest * Math.cos(ang * Math.PI / 180);
+    if (alongTrackNm < 0) {
+      // Aircraft has overshot the threshold. Aim directly back at it so
+      // the hard-landing detector in _demoTick can catch it on the next
+      // pass and freeze the aircraft on the ground.
+      return _demoRhumbBearing(_demoAcLat, _demoAcLon, dest.lat, dest.lon);
+    }
+    // XTE-prop: 25 °/nm intercept gain, saturated at ±45°. Positive xtErr
+    // (left of centerline) → turn right (increase heading); negative
+    // (right of centerline) → turn left.
+    const xtCorr = Math.max(-45, Math.min(45, xtErrNm * 25));
+    return ((rwyHdg + xtCorr) + 360) % 360;
   }
 
   // Otherwise fly toward the next waypoint, skipping any that fall inside
@@ -11458,6 +11556,23 @@ function _demoApFindNextWptFromPos() {
     if (d < bestD) { bestD = d; best = i; }
   }
   return best;
+}
+
+// Remaining route distance from the current integrator position: distance
+// to the current target waypoint + sum of all remaining planned legs to the
+// destination. More accurate than straight-line-to-dest for the arrival
+// guard when the aircraft is still threading through intermediate STAR
+// waypoints (a STAR that arcs around adds real nm the crow-flies measure
+// would miss). Degrades to straight-line distance once on the final leg.
+function _demoRemainingRouteNm() {
+  if (!_demoPlan || !_demoPlan.points) return 0;
+  const pts = _demoPlan.points;
+  const idx = Math.max(0, Math.min(_demoNextWptIdx, pts.length - 1));
+  let rem = _demoDistNm(_demoAcLat, _demoAcLon, pts[idx].lat, pts[idx].lon);
+  for (let i = idx; i < pts.length - 1; i++) {
+    rem += _demoDistNm(pts[i].lat, pts[i].lon, pts[i + 1].lat, pts[i + 1].lon);
+  }
+  return rem;
 }
 
 // AP setter actions called from the UI.
@@ -11782,7 +11897,114 @@ function _demoPickRwyHdg(icao, desiredHdgTrue) {
   return best;
 }
 
-function _demoBuildPlan(raw, acCode) {
+// ── Demo — weather-based runway selection + FAF intercept (v3.0.0) ──────────
+
+// Extract {dir, spd} from a decoded CheckWX METAR data object.
+// Returns null for calm/variable winds (speed < 3 kt or non-numeric direction).
+function _demoExtractWind(d) {
+  if (!d || !d.wind) return null;
+  const spd = d.wind.speed_kts, dir = d.wind.degrees;
+  if (!isFinite(spd) || !isFinite(dir) || spd < 3) return null;
+  return { dir, spd };
+}
+
+// Fetch destination METAR via the shared _wxCache / _wxFetchOne infrastructure.
+// Returns {dir, spd} or null; never throws.
+async function _demoFetchDestWind(icao) {
+  if (!icao || !WX_API_KEY) return null;
+  const up = icao.toUpperCase();
+  try {
+    const cached = _wxCache.get(up);
+    if (cached && (Date.now() - cached.fetchedAt) <= WX_TTL_MS) return _demoExtractWind(cached.data);
+    const ok = await _wxFetchOne(up);
+    if (!ok) return null;
+    const entry = _wxCache.get(up);
+    return entry ? _demoExtractWind(entry.data) : null;
+  } catch (_) { return null; }
+}
+
+// Select the best runway end at `icao` for landing.
+// Pass 1 — only considers runway ends whose approach heading is within
+// _DEMO_FAF_MAX_COURSE_CHANGE_DEG of the inbound route bearing; within
+// that eligible set, the highest headwind component wins (or best alignment
+// if no wind data). If every end fails the gate (unusual approach geometry),
+// Pass 2 relaxes to full 360° and picks by alignment only.
+// Returns {thLat,thLon,hdgT,ident} or null when runwayDB has no data.
+function _demoSelectRunwayByWind(icao, wind, fallbackHdg) {
+  if (!runwayDB || !icao) return null;
+  const rwys = runwayDB.get((icao || '').toUpperCase()) || [];
+  if (!rwys.length) return null;
+
+  const approachDiff = (hdgT) => {
+    if (!isFinite(fallbackHdg)) return 0;
+    let d = Math.abs(hdgT - fallbackHdg) % 360;
+    return d > 180 ? 360 - d : d;
+  };
+  // lengthFt is included in scoring so that longer (primary) runways beat
+  // shorter (secondary/decommissioned) ones even when course-change alignment
+  // is similar. No-wind: length × 1000 dominates, alignment is tiebreaker
+  // (a 5000 ft length advantage swamps any realistic degree difference).
+  // With wind: headwind × 200 + lengthFt — a 5000 ft length advantage needs
+  // ~25 kt headwind deficit to be overridden, consistent with real crosswind
+  // limits.
+  const endpointScore = (hdgT, lengthFt) => {
+    const len = lengthFt || 0;
+    if (wind) {
+      const toward = (wind.dir + 180) % 360;
+      return wind.spd * Math.cos((toward - hdgT) * Math.PI / 180) * 200 + len;
+    }
+    return len * 1000 - approachDiff(hdgT);
+  };
+
+  // Two passes: first within the course-change gate, then without.
+  for (const maxDiff of [_DEMO_FAF_MAX_COURSE_CHANGE_DEG, 360]) {
+    let best = null, bestScore = -Infinity;
+    for (const rwy of rwys) {
+      if (rwy.lengthFt > 0 && rwy.lengthFt < 5000) continue;  // skip helipads/historical/secondary strips
+      for (const [hdgT, thLat, thLon, ident] of [
+        [rwy.leHdgT, rwy.leLat, rwy.leLon, rwy.leIdent],
+        [rwy.heHdgT, rwy.heLat, rwy.heLon, rwy.heIdent],
+      ]) {
+        if (!isFinite(hdgT) || !isFinite(thLat) || !isFinite(thLon)) continue;
+        if (approachDiff(hdgT) > maxDiff) continue;
+        const score = endpointScore(hdgT, rwy.lengthFt);
+        if (score > bestScore) { bestScore = score; best = { thLat, thLon, hdgT, ident }; }
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
+// Return {lat,lon} of the virtual FAF: `fafNm` nm outbound from the landing
+// threshold on the extended runway centerline (back-course of hdgT).
+function _demoFAFPoint(windRwy, fafNm) {
+  if (!windRwy || !isFinite(windRwy.thLat) || !isFinite(windRwy.thLon)) return null;
+  const pos = _demoMoveAlong(windRwy.thLat, windRwy.thLon, (windRwy.hdgT + 180) % 360, fafNm);
+  return { lat: pos[0], lon: pos[1] };
+}
+
+// Compute the inbound approach bearing from the raw route (last waypoint
+// outside 5 nm to dest). Falls back to dep→dest bearing for very short routes.
+function _demoRawApproachHdg(raw) {
+  if (!raw || !raw.dest) return NaN;
+  const all = [raw.dep].concat(raw.waypoints || []).concat([raw.dest]).filter(Boolean);
+  if (all.length < 2) return NaN;
+  const dest = all[all.length - 1];
+  const dLat = parseFloat(dest.lat), dLon = parseFloat(dest.lon);
+  for (let i = all.length - 2; i >= 0; i--) {
+    const lat = parseFloat(all[i].lat), lon = parseFloat(all[i].lon);
+    if (isFinite(lat) && isFinite(lon) && _demoDistNm(lat, lon, dLat, dLon) > 5) {
+      return _demoBearing(lat, lon, dLat, dLon);
+    }
+  }
+  const dep = all[0];
+  const fLat = parseFloat(dep.lat), fLon = parseFloat(dep.lon);
+  if (isFinite(fLat) && isFinite(fLon)) return _demoBearing(fLat, fLon, dLat, dLon);
+  return NaN;
+}
+
+function _demoBuildPlan(raw, acCode, windRwy) {
   if (!raw || !raw.dep || !raw.dest) return null;
   const ac   = (acCode && aircraftDB.has(acCode)) ? aircraftDB.get(acCode) : null;
   const cat  = ac && ac.simfly_cat ? ac.simfly_cat : 6;
@@ -11805,6 +12027,58 @@ function _demoBuildPlan(raw, acCode) {
   });
   points.push({ name: raw.dest.icao || raw.dest.name || 'DEST', lat: parseFloat(raw.dest.lat), lon: parseFloat(raw.dest.lon) });
 
+  // Field elevations — computed here, before FAF insertion, because both the
+  // VNAV annotation and the synthetic FAF altitude need destElev.
+  // Prefer raw.dep.elev / raw.dest.elev when SimBrief (or a saved demo plan)
+  // provides them, else fall back to airportDB, else 0. v2.97.9.
+  const depAp  = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dep.icao  || '').toUpperCase()) : null;
+  const destAp = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dest.icao || '').toUpperCase()) : null;
+  const depElev  = isFinite(raw.dep.elev)  ? raw.dep.elev
+                : (depAp  && isFinite(depAp.elevation_ft))  ? depAp.elevation_ft  : 0;
+  const destElev = isFinite(raw.dest.elev) ? raw.dest.elev
+                : (destAp && isFinite(destAp.elevation_ft)) ? destAp.elevation_ft : 0;
+  // Anchor dep/dest altitudes before annotation so _demoAnnotateVnav has
+  // both anchors to interpolate between.
+  points[0].altFt = depElev;
+  points[points.length - 1].altFt = destElev;
+  // Annotate VNAV before FAF insertion. Running here ensures hasVnav=true
+  // is only triggered by raw SimBrief waypoint altitudes — not by the
+  // synthetic FAF altitude we are about to inject.
+  const vnavHasConstraints = _demoAnnotateVnav(points);
+
+  // v3.0.0 — Insert a virtual FAF on the extended runway centerline so the
+  // aircraft intercepts final approach before the threshold. Also redirect
+  // the dest point to the actual landing threshold so the final segment
+  // tracks the runway heading rather than the airport reference point.
+  // v3.0.9 — Before inserting, strip any interior waypoints that are already
+  // within FAF range of the threshold. SimBrief navlogs frequently include the
+  // destination airport as the last navlog fix (at the airport reference point),
+  // which would land between the FAF and the threshold after the splice and
+  // force the aircraft to detour past the airport before reaching the FAF.
+  // v3.0.10 — Tag with isFaf:true so _demoTick can detect the final approach
+  // legs and apply approach speed. On VNAV plans, also set altFt to the 3°
+  // glideslope intercept altitude so _demoVnavManagedAlt tracks the correct
+  // descent profile on the FAF→threshold leg instead of the time-based profile.
+  if (windRwy) {
+    const dest = points[points.length - 1];
+    dest.lat = windRwy.thLat;
+    dest.lon = windRwy.thLon;
+    for (let i = points.length - 2; i >= 1; i--) {
+      if (_demoDistNm(points[i].lat, points[i].lon, windRwy.thLat, windRwy.thLon) < _DEMO_FAF_NM) {
+        points.splice(i, 1);
+      }
+    }
+    const faf = _demoFAFPoint(windRwy, _DEMO_FAF_NM);
+    if (faf) {
+      const fafPt = { name: 'FAF', lat: faf.lat, lon: faf.lon, isFaf: true };
+      if (vnavHasConstraints) {
+        // 3° ILS glideslope: height AGL = dist_nm × tan(3°) × 6076 ft/nm
+        fafPt.altFt = destElev + Math.round(_DEMO_FAF_NM * Math.tan(3 * Math.PI / 180) * 6076);
+      }
+      points.splice(points.length - 1, 0, fafPt);
+    }
+  }
+
   // Build straight-line segments + cumulative distance. These straight-line
   // distances drive the phase timing (taxi/climb/cruise/descent/approach).
   // The actual position walk uses a separate `track` polyline below that
@@ -11820,54 +12094,55 @@ function _demoBuildPlan(raw, acCode) {
   }
   const totalNm = cum;
 
-  // Field elevations — prefer raw.dep.elev / raw.dest.elev when SimBrief
-  // (or a saved demo plan) provides them, else fall back to airportDB,
-  // else 0. v2.97.9.
-  const depAp  = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dep.icao  || '').toUpperCase()) : null;
-  const destAp = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((raw.dest.icao || '').toUpperCase()) : null;
-  const depElev  = isFinite(raw.dep.elev)  ? raw.dep.elev
-                : (depAp  && isFinite(depAp.elevation_ft))  ? depAp.elevation_ft  : 0;
-  const destElev = isFinite(raw.dest.elev) ? raw.dest.elev
-                : (destAp && isFinite(destAp.elevation_ft)) ? destAp.elevation_ft : 0;
-  // Anchor dep/dest altitudes on the points list.
-  points[0].altFt = depElev;
-  points[points.length - 1].altFt = destElev;
-  // Annotate VNAV — fills in altFt for intermediate waypoints that lack
-  // an explicit value by linear-interpolating cumulative-distance between
-  // the nearest specified neighbours. Sets _vnavHasConstraints true if
-  // any raw waypoint actually had altitude data so the engine knows to
-  // engage VNAV rather than fall back to the phase model.
-  const vnavHasConstraints = _demoAnnotateVnav(points);
+  // Compute phase timing.
+  // The FAF→threshold segment is budgeted as its own approach phase (at
+  // approachKts). Climb/cruise/descent cover only the pre-FAF route distance.
+  const fafNm       = windRwy ? _DEMO_FAF_NM : 0;
+  const approachKts = perf.approachKts || 140;
+  // v3.0.12 — Landing-roll / threshold-crossing speed. Pre-3.0.12 the
+  // landing roll was hardcoded to 80 kt — fine for Light GA but far too
+  // slow for jets (Citation X Vref is ~120 kt; widebody Vref ~140 kt).
+  // Derive it from category approach speed: Vref ≈ approachKts − 20,
+  // floored at 60 kt so the Light GA categories still get a sensible
+  // taxi-out-of-rollout speed.
+  const landingKts  = Math.max(60, approachKts - 20);
+  const preFafNm    = Math.max(1, totalNm - fafNm);
 
-  // Compute phase timing. Climb/descent distance derived from perf profile;
-  // if route is too short to fit the full vertical profile, we scale both
-  // legs proportionally so the aircraft still reaches a sensible step-cruise
-  // altitude rather than spiking through it.
   const climbDeltaFt   = Math.max(500, perf.cruiseFt - depElev);
   const descentDeltaFt = Math.max(500, perf.cruiseFt - destElev);
   let climbMin   = climbDeltaFt   / perf.climbFpm;        // minutes
   let descentMin = descentDeltaFt / perf.descentFpm;      // minutes
-  let climbNm   = (climbMin   / 60) * perf.cruiseKts;
-  let descentNm = (descentMin / 60) * perf.cruiseKts;
+  // v3.0.11 — Use average groundspeed per phase, not peak cruise speed.
+  // Climb ramps 55%→100% of cruise (integral average = 77.5%); descent ramps
+  // 100%→70% (average = 85%). Using full cruise speed overestimated distance
+  // by 15-22%, causing the time budget to exhaust 15-20 min before the
+  // aircraft physically arrived, leaving the slider frozen with 19+ min
+  // "remaining" while the aircraft was already on final.
+  let climbNm   = (climbMin   / 60) * perf.cruiseKts * 0.775;
+  let descentNm = (descentMin / 60) * perf.cruiseKts * 0.850;
   let cruiseFtUsed = perf.cruiseFt;
-  if (climbNm + descentNm > totalNm * 0.9 && totalNm > 0) {
-    // Route can't accommodate full cruise — scale climb+descent into 90 %
-    // of the route and pro-rate cruise altitude so the V-profile fits.
-    const scale = (totalNm * 0.9) / (climbNm + descentNm);
+  if (climbNm + descentNm > preFafNm * 0.9 && preFafNm > 0) {
+    // Route can't accommodate full cruise — scale climb+descent into 90%
+    // of the pre-FAF route and pro-rate cruise altitude so the V-profile fits.
+    const scale = (preFafNm * 0.9) / (climbNm + descentNm);
     climbNm   *= scale;
     descentNm *= scale;
     climbMin   *= scale;
     descentMin *= scale;
     cruiseFtUsed = depElev + (perf.cruiseFt - depElev) * scale;
   }
-  const cruiseNm  = Math.max(0, totalNm - climbNm - descentNm);
+  const cruiseNm  = Math.max(0, preFafNm - climbNm - descentNm);
   const cruiseMin = (cruiseNm / Math.max(1, perf.cruiseKts)) * 60;
 
   const climbSec   = climbMin   * 60;
   const cruiseSec  = cruiseMin  * 60;
   const descentSec = descentMin * 60;
   const taxiSec    = _DEMO_TAXI_SEC;
-  const apprSec    = _DEMO_APPROACH_SEC;
+  // Approach phase covers the FAF→threshold segment at category approach speed.
+  // Falls back to the legacy 45-s constant on routes without a FAF.
+  const apprSec = fafNm > 0
+    ? Math.round(fafNm / approachKts * 3600)
+    : _DEMO_APPROACH_SEC;
   const totalSec   = taxiSec + climbSec + cruiseSec + descentSec + apprSec + taxiSec;
 
   // Build the speed-aware track. Each interior waypoint is expanded into a
@@ -11887,7 +12162,8 @@ function _demoBuildPlan(raw, acCode) {
       const f = (d - climbNm - cruiseNm) / Math.max(0.001, descentNm);
       return perf.cruiseKts * (1 - 0.30 * f);
     }
-    return 100; // approach / taxi
+    if (d < totalNm) return approachKts; // FAF → threshold arc sizing
+    return landingKts; // landing roll (v3.0.12 — derived from approachKts)
   };
   const track = _demoBuildTrack(points, speedAtNm);
 
@@ -11922,7 +12198,9 @@ function _demoBuildPlan(raw, acCode) {
   const desiredDepHdg  = (depOutIdx  != null) ? _demoBearing(points[0].lat, points[0].lon, points[depOutIdx].lat, points[depOutIdx].lon) : NaN;
   const desiredDestHdg = (destInIdx != null) ? _demoBearing(points[destInIdx].lat, points[destInIdx].lon, points[points.length - 1].lat, points[points.length - 1].lon) : NaN;
   const depRwyHdg  = _demoPickRwyHdg((raw.dep  && raw.dep.icao)  || '', desiredDepHdg);
-  const destRwyHdg = _demoPickRwyHdg((raw.dest && raw.dest.icao) || '', desiredDestHdg);
+  const destRwyHdg = windRwy
+    ? windRwy.hdgT
+    : _demoPickRwyHdg((raw.dest && raw.dest.icao) || '', desiredDestHdg);
 
   return {
     raw,
@@ -11938,6 +12216,7 @@ function _demoBuildPlan(raw, acCode) {
     timing: {
       taxiSec, climbSec, cruiseSec, descentSec, apprSec, totalSec,
       climbNm, cruiseNm, descentNm,
+      fafNm, approachKts, landingKts,
       depElev, destElev,
       cruiseFt:  cruiseFtUsed,
       cruiseKts: perf.cruiseKts,
@@ -12139,15 +12418,33 @@ function _demoStateAt(simSec) {
   } else if (simSec < taxi + cl + cr + de) {
     phase = 'descent';
     const f = (simSec - taxi - cl - cr) / Math.max(1, de);
-    alt = T.cruiseFt - (T.cruiseFt - T.destElev - 1500) * f;
+    // v3.0.11 — Descent endpoint is the FAF glideslope altitude (when a FAF
+    // exists), not a fixed 1 500 ft AGL. Without this the time-machine profile
+    // crossed the glideslope altitude mid-descent and showed an unnatural kink.
+    const descentEndAlt = T.fafNm > 0
+      ? T.destElev + Math.round(T.fafNm * Math.tan(3 * Math.PI / 180) * 6076)
+      : T.destElev + 1500;
+    alt = T.cruiseFt - (T.cruiseFt - descentEndAlt) * f;
     gs  = T.cruiseKts * (1 - 0.30 * f); // bleed off speed during descent
     distAlongRoute = T.climbNm + T.cruiseNm + T.descentNm * f;
   } else if (simSec < taxi + cl + cr + de + ap) {
     phase = 'approach';
     const f = (simSec - taxi - cl - cr - de) / Math.max(1, ap);
-    alt = (T.destElev + 1500) - 1500 * f;
-    gs  = 140 - 60 * f; // 140 kt → 80 kt
-    distAlongRoute = p.totalNm;
+    if (T.fafNm > 0) {
+      // v3.0.11 — Approach phase now walks the FAF→threshold segment so the
+      // slider advances through the final 8 nm rather than freezing at 100%.
+      // Altitude tracks the 3° glideslope; speed tapers from approachKts to
+      // ~57% (landing speed) using the same ratio as the old 140→80 model.
+      const fafAltAgl = Math.round(T.fafNm * Math.tan(3 * Math.PI / 180) * 6076);
+      alt = T.destElev + fafAltAgl * (1 - f);
+      gs  = T.approachKts * (1 - 0.43 * f);
+      distAlongRoute = T.climbNm + T.cruiseNm + T.descentNm + T.fafNm * f;
+    } else {
+      // Legacy virtual approach (no FAF) — keep old behaviour.
+      alt = (T.destElev + 1500) - 1500 * f;
+      gs  = T.approachKts * (1 - 0.43 * f);
+      distAlongRoute = p.totalNm;
+    }
   } else {
     phase = 'ground';
     alt = T.destElev; gs = 0;
@@ -12243,11 +12540,138 @@ function _demoTick() {
   _demoSimSec = Math.max(0, _demoSimSec + dt);
   if (_demoSuspendEmit) { _demoUpdateBar(); return; }
 
+  // v3.0.12 — Landed short-circuit. Once the hard-landing detector
+  // below has fired, freeze the aircraft at the destination threshold
+  // and skip all integration / heading / speed logic. simSec continues
+  // to advance so the scrub bar still reaches 100%, but the aircraft
+  // no longer moves. This is the belt-and-suspenders guard that
+  // prevents the "circle past the airport forever" state if anything
+  // upstream lets the aircraft slip past the threshold.
+  if (_demoLanded && _demoPlan && _demoPlan.points && _demoPlan.points.length > 0) {
+    const _destPt = _demoPlan.points[_demoPlan.points.length - 1];
+    const _destE  = (_demoPlan.timing && _demoPlan.timing.destElev) || 0;
+    try {
+      _liveAcRenderMarker({
+        lat: _destPt.lat, lng: _destPt.lon, hdg: _demoAcHdg,
+        alt: _destE, gs: 0, ias: 0,
+        ident: 'DEMO',
+        af:    (_demoPlan.acCode) || null,
+        phase: null,
+        dep:   (_demoPlan.raw && _demoPlan.raw.dep  && _demoPlan.raw.dep.icao)  || null,
+        dest:  (_demoPlan.raw && _demoPlan.raw.dest && _demoPlan.raw.dest.icao) || null,
+        source: 'demo',
+        _demoPhase: 'ground',
+      });
+    } catch (e) { console.warn('[demo] landed render error', e); }
+    _demoUpdateBar();
+    return;
+  }
+
   // Plan baseline — provides AUTO references for alt/gs and the demo
   // phase label. Heading AUTO comes from the next-wpt bearing rather
   // than the plan track tangent so DIRECT TO works as a simple
   // index-shift without any extra plumbing.
   const planBase = _demoStateAt(_demoSimSec) || { alt: 0, gs: 0, _demoPhase: null };
+
+  // Arrival guard — the time-phase machine fires 'ground' (arrival) at a
+  // fixed elapsed-second deadline, but the integrator's GS profile averages
+  // ~78% of cruise speed during climb and ~85% during descent, so it
+  // consistently arrives behind the time budget on longer routes. Without
+  // this guard the speed target drops to 0 and the aircraft stops short
+  // (e.g. ~15 km before KPDX on a KSEA→KPDX STAR route). Hold approach
+  // phase active — GS target 80 kt so the integrator keeps decelerating
+  // toward landing speed but doesn't stop — until remaining route miles
+  // fall within _DEMO_ARRIVAL_THRESH_NM. Uses track miles (via remaining
+  // planned waypoints) rather than straight-line to destination so a STAR
+  // that arcs away from the airport counts correctly.
+  // Only applies to the arrival-side ground phase (simSec > taxiSec so
+  // the departure-ground taxi phase is not affected).
+  if (_demoPlan && planBase._demoPhase === 'ground'
+      && _demoSimSec > _demoPlan.timing.taxiSec) {
+    if (_demoRemainingRouteNm() > _DEMO_ARRIVAL_THRESH_NM) {
+      planBase._demoPhase = 'approach';
+      // v3.0.12 — Use derived landing speed instead of hardcoded 80 kt.
+      // 80 was a sensible Vref for a Cessna 172 but ~40 kt too slow for
+      // a Citation X (Vref ~120 kt) and ~60 kt too slow for a 777
+      // (Vref ~140 kt). The landingKts in plan.timing is approachKts−20
+      // floored at 60, so every category settles to a realistic
+      // threshold-crossing speed.
+      planBase.gs = (_demoPlan.timing && _demoPlan.timing.landingKts) || 80;
+    }
+  }
+
+  // v3.0.12 — Early approach-speed deceleration. The v3.0.10 _preFaf
+  // override below only fires when the FAF is the immediate next
+  // waypoint, so the aircraft has at most one leg of decel. On routes
+  // where that leg is short (typical STAR ending) the aircraft was
+  // still mostly at descent speed when it hit the FAF turn — and at jet
+  // descent speeds (250–330 kt) the integrator's 2 kt/sec decel needs
+  // 3–6 nm just to reach approachKts. Result: turn radius 2–3 nm, wide
+  // arc that overshot the extended centerline. Fix: cap target speed to
+  // approachKts whenever the FAF is still ahead and within 7 nm — this
+  // gives enough lead for the slowest decel profile (widebody 330 → 150
+  // takes ~6 nm).
+  if (_demoPlan && _demoPlan.points && _demoPlan.perf) {
+    let _earlyFafIdx = -1;
+    for (let i = _demoNextWptIdx; i < _demoPlan.points.length; i++) {
+      if (_demoPlan.points[i].isFaf) { _earlyFafIdx = i; break; }
+    }
+    if (_earlyFafIdx > 0) {
+      const _earlyFaf  = _demoPlan.points[_earlyFafIdx];
+      const _distToFaf = _demoDistNm(_demoAcLat, _demoAcLon, _earlyFaf.lat, _earlyFaf.lon);
+      if (_distToFaf < 7) {
+        const _earlyAppKts = (_demoPlan.perf.approachKts) || 140;
+        planBase.gs = Math.min(planBase.gs, _earlyAppKts);
+      }
+    }
+  }
+
+  // v3.0.10 — Approach speed and altitude override.
+  // Problem: the time-phase machine keeps the aircraft at descent speed
+  // (~70% of cruise, ~294 kt for narrowbody) until the approach phase fires,
+  // which only happens after all route distance has elapsed. With the FAF
+  // now a real route leg, the aircraft arrives at the FAF still at descent
+  // speed — turn radius 2-3 nm — and overshoots badly. Fix:
+  //  • When heading toward the FAF (pre-final leg): cap speed to approachKts
+  //    so the aircraft decelerates over the approach leg distance and arrives
+  //    at the FAF near approach speed for a tighter, more realistic turn.
+  //  • On the FAF→threshold leg (final): hold approach speed + track the 3°
+  //    glideslope altitude. For VNAV plans the glideslope altitude is already
+  //    provided by _demoVnavManagedAlt via the FAF's altFt; this override only
+  //    injects a position-based fallback for non-VNAV plans.
+  if (_demoPlan && _demoPlan.points) {
+    const _apPts    = _demoPlan.points;
+    const _apPerf   = _demoPlan.perf;
+    const _appKts   = (_apPerf && _apPerf.approachKts) || 140;
+    const _lastIdx  = _apPts.length - 1;
+    const _onFinal  = _demoNextWptIdx >= _lastIdx;
+    const _preFaf   = !_onFinal && _lastIdx >= 2
+                      && _apPts[_lastIdx - 1] && _apPts[_lastIdx - 1].isFaf
+                      && _demoNextWptIdx === _lastIdx - 1;
+    if (_preFaf) {
+      // Assign directly — aircraft should be decelerating toward approachKts
+      // here regardless of what the time-phase machine says (including the
+      // arrival guard's 80 kt floor, which is too slow for an in-bound leg).
+      planBase.gs = _appKts;
+    }
+    if (_onFinal) {
+      // Cap from above only — allows the time-phase natural deceleration taper
+      // (140→80 kt) or the arrival guard's 80 kt floor to run below approachKts,
+      // but prevents the aircraft flying final at descent speed.
+      planBase.gs = Math.min(planBase.gs, _appKts);
+    }
+    if (_onFinal && !_demoPlan.hasVnav) {
+      // Non-VNAV plan: substitute a position-based 3° glideslope target so
+      // the aircraft descends correctly rather than snapping to the time-
+      // phase altitude (which may be near 0 ft while the aircraft is still
+      // 5+ nm from the runway).
+      const _dst   = _apPts[_lastIdx];
+      const _dElev = isFinite(_dst.altFt) ? _dst.altFt : 0;
+      const _dNm   = _demoDistNm(_demoAcLat, _demoAcLon, _dst.lat, _dst.lon);
+      planBase.alt = Math.max(_dElev, _dElev + _dNm * Math.tan(3 * Math.PI / 180) * 6076);
+    }
+  }
+
   // v2.98.1 — Manual HDG setpoint is stored MAGNETIC; convert to TRUE
   // here so the integrator (which works in true) gets a consistent
   // target. The managed auto-target is already true.
@@ -12257,6 +12681,43 @@ function _demoTick() {
 
   _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs);
   _demoApMaybeAdvanceWpt();
+
+  // v3.0.12 — Hard-landing termination. Once the aircraft is on the
+  // final leg and has crossed the runway threshold at low altitude,
+  // freeze the aircraft on the ground and short-circuit all further
+  // ticks via _demoLanded. This is the safety net that guarantees the
+  // demo will never enter the "circle past the airport forever" state
+  // even if upstream centerline capture is imperfect.
+  //
+  // Trigger criteria (all must hold):
+  //   - on the final leg (next-wpt pointer at or past the destination)
+  //   - aircraft below 500 ft AGL (we're really on final, not still
+  //     descending high above the threshold for some reason)
+  //   - signed along-track distance past the threshold > 0.05 nm (a
+  //     small positive value to keep us from latching mid-flare)
+  if (!_demoLanded && _demoPlan && _demoPlan.points
+      && _demoNextWptIdx >= _demoPlan.points.length - 1
+      && isFinite(_demoPlan.destRwyHdg)) {
+    const _dest = _demoPlan.points[_demoPlan.points.length - 1];
+    const _rwy  = _demoPlan.destRwyHdg;
+    const _brg  = _demoBearing(_dest.lat, _dest.lon, _demoAcLat, _demoAcLon);
+    const _distD = _demoDistNm(_dest.lat, _dest.lon, _demoAcLat, _demoAcLon);
+    let _a = _brg - ((_rwy + 180) % 360);
+    while (_a >  180) _a -= 360;
+    while (_a < -180) _a += 360;
+    // alongTrack > 0 means aircraft is on the approach side of the
+    // threshold; < 0 means past it.
+    const _along = _distD * Math.cos(_a * Math.PI / 180);
+    const _destE = (_demoPlan.timing && _demoPlan.timing.destElev) || 0;
+    const _agl   = _demoAcAlt - _destE;
+    if (_along < -0.05 && _agl < 500) {
+      _demoLanded = true;
+      _demoAcLat = _dest.lat;
+      _demoAcLon = _dest.lon;
+      _demoAcAlt = _destE;
+      _demoAcGs  = 0;
+    }
+  }
 
   try {
     _liveAcRenderMarker({
@@ -12270,32 +12731,14 @@ function _demoTick() {
       dep:    (_demoPlan && _demoPlan.raw && _demoPlan.raw.dep  && _demoPlan.raw.dep.icao)  || null,
       dest:   (_demoPlan && _demoPlan.raw && _demoPlan.raw.dest && _demoPlan.raw.dest.icao) || null,
       source: 'demo',
-      _demoPhase: planBase._demoPhase,
+      _demoPhase: _demoLanded ? 'ground' : planBase._demoPhase,
     });
   } catch (e) { console.warn('[demo] render error', e); }
   _demoUpdateBar();
 }
 
 // ── Engine control ──
-function _demoStart() {
-  if (_demoActive) return;
-  // Build plan from raw + selected aircraft. Prefer the loaded demo plan
-  // (file-loaded), then fall back to _sbOfpLastData converted to demo
-  // shape, then refuse if nothing is available.
-  let raw = _demoLoadedPlanRaw;
-  if (!raw && typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
-    raw = _demoRawFromSbOfp(_sbOfpLastData);
-  }
-  if (!raw) {
-    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load a flight plan first.', 'err');
-    return;
-  }
-  const acCode = _demoGetSelectedAircraftCode();
-  const plan = _demoBuildPlan(raw, acCode);
-  if (!plan || !plan.totalNm || plan.totalNm < 1) {
-    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: route is too short — need at least 1 nm.', 'err');
-    return;
-  }
+function _demoLaunch(plan, raw) {
   _demoPlan          = plan;
   _demoSimSec        = 0;
   _demoSpeed         = 1.0;
@@ -12305,11 +12748,6 @@ function _demoStart() {
   _demoLastReal      = performance.now();
 
   // v2.97.7 — Block map interaction on the floating bar + AP panel.
-  // Without this, mousedown on the speed/scrub sliders (or any other
-  // dragging control) propagates down to Leaflet, which interprets the
-  // drag as a map pan. Leaflet's helpers stop the relevant pointer +
-  // wheel events at the container so every nested control behaves
-  // correctly. One-shot guarded — re-applying is a no-op.
   if (typeof L !== 'undefined' && L.DomEvent && !window._demoPanGuardsApplied) {
     ['demoFloating', 'demoApPanel'].forEach(id => {
       const el = document.getElementById(id);
@@ -12321,17 +12759,11 @@ function _demoStart() {
     });
     window._demoPanGuardsApplied = true;
   }
-  // Seed integrating state from the dep airport (v2.97.5+). Heading is
-  // bearing toward the first interior waypoint so the aircraft naturally
-  // accelerates and climbs into the route.
+  // Seed integrating state from the dep airport (v2.97.5+).
   if (plan.points && plan.points.length > 1) {
     _demoAcLat = plan.points[0].lat;
     _demoAcLon = plan.points[0].lon;
-    // v2.98.0 — Seed heading from the dep runway if one was matched,
-    // otherwise fall back to bearing-toward-next-waypoint (legacy path).
-    // v2.98.7 — plan.depRwyHdg is now TRUE (sourced from
-    // ourairports le_heading_degT / he_heading_degT), so no conversion
-    // is needed at the integrator boundary.
+    // v2.98.0/v2.98.7 — depRwyHdg is TRUE heading; no conversion needed.
     _demoAcHdg = isFinite(plan.depRwyHdg)
       ? plan.depRwyHdg
       : _demoBearing(plan.points[0].lat, plan.points[0].lon, plan.points[1].lat, plan.points[1].lon);
@@ -12339,37 +12771,93 @@ function _demoStart() {
     _demoAcGs  = 0;
     _demoNextWptIdx = 1;
     _demoDepRwyDone = false;
+    _demoLanded     = false;
   }
   _demoApMode.hdg = 'plan'; _demoApMode.alt = 'plan'; _demoApMode.gs = 'plan';
   _demoApSetpoints.hdg = 0; _demoApSetpoints.alt = 0; _demoApSetpoints.gs = 0;
   if (typeof _liveAcStopOthers === 'function') _liveAcStopOthers('demo');
   _liveAcSource = 'demo';
 
-  // Make sure the route is plotted (use the synthesized SimBrief shape so
-  // _sbOfpRender + waypoint alarms work identically to a real plan).
+  // Plot the route. Build the SimBrief shape from plan.points (not raw) so
+  // the FAF waypoint and the redirected runway threshold show up in the
+  // rendered route line. The interior points become navlog fixes; the last
+  // point's lat/lon is used as the destination position. ICAO codes and
+  // alarm metadata still come from the original raw object.
   try {
-    const sb = _demoToSbOfpShape(raw);
+    const planPts  = plan.points;
+    const interior = planPts.slice(1, -1).map(pt => ({
+      name:  pt.name || '',
+      lat:   pt.lat,
+      lon:   pt.lon,
+      ...(isFinite(pt.altFt) ? { altFt: pt.altFt } : {}),
+    }));
+    const lastPt = planPts[planPts.length - 1];
+    const rawForRender = Object.assign({}, raw, {
+      waypoints: interior,
+      dest: Object.assign({}, raw.dest, { lat: lastPt.lat, lon: lastPt.lon }),
+    });
+    const sb = _demoToSbOfpShape(rawForRender);
     _sbOfpLastData = sb;
     if (typeof _sbOfpRender === 'function') _sbOfpRender(sb, { silent: true });
   } catch (e) { console.warn('[demo] plan render error', e); }
 
-  // Show the floating control bar; close the config modal.
   _demoCloseModal();
   _demoShowFloatingBar(true);
   _demoApplyLockdown(true);
 
-  // Periodic UI refresh (bar slider + label) at 4 Hz so scrub feels live.
   if (_demoBarUpdateTmr) clearInterval(_demoBarUpdateTmr);
   _demoBarUpdateTmr = setInterval(_demoUpdateBar, 250);
 
-  // Engine tick — match FSUIPC's flight cadence (1 Hz) so AFK alerts see
-  // the same packet rate they see in production.
   if (_demoTickTmr) clearInterval(_demoTickTmr);
   _demoTickTmr = setInterval(_demoTick, _DEMO_TICK_MS);
-  // Immediate first packet so the marker appears without waiting a full second.
   _demoTick();
 
   if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Flight Demo Mode started — ' + plan.acLabel, 'ok');
+}
+
+// v3.0.0 — async so we can await a CheckWX METAR fetch (4 s timeout) before
+// building the plan; weather-based runway selection inserts a virtual FAF on
+// the extended centerline for a realistic ILS-style final approach.
+async function _demoStart() {
+  if (_demoActive || _demoPendingStart) return;
+  _demoPendingStart = true;
+
+  let raw = _demoLoadedPlanRaw;
+  if (!raw && typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) {
+    raw = _demoRawFromSbOfp(_sbOfpLastData);
+  }
+  if (!raw) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: load a flight plan first.', 'err');
+    _demoPendingStart = false;
+    return;
+  }
+
+  const acCode   = _demoGetSelectedAircraftCode();
+  const destIcao = (raw.dest && raw.dest.icao) ? raw.dest.icao.toUpperCase() : null;
+  const apprHdg  = _demoRawApproachHdg(raw);
+
+  // Fetch destination METAR with a 4-second timeout; proceed without on failure.
+  let wind = null;
+  if (destIcao) {
+    try {
+      wind = await Promise.race([
+        _demoFetchDestWind(destIcao),
+        new Promise(res => setTimeout(() => res(null), 4000)),
+      ]);
+    } catch (_) {}
+  }
+
+  const windRwy = _demoSelectRunwayByWind(destIcao, wind, apprHdg);
+  const plan    = _demoBuildPlan(raw, acCode, windRwy);
+
+  if (!plan || !plan.totalNm || plan.totalNm < 1) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Demo: route is too short — need at least 1 nm.', 'err');
+    _demoPendingStart = false;
+    return;
+  }
+
+  _demoPendingStart = false;
+  _demoLaunch(plan, raw);
 }
 
 function _demoStop() {
@@ -12380,6 +12868,7 @@ function _demoStop() {
   _demoSuspendEmit  = false;
   _demoSimSec       = 0;
   _demoPlan         = null;
+  _demoPendingStart = false;
   // v2.97.11 — clear .active state on the telemetry-loss buttons so the
   // next demo doesn't open with stale visual engagement from the previous run.
   ['demoStaleBtn', 'demoDisconnectBtn'].forEach(id => {
@@ -12412,6 +12901,13 @@ function _demoScrubTo(simSec) {
   simSec = Math.max(0, Math.min(_demoPlan.timing.totalSec, parseFloat(simSec) || 0));
   _demoSimSec = simSec;
   _demoLastReal = performance.now();
+  // v3.0.12 — Always clear the landed latch on a scrub. A backward scrub
+  // is obvious (we're rewinding the flight). A forward scrub also needs
+  // to clear it: if the user jumps ahead to a point near landing, we
+  // want the live integrator + landing detector to re-evaluate from the
+  // snapped baseline state rather than staying stuck in the "frozen at
+  // dest" branch from a prior touchdown.
+  _demoLanded = false;
   // Scrub returns the engine to plan-baseline at the new simSec. Manual
   // AP setpoints are cleared — scrubbing is fundamentally a "show me the
   // plan at this point" action, so any user-imposed heading/alt/speed
@@ -14270,9 +14766,8 @@ const _afkPhase = (() => {
   }
 
   function currentVSfpm() {
+    // Smoothed VS over last 30 s — used internally for stable phase detection.
     if (samples.length < 2) return 0;
-    // Use newest sample and the oldest sample within the last 30 seconds (or
-    // the oldest available if fewer than 30 s of data).
     const now = samples[samples.length - 1];
     const cutoff = now.t - 30000;
     let oldest = samples[0];
@@ -14282,6 +14777,16 @@ const _afkPhase = (() => {
     const dtSec = (now.t - oldest.t) / 1000;
     if (dtSec < 2) return 0;
     return ((now.alt - oldest.alt) / dtSec) * 60; // ft/min
+  }
+
+  function instantVSfpm() {
+    // Instantaneous VS from the last two samples — used for telemetry display.
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    const prev   = samples[samples.length - 2];
+    const dtSec  = (newest.t - prev.t) / 1000;
+    if (dtSec < 0.1 || dtSec > 10) return 0;
+    return ((newest.alt - prev.alt) / dtSec) * 60; // ft/min
   }
 
   function _computePhase(altFt, gsKts) {
@@ -14397,7 +14902,7 @@ const _afkPhase = (() => {
   }
 
   function get() { return lastEmittedPhase; }
-  function vsFpm() { return currentVSfpm(); }
+  function vsFpm() { return instantVSfpm(); }
   function lastChange() { return lastTransition; }
   function lastChangeTime() { return lastChangeAt; }
 
@@ -14652,7 +15157,6 @@ const _AFK_LS_DUR_SEC    = 'simfly_aa_afk_alarm_duration_sec'; // user's preferr
 const _AFK_LS_CARDS_COLL = 'simfly_aa_afk_collapsed_cards';    // Array<number> of card ids
 const _AFK_LS_CRUISE_ALT = 'simfly_aa_afk_cruise_alt_text';    // last-entered cruise altitude (v2.76.0+)
 const _AFK_LS_GROUPS     = 'simfly_aa_afk_groups';             // alarm groups (v2.83.0+)
-const _AFK_LS_MULTITAB   = 'simfly_aa_afk_multitab_toast';     // multi-tab sync toast on/off (v2.98.11+)
 let _afkAlarmIdSeq       = 1;
 let _afkGroupIdSeq       = 1;
 
@@ -14873,17 +15377,6 @@ function _afkSetUserDefaultCruiseAltText(v) {
     if (v) localStorage.setItem(_AFK_LS_CRUISE_ALT, v);
     else   localStorage.removeItem(_AFK_LS_CRUISE_ALT);
   } catch (_) {}
-}
-
-// v2.98.11 — Multi-tab sync toast preference. Default ON (matches the
-// pre-v2.98.11 behaviour). Stored as '0' or '1' under the localStorage
-// key so absence-of-value reads as enabled.
-function _afkGetShowMultiTabToast() {
-  try { return localStorage.getItem(_AFK_LS_MULTITAB) !== '0'; }
-  catch (_) { return true; }
-}
-function _afkSetShowMultiTabToast(on) {
-  try { localStorage.setItem(_AFK_LS_MULTITAB, on ? '1' : '0'); } catch (_) {}
 }
 
 // Per-alarm auto-dismiss timers when mode='seconds'. Stored by alarm id.
@@ -15338,9 +15831,10 @@ function _afkCrossTabReload(keys) {
       try { _afkUpdateBtnState(); } catch (_) {}
       try { _afkUpdateBadge(); } catch (_) {}
       try { _afkSyncTripOverlay(); } catch (_) {}
-      // v2.98.11 — Toast is opt-out via the Alerts modal's
-      // "Show multi-tab sync toast" checkbox (default ON).
-      try { if (_afkGetShowMultiTabToast()) _aaRtToast('🔁 Synced changes from another AA tab.', 'ok'); } catch (_) {}
+      // v3.0.13 — Toast removed entirely. The reload still runs (the
+      // whole point of the feature); the visual notification is gone
+      // because the user-facing checkbox that controlled it was removed
+      // as a noisy single-use preference. Sync now happens silently.
     } catch (_) {}
   }, 250);
 }
@@ -17141,10 +17635,6 @@ function _afkOpenConfig() {
   if (!m) return;
   m.classList.add('open');
   _afkRenderAlarmList();
-  // v2.98.11 — Reflect the persisted multi-tab toast preference each
-  // time the modal opens, in case another tab toggled it.
-  const cb = document.getElementById('afkMultiTabToastCb');
-  if (cb) cb.checked = _afkGetShowMultiTabToast();
 }
 function _afkCloseConfig() {
   const m = document.getElementById('afkConfigModal');
@@ -24749,6 +25239,14 @@ async function _rgInitMap() {
       _sbOfpRender(cached, { silent: true, noFit: true });
     }
   } catch (_) {}
+  // v3.1.0 — Auto-resume FSUIPC live tracking if the user was connected
+  // when the tab was last open (reload / crash recovery). Silent: the
+  // connecting / retry / failure toasts are suppressed and background
+  // retries are capped at 2 minutes (see _fsuipcStart / _fsuipcScheduleRetry).
+  // The persisted Follow A/C flag and breadcrumb trail are already restored
+  // above, so when the first fix arrives the marker reappears and follow
+  // resumes exactly as it was. A single success toast confirms reconnect.
+  try { if (_fsuipcGetWanted()) _fsuipcStart(true); } catch (_) {}
   // Restore alarm visuals — geofence rings + labels, and waypoint highlight
   // rings. Alarms persist via _afkAlarms' _load() at DOMContentLoaded time,
   // but the map didn't exist then, so _afkRenderGeofenceVisuals() returned
@@ -31084,7 +31582,9 @@ function rgSendToFlightPlanner() {
               <li>In AA's map header click <strong>🔌 FSUIPC Live</strong>. The button switches to <strong>⏹ FSUIPC Tracking…</strong> and within ~1 second your green plane appears.</li>
             </ol>
             <br/>
-            Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 10 seconds while the button stays active — so MSFS restarts don't require re-clicking.<br/><br/>
+            Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 15 seconds while the button stays active — so MSFS restarts don't require re-clicking.<br/><br/>
+
+            <strong>Auto-resume across reloads</strong> (v3.1.0) &mdash; if FSUIPC tracking was active when you refresh the tab (or the browser crashes and reopens), AA silently reconnects on the next page load and restores the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were &mdash; no need to re-click <em>FSUIPC Live</em>. The auto-reconnect is quiet (no connecting / retry toasts; a single confirmation toast on success) and gives up after <strong>2 minutes</strong> if the sim can't be reached &mdash; so opening AA on a machine without FSUIPC (a laptop away from the sim PC) won't retry localhost forever. Explicitly clicking <em>⏹ FSUIPC Tracking…</em> to stop clears the auto-resume intent, so a deliberate disconnect stays disconnected after a reload.<br/><br/>
 
             <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.<br/><br/>
 
@@ -31117,7 +31617,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it.<br/><br/>
 
-            <strong>Runway alignment (v2.98.0)</strong> &mdash; the demo holds the dep-runway heading for the first 5&nbsp;nm after takeoff and the arr-runway heading for the last 5&nbsp;nm before landing, so the simulated track lines up with the satellite-scenery runway centerline. The runway end is picked from the airport's published runways by matching against the actual bearing the route takes leaving / approaching the airport. Waypoints that fall inside the 5-nm exclusion bubble are skipped so a SID or STAR fix near the airport doesn't pull the aircraft off the runway-extended centerline before alignment ends. All heading work (v2.98.1+) is in <strong>magnetic</strong> reference &mdash; AP display, AP input, runway pick &mdash; matching published runway numbers and chart headings; the integrator math still runs in true and converts at every I/O boundary via a centred-dipole magnetic-variation model.<br/><br/>
+            <strong>Runway selection &amp; final approach (v3.0.0)</strong> &mdash; before starting, the demo fetches the current METAR for the destination airport from CheckWX and selects the runway with the highest headwind component. If weather data isn&rsquo;t available within 4 seconds the runway is picked by best alignment with the route&rsquo;s inbound bearing. A virtual Final Approach Fix (FAF) is inserted into the route plan 8&nbsp;nm outbound from the selected landing threshold on the extended runway centerline, so the aircraft intercepts the final approach course and flies the last segment precisely aligned with the runway. The departure runway heading is held for the first 5&nbsp;nm after takeoff so the track lines up with the scenery centerline on climb-out too.<br/><br/>
 
             <strong>AP target vs live (v2.98.1)</strong> &mdash; the AP panel HDG / ALT / SPD readouts show the value the autopilot is <em>chasing</em>, not the current live integrator state. Managed = the auto-derived target (next-wpt bearing / VNAV alt / plan-baseline gs); Selected = the user setpoint. Live telemetry remains visible in the floating data panel.<br/><br/>
 
@@ -31476,10 +31976,226 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.1.0</span>
+          <span class="release-date">May 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>FSUIPC live tracking now auto-resumes after a page reload.</strong> If you were connected to FSUIPC when the tab refreshed (intentionally, or via a browser crash / restore), AA now silently re-opens the WebSocket on the next page load and brings back the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were &mdash; no more re-clicking <em>FSUIPC Live</em> and re-enabling follow every time the page reloads mid-flight. Connect-intent is persisted to <code>localStorage</code> under <code>simfly_aa_fsuipc_wanted</code>, written when you start tracking and cleared the moment you click <em>⏹ FSUIPC Tracking…</em> to stop &mdash; so a deliberate disconnect stays disconnected across reloads.</li>
+          <li><strong>Auto-resume is silent and self-limiting.</strong> The reconnect on reload suppresses the &ldquo;connecting&hellip;&rdquo;, retry, and failure toasts (a single confirmation toast fires only on a successful reconnect), and it gives up after <strong>2 minutes</strong> if the sim can&rsquo;t be reached. That cap means opening AA on a machine with no FSUIPC running &mdash; a laptop away from the sim PC, for instance &mdash; won&rsquo;t hammer <code>localhost:2048</code> forever; it tries quietly for two minutes, then stops and clears the intent so future reloads don&rsquo;t retry either. A manual click, or any connection that succeeds at least once, is never capped &mdash; mid-flight socket drops still retry indefinitely as before.</li>
+          <li><strong>Help text corrected.</strong> The Live Aircraft Tracking help section said the background reconnect fires every 10&nbsp;seconds; the actual interval has been 15&nbsp;seconds since v2.88.0. Updated to match, and documented the new auto-resume behaviour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.0.13</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Multi-tab sync now happens silently.</strong> Removed the <em>Sync toast</em> checkbox from the Alerts modal footer and dropped the &ldquo;🔁 Synced changes from another AA tab&rdquo; toast that fired on every cross-tab reload. The sync itself is unchanged &mdash; alarm, group, and history changes still propagate between open AA tabs the moment one tab writes to localStorage, with the same 250&nbsp;ms debounce and the same in-memory reload + UI re-render &mdash; you just don&rsquo;t get a visual notification anymore. Removed: the <code>_AFK_LS_MULTITAB</code> localStorage key, the get/set helpers, the checkbox markup, and the modal-open handler that reflected the persisted state. Existing <code>simfly_aa_afk_multitab_toast</code> values left behind in browser storage are orphaned but harmless.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.12</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft now captures and tracks the extended runway centerline on final.</strong> Pre-3.0.12, the runway-heading lock at the destination was a flat &ldquo;hold <code>destRwyHdg</code> within 5&nbsp;nm of the airport&rdquo; with no lateral-offset correction &mdash; so if the FAF turn was even slightly wide, the aircraft would parallel the centerline, fly past the airport, U-turn back when it left the 5&nbsp;nm bubble, then re-grab runway heading and fly past again, circling endlessly without ever crossing the threshold. Replaced with pure cross-track-error proportional control: the heading target is now <code>destRwyHdg ± min(45°, xtErr&nbsp;×&nbsp;25°/nm)</code>, so even a wide FAF turn is captured at a localizer-style intercept angle and the aircraft tracks the extended centerline all the way to the threshold.</li>
+          <li><strong>Demo aircraft now actually stops at the destination.</strong> Added a hard-landing detector that fires when the aircraft has crossed the runway threshold along the approach direction at below 500&nbsp;ft AGL. On trip, position is snapped to the threshold, groundspeed is zeroed, altitude is set to field elevation, and a latch is set that short-circuits all further integration ticks. Belt-and-suspenders: even if centerline capture is imperfect, the demo can no longer enter the &ldquo;circle past the airport forever&rdquo; state.</li>
+          <li><strong>Approach-speed deceleration now begins early enough for the FAF turn.</strong> The v3.0.10 deceleration trigger only fired when the FAF was the immediate next waypoint &mdash; one leg of decel, and at jet descent speeds (250&ndash;330&nbsp;kt) the integrator's 2&nbsp;kt/sec slow-down needs 3&ndash;6&nbsp;nm just to reach approachKts. On routes where the leg leading into the FAF was short, the aircraft was still mostly at descent speed when it hit the turn, blowing the turn radius out to 2&ndash;3&nbsp;nm and producing the wide overshoot. Fixed: speed target is now capped to approachKts whenever the FAF is in the remaining route and within 7&nbsp;nm of the aircraft &mdash; enough lead for the slowest decel profile (widebody 330&nbsp;&rarr;&nbsp;150&nbsp;kt over ~6&nbsp;nm).</li>
+          <li><strong>Threshold-crossing and landing-roll speed now scale with aircraft category.</strong> The arrival guard and end-of-route speed profile were hardcoded to 80&nbsp;kt &mdash; a reasonable Vref for a Cessna 172 but ~40&nbsp;kt too slow for a Citation X (Vref ~120&nbsp;kt) and ~60&nbsp;kt too slow for a 777 (Vref ~140&nbsp;kt). Replaced with a per-category derived <code>landingKts = max(60, approachKts &minus; 20)</code>, applied in both the arrival guard and the speed-profile builder. Light GA still lands ~60&nbsp;kt; bizjet ~110&nbsp;kt; widebody ~130&nbsp;kt.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.11</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Time budget and slider bar now track actual flight progress.</strong> The demo engine computed climb and descent <em>distance</em> using full cruise speed, but the aircraft actually averages 77.5% of cruise during climb (speed ramp 55%&thinsp;&rarr;&thinsp;100%) and 85% during descent (ramp 100%&thinsp;&rarr;&thinsp;70%). This 15&ndash;22% overestimate caused the budget to exhaust 15&ndash;20 minutes before the aircraft physically arrived — leaving the scrubber frozen with &ldquo;19:42 remaining&rdquo; while the plane was already on short final. Fix: <code>climbNm</code> and <code>descentNm</code> are now derived from the correct integral-average groundspeed (×&thinsp;0.775 and ×&thinsp;0.850). The cruise phase absorbs the reclaimed distance, keeping total route nm accurate while aligning the time machine with the integrator.</li>
+          <li><strong>Approach phase now covers the actual FAF&thinsp;&rarr;&thinsp;threshold segment.</strong> The legacy approach phase was a fixed 45&thinsp;s &ldquo;virtual&rdquo; final that was glued to the end of the timeline after the aircraft reached the destination — adequate when the route ended at the airport, but far too short now that the 8&thinsp;nm FAF leg is a real route segment. The approach phase is now computed as <code>fafNm / approachKts × 3600</code> seconds (≈&thinsp;206&thinsp;s for a narrowbody at 140&thinsp;kt), covers only the FAF&thinsp;&rarr;&thinsp;threshold distance, and the slider advances through it rather than freezing at 100%.</li>
+          <li><strong>Approach phase correctly models the 3° glideslope.</strong> <code>_demoStateAt</code> now walks altitude from the FAF intercept height (<code>fafNm × tan(3°) × 6076 ≈ 2548&thinsp;ft AGL</code>) down to threshold elevation during the approach phase, and uses the category <code>approachKts</code> for speed instead of the hardcoded 140&thinsp;kt. The descent phase likewise targets the FAF altitude (not a fixed 1500&thinsp;ft AGL) so the vertical profile is consistent end-to-end.</li>
+          <li><strong>Approach phase budget is excluded from the climb/descent scaling check.</strong> The short-route V-profile scaling now fits climb+descent into 90% of the <em>pre-FAF</em> route distance (not total route), so the 8&thinsp;nm approach leg is never cannibalised by the scale factor on very short routes.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.10</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft no longer overshoots the FAF turn.</strong> The aircraft was arriving at the FAF at descent speed (~294&nbsp;kt for a narrowbody), giving a turn radius of roughly 2.7&nbsp;nm and requiring 52&nbsp;seconds to complete a 90° turn — producing an obvious bulge well past the runway centerline. Root cause: the approach speed phase only activated after all route distance was consumed, so the FAF leg was flown at full descent speed. Fix: the engine now detects when the aircraft is on the leg <em>leading into</em> the FAF (pointer targets the FAF) and immediately caps the speed target to the category approach speed (65&nbsp;kt Light GA up to 150&nbsp;kt Widebody). The aircraft decelerates over the full approach leg distance, arriving at the FAF near Vref and executing a compact standard-rate turn with a radius under 0.7&nbsp;nm.</li>
+          <li><strong>Demo VNAV now tracks a 3° glideslope on final approach.</strong> Previously the FAF→threshold leg used the time-based descent altitude profile, which targeted ~1&thinsp;500&nbsp;ft AGL at end-of-descent. This left the aircraft hundreds to thousands of feet above a correct ILS glideslope when it intercepted the FAF. Fix: the FAF point now carries an explicit altitude constraint equal to the 3° glideslope intercept (<code>destElev + 8&nbsp;nm × tan(3°) × 6076 ≈ destElev + 2548&nbsp;ft</code>). On SimBrief plans (<code>hasVnav = true</code>) the existing <code>_demoVnavManagedAlt</code> interpolator picks this up and tracks the glideslope by position rather than by time. On non-VNAV (hand-constructed) plans a direct position-based fallback injects the same glideslope target into the altitude command.</li>
+          <li><strong>Category approach speeds added to performance table.</strong> The <code>_DEMO_PERF</code> table now carries an <code>approachKts</code> field for each SimFly category (65–150&nbsp;kt). The approach speed is used for the new final-leg speed cap and ensures the arrival deceleration profile is realistic across all aircraft types, not just hardcoded for narrowbodies.</li>
+          <li><strong>VNAV annotation now runs before FAF insertion.</strong> <code>_demoAnnotateVnav</code> previously ran after the synthetic FAF was spliced in. Had the FAF carried an <code>altFt</code> at that point, it would have been counted as a raw waypoint constraint — turning on VNAV mode for hand-constructed plans that have no real altitude data. The order in <code>_demoBuildPlan</code> is now: compute field elevations → annotate raw waypoints → insert FAF (with synthetic altitude for VNAV plans only). This ensures <code>hasVnav</code> is set only by actual SimBrief altitude constraints.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.9</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo FAF now inserts correctly before the approach segment, not inside it.</strong> SimBrief navlogs frequently include the destination airport as the final navlog fix (at the airport reference point), which means <code>raw.waypoints</code> already contains a KPDX fix immediately before <code>raw.dest</code>. The v3.0.0 splice inserted the FAF only between <code>raw.dest</code> and the point just before it &mdash; leaving the KPDX navlog fix stranded between RALEE and the FAF, producing the route RALEE &rarr; KPDX &rarr; FAF &rarr; Threshold. The aircraft would route to the airport first, then fly southeast to intercept the FAF, then turn northwest to land &mdash; visibly backward. Fix: before inserting the FAF, all interior waypoints within <code>_DEMO_FAF_NM</code> (8&nbsp;nm) of the runway threshold are removed. Terminal STAR fixes that coincide with or near the airport reference are stripped out; the route then correctly reads last-enroute-fix &rarr; FAF &rarr; Threshold for a clean extended-centerline approach.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.8</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway selector now scores by length, ending decommissioned-runway wins.</strong> Diagnostic data confirmed that KPDX&rsquo;s decommissioned runway 3/21 (6,000&nbsp;ft, heading 225&deg;) was consistently beating the active runways 28R/28L (9,825&ndash;11,000&nbsp;ft, heading 299&deg;) because the inbound bearing from RALEE (~261&deg;) sits almost exactly between the two headings. With purely angular scoring, a fraction-of-a-degree difference decided the winner &mdash; and 225&deg; happened to be marginally closer than 299&deg; to 261&deg;. Fix: runway length is now factored into <code>endpointScore</code>. Without wind data the formula is <code>lengthFt &times; 1000 &minus; approachDiff</code>, making a 5,000&nbsp;ft length difference worth thousands of points versus a fraction of a degree &mdash; the decommissioned runway cannot win unless no longer runway is available. With live wind data the formula is <code>headwindKts &times; 200 + lengthFt</code>; a 5,000&nbsp;ft length advantage requires approximately 25&nbsp;kt of headwind deficit to be overridden, consistent with real crosswind limits. At KPDX with no wind, the 11,000&nbsp;ft runway 28L is now selected and the FAF is placed on the extended runway 28 centerline to the east of the airport.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.7</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway selector &mdash; approach alignment gate corrected to 40&deg;.</strong> The v3.0.5 gate of 60&deg; was computed incorrectly: RALEE sits roughly due east of KPDX, giving an inbound bearing of ~269&deg;. The decommissioned runway 21 (heading 210&deg;) is 59&deg; off that bearing &mdash; which passes a <code>&gt; 60</code> check since 59 is not greater than 60. Reducing the gate to 40&deg; correctly excludes runway 21 (59&deg; &gt; 40 = true) while runway 28 (12&deg; off) passes cleanly. Airports with no runway within 40&deg; of the inbound bearing fall through to the unconstrained pass&nbsp;2 (wind-only selection) as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.6</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Vertical speed telemetry now shows instantaneous rate, not a 30-second average.</strong> The VS value displayed in the telemetry panel was computed by dividing the total altitude change over the last 30 seconds by 30 &mdash; a heavily smoothed figure that lagged reality significantly during climb and descent transitions. The phase tracker still uses the 30-second average internally (it needs stability to avoid false climb/cruise/descent transitions), but the publicly exposed <code>vsFpm()</code> now returns an instantaneous reading derived from the last two altitude samples. The displayed value reflects the actual rate of change over the most recent polling interval.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.5</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway selector &mdash; approach alignment gate tightened from 120&deg; to 60&deg;.</strong> With a 120&deg; gate, a decommissioned KPDX runway (heading ~210&deg;) was passing the course-change check (70&deg; off the ~280&deg; KSEA&rarr;KPDX inbound bearing) and beating runway 28 on headwind score whenever northerly winds were present. The FAF was then placed on the backcourse of that runway &mdash; 8&nbsp;nm to the north of the airport &mdash; instead of to the east near the real approach corridor. Narrowing the gate to 60&deg; excludes any runway whose approach heading differs from the inbound route bearing by more than 60&deg;; runway 28 (1&deg; off) passes cleanly while the aberrant entry (70&deg; off) is rejected. If no runway qualifies in pass&nbsp;1, the fallback pass uses wind-only scoring with no alignment constraint, so airports with oblique approach geometry are unaffected.</li>
+          <li><strong>Reverted nearest-forward waypoint advance (v3.0.4 regression).</strong> The scan searched all remaining waypoints for one closer than the current target and jumped ahead to it. On routes where the destination is already geometrically closer than intermediate enroute fixes (common when approaching from the far side of a route arc), the aircraft skipped directly to the runway threshold before reaching the FAF, activating the runway lock from the wrong approach angle and causing large orbits over the destination. Removed entirely; normal turn-anticipation advance is sufficient.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.0.4</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot routes directly to the FAF when it is the nearest remaining waypoint.</strong> Previously the aircraft followed route waypoints strictly in order &mdash; if the FAF was already the geographically closest remaining point, the aircraft would still fly to the next intermediate STAR fix first, then turn back toward the FAF. The advance logic in <code>_demoApMaybeAdvanceWpt</code> now scans forward through remaining waypoints at each tick: if any later waypoint is more than 1&nbsp;nm closer than the current target, the pointer advances to it. The 1&nbsp;nm guard prevents spurious skips on near-equidistant fixes; scanning in route order means the aircraft takes the first closer fix encountered rather than leapfrogging past genuinely necessary intermediate turns.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.3</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway selector &mdash; short and historical runways excluded from ILS approach planning.</strong> The OurAirports runway database includes historical, decommissioned, and secondary strips at many airports alongside their primary commercial runways. With no length filter, the selector could choose a short taxiway-width strip or a closed runway whose extended centerline places the virtual FAF in the wrong direction &mdash; for example, at KPDX an old runway 3/21 entry (heading ~210&deg;) would beat runway 28 on course-change angle and place the FAF north of the airport rather than to the east. Fix: runways shorter than 5&thinsp;000&nbsp;ft are now skipped before scoring. This threshold comfortably admits all primary jet runways while excluding helipads, ultralight strips, and most decommissioned secondary pavements.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.2</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo route line now shows the FAF waypoint and runway threshold.</strong> The pink route line was rendered from the original <code>raw</code> flight plan (unchanged from the SimBrief import), so it drew directly from the last STAR fix to the airport reference point with no FAF detour visible. The aircraft itself was navigating via the FAF correctly, but the rendered route didn&rsquo;t reflect it. <code>_demoLaunch</code> now builds the SimBrief shape from <code>plan.points</code> instead of <code>raw.waypoints</code>, so the displayed route includes the FAF waypoint and the final segment ends at the selected runway threshold. On routes where the STAR approach direction is already roughly aligned with the runway, the FAF is nearly colinear with the direct path and the deviation is subtle; on routes with a more oblique approach the FAF intercept and final centerline segment are clearly visible as a dog-leg onto the runway heading.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.0.1</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo runway selector &mdash; no longer picks a runway whose FAF requires a course reversal.</strong> v3.0.0 selected the runway with the highest headwind component without considering whether the aircraft could reasonably reach that runway&rsquo;s Final Approach Fix from its current direction. When Portland&rsquo;s prevailing westerly winds were active, the selector chose runway 10 (eastbound) over runway 28 (westbound), placing the FAF 8&nbsp;nm west of the airport &mdash; which required the aircraft approaching from the northeast (via RALEE) to fly a large looping orbit around Portland before lining up. Fix: a two-pass selector now first screens candidates to those within <strong>120&deg;</strong> of the inbound route bearing; headwind scoring applies only within that eligible set. If no runway passes the gate (unusual approach geometry), a second pass relaxes to all candidates and picks by alignment. For the KSEA&rarr;KPDX route approaching via RALEE, runway 10 is 154&deg; off the inbound bearing and is rejected; runway 28 (26&deg; off) is selected regardless of wind direction. New constant <code>_DEMO_FAF_MAX_COURSE_CHANGE_DEG = 120</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.0.0</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot &mdash; weather-based runway selection with extended centerline intercept.</strong> The demo engine now queries CheckWX for the destination airport&rsquo;s current METAR before building the flight plan. The runway end with the highest headwind component is selected; when no METAR is available the selection falls back to the runway whose heading best matches the route&rsquo;s inbound bearing. A virtual &ldquo;FAF&rdquo; waypoint is inserted into the route plan 8&nbsp;nm outbound from the landing threshold on the extended runway centerline, so the aircraft intercepts the final approach course and flies the last segment aligned with the runway rather than angling in from whatever direction the last STAR fix happened to be. The dest point is also redirected to the actual runway threshold coordinates so the final segment precisely tracks the centerline. The runway heading is taken directly from the selected threshold rather than being estimated from the route bearing &mdash; no rounding through the 10&deg; runway-ident quantisation. The weather fetch runs with a 4-second timeout and a <code>_demoPendingStart</code> guard prevents the Start button from firing twice while the fetch is in-flight; the demo starts immediately using route-based fallback if weather data is unavailable.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v2.99.8</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo arrival guard &mdash; uses remaining track miles instead of straight-line distance.</strong> The v2.99.7 arrival guard (which prevents the aircraft stopping short when the time-phase machine fires &ldquo;ground&rdquo; too early) was checking straight-line distance from the aircraft to the destination. Replaced with <code>_demoRemainingRouteNm()</code>, a new helper that sums the distance to the current target waypoint plus every remaining planned leg to the destination. On routes where the STAR arcs away from the airport, track miles remaining is longer than the crow-flies measure &mdash; the straight-line check would have allowed the guard to drop while the aircraft still had one or more waypoints left to thread. The helper degrades to straight-line distance once the aircraft is on the final direct leg to the destination, so there is no change in behaviour for that case.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v2.99.7</span>
+          <span class="release-date">May 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo autopilot &mdash; aircraft no longer stops short of the destination.</strong> On longer routes with STAR approaches (e.g. KSEA&rarr;KPDX), the simulated aircraft was stopping ~15&nbsp;km before the destination and showing the <em>ground</em> phase while still airborne. Root cause: the time-based phase machine fires the arrival-ground transition at a fixed elapsed-second deadline, but the integrator&rsquo;s GS profile averages ~78% of cruise speed during climb and ~85% during descent, so the aircraft physically lags behind the time budget. When <em>ground</em> fired, the speed target dropped to zero and the aircraft stopped wherever the integrator happened to be. Fix: an arrival guard in <code>_demoTick</code> checks whether the integrator is still more than 0.3&nbsp;nm from the destination when the time-phase fires <em>ground</em>. If so, it holds <em>approach</em> phase active (GS target 80&nbsp;kt) so the aircraft keeps decelerating toward landing speed and continues navigating to the runway. The ground phase is then allowed to engage only once the aircraft is within the 0.3&nbsp;nm arrival threshold.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v2.99.6</span>
-          <span class="release-date">May 26, 2026 &middot; Current</span>
+          <span class="release-date">May 26, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -40725,11 +41441,6 @@ function rgSendToFlightPlanner() {
         <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save to File</button>
         <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load from File</button>
         <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
-        <!-- v2.98.11 — Inline toggle for the multi-tab sync toast. Default ON. -->
-        <label class="afk-toggle" id="afkMultiTabToastWrap" style="display:inline-flex;align-items:center;gap:0.35rem;margin-left:0.4rem;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:var(--muted);cursor:pointer;" title="When multiple AA tabs are open and one persists a change (alarm edit, group rename, history dismissal), the others auto-resync. Untick to suppress the &quot;🔁 Synced changes from another AA tab&quot; toast.">
-          <input type="checkbox" id="afkMultiTabToastCb" onchange="_afkSetShowMultiTabToast(this.checked)">
-          <span>Sync toast</span>
-        </label>
         <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
         <button class="afk-btn-secondary" onclick="_afkEnableAll()" title="Enable every configured alert at once — useful for re-arming after a Disable All or after importing a saved alert set.">Enable All</button>
         <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alert, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v2.99.6**
+**Current version: v3.1.0**
 
 ---
 
@@ -192,6 +192,8 @@ Open the interactive map and click the **🔌 Live** pulldown in the header, the
 
 Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), the app shows an error toast on the first failure and then **silently retries every 15 seconds** in the background while the button stays active — MSFS restarts don't require re-clicking, and a long-running disconnect no longer spams the toast stack on every retry.
 
+**Auto-resume across reloads** (v3.1.0+) — if FSUIPC tracking was active when you refresh the tab (or the browser crashes and reopens), the app silently reconnects on the next page load and restores the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were — no need to re-click **FSUIPC Live**. The auto-reconnect is quiet (no connecting / retry toasts; one confirmation toast on success) and **gives up after 2 minutes** if the sim can't be reached, so opening the app on a machine without FSUIPC running — a laptop away from the sim PC — won't retry localhost forever. Explicitly clicking **⏹ FSUIPC Tracking…** to stop clears the resume intent, so a deliberate disconnect stays disconnected across reloads.
+
 No cloud round-trip, no API tokens, no handshakes that can silently fail. Position data travels straight from your sim to your browser over loopback. Browsers exempt `localhost` from mixed-content blocking (W3C "potentially trustworthy" rule), so the local WebSocket works even though the app itself is served over HTTPS.
 
 ### 📍 Follow A/C — keep the map centred on your aircraft
@@ -234,7 +236,7 @@ Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Dig
 
 Alarms persist to `localStorage` and survive page reloads. **Active geofence rings and waypoint highlight rings also re-render on every page load**, and the most recently plotted **SimBrief flight plan is restored** at map-init time (route line, end-rings, waypoint markers, and any waypoint-alarm rings reappear without re-clicking *SimBrief Flight Plan*). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any *Specific waypoints* picks are automatically cleared with a toast notification. Alerts need a live aircraft source (FSUIPC) to evaluate; Waypoint, TOC, and TOD additionally need a SimBrief flight plan loaded.
 
-**Multi-tab safe** (v2.93.0+) — opening AA in two browser tabs is no longer a state-corruption hazard. The app listens for `localStorage` change events from sibling tabs, reloads its in-memory alarm / group / history state when one of them persists a change, and re-renders the alarm list / map overlays / badges so both tabs stay in sync. A brief toast (*🔁 Synced changes from another AA tab*) surfaces each sync. Coalesced with a 250 ms debounce so rapid bursts (drag-reorder, batch edits) don't cause render storms. The sync toast is opt-out (v2.98.11+) via the **Sync toast** checkbox in the Alerts modal footer — uncheck to silence; the underlying sync still happens.
+**Multi-tab safe** (v2.93.0+) — opening AA in two browser tabs is no longer a state-corruption hazard. The app listens for `localStorage` change events from sibling tabs, reloads its in-memory alarm / group / history state when one of them persists a change, and re-renders the alarm list / map overlays / badges so both tabs stay in sync. Coalesced with a 250 ms debounce so rapid bursts (drag-reorder, batch edits) don't cause render storms. As of v3.0.13 the sync happens **silently** — the earlier *🔁 Synced changes from another AA tab* toast and its opt-out checkbox have been removed.
 
 **Save / Load alarm sets to disk** (v2.82.0+) — two buttons in the Alerts modal footer let you keep named alarm setups (per aircraft, per route, per workflow): **⤓ Save to File** downloads the current queue as a timestamped JSON file; **⤒ Load from File** replaces the current queue with a previously-saved file after a confirm. The local-storage autosave is unchanged — this is a parallel "named setups" channel.
 
@@ -291,6 +293,8 @@ For demos and presentations at locations where MSFS / FSUIPC is unavailable (cor
 **Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (0.25× / 0.5× / 1× / 3× / 5×) plus a free-slider for arbitrary 0.1× – 25× playback (v2.98.0+), and an elapsed / total time readout.
 
 **Runway-aligned takeoff and landing** (v2.98.0+, accuracy improved v2.98.7+) — the demo aircraft holds the dep-runway heading for the first 5 nm after takeoff and the arr-runway heading for the last 5 nm before landing, so the simulated track lines up with the satellite-scenery runway centerline instead of cornering directly toward the first or last waypoint. The runway end is picked using each runway's published true heading (sub-degree accuracy from the OurAirports database) and matched against the actual bearing of the route leaving / approaching the airport. Waypoints that fall inside the 5 nm bubble are skipped so a SID or STAR fix near the airport doesn't pull the aircraft off the runway-extended centerline before the alignment ends.
+
+**Weather-driven ILS-style final approach** (v3.0.0+, capture + landing overhauled v3.0.12) — before the demo starts, the engine fetches the destination METAR and picks the landing runway with the best headwind (falling back to best route alignment if weather is unavailable). It then inserts a virtual **Final Approach Fix (FAF)** 8 nm out on the extended runway centerline and flies a realistic final: the aircraft decelerates to its category approach speed before the FAF turn, captures the extended centerline using localizer-style cross-track steering (so even a wide turn is recaptured cleanly), tracks a 3° glideslope down to the threshold, and **comes to a stop on the runway** instead of overflying the field. Approach and landing-roll speeds scale with aircraft category (a light single lands near 60 kt; a widebody near 130 kt).
 
 **✈ Autopilot panel — hands-on demo flying** — clicking the AP button opens a compact MCP-style panel above the floating bar with four columns:
 
