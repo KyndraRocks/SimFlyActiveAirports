@@ -6120,7 +6120,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.4.6';
+const APP_VERSION = '3.5.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10141,6 +10141,8 @@ function _sbOfpRender(data, opts) {
   if (typeof _afkOnSbPlanLoaded === 'function') {
     try { _afkOnSbPlanLoaded({ silent: !!opts.silent }); } catch (_) {}
   }
+  // v3.5.0 — surface the "✈ Flight Plan" breadcrumb chip now that a plan is plotted.
+  if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
 }
 
 function _sbOfpClearLayers() {
@@ -10178,6 +10180,8 @@ function _sbOfpClear() {
   // v2.90.4 — SimBrief plan-loaded indicator now lights the Live dot
   // (SimBrief moved from Tools to Live in v2.89.0).
   if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
+  // v3.5.0 — drop the "✈ Flight Plan" breadcrumb chip now that the plan is gone.
+  if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
 }
 
 // v2.84.1 — toast-wrapping helpers for the 🔌 Live menu's destructive
@@ -10618,6 +10622,9 @@ function _liveAcUpdateTrail(lat, lng, gs) {
       color: '#00e676', weight: 2.2, opacity: 0.92,
       lineCap: 'round', lineJoin: 'round', interactive: false,
     }).addTo(_rgMap);
+    // v3.5.0 — trail line just became visible: surface the "Aircraft Track"
+    // breadcrumb chip. Runs only on first draw (this else-branch), not per fix.
+    if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
   }
   _liveAcScheduleTrailSave();
 }
@@ -10630,6 +10637,8 @@ function _liveAcClearTrail() {
   _liveAcTrailArchive = [];
   _liveAcLastWasZeroGs = false; // v2.88.0
   try { localStorage.removeItem(_LIVE_AC_TRAIL_LS); } catch (_) {}
+  // v3.5.0 — remove the "Aircraft Track" breadcrumb chip now the trail is gone.
+  if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
 }
 
 // Throttled persistence of the breadcrumb trail so a browser crash or close
@@ -29852,6 +29861,41 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
   for (const dev of _rgExcludedDevelopers)
     container.appendChild(mkExcludeChip(dev, () => { _rgExcludedDevelopers.delete(dev); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
+
+  // v3.5.0 — "active layer" chips for the plotted SimBrief flight plan and
+  // the aircraft breadcrumb track, so each can be removed in one click
+  // without opening the 🔌 Live menu. v3.5.1 — sized like the other filter
+  // chips (standard rg-bc); the track chip keeps a green label accent.
+  function mkMiniChip(text, title, onX, accent) {
+    const chip = document.createElement('span');
+    chip.className = 'rg-bc';
+    if (title) chip.title = title;
+    const lbl = document.createElement('span');
+    lbl.textContent = text;
+    if (accent) lbl.style.color = accent;
+    chip.appendChild(lbl);
+    const x = document.createElement('span');
+    x.className = 'rg-bc-x';
+    x.textContent = '✕';
+    x.title = title || 'Remove';
+    x.addEventListener('click', e => { e.stopPropagation(); onX(); });
+    chip.appendChild(x);
+    return chip;
+  }
+  const sbLoaded = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) ||
+                   (typeof _sbOfpLayers !== 'undefined' && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0);
+  if (sbLoaded) {
+    container.appendChild(mkMiniChip('✈ Flight Plan', 'Remove the plotted SimBrief flight plan',
+      () => { _sbOfpClearUI(); _rgUpdateBreadcrumbs(); }));
+  }
+  const hasTrack = (typeof _liveAcTrailUltra   !== 'undefined' && _liveAcTrailUltra.length   > 0) ||
+                   (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
+                   (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
+  if (hasTrack) {
+    // Green label matches the green breadcrumb trail on the map.
+    container.appendChild(mkMiniChip('Aircraft Track', 'Erase the flown aircraft breadcrumb track',
+      () => { _liveAcClearTrailUI(); _rgUpdateBreadcrumbs(); }, '#00e676'));
+  }
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -32071,6 +32115,7 @@ function rgSendToFlightPlanner() {
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
             <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
+            <strong>✈ Flight Plan</strong> / <strong>Aircraft Track</strong> (v3.5.0) &mdash; two small, muted chips at the end of the strip. The <em>✈ Flight Plan</em> chip appears whenever a SimBrief flight plan is plotted; the green <em>Aircraft Track</em> chip appears whenever a live breadcrumb trail is on the map. Click the <strong>&times;</strong> on either to clear that layer in one step &mdash; the same as the clear actions in the <strong>🔌 Live</strong> menu, but reachable without opening it. They appear / disappear automatically as the plan and track come and go.<br/><br/>
             The strip truncates automatically if it would overlap the category circles, always leaving at least 30 px of clearance.
           </div>
         </div>
@@ -32225,10 +32270,34 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.5.1</span>
+          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight Plan and Aircraft Track chips now match the other filter chips.</strong> The two breadcrumb chips added in v3.5.0 are sized the same as the rest of the filter strip instead of using a smaller style. The Aircraft Track chip keeps its green label as a cue.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.5.0</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Clear the SimBrief flight plan and aircraft track from the map breadcrumb strip.</strong> When a SimBrief plan is plotted, a small <strong>✈ Flight Plan</strong> chip appears in the filter strip; when an aircraft breadcrumb track is on the map, a small green <strong>Aircraft Track</strong> chip appears. Click the ✕ on either to remove that layer in one step, without opening the Live menu. The chips are intentionally small and unobtrusive since they're shown for most of a flight, and they appear/disappear automatically as the plan and track come and go.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.4.6</span>
-          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-date">May 29, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
