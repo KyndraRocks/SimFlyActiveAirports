@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.7**
+**Current version: v3.6.8**
 
 ---
 
@@ -299,7 +299,7 @@ For demos and presentations at locations where MSFS / FSUIPC is unavailable (cor
 
 **Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (1× / 3× / 10× — v3.6.5) plus a free-slider for arbitrary 0.1× – 25× playback, and an elapsed / total time readout. **Stale**, **Disconnect**, and **Exit** sit on a centered second row (v3.6.5). The **total flight time** shown next to the scrub bar refines as the flight progresses (v3.6.2) — it learns the pace you're actually flying and converges on the true arrival time, and stops counting at touchdown.
 
-**Realistic takeoff & climb-out** (v3.6.7) — the synthetic aircraft performs a proper takeoff roll: it accelerates down the departure runway at field elevation until rotation speed, *then* rotates and climbs (rather than ascending vertically before it has any speed). It holds runway heading for the first 90 seconds after rotation (v3.6.6) so the climb-out lines up with the scenery centerline before turning to follow the plan.
+**Realistic takeoff & climb-out** (v3.6.7) — the synthetic aircraft performs a proper takeoff roll: it accelerates down the departure runway at field elevation until rotation speed, *then* rotates and climbs (rather than ascending vertically before it has any speed). It holds runway heading for the first 45 seconds after takeoff (v3.6.8) so the roll and initial climb-out line up with the scenery centerline before turning to follow the plan.
 
 **Simulated ELAPSED** (v3.6.5) — in demo mode the data-panel ELAPSED field shows *simulated* time since takeoff (matching the scrub bar), so a sped-up demo reports the flight time it represents rather than real wall-clock seconds.
 
