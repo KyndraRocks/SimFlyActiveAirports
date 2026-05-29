@@ -6040,7 +6040,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6481,7 +6481,7 @@ function loadAirportDB() {
 
       // ── Build aircraft map from Gist CSV ────────────────────────────────────
       if (aircraftCsv) {
-        const acLines = aircraftCsv.split('\n');
+        const acLines = aircraftCsv.split(/\r?\n/);
         const acHdr   = parseCSVLine(acLines[0]);
         const aIcao   = acHdr.indexOf('ICAO_Code');
         const aBrand  = acHdr.indexOf('Brand');
@@ -6492,6 +6492,10 @@ function loadAirportDB() {
         const aLand   = acHdr.indexOf('Landing_Dist');
         const aPaved  = acHdr.indexOf('Paved_Only');
         const aRange  = acHdr.indexOf('Max_Range');
+        const aMtowLb = acHdr.indexOf('MTOW_lb');
+        const aFuelLb = acHdr.indexOf('Fuel_lb');
+        const aOewLb  = acHdr.indexOf('OEW_lb');
+        const _intCol = (cols, idx) => idx >= 0 ? (Math.round(parseFloat((cols[idx]||'').replace(/,/g,'').replace(/^"|"$/g,'').trim())) || 0) : 0;
         if (aIcao >= 0) {
           for (let i = 1; i < acLines.length; i++) {
             const line = acLines[i].trim(); if (!line) continue;
@@ -6505,7 +6509,7 @@ function loadAirportDB() {
             const tkoff    = parseInt((cols[aTkoff] ||'').replace(/^"|"$/g,'').trim()) || 0;
             const land     = parseInt((cols[aLand]  ||'').replace(/^"|"$/g,'').trim()) || 0;
             const pavedRaw = (cols[aPaved]  ||'').replace(/^"|"$/g,'').trim().toLowerCase();
-            const rangeNm  = aRange >= 0 ? (Math.round(parseFloat((cols[aRange]||'').replace(/,/g,'').replace(/^"|"$/g,'').trim())) || 0) : 0;
+            const rangeNm  = _intCol(cols, aRange);
             aircraftDB.set(code, {
               label    : brand && model ? brand + ' ' + model : (model || brand || code),
               brand,
@@ -6517,6 +6521,13 @@ function loadAirportDB() {
               pavedOnly: pavedRaw === 'true',
               range_nm : rangeNm,
             });
+            // Weight data (lbs) — authoritative source, no hardcoded fallback.
+            const mtowLb = _intCol(cols, aMtowLb);
+            const fuelLb = _intCol(cols, aFuelLb);
+            const oewLb  = _intCol(cols, aOewLb);
+            if (mtowLb) _AC_WEIGHTS_LBS[code] = mtowLb;
+            if (fuelLb) _AC_FUEL_LBS[code]    = fuelLb;
+            if (oewLb)  _AC_OEW_LBS[code]     = oewLb;
           }
         }
         console.log('Aircraft DB loaded: ' + aircraftDB.size + ' entries');
@@ -7248,32 +7259,7 @@ function _acGetRequiredRunway() {
 // MTOW weights (lbs) for all aircraft in the database.
 // Used to show actual departure weight alongside the load % slider so pilots
 // can match their SimBrief TOW directly. kg is derived on-the-fly (/2.20462).
-const _AC_WEIGHTS_LBS = {
-  // Cat 1 — Light GA
-  BE35: 2900,   BE24: 2750,   C152: 1670,   C172: 2550,
-  SR22: 3600,   DIMO: 1764,   PA24: 2900,   PA28: 2440,
-  // Cat 2 — GA twin / light turboprop
-  C208: 8750,   K100: 7255,   DA62: 4497,   M20P: 3368,
-  // Cat 3 — Turboprop single / pressurised piston
-  AEST: 5500,   BE58: 5524,   BE36: 3650,   C310: 5500,
-  C414: 6750,   TBM8: 6579,   TBM9: 7394,   PC12: 10450,
-  // Cat 4 — Large turboprop / twin turboprop
-  BE9L: 15000,  SF50: 6000,   DHC6: 12500,  DC3:  26900,
-  // Cat 5 — Business jet / Regional jet
-  AT76: 49604,  B461: 93000,  C25C: 17110,  C700: 29600,
-  C750: 36100,  CRJ7: 75000,  CRJ9: 84500,  CRJX: 90390,
-  DC6:  107000, DH8D: 64500,  E190: 110892, F28:  73000,
-  HA4T: 10700,
-  // Cat 6 — Narrowbody airliner
-  A319: 166449, A320: 171961, A20N: 174165, A321: 196210,
-  A21N: 213848, B38M: 181200, B736: 144500, B737: 154500,
-  B738: 174200, B739: 187700, MD82: 149500,
-  // Cat 7 — Widebody airliner
-  CONC: 413800, A313: 330693, A332: 507063, A333: 533518,
-  A339: 553360, A343: 558870, A346: 811300, A35K: 697000,
-  A359: 617295, A388: 1234600,B748: 987000, B762: 395000,
-  B772: 656000, B77W: 775000, B789: 560000, MD11: 630500,
-};
+const _AC_WEIGHTS_LBS = {};   // populated from the aircraft Gist (MTOW_lb column) — no hardcoded fallback
 
 // Max usable fuel per airframe in lbs. Combined with _AC_WEIGHTS_LBS this gives
 // the zero-fuel-weight (ZFW) fraction used in the Breguet range calculation.
@@ -7281,61 +7267,11 @@ const _AC_WEIGHTS_LBS = {
 // Conversion: Avgas 6.0 lb/gal · Jet-A / diesel 6.7 lb/gal.
 // To add a new aircraft: look up max usable fuel in POH or manufacturer spec,
 // convert to lbs, and add an entry here keyed to the aircraft's ICAO type code.
-const _AC_FUEL_LBS = {
-  // Cat 1 — Light GA piston (Avgas @ 6.0 lb/gal)
-  BE35:    204,  BE24:    343,  C152:    147,  C172:    318,
-  SR22:    486,  DIMO:    144,  PA24:    516,  PA28:    288,
-  // Cat 2 — GA twin / light turboprop
-  C208:  1_112,  K100:  1_248,  DA62:    576,  M20P:    384,
-  // Cat 3 — Turboprop single / pressurised piston
-  AEST:    993,  BE58:    816,  BE36:    444,  C310:    978,
-  C414:  1_236,  TBM8:  1_950,  TBM9:  1_956,  PC12:  2_704,
-  // Cat 4 — Large turboprop / twin turboprop
-  BE9L:  3_645,  SF50:  2_000,  DHC6:  2_576,  DC3:   4_824,
-  // Cat 5 — Business jet / Regional jet (Jet-A @ 6.7 lb/gal)
-  AT76: 11_023,  B461: 20_100,  C25C:  5_828,  C700: 14_511,
-  C750: 12_931,  CRJ7: 19_450,  CRJ9: 19_595,  CRJX: 19_450,
-  DC6:  26_800,  DH8D: 11_724,  E190: 26_900,  F28:  17_005,
-  HA4T:  4_911,
-  // Cat 6 — Narrowbody airliner (Jet-A; from Airbus/Boeing ACAPs)
-  A319: 41_290,  A320: 41_860,  A20N: 42_100,  A321: 43_200,
-  A21N: 47_400,  B38M: 45_694,  B736: 45_900,  B737: 45_900,
-  B738: 45_900,  B739: 45_900,  MD82: 38_990,
-  // Cat 7 — Widebody airliner (Jet-A; from Airbus/Boeing ACAPs)
-  CONC: 209_440,  A313: 105_688,  A332: 246_918,  A333: 192_593,
-  A339: 246_918,  A343: 243_436,  A346: 337_448,  A35K: 274_844,
-  A359: 248_000,  A388: 559_000,  B748: 422_328,  B762: 111_500,
-  B772: 302_977,  B77W: 320_863,  B789: 223_646,  MD11: 258_721,
-};
+const _AC_FUEL_LBS = {};   // populated from the aircraft Gist (Fuel_lb column) — no hardcoded fallback
 
 // Operating empty weight in lbs — sourced from AFM/POH data. Paired with
 // _AC_FUEL_LBS to separate OEW + payload + fuel in the three-component weight model.
-const _AC_OEW_LBS = {
-  // Cat 1 — Light GA piston
-  BE35:  1_862,  BE24:  1_750,  C152:  1_109,  C172:  1_691,
-  SR22:  2_249,  DIMO:  1_057,  PA24:  1_714,  PA28:  1_458,
-  // Cat 2 — GA twin / light turboprop
-  C208:  4_717,  K100:  4_050,  DA62:  3_197,  M20P:  2_148,
-  // Cat 3 — Turboprop single / pressurised piston
-  AEST:  3_637,  BE58:  3_739,  BE36:  2_446,  C310:  3_505,
-  C414:  4_397,  TBM8:  4_572,  TBM9:  4_737,  PC12:  6_173,
-  // Cat 4 — Large turboprop / twin turboprop
-  BE9L:  9_468,  SF50:  3_530,  DHC6:  6_700,  DC3:  17_865,
-  // Cat 5 — Business jet / Regional jet
-  AT76: 28_660,  B461: 54_890,  C25C: 10_700,  C700: 16_900,
-  C750: 22_500,  CRJ7: 44_350,  CRJ9: 47_400,  CRJX: 50_800,
-  DC6:  55_000,  DH8D: 40_000,  E190: 60_060,  F28:  44_600,
-  HA4T:  7_165,
-  // Cat 6 — Narrowbody airliner
-  A319: 91_270,  A320: 93_696,  A20N: 97_000,  A321: 105_820,
-  A21N: 107_600, B38M: 99_650,  B736: 80_700,  B737: 83_000,
-  B738: 91_300,  B739: 93_700,  MD82: 77_380,
-  // Cat 7 — Widebody airliner
-  CONC: 173_500, A313: 177_200, A332: 264_990, A333: 275_570,
-  A339: 287_040, A343: 288_020, A346: 378_750, A35K: 330_360,
-  A359: 313_055, A388: 611_500, B748: 412_775, B762: 181_830,
-  B772: 304_174, B77W: 370_370, B789: 262_350, MD11: 286_600,
-};
+const _AC_OEW_LBS = {};   // populated from the aircraft Gist (OEW_lb column) — no hardcoded fallback
 
 // Breguet range equation — physically-derived range at departure weight and payload.
 //
@@ -8017,7 +7953,9 @@ function _applyUrlParams() {
   if (ac && ac.code) {
     // Apply fuel% and payload% from URL before calling _acSelect so sliders are
     // correct from the first render. Clamp to valid ranges; use defaults if absent.
-    const urlPct = (ac.mtowPct != null && ac.mtowPct >= 40 && ac.mtowPct <= 100)
+    // Fuel floor is 0 (not 40) so low-fuel loads set in Recip Tracker carry over
+    // instead of silently snapping to 100% — matches the slider/localStorage range.
+    const urlPct = (ac.mtowPct != null && ac.mtowPct >= 0 && ac.mtowPct <= 100)
       ? ac.mtowPct : 100;
     _acMtowPct    = urlPct;
     _acPayloadPct = (ac.payloadPct != null && ac.payloadPct >= 0 && ac.payloadPct <= 100)
@@ -31976,10 +31914,34 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.2.0</span>
+          <span class="release-date">May 28, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft weight data now comes from the shared aircraft database.</strong> Maximum takeoff weight, usable fuel, and empty weight (the figures behind required-runway, landing, and range calculations) used to be baked into the app. They now load from the same community aircraft database that already supplies the model list, categories, and distances &mdash; three new columns (<code>MTOW_lb</code>, <code>Fuel_lb</code>, <code>OEW_lb</code>). Adding or correcting an aircraft is now a single edit to that database, and Active Airports and Recip Tracker stay perfectly in sync automatically. There is no built-in fallback, so weight-based figures appear only once the database has loaded.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.1.1</span>
+          <span class="release-date">May 28, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Low fuel loads from Recip Tracker now carry over correctly.</strong> When launching Active Airports from Recip Tracker's Plan Flight, a fuel load below 40% was silently snapping back to 100% on arrival &mdash; an old lower limit on the incoming fuel value. The limit now allows the full 0&ndash;100% range (matching the fuel slider and saved preferences), so whatever fuel and payload you set in Recip Tracker is exactly what Active Airports opens with.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.1.0</span>
-          <span class="release-date">May 27, 2026 &middot; Current</span>
+          <span class="release-date">May 27, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.1.0**
+**Current version: v3.2.0**
 
 ---
 
@@ -365,6 +365,7 @@ Toggle dark / light mode with the button in the top-right corner. Light mode use
 ## Data Sources
 
 - **Airport database** — [OurAirports](https://ourairports.com) (open data, fetched at runtime)
+- **Aircraft data** — community-maintained SimFly aircraft database (fetched at runtime): model list, SimFly categories, runway distances, max range, and weights (maximum takeoff weight, usable fuel, empty weight). Adding or correcting an aircraft is a single edit to that shared database, and both Active Airports and the Reciprocation Tracker stay in sync automatically.
 - **Weather** — [CheckWX](https://www.checkwxapi.com)
 - **Magnetic heading** — [NOAA World Magnetic Model](https://www.ngdc.noaa.gov/geomag/WMM/) (map ruler)
 - **Flight planning** — [SimBrief](https://www.simbrief.com)
