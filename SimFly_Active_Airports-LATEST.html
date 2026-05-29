@@ -3325,6 +3325,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     text-align:right;
   }
   body.light-mode .demo-floating .demo-speed-label-num { color:rgba(20,20,30,0.85); }
+  /* v3.6.5 — Stale / Disconnect / Exit on their own centered second row.
+     flex-basis:100% forces a wrap within the flex-wrap .demo-floating bar. */
+  .demo-floating .demo-row2 {
+    flex-basis:100%; width:100%;
+    display:flex; justify-content:center; align-items:center; gap:0.45rem;
+  }
 
   /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
      conventions used by the SimBrief settings modal so the look is
@@ -3893,13 +3899,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-results-bar.visible { display:flex; }
   /* v2.88.0 — Dismiss-matrix ✕ button at the far right of the results bar.
      `margin-left:auto` shoves it to the end regardless of how the wrapping
-     filter widgets land. Sized to match the other rg-btn pill style but
-     visually distinct (accent-tinted) so it reads as a dismissal. */
+     filter widgets land. Sized to match the other rg-btn pill style.
+     v3.6.4 — red-tinted (was accent/cyan) so it reads clearly as a close. */
   .rg-results-close {
     margin-left:auto;
-    background:rgba(0,200,255,0.08);
-    border:1px solid rgba(0,200,255,0.45);
-    color:var(--accent);
+    background:rgba(255,61,90,0.10);
+    border:1px solid rgba(255,61,90,0.5);
+    color:#ff8090;
     font-family:'Rajdhani',sans-serif;
     font-size:1.05rem; font-weight:600;
     padding:0.32rem 0.72rem;
@@ -3907,7 +3913,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     cursor:pointer; line-height:1;
     flex-shrink:0;
   }
-  .rg-results-close:hover { background:rgba(0,200,255,0.18); color:#fff; }
+  .rg-results-close:hover { background:rgba(255,61,90,0.22); border-color:#ff3d5a; color:#fff; }
   .rg-results-summary { font-family:'Rajdhani',sans-serif; font-size:1.3rem; color:var(--muted); flex:1; text-align:center; }
   .rg-results-summary b { color:var(--text); }
   .rg-cap-row { display:flex; align-items:center; gap:0.45rem; }
@@ -6120,7 +6126,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.5.1';
+const APP_VERSION = '3.6.7';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11239,6 +11245,12 @@ const _DEMO_ARRIVAL_THRESH_NM  = 0.3;
 // up with the satellite scenery's runway centerline instead of cornering
 // toward (or away from) the first/last waypoint.
 const _DEMO_RWY_ALIGN_NM  = 5;
+// v3.6.5 — Seconds of airborne flight the aircraft holds dep runway heading
+// before turning to follow the plan. Replaces the v3.6.0 altitude gate
+// (2000 ft AGL) and the original 5 nm distance gate: a fixed delay after
+// rotation it's safe to turn onto course, independent of speed/climb rate.
+// v3.6.6 — bumped 30 s → 90 s (aircraft was turning too soon).
+const _DEMO_RWY_ALIGN_SEC = 90;
 const _DEMO_FAF_NM                    = 8;    // nm outbound from landing threshold for the virtual FAF
 // Max degrees a runway approach heading may deviate from the inbound route bearing
 // before it is rejected by the runway selector. Prevents selecting a headwind runway
@@ -11371,6 +11383,20 @@ function _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs) {
   if (Math.abs(dHdg) <= maxDhdg) _demoAcHdg = ((tgtHdg + 360) % 360);
   else                            _demoAcHdg = ((_demoAcHdg + Math.sign(dHdg) * maxDhdg + 360) % 360);
 
+  // v3.6.7 — Takeoff roll. Previously altitude chased its climb target at
+  // the full climb rate the instant the climb phase began, while ground
+  // speed only built up at 2 kt/sec from a standing start — so the aircraft
+  // rose almost vertically (helicopter-like) for the first ~2 minutes before
+  // it had any lateral speed. Now, while still at field elevation and below
+  // rotation speed, the aircraft HOLDS altitude and accelerates briskly down
+  // the runway; only once it passes Vr does it begin to climb. Result: it
+  // tracks laterally along the departure runway, then rotates and climbs.
+  const _depElev   = (_demoPlan && _demoPlan.timing && isFinite(_demoPlan.timing.depElev)) ? _demoPlan.timing.depElev : 0;
+  const _cruiseKts = perf.cruiseKts || 250;
+  const _vr        = Math.max(50, _cruiseKts * 0.35);   // rotation speed (kt)
+  const _onRoll    = (tgtAlt > _demoAcAlt + 1) && (_demoAcAlt <= _depElev + 50) && (_demoAcGs < _vr);
+  if (_onRoll) tgtAlt = _demoAcAlt;                      // no climb until airborne
+
   // Altitude — climbFpm up, descentFpm down. No "smooth" approach to
   // target — just steady rate until within rate*dt of target, then snap.
   let dAlt = tgtAlt - _demoAcAlt;
@@ -11379,9 +11405,10 @@ function _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs) {
   if (Math.abs(dAlt) <= maxDalt) _demoAcAlt = tgtAlt;
   else                           _demoAcAlt += Math.sign(dAlt) * maxDalt;
 
-  // Speed — generic 2 kt/sec accel/decel. Fine for visual realism at
-  // every category; spool-up nuances out of scope for a demo.
-  const accel = 2.0;
+  // Speed — generic 2 kt/sec accel/decel, but a brisk 6 kt/sec on the
+  // takeoff roll so the aircraft reaches flying speed (and starts moving
+  // laterally) in a realistic ~20-30 s instead of ~2 minutes.
+  const accel = _onRoll ? 6.0 : 2.0;
   let dGs = tgtGs - _demoAcGs;
   const maxDgs = accel * dt;
   if (Math.abs(dGs) <= maxDgs) _demoAcGs = tgtGs;
@@ -11412,19 +11439,18 @@ function _demoApAutoTargetHdg() {
   const pts = _demoPlan.points;
   const dep = pts[0];
   const dest = pts[pts.length - 1];
-  const alignNm = _DEMO_RWY_ALIGN_NM;
 
-  // Dep runway lock — applies until the aircraft is more than alignNm
-  // from the dep airport. Uses a small ground-distance hysteresis: once
-  // past the radius, never re-engages even if the aircraft loops back.
-  // v2.98.7 — plan.depRwyHdg / destRwyHdg are now stored in TRUE frame
-  // (sourced from ourairports le_heading_degT / he_heading_degT), so
-  // they're returned to the integrator as-is. No more dipole-mag-var
-  // round-trip — the integrator works in true and gets the picker's
-  // sub-degree result directly.
+  // Dep runway lock — hold the dep runway heading on the initial climb,
+  // then release 30 s after rotation (v3.6.5; was 2000 ft AGL in v3.6.0,
+  // and 5 nm from dep originally). Airborne time = simSec minus the taxi
+  // budget. Latches once: never re-engages mid-flight even if a later leg
+  // dips back toward the dep field.
+  // v2.98.7 — plan.depRwyHdg / destRwyHdg are stored in the TRUE frame
+  // (ourairports le_heading_degT / he_heading_degT) and returned as-is.
   if (isFinite(_demoPlan.depRwyHdg) && !_demoDepRwyDone) {
-    const distFromDep = _demoDistNm(_demoAcLat, _demoAcLon, dep.lat, dep.lon);
-    if (distFromDep <= alignNm) return _demoPlan.depRwyHdg;
+    const taxiSec     = (_demoPlan.timing && isFinite(_demoPlan.timing.taxiSec)) ? _demoPlan.timing.taxiSec : 0;
+    const airborneSec = _demoSimSec - taxiSec;
+    if (airborneSec < _DEMO_RWY_ALIGN_SEC) return _demoPlan.depRwyHdg;
     _demoDepRwyDone = true;
   }
 
@@ -12457,7 +12483,12 @@ function _demoStateAt(simSec) {
     phase = 'cruise';
     const t = simSec - taxi - cl;
     alt = T.cruiseFt; gs = T.cruiseKts;
-    distAlongRoute = T.climbNm + (t / 3600) * T.cruiseKts;
+    // v3.6.0 — clamp at top-of-descent so the dynamic cruise-duration
+    // refinement (which can stretch cruiseSec beyond the fixed route
+    // geometry when the live estimate runs long) never advances the
+    // along-route distance past the start of descent; the marker simply
+    // holds at TOD until the descent phase begins.
+    distAlongRoute = T.climbNm + Math.min(T.cruiseNm, (t / 3600) * T.cruiseKts);
   } else if (simSec < taxi + cl + cr + de) {
     phase = 'descent';
     const f = (simSec - taxi - cl - cr) / Math.max(1, de);
@@ -12568,6 +12599,49 @@ function _demoStateAt(simSec) {
 }
 
 // ── Engine tick (integrating, v2.97.5) ──
+// v3.6.0 / reworked v3.6.2 — Dynamic scrub-total refinement. The plan's total
+// flight time is a build-time estimate (straight-line leg distances, average
+// phase speeds). The aircraft actually flies turn arcs and holds the planned
+// speeds, so the real arrival time drifts from that estimate — the v3.6.0
+// version re-derived the remainder from the SAME planned speeds, so it just
+// reproduced the original total and never moved. This version measures the
+// ACTUAL pace flown so far (airborne sim-seconds per track-mile covered) and
+// projects the track miles still remaining at that pace — capturing turn
+// overhead and any real-vs-estimate difference. The delta eases into the
+// elastic cruise phase (cruise is level, so its duration can stretch/shrink
+// with no altitude discontinuity; _demoStateAt clamps cruise distAlongRoute
+// at TOD so the marker never overshoots). Runs from cruise onward; live
+// position is integration-driven and landing is detected independently, so
+// this only affects the displayed total and the time-machine scrub mapping.
+function _demoRefineTiming(simSec) {
+  if (!_demoActive || _demoLanded || !_demoPlan) return;
+  const T = _demoPlan.timing; if (!T) return;
+  const cruiseStart = T.taxiSec + T.climbSec;
+  const todSec      = cruiseStart + T.cruiseSec;        // top of descent
+  // Refine from the start of cruise until TOD. Once descending, the tail
+  // phases (descent + approach) are fixed budgets, so leave the total alone.
+  if (simSec < cruiseStart || simSec >= todSec) return;
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || typeof _afkTrackMilesRemaining !== 'function') return;
+  const remNm   = _afkTrackMilesRemaining({ lat: _demoAcLat, lng: _demoAcLon, gs: _demoAcGs }, fp);
+  const totalNm = _demoPlan.totalNm;
+  if (!isFinite(remNm) || remNm <= 0 || !isFinite(totalNm) || totalNm <= 0) return;
+  const flownNm = totalNm - remNm;
+  const airborneSec = simSec - T.taxiSec;               // sim seconds since rotation
+  if (flownNm < 1 || airborneSec < 30) return;          // wait for a stable pace
+  // Actual pace = airborne sim-seconds per track-mile flown. Projecting the
+  // remaining track miles at this pace yields the live ETA; add the final
+  // taxi-in budget for the full gate-to-gate total.
+  const secPerNm = airborneSec / flownNm;
+  const estTotal = simSec + remNm * secPerNm + (T.taxiSec || 0);
+  // Ease toward the estimate (10%/tick @ 1 Hz) so the bar converges smoothly.
+  const eased    = T.totalSec + (estTotal - T.totalSec) * 0.1;
+  // Never let cruise end in the past — keep ≥1 s of cruise plus the fixed tail.
+  const minTotal = simSec + (T.descentSec || 0) + (T.apprSec || 0) + (T.taxiSec || 0) + 1;
+  T.totalSec  = Math.max(minTotal, eased);
+  T.cruiseSec = T.totalSec - (T.taxiSec + T.climbSec + (T.descentSec || 0) + (T.apprSec || 0) + T.taxiSec);
+}
+
 // Each tick: compute target heading/alt/gs (from manual setpoints or plan
 // baseline), integrate state by simulated dt seconds, emit a packet
 // through the FSUIPC-shaped _liveAcRenderMarker chokepoint. simSec keeps
@@ -12580,7 +12654,15 @@ function _demoTick() {
   _demoLastReal = now;
   if (_demoPaused) { _demoUpdateBar(); return; }
   const dt = dtReal * _demoSpeed;
-  _demoSimSec = Math.max(0, _demoSimSec + dt);
+  // v3.6.2 — Once landed, stop advancing the sim clock so the scrub bar
+  // freezes at touchdown instead of counting on past the end of the flight.
+  // (Pre-3.6.2 simSec kept ticking so the bar would "reach 100%", but it
+  // then kept incrementing the displayed time indefinitely.)
+  if (_demoLanded) {
+    if (_demoPlan && _demoPlan.timing) _demoSimSec = Math.min(_demoSimSec, _demoPlan.timing.totalSec);
+  } else {
+    _demoSimSec = Math.max(0, _demoSimSec + dt);
+  }
   if (_demoSuspendEmit) { _demoUpdateBar(); return; }
 
   // v3.0.12 — Landed short-circuit. Once the hard-landing detector
@@ -12614,6 +12696,9 @@ function _demoTick() {
   // phase label. Heading AUTO comes from the next-wpt bearing rather
   // than the plan track tangent so DIRECT TO works as a simple
   // index-shift without any extra plumbing.
+  // v3.6.0 — refine the total-flight-time estimate from live progress
+  // before sampling the plan baseline (cruise-phase only; see helper).
+  try { _demoRefineTiming(_demoSimSec); } catch (_) {}
   const planBase = _demoStateAt(_demoSimSec) || { alt: 0, gs: 0, _demoPhase: null };
 
   // Arrival guard — the time-phase machine fires 'ground' (arrival) at a
@@ -12759,6 +12844,12 @@ function _demoTick() {
       _demoAcLon = _dest.lon;
       _demoAcAlt = _destE;
       _demoAcGs  = 0;
+      // v3.6.0 — Freeze the ELAPSED telemetry timer at touchdown for demo
+      // flights so it stops here instead of ticking up for another 60 s
+      // (the real-time landing auto-arm) — or forever if the demo is left
+      // sitting on the ground. Demo-only: live / FSUIPC keep their own
+      // takeoff + landing detection untouched.
+      if (typeof _afkElapsedArmLanded === 'function') { try { _afkElapsedArmLanded(); } catch (_) {} }
     }
   }
 
@@ -12816,6 +12907,11 @@ function _demoLaunch(plan, raw) {
     _demoDepRwyDone = false;
     _demoLanded     = false;
   }
+  // v3.6.0 — Reset the ELAPSED telemetry timer for the new demo flight so it
+  // starts clean (the demo's own climb-out re-arms it on takeoff). Demo-only;
+  // live / FSUIPC new-flight handling is unchanged.
+  if (typeof _afkResetTakeoff === 'function')      { try { _afkResetTakeoff(); } catch (_) {} }
+  if (typeof _afkRenderElapsedField === 'function'){ try { _afkRenderElapsedField(); } catch (_) {} }
   _demoApMode.hdg = 'plan'; _demoApMode.alt = 'plan'; _demoApMode.gs = 'plan';
   _demoApSetpoints.hdg = 0; _demoApSetpoints.alt = 0; _demoApSetpoints.gs = 0;
   if (typeof _liveAcStopOthers === 'function') _liveAcStopOthers('demo');
@@ -12919,6 +13015,11 @@ function _demoStop() {
     if (b) b.classList.remove('active');
   });
   if (_liveAcSource === 'demo' && typeof _liveAcClear === 'function') _liveAcClear();
+  // v3.6.0 — Stopping the demo removes the live source, so clear the ELAPSED
+  // timer too (otherwise a demo stopped mid-flight leaves it ticking with no
+  // telemetry behind it). Demo-only.
+  if (typeof _afkResetTakeoff === 'function')      { try { _afkResetTakeoff(); } catch (_) {} }
+  if (typeof _afkRenderElapsedField === 'function'){ try { _afkRenderElapsedField(); } catch (_) {} }
   _demoShowFloatingBar(false);
   _demoApplyLockdown(false);
   if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo stopped.', 'ok');
@@ -16349,9 +16450,10 @@ const _AFK_COND_PARAMS = [
   { id: 'distNext',  label: 'Distance to next waypoint', unit: 'nm', defaultVal: 10,   evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); return nx ? nx.distNm : null; } },
   { id: 'distWp',    label: 'Distance to waypoint',    unit: 'nm',  defaultVal: 20,    needsWp: true, evalFn: (ac, c, fp) => { if (!ac || !c.wp || !fp || !fp.navlog) return null; const fixes = Array.isArray(fp.navlog.fix) ? fp.navlog.fix : [fp.navlog.fix]; const w = fixes.find(f => f && f.ident === c.wp); if (!w || !isFinite(parseFloat(w.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(w.pos_lat), parseFloat(w.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'trkRem',    label: 'Track miles remaining',   unit: 'nm',  defaultVal: 100,   evalFn: (ac, c, fp) => { if (!ac || !fp) return null; const v = _afkTrackMilesRemaining(ac, fp); return isFinite(v) ? v : null; } },
+  { id: 'xtk',       label: 'Track deviation',         unit: 'nm',  defaultVal: 10,    evalFn: (ac, c, fp) => { if (!ac || !fp) return null; const v = _afkCrossTrackNm(ac, fp); return isFinite(v) ? v : null; } },
   { id: 'remTime',   label: 'Remaining time',          unit: 'sec', defaultVal: 30,   isTime: true, defaultUnit: 'minutes', defaultValSec: 1800, evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination) return null; const trk = _afkTrackMilesRemaining(ac, fp); const dest = isFinite(trk) ? trk : (fp.destination ? _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)) : null); if (!isFinite(dest) || !ac.gs || ac.gs <= 5) return null; return (dest / ac.gs) * 3600; } },
   { id: 'etaNext',   label: 'ETA to next waypoint',    unit: 'sec', defaultVal: 5,    isTime: true, defaultUnit: 'minutes', defaultValSec: 300,  evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); if (!nx || !ac.gs || ac.gs <= 5) return null; return (nx.distNm / ac.gs) * 3600; } },
-  { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'minutes', defaultValSec: 3600, evalFn: () => (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null },
+  { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'minutes', defaultValSec: 3600, evalFn: () => { const d = (typeof _afkDemoElapsedSec === 'function') ? _afkDemoElapsedSec() : null; if (d != null) return d; return (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null; } },
   { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'seconds', defaultValSec: 60,   evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
 ];
 // v2.94.2 — Seconds-per-unit for the time-unit pulldown.
@@ -16802,9 +16904,24 @@ function _afkSaveElapsedState() {
   } catch (_) {}
 }
 
+// v3.6.5 — Demo flights report SIMULATED time since takeoff (= the scrub
+// clock minus the taxi budget), so ELAPSED matches the flight-plan scrub bar
+// instead of wall-clock real time. Freezes naturally when the demo pauses or
+// lands because _demoSimSec stops advancing. Returns null when no demo is
+// active so live / FSUIPC flights fall through to the wall-clock path.
+function _afkDemoElapsedSec() {
+  if (typeof _demoActive !== 'undefined' && _demoActive &&
+      typeof _demoPlan !== 'undefined' && _demoPlan && _demoPlan.timing) {
+    return Math.max(0, _demoSimSec - (_demoPlan.timing.taxiSec || 0));
+  }
+  return null;
+}
+
 // Convenience: the value (in seconds) the data panel should display.
 // Returns null when state is 'idle' (display '—').
 function _afkElapsedDisplaySec() {
+  const demo = _afkDemoElapsedSec();
+  if (demo != null) return demo;
   if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
     return (Date.now() - _afkTakeoffAt) / 1000;
   }
@@ -16824,6 +16941,13 @@ function _afkElapsedDisplaySec() {
 // before the next idle render-cycle reverted them to em-dash.
 function _afkRenderElapsedField() {
   if (typeof _afkDpSet !== 'function') return;
+  // v3.6.5 — Demo: show simulated time since takeoff (matches the scrub bar).
+  const _demoElapsed = _afkDemoElapsedSec();
+  if (_demoElapsed != null) {
+    _afkDpSet('afkDpElapsed', _afkFmtHMS(_demoElapsed), 'afk-dp-value');
+    _afkDpSetTitle('afkDpElapsed', 'Simulated time since takeoff (demo) — matches the flight-plan scrub bar.');
+    return;
+  }
   if (_afkElapsedState === _AFK_ELAPSED_RUNNING && _afkTakeoffAt > 0) {
     _afkDpSet('afkDpElapsed', _afkFmtHMS((Date.now() - _afkTakeoffAt) / 1000), 'afk-dp-value');
     // v2.88.0 — hover reveals the takeoff timestamp in local + Zulu form.
@@ -20488,6 +20612,54 @@ function _afkTrackMilesRemaining(ac, fp) {
   return total;
 }
 
+// v3.6.2 — Cross-track deviation: the perpendicular great-circle distance
+// (nm, always ≥ 0) from the aircraft to the nearest leg of the loaded
+// SimBrief route — i.e. how far abeam the planned track you are. Picks the
+// leg the aircraft is most plausibly on (same min-excess scoring as
+// _afkTrackMilesRemaining), then applies the standard cross-track formula.
+// Returns NaN when telemetry or the plan isn't usable.
+function _afkBearingRad(lat1, lon1, lat2, lon2) {
+  const toR = Math.PI / 180;
+  const p1 = lat1 * toR, p2 = lat2 * toR, dl = (lon2 - lon1) * toR;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return Math.atan2(y, x);
+}
+function _afkCrossTrackNm(ac, fp) {
+  if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng) || !fp || !fp.origin || !fp.destination) return NaN;
+  const oLat = parseFloat(fp.origin.pos_lat),       oLng = parseFloat(fp.origin.pos_long);
+  const dLat = parseFloat(fp.destination.pos_lat),  dLng = parseFloat(fp.destination.pos_long);
+  if (!isFinite(oLat) || !isFinite(oLng) || !isFinite(dLat) || !isFinite(dLng)) return NaN;
+  const fixesRaw = fp.navlog && fp.navlog.fix;
+  const fixes    = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  const pts = [[oLat, oLng]];
+  fixes.forEach(f => {
+    const la = parseFloat(f.pos_lat), ln = parseFloat(f.pos_long);
+    if (isFinite(la) && isFinite(ln)) pts.push([la, ln]);
+  });
+  pts.push([dLat, dLng]);
+  if (pts.length < 2) return NaN;
+  let bestIdx = 0, bestScore = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i], B = pts[i + 1];
+    const dA = _afkDistNm(ac.lat, ac.lng, A[0], A[1]);
+    const dB = _afkDistNm(ac.lat, ac.lng, B[0], B[1]);
+    const dAB = _afkDistNm(A[0], A[1], B[0], B[1]);
+    if (!isFinite(dA) || !isFinite(dB) || !isFinite(dAB)) continue;
+    const excess = (dA + dB) - dAB;
+    if (excess < bestScore) { bestScore = excess; bestIdx = i; }
+  }
+  const A = pts[bestIdx], B = pts[bestIdx + 1];
+  const R = 3440.065; // earth radius, nm
+  const d13 = _afkDistNm(A[0], A[1], ac.lat, ac.lng) / R; // angular distance A→ac
+  if (!isFinite(d13)) return NaN;
+  const th13 = _afkBearingRad(A[0], A[1], ac.lat, ac.lng);
+  const th12 = _afkBearingRad(A[0], A[1], B[0], B[1]);
+  const s = Math.sin(d13) * Math.sin(th13 - th12);
+  const xtd = Math.asin(Math.max(-1, Math.min(1, s))) * R;
+  return isFinite(xtd) ? Math.abs(xtd) : NaN;
+}
+
 // =====================================================================
 // Customisable data panel (v2.80.0)
 //
@@ -20523,12 +20695,19 @@ const _AFK_DP_ELEMENTS = {
                title:'Great-circle nautical miles from your current position to the next un-passed waypoint on the SimBrief route. Requires a SimBrief flight plan loaded.' },
   etaNext:   { label:'ETA NEXT',      group:'Time',     valueId:'afkDpEtaNext',   minWidth:'4.5em',
                title:'Time-to-next-waypoint, computed from DIST TO NEXT and your current ground speed. Requires a SimBrief flight plan loaded and GS > 5 kt.' },
+  // v3.6.0 — Next waypoint ident along the loaded SimBrief route.
+  nextWpt:   { label:'NEXT',          group:'Navigation', valueId:'afkDpNextWpt', minWidth:'4.5em',
+               title:'Ident of the next un-passed waypoint on the loaded SimBrief route.' },
+  // v3.6.2 — Cross-track deviation (nm abeam the route). Hidden by default
+  // (not in _AFK_DP_DEFAULT_CONFIG); add it via the ⚙ panel-customise menu.
+  xtk:       { label:'TRK DEV',       group:'Navigation', valueId:'afkDpXtk',     minWidth:'5.0em',
+               title:'Track deviation — perpendicular distance abeam the loaded SimBrief route (nm). Requires a SimBrief flight plan.' },
   nextAlarm: { label:'NEXT ALERT',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
   nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
 };
 
 const _AFK_DP_DEFAULT_CONFIG = [
-  'lat', 'lon', 'hdg', 'altMsl', 'gs', 'ias', 'vs', 'phase',
+  'lat', 'lon', 'hdg', 'altMsl', 'gs', 'ias', 'vs', 'phase', 'nextWpt',
   'spacer-1',
   'elapsed', 'remaining', 'distRem', 'trkRem', 'etaLcl', 'etaUtc',
   'spacer-2',
@@ -21023,6 +21202,22 @@ function _afkUpdateDataPanel(ac) {
   const distDepEl  = document.getElementById('afkDpDistDep');
   const distNextEl = document.getElementById('afkDpDistNext');
   const etaNextEl  = document.getElementById('afkDpEtaNext');
+  const nextWptEl  = document.getElementById('afkDpNextWpt');
+  // v3.6.2 — TRK DEV (cross-track). Hidden by default, so the element is
+  // usually absent; _afkDpSet-style null guards keep this a no-op then.
+  const xtkEl = document.getElementById('afkDpXtk');
+  if (xtkEl) {
+    const xtk = (fp && fp.origin && fp.destination) ? _afkCrossTrackNm(ac, fp) : NaN;
+    if (isFinite(xtk)) {
+      xtkEl.textContent = xtk.toFixed(1) + ' nm';
+      xtkEl.className = 'afk-dp-value';
+      _afkDpSetTitle('afkDpXtk', 'Track deviation: ' + xtk.toFixed(1) + ' nm abeam the SimBrief route (' + (xtk * 1.852).toFixed(1) + ' km).');
+    } else {
+      xtkEl.textContent = '—';
+      xtkEl.className = 'afk-dp-value muted';
+      _afkDpSetTitle('afkDpXtk', null);
+    }
+  }
   // DIST FROM DEP — needs the origin from the SimBrief plan; falls
   // back to em-dash when no plan is loaded.
   if (fp && fp.origin && isFinite(parseFloat(fp.origin.pos_lat))) {
@@ -21051,6 +21246,12 @@ function _afkUpdateDataPanel(ac) {
   // down that holds the _afkETA.next() result for NEXT ALERT / ALERT ETA.)
   const nextWpt = (fp && fp.origin && fp.destination) ? _afkNextWptInfo(ac, fp) : null;
   if (nextWpt) {
+    if (nextWptEl) {
+      nextWptEl.textContent = nextWpt.ident || '—';
+      nextWptEl.className = nextWpt.ident ? 'afk-dp-value' : 'afk-dp-value muted';
+      _afkDpSetTitle('afkDpNextWpt', nextWpt.ident
+        ? ('Next waypoint: ' + nextWpt.ident + ' · ' + nextWpt.distNm.toFixed(1) + ' nm away.') : null);
+    }
     if (distNextEl) {
       distNextEl.textContent = nextWpt.distNm.toFixed(1) + ' nm';
       distNextEl.className = 'afk-dp-value';
@@ -21071,6 +21272,7 @@ function _afkUpdateDataPanel(ac) {
       }
     }
   } else {
+    if (nextWptEl)  { nextWptEl.textContent  = '—'; nextWptEl.className  = 'afk-dp-value muted'; _afkDpSetTitle('afkDpNextWpt',  null); }
     if (distNextEl) { distNextEl.textContent = '—'; distNextEl.className = 'afk-dp-value muted'; _afkDpSetTitle('afkDpDistNext', null); }
     if (etaNextEl)  { etaNextEl.textContent  = '—'; etaNextEl.className  = 'afk-dp-value muted'; _afkDpSetTitle('afkDpEtaNext',  null); }
   }
@@ -25757,11 +25959,18 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
   marker.on('mouseover', function() {
     if (_rgPhase !== 'explore' && _rgPhase !== 'results') return;
     clearTimeout(_rgTipTimer);
-    const tip = this.getTooltip();
-    if (!tip || !this._map) return;
-    tip._source = this;
-    tip.setLatLng(this.getLatLng());
-    tip.openOn(this._map);
+    // v3.6.4 — 250 ms hover delay before the airport tooltip opens, so
+    // sweeping the cursor across the dot field doesn't flash tooltips.
+    // mouseout (and movestart) clear the timer to cancel a pending open.
+    const self = this;
+    _rgTipTimer = setTimeout(function() {
+      if (_rgPhase !== 'explore' && _rgPhase !== 'results') return;
+      const tip = self.getTooltip();
+      if (!tip || !self._map) return;
+      tip._source = self;
+      tip.setLatLng(self.getLatLng());
+      tip.openOn(self._map);
+    }, 250);
   });
   marker.on('mouseout', function() {
     clearTimeout(_rgTipTimer);
@@ -26876,6 +27085,18 @@ function _rgScheduleMatrixRefresh() {
   _rgMatRefreshTm = setTimeout(() => { if (_rgPhase === 'results') _rgComputeAndRender(); }, 120);
 }
 
+// v3.6.3 — While resizing a drawn dep/arr region ring (dragging its edge
+// handle), float the live radius next to the cursor — the same "N nm" label
+// the initial region draw shows. `isArr` flips the colour/side like the draw.
+function _rgShowResizeRadiusLabel(latlng, nm, isArr) {
+  try {
+    const rect = document.getElementById('rgMapContainer').getBoundingClientRect();
+    const cpt  = _rgMap.latLngToContainerPoint(latlng);
+    _rgShowNmLabel({ clientX: rect.left + cpt.x, clientY: rect.top + cpt.y },
+                   Math.round(nm) + ' nm', isArr);
+  } catch (_) {}
+}
+
 function _rgApplyDrag(e) {
   if (_rgDragMode === 'dep_center') {
     _rgDepCenter = e.latlng;
@@ -26902,6 +27123,7 @@ function _rgApplyDrag(e) {
     _rgDepRing.setRadius(nm * 1852);
     _rgDrawHandles();
     _rgScheduleMatrixRefresh();
+    _rgShowResizeRadiusLabel(e.latlng, nm, false);
 
   } else if (_rgDragMode === 'arr_edge') {
     const nm = Math.max(1, _haversineNm(_rgArrCenter.lat, _rgArrCenter.lng, e.latlng.lat, e.latlng.lng));
@@ -26910,6 +27132,7 @@ function _rgApplyDrag(e) {
     _rgArrRing.setRadius(nm * 1852);
     _rgDrawHandles();
     _rgScheduleMatrixRefresh();
+    _rgShowResizeRadiusLabel(e.latlng, nm, true);
 
   } else if (_rgDragMode.startsWith('meas_center_')) {
     const idx = parseInt(_rgDragMode.slice(12));
@@ -27414,6 +27637,8 @@ function _rgEndDrag() {
   clearTimeout(_rgMatRefreshTm);
   _rgMap.dragging.enable();
   _rgSetCursor('');
+  // v3.6.3 — clear the live radius label shown while resizing a region ring.
+  _rgHideNmLabel();
   if (!wasMeas) _rgComputeAndRender();
   // Edge-handle drag: restore handle visibility AND re-render the entry so the
   // label snaps back to the line midpoint (it was riding the endpoint during
@@ -29866,7 +30091,9 @@ function _rgUpdateBreadcrumbs() {
   // the aircraft breadcrumb track, so each can be removed in one click
   // without opening the 🔌 Live menu. v3.5.1 — sized like the other filter
   // chips (standard rg-bc); the track chip keeps a green label accent.
-  function mkMiniChip(text, title, onX, accent) {
+  // v3.6.1 — clicking the chip BODY zooms the map to fit that layer (~90%
+  // of the viewport); clicking the ✕ still clears it.
+  function mkMiniChip(text, title, onX, accent, onBody) {
     const chip = document.createElement('span');
     chip.className = 'rg-bc';
     if (title) chip.title = title;
@@ -29874,10 +30101,13 @@ function _rgUpdateBreadcrumbs() {
     lbl.textContent = text;
     if (accent) lbl.style.color = accent;
     chip.appendChild(lbl);
+    if (onBody) {
+      chip.addEventListener('click', e => { if (!e.target.classList.contains('rg-bc-x')) onBody(); });
+    }
     const x = document.createElement('span');
     x.className = 'rg-bc-x';
     x.textContent = '✕';
-    x.title = title || 'Remove';
+    x.title = 'Remove';
     x.addEventListener('click', e => { e.stopPropagation(); onX(); });
     chip.appendChild(x);
     return chip;
@@ -29885,17 +30115,64 @@ function _rgUpdateBreadcrumbs() {
   const sbLoaded = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) ||
                    (typeof _sbOfpLayers !== 'undefined' && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0);
   if (sbLoaded) {
-    container.appendChild(mkMiniChip('✈ Flight Plan', 'Remove the plotted SimBrief flight plan',
-      () => { _sbOfpClearUI(); _rgUpdateBreadcrumbs(); }));
+    container.appendChild(mkMiniChip('✈ Flight Plan',
+      'Click to zoom the map to the SimBrief flight plan · ✕ to remove it',
+      () => { _sbOfpClearUI(); _rgUpdateBreadcrumbs(); },
+      null,
+      () => _rgZoomToFlightPlan()));
   }
   const hasTrack = (typeof _liveAcTrailUltra   !== 'undefined' && _liveAcTrailUltra.length   > 0) ||
                    (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
                    (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
   if (hasTrack) {
     // Green label matches the green breadcrumb trail on the map.
-    container.appendChild(mkMiniChip('Aircraft Track', 'Erase the flown aircraft breadcrumb track',
-      () => { _liveAcClearTrailUI(); _rgUpdateBreadcrumbs(); }, '#00e676'));
+    container.appendChild(mkMiniChip('Aircraft Track',
+      'Click to zoom the map to the flown track · ✕ to erase it',
+      () => { _liveAcClearTrailUI(); _rgUpdateBreadcrumbs(); },
+      '#00e676',
+      () => _rgZoomToAircraftTrack()));
   }
+}
+
+// v3.6.1 — Zoom-to-fit helpers for the breadcrumb layer pills. Padding is
+// ~5% of the map container on each side so the geometry fills ~90% of the
+// viewport. maxZoom caps the zoom so a degenerate one-point track (or a
+// very short plan) doesn't slam to street level.
+function _rgFitPadding() {
+  const c = document.getElementById('rgMapContainer');
+  const w = (c && c.clientWidth)  ? c.clientWidth  : 800;
+  const h = (c && c.clientHeight) ? c.clientHeight : 600;
+  return [Math.max(20, Math.round(w * 0.05)), Math.max(20, Math.round(h * 0.05))];
+}
+function _rgFitToPoints(pts) {
+  if (!_rgMap || typeof L === 'undefined' || !pts || pts.length === 0) return;
+  try {
+    const [px, py] = _rgFitPadding();
+    _rgMap.fitBounds(L.latLngBounds(pts), {
+      paddingTopLeft: [px, py], paddingBottomRight: [px, py],
+      maxZoom: 13, animate: true,
+    });
+  } catch (_) {}
+}
+function _rgZoomToFlightPlan() {
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp) return;
+  const pts = [];
+  const push = (la, ln) => { const a = parseFloat(la), b = parseFloat(ln); if (isFinite(a) && isFinite(b)) pts.push([a, b]); };
+  if (fp.origin)      push(fp.origin.pos_lat,      fp.origin.pos_long);
+  if (fp.destination) push(fp.destination.pos_lat, fp.destination.pos_long);
+  const fixesRaw = fp.navlog && fp.navlog.fix;
+  const fixes = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+  fixes.forEach(f => push(f.pos_lat, f.pos_long));
+  _rgFitToPoints(pts);
+}
+function _rgZoomToAircraftTrack() {
+  const pts = [].concat(
+    (typeof _liveAcTrailArchive !== 'undefined') ? _liveAcTrailArchive : [],
+    (typeof _liveAcTrailFresh   !== 'undefined') ? _liveAcTrailFresh   : [],
+    (typeof _liveAcTrailUltra   !== 'undefined') ? _liveAcTrailUltra   : []
+  ).filter(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]));
+  _rgFitToPoints(pts);
 }
 
 // ── Main-screen category filter sync ─────────────────────────────────────────
@@ -31735,7 +32012,7 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body demo-modal-body">
       <div class="demo-section-hint" style="padding:0.4rem 0 0.6rem;">
-        Drive AA's telemetry and alerting system with a synthetic flight along a saved plan — no MSFS or FSUIPC connection required. Designed for demos at sites where the simulator is unavailable.
+        Drive AA's telemetry and alerting system with a synthetic flight along a saved plan — no MSFS or FSUIPC connection required. Perfect for alert testing or offline demos.
       </div>
 
       <div class="demo-modal-section">
@@ -31904,16 +32181,16 @@ function rgSendToFlightPlanner() {
 
             <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it.<br/><br/>
 
-            <strong>Runway selection &amp; final approach (v3.0.0)</strong> &mdash; before starting, the demo fetches the current METAR for the destination airport from CheckWX and selects the runway with the highest headwind component. If weather data isn&rsquo;t available within 4 seconds the runway is picked by best alignment with the route&rsquo;s inbound bearing. A virtual Final Approach Fix (FAF) is inserted into the route plan 8&nbsp;nm outbound from the selected landing threshold on the extended runway centerline, so the aircraft intercepts the final approach course and flies the last segment precisely aligned with the runway. The departure runway heading is held for the first 5&nbsp;nm after takeoff so the track lines up with the scenery centerline on climb-out too.<br/><br/>
+            <strong>Runway selection &amp; final approach (v3.0.0)</strong> &mdash; before starting, the demo fetches the current METAR for the destination airport from CheckWX and selects the runway with the highest headwind component. If weather data isn&rsquo;t available within 4 seconds the runway is picked by best alignment with the route&rsquo;s inbound bearing. A virtual Final Approach Fix (FAF) is inserted into the route plan 8&nbsp;nm outbound from the selected landing threshold on the extended runway centerline, so the aircraft intercepts the final approach course and flies the last segment precisely aligned with the runway. The departure runway heading is held for the first 90&nbsp;seconds after rotation (v3.6.6; was 30&nbsp;s / 2,000&nbsp;ft AGL / 5&nbsp;nm in earlier builds) so the track lines up with the scenery centerline on climb-out before it turns to follow the plan.<br/><br/>
 
             <strong>AP target vs live (v2.98.1)</strong> &mdash; the AP panel HDG / ALT / SPD readouts show the value the autopilot is <em>chasing</em>, not the current live integrator state. Managed = the auto-derived target (next-wpt bearing / VNAV alt / plan-baseline gs); Selected = the user setpoint. Live telemetry remains visible in the floating data panel.<br/><br/>
 
             <strong>Floating control bar</strong> &mdash; while the demo is running, a control bar appears at the bottom of the map with:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>⏸ Pause / ▶ Play</strong> and <strong>⏮ Restart</strong></li>
-              <li><strong>Scrub slider</strong> &mdash; drag to jump to any point along the flight</li>
+              <li><strong>Scrub slider</strong> &mdash; drag to jump to any point along the flight. The total flight time shown next to it refines as the flight progresses (v3.6.0), converging on a more accurate figure during cruise.</li>
               <li><strong>Phase label</strong> &mdash; current synthetic phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH)</li>
-              <li><strong>Speed presets</strong> &mdash; 0.25× / 0.5× / 1× / 3× / 5×, plus a free-slider for arbitrary 0.1× &ndash; 25× playback (v2.98.0)</li>
+              <li><strong>Speed presets</strong> &mdash; 1× / 3× / 10× (v3.6.0), plus a free-slider for arbitrary 0.1× &ndash; 25× playback</li>
               <li><strong>📡✖ Stale</strong> &mdash; stops emitting packets but keeps the marker. After 30 s the icon greys out and any configured Loss-of-Telemetry alarms trip per their thresholds. Click again to resume the stream.</li>
               <li><strong>⛓✖ Disconnect</strong> &mdash; clears the live-aircraft marker entirely (mirrors a full FSUIPC drop). Click again to reconnect.</li>
               <li><strong>✕ Exit</strong> &mdash; end the demo and clear the synthetic aircraft.</li>
@@ -32047,6 +32324,7 @@ function rgSendToFlightPlanner() {
             <strong>Removing a stacked compound with <code>-</code></strong> — the exact inverse of <code>+</code> stacking. Prefix a compound query with <code>-</code> to drop the matching tuple from the active union. Example: after stacking the three Europe queries above, typing <em>-jmribe @ Europe</em> removes jmribe&rsquo;s European entry and the map snaps to Kyndra + CapitanCabal in Europe. The dropdown automatically filters to show only currently-active compound entries when <code>-</code> is the prefix, so you can&rsquo;t accidentally click a row that wouldn&rsquo;t remove anything. Removing the last surviving tuple clears the compound filter entirely.<br/><br/>
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
+            <strong>Adjust a drawn region</strong> — after both circles are down, drag a region&rsquo;s <strong>center pin</strong> to move it, or drag its <strong>edge handle</strong> to resize it. While resizing, the live radius (&ldquo;N nm&rdquo;) floats next to the cursor (v3.6.3), the same readout shown during the initial draw.<br/><br/>
             <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle, a resize arrow over an edge handle, and a pointer over the close ✕ badge. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map. A plain <strong>right-click on an empty part of the map</strong> also exits measurement mode (right-click drag still pans; right-clicking a dot still opens its Quick-Rate popover).<br/><br/>
             <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the Quick-Rate popover</em> over an airport dot in explore / results phases, <em>cancels the in-progress region selection</em> during region drawing, and <em>exits measurement mode</em> when made on an empty area of the map while measuring.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
@@ -32115,7 +32393,7 @@ function rgSendToFlightPlanner() {
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
             <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
-            <strong>✈ Flight Plan</strong> / <strong>Aircraft Track</strong> (v3.5.0) &mdash; two small, muted chips at the end of the strip. The <em>✈ Flight Plan</em> chip appears whenever a SimBrief flight plan is plotted; the green <em>Aircraft Track</em> chip appears whenever a live breadcrumb trail is on the map. Click the <strong>&times;</strong> on either to clear that layer in one step &mdash; the same as the clear actions in the <strong>🔌 Live</strong> menu, but reachable without opening it. They appear / disappear automatically as the plan and track come and go.<br/><br/>
+            <strong>✈ Flight Plan</strong> / <strong>Aircraft Track</strong> (v3.5.0) &mdash; two chips at the end of the strip. The <em>✈ Flight Plan</em> chip appears whenever a SimBrief flight plan is plotted; the green <em>Aircraft Track</em> chip appears whenever a live breadcrumb trail is on the map. <strong>Click the chip body</strong> (v3.6.1) to zoom the map so that route or track fills about 90% of the viewport; click the <strong>&times;</strong> to clear that layer in one step &mdash; the same as the clear actions in the <strong>🔌 Live</strong> menu, but reachable without opening it. They appear / disappear automatically as the plan and track come and go.<br/><br/>
             The strip truncates automatically if it would overlap the category circles, always leaving at least 30 px of clearance.
           </div>
         </div>
@@ -32136,7 +32414,7 @@ function rgSendToFlightPlanner() {
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 20 seconds, shortened from 30 s in v3.3.0). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
-              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -32238,12 +32516,12 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Aircraft Data Panel</div>
           <div class="help-feature-desc">
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
-            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
-            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one.<br/><br/>
+            <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE, and <strong>NEXT</strong> (the ident of the next un-passed waypoint on the loaded SimBrief route; v3.6.0 — shows &mdash; without a plan). A <strong>TRK DEV</strong> field (v3.6.2 — cross-track distance in nm abeam the SimBrief route) is also available but hidden by default; add it from the ⚙ menu under <em>Navigation</em>. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
+            <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. <strong>In Flight Demo Mode</strong> (v3.6.5) ELAPSED shows <em>simulated</em> time since takeoff — matching the scrub bar — rather than wall-clock, so a sped-up demo reports the flight time it represents.<br/><br/>
             <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.<br/><br/>
             Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
 
-            <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
+            <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Navigation</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
             <strong>FSUIPC offset note</strong> &mdash; IAS reads FSUIPC offset <code>0x02BC</code> (uint, knots&nbsp;&times;&nbsp;128). STKP doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; when STKP is the active source.
           </div>
         </div>
@@ -32270,10 +32548,116 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.7</span>
+          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo aircraft no longer climbs like a helicopter on takeoff.</strong> The synthetic aircraft was gaining altitude before it built up speed, so it appeared to ascend vertically before moving. It now performs a proper takeoff roll &mdash; accelerating down the runway at field elevation until rotation speed, then climbing &mdash; so it tracks laterally as it climbs out.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.6</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo holds runway heading longer after takeoff.</strong> The synthetic aircraft now flies the departure runway heading for 90 seconds after rotation (was 30 s) before turning to follow the plan — it was still turning onto course too soon.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.5</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Demo ELAPSED shows simulated flight time.</strong> In Flight Demo Mode the ELAPSED data-panel field now tracks <em>simulated</em> time since takeoff — matching the scrub bar — instead of real wall-clock time, so a sped-up demo reports the flight time it represents. Live / FSUIPC flights are unchanged.</li>
+          <li><strong>Demo turns onto course 30 seconds after takeoff.</strong> The synthetic aircraft was beginning its turn-to-course too early; it now holds runway heading for a fixed 30 seconds after rotation before following the plan (replacing the altitude-based trigger).</li>
+          <li><strong>Demo control bar — second row.</strong> Stale, Disconnect, and Exit now sit on their own row, centered, beneath the playback controls.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.4</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips wait briefly before showing.</strong> Map airport tooltips now appear after a 250 ms hover, so sweeping the cursor across a dense field of airport dots no longer flashes tooltips.</li>
+          <li><strong>Matrix close button is red.</strong> The ✕ that dismisses the route matrix is now red instead of blue, so it reads clearly as a close action.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.3</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Radius shown while resizing a region ring.</strong> Dragging the edge handle of a drawn departure or arrival region now floats the live radius (&ldquo;N nm&rdquo;) next to the cursor, just like the initial region draw does.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.6.2</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Track Deviation telemetry + alert.</strong> A new <strong>TRK DEV</strong> data-panel field shows how far you are abeam the SimBrief route (cross-track distance in nm). It's hidden by default — add it from the ⚙ panel-customise menu (under <em>Navigation</em>). <strong>Track deviation</strong> is also a new <em>Conditional</em> alert parameter (default threshold 10 nm), so you can get alerted when you drift off the planned track.</li>
+          <li><strong>Demo flight-time estimate now actually refines.</strong> The scrub bar's total time was reproducing the original build-time estimate; it now measures the pace you're actually flying (including turn overhead) and converges the total on the real arrival time as the flight progresses.</li>
+          <li><strong>Demo scrub time stops at touchdown.</strong> The scrub bar no longer keeps counting up after the flight has landed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.1</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Click a layer pill to zoom to it.</strong> Clicking the <strong>✈ Flight Plan</strong> or <strong>Aircraft Track</strong> breadcrumb pill (the label, not the ✕) now zooms the map so that route or track fills about 90% of the viewport. The ✕ still clears the layer as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.6.0</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New NEXT data-panel field.</strong> The aircraft data panel now has a <strong>NEXT</strong> field showing the ident of the next un-passed waypoint on the loaded SimBrief route, next to the existing position/altitude/speed fields.</li>
+          <li><strong>Demo Mode follows the flight plan once it reaches 2,000 ft.</strong> The synthetic aircraft now holds runway heading on the initial climb and turns to follow the plan as soon as it has climbed 2,000 ft above field elevation — instead of waiting until it was 5 nm from the departure airport. Turns onto course happen at a realistic point regardless of how fast the aircraft is moving.</li>
+          <li><strong>Demo speed buttons are now 1×, 3×, 10×.</strong> Replaces the old 0.25× / 0.5× / 1× / 3× / 5× set with the three most useful playback speeds (the fine-tune slider still covers everything in between).</li>
+          <li><strong>Demo flight time estimate refines as you fly.</strong> The scrub bar's total flight time now subtly adjusts during cruise to converge on a more accurate figure as the flight progresses, rather than staying pinned to the initial build-time estimate.</li>
+          <li><strong>Demo elapsed timer now starts and stops with the flight.</strong> Starting a demo resets the ELAPSED telemetry timer, and it now freezes at touchdown (and clears when you stop the demo) instead of ticking on after landing. Live / FSUIPC flights are unaffected.</li>
+          <li><strong>&ldquo;Clear Aircraft Track&rdquo; removed from the Live menu.</strong> The green <em>Aircraft Track</em> pill in the map filter strip (added in v3.5.0) already clears the trail in one click, so the duplicate menu row is gone.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.5.1</span>
-          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-date">May 29, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -42131,15 +42515,12 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
             <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone.">📱 <span class="rg-btn-label">Mobile Alerts…</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
+            <!-- v2.89.2 — "Clear Flight Plan" row removed (the SimBrief item
+                 above doubles as load/clear). v3.6.0 — "Clear Aircraft Track"
+                 row removed too: the breadcrumb strip's green "Aircraft Track"
+                 pill now clears the trail in one click. -->
             <div class="rg-pulldown-sep"></div>
-            <!-- v2.89.2 — Removed the dedicated "Clear Flight Plan" row: the
-                 SimBrief Flight Plan item above already doubles as a load /
-                 clear toggle (_sbOfpButtonClick), so showing it twice was
-                 redundant. Clear Aircraft Track stays — there's no load
-                 counterpart for the breadcrumb trail. -->
-            <button class="rg-btn rg-pulldown-row" id="rgClearTrackBtn" onclick="if(this.classList.contains('disabled'))return;_liveAcClearTrailUI();_rgCloseAnyPulldown()" title="Erase the green breadcrumb trail showing your flown path. Local-storage track is also cleared so it won't restore on next page load.">✕ <span class="rg-btn-label">Clear Aircraft Track</span></button>
-            <div class="rg-pulldown-sep"></div>
-            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). For demos at sites where the simulator is unavailable.">🎬 <span class="rg-btn-label">Flight Demo Mode…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). Perfect for alert testing or offline demos.">🎬 <span class="rg-btn-label">Flight Demo Mode…</span></button>
           </div>
         </div>
 
@@ -42310,20 +42691,19 @@ function rgSendToFlightPlanner() {
                title="Drag to jump anywhere along the demo flight">
         <span class="demo-time-label" id="demoTimeLabel">00:00 / 00:00</span>
         <span class="demo-sep"></span>
-        <button class="rg-btn demo-speed-preset" data-speed="0.25" onclick="_demoSetSpeed(0.25)" title="Quarter speed">0.25×</button>
-        <button class="rg-btn demo-speed-preset" data-speed="0.5"  onclick="_demoSetSpeed(0.5)"  title="Half speed">0.5×</button>
         <button class="rg-btn demo-speed-preset active" data-speed="1" onclick="_demoSetSpeed(1)"  title="Normal speed">1×</button>
         <button class="rg-btn demo-speed-preset" data-speed="3"    onclick="_demoSetSpeed(3)"    title="Triple speed">3×</button>
-        <button class="rg-btn demo-speed-preset" data-speed="5"    onclick="_demoSetSpeed(5)"    title="5× speed">5×</button>
+        <button class="rg-btn demo-speed-preset" data-speed="10"   onclick="_demoSetSpeed(10)"   title="10× speed">10×</button>
         <input type="range" class="demo-speed-slider" id="demoSpeedSlider" min="0.1" max="25" step="0.1" value="1"
                oninput="_demoSetSpeed(this.value)"
                title="Fine-tune playback speed (0.1× – 25×)">
         <span class="demo-speed-label-num" id="demoSpeedLabel">1×</span>
-        <span class="demo-sep"></span>
-        <button class="rg-btn" id="demoStaleBtn" onclick="_demoSimStale()" title="Simulate a stale telemetry feed — packets stop emitting and the marker greys after 30 s, tripping any configured Loss-of-Telemetry alarms. Click again to resume.">📡✖ Stale</button>
-        <button class="rg-btn" id="demoDisconnectBtn" onclick="_demoSimDisconnect()" title="Simulate a full live-aircraft disconnect — clears the marker entirely. Click again to reconnect.">⛓✖ Disconnect</button>
-        <span class="demo-sep"></span>
-        <button class="rg-btn" onclick="_demoStop()" title="Exit Flight Demo Mode and clear the synthetic aircraft">✕ Exit</button>
+        <!-- v3.6.5 — Stale / Disconnect / Exit live on a centered second row. -->
+        <div class="demo-row2">
+          <button class="rg-btn" id="demoStaleBtn" onclick="_demoSimStale()" title="Simulate a stale telemetry feed — packets stop emitting and the marker greys after 30 s, tripping any configured Loss-of-Telemetry alarms. Click again to resume.">📡✖ Stale</button>
+          <button class="rg-btn" id="demoDisconnectBtn" onclick="_demoSimDisconnect()" title="Simulate a full live-aircraft disconnect — clears the marker entirely. Click again to reconnect.">⛓✖ Disconnect</button>
+          <button class="rg-btn" onclick="_demoStop()" title="Exit Flight Demo Mode and clear the synthetic aircraft">✕ Exit</button>
+        </div>
       </div>
 
       <!-- Autopilot panel (v2.97.6) — compact MCP-style strip, opens above
