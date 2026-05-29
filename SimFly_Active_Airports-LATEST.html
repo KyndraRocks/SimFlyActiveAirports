@@ -4509,6 +4509,17 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     display:none;
   }
   .afk-btn-badge.show { display:block; }
+  /* v3.3.0 — Inline pill on the Live → Mobile Alerts menu row showing how
+     many active alarms forward to the phone. Pushed to the right edge of
+     the flex row. */
+  .ma-menu-badge {
+    display:none; margin-left:auto;
+    min-width:18px; height:18px; padding:0 5px;
+    background:#ff3d5a; color:#fff; border-radius:9px;
+    font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:700;
+    line-height:18px; text-align:center;
+  }
+  .ma-menu-badge.show { display:inline-block; }
   #afkAlertsBtn.armed { background:rgba(255,140,40,0.16); border-color:rgba(255,140,40,0.55); color:#ffaa55; }
   #afkAlertsBtn.tripping { background:rgba(255,61,90,0.22); border-color:#ff3d5a; color:#ff8090;
     animation:afkBtnPulse 0.8s ease-in-out infinite alternate; }
@@ -5729,6 +5740,75 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
+<!-- ── Boot splash (v3.4.0) — progress bar + live component readout. Placed
+     first in <body> so it paints before the main app script parses. The
+     _aaSplash API is defined immediately below so the loaders can drive it. -->
+<div id="aaSplash" role="status" aria-live="polite">
+  <div class="aa-splash-inner">
+    <div class="aa-splash-title">SimFly Active Airports</div>
+    <div class="aa-splash-sub">Route Distances Between Active Player-Owned Airports</div>
+    <div class="aa-splash-track"><div class="aa-splash-bar" id="aaSplashBar"></div></div>
+    <div class="aa-splash-meta">
+      <span class="aa-splash-label" id="aaSplashLabel">Starting&hellip;</span>
+      <span class="aa-splash-pct" id="aaSplashPct">0%</span>
+    </div>
+  </div>
+</div>
+<style>
+  #aaSplash{position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 35%, #0c1730 0%, #060a16 70%, #03060e 100%);
+    transition:opacity .55s ease;font-family:'Rajdhani',sans-serif;}
+  #aaSplash.aa-splash-hide{opacity:0;pointer-events:none;}
+  .aa-splash-inner{width:min(520px,86vw);text-align:center;padding:1.5rem;}
+  .aa-splash-title{font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:.06em;font-size:1.7rem;
+    color:#eaf4ff;text-shadow:0 0 18px rgba(0,200,255,.45);margin-bottom:.35rem;}
+  .aa-splash-sub{color:#7da2c8;font-size:1rem;letter-spacing:.02em;margin-bottom:1.5rem;}
+  .aa-splash-track{position:relative;height:10px;border-radius:6px;overflow:hidden;
+    background:rgba(120,170,220,.12);box-shadow:inset 0 0 0 1px rgba(120,170,220,.2);}
+  .aa-splash-bar{position:absolute;left:0;top:0;bottom:0;width:0%;border-radius:6px;
+    background:linear-gradient(90deg,#0090d0,#00c8ff 60%,#7fe3ff);
+    box-shadow:0 0 12px rgba(0,200,255,.7);transition:width .18s ease-out;}
+  .aa-splash-meta{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-top:.7rem;}
+  .aa-splash-label{color:#bcd6f0;font-size:.95rem;letter-spacing:.03em;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;font-variant-numeric:tabular-nums;}
+  .aa-splash-pct{color:#00c8ff;font-weight:700;font-size:.95rem;font-variant-numeric:tabular-nums;}
+  @media (prefers-reduced-motion: reduce){ .aa-splash-bar,#aaSplash{transition:none;} }
+</style>
+<script>
+(function(){
+  var pct=0, target=0, raf=null, finished=false;
+  function $(id){ return document.getElementById(id); }
+  function paint(){
+    var b=$('aaSplashBar'); if(b) b.style.width = pct.toFixed(1)+'%';
+    var p=$('aaSplashPct'); if(p) p.textContent = Math.round(pct)+'%';
+  }
+  function frame(){
+    raf=null;
+    if(pct<target){ pct += Math.max(0.6,(target-pct)*0.16); if(pct>target)pct=target; paint(); }
+    if(pct<target) raf=requestAnimationFrame(frame);
+  }
+  function nudge(){ if(!raf) raf=requestAnimationFrame(frame); }
+  function setLabelText(t){ var l=$('aaSplashLabel'); if(l&&t) l.textContent=t; }
+  function set(p,t){ if(finished) return; if(p>target) target=Math.min(100,p); setLabelText(t); nudge(); }
+  function step(t){ if(finished) return; target=Math.min(96,Math.max(target,target+4)); setLabelText(t); nudge(); }
+  function publicLabel(t){ if(finished) return; setLabelText(t); }
+  function done(){
+    if(finished) return; finished=true;
+    target=100; pct=Math.max(pct,99); paint();
+    var b=$('aaSplashBar'); if(b) b.style.width='100%';
+    var p=$('aaSplashPct'); if(p) p.textContent='100%';
+    setLabelText('Ready');
+    setTimeout(function(){
+      var o=$('aaSplash');
+      if(o){ o.classList.add('aa-splash-hide'); setTimeout(function(){ if(o&&o.parentNode) o.style.display='none'; }, 650); }
+    }, 320);
+  }
+  // Safety net: never trap the user if a fetch hangs or the machine is offline.
+  setTimeout(done, 15000);
+  window._aaSplash = { set:set, step:step, label:publicLabel, done:done };
+  set(5, 'Starting SimFly Active Airports');
+})();
+</script>
 <div id="simfly-clock">
   <div><span class="ck-lbl">LCL</span><span id="ck-lcl"></span></div>
   <div><span class="ck-lbl">UTC</span><span id="ck-utc"></span></div>
@@ -6040,7 +6120,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.4.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6233,21 +6313,33 @@ async function fetchCategoryCsvWithRetry() {
   return '';
 }
 
+// v3.4.0 — boot-splash progress: bump the bar + show a component name as each
+// of the seven startup fetches settles. Order of completion is network-driven,
+// so we count settlements rather than assume an order.
+let _bootFetchN = 0;
+function _bootTick(name) {
+  _bootFetchN++;
+  if (window._aaSplash) window._aaSplash.set(10 + _bootFetchN * 8, name); // 7 fetches → up to ~66%
+}
+
 function loadAirportDB() {
   if (dbLoadPromise) return dbLoadPromise;
+  if (window._aaSplash) window._aaSplash.set(8, 'Contacting data sources');
   dbLoadPromise = Promise.all([
-    fetch(OURAIRPORTS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch airport database'); return r.text(); }),
-    fetch(REGIONS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch regions database'); return r.text(); }),
-    fetch(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch runway database'); return r.text(); }),
-    fetchCategoryCsvWithRetry(),
-    fetch(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => ''),
+    fetch(OURAIRPORTS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch airport database'); return r.text(); }).then(v => { _bootTick('Airport database'); return v; }),
+    fetch(REGIONS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch regions database'); return r.text(); }).then(v => { _bootTick('Region names'); return v; }),
+    fetch(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch runway database'); return r.text(); }).then(v => { _bootTick('Runway database'); return v; }),
+    fetchCategoryCsvWithRetry().then(v => { _bootTick('Airport categories'); return v; }),
+    fetch(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => '').then(v => { _bootTick('Aircraft database'); return v; }),
     // ?t= cache-buster: GitHub raw URLs are CDN-cached for several minutes,
     // so without it a fresh corrections push from KML Generator won't surface
     // here until the cache expires, even on a hard refresh.
-    fetch(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}'),
-    fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}').then(v => { _bootTick('Field overrides'); return v; }),
+    fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null).then(v => { _bootTick('Pilot payouts'); return v; }),
   ])
     .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson]) => {
+
+      if (window._aaSplash) window._aaSplash.set(74, 'Building airport index');
 
       // ── Build payout map (gist is authoritative; localStorage is fallback pre-load) ──
       if (payoutJson && typeof payoutJson === 'object') {
@@ -6540,6 +6632,7 @@ function loadAirportDB() {
       _acRestoreFromStorage();
 
       // Trigger any pending recalculations after DB loads
+      if (window._aaSplash) window._aaSplash.set(86, 'Computing route distances');
       refreshOwnerDropdowns();
       _calcDistance();
       return airportDB;
@@ -6939,8 +7032,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Pre-load the airport database as soon as the page is ready, then auto-load airport data from Gist
 loadAirportDB()
-  .then(() => autoLoadDefaultKML())
-  .catch(err => console.warn('Airport DB preload failed:', err));
+  .then(() => { if (window._aaSplash) window._aaSplash.set(90, 'Loading owner airports'); return autoLoadDefaultKML(); })
+  .then(() => { if (window._aaSplash) window._aaSplash.set(99, 'Rendering airport list'); })
+  .catch(err => console.warn('Airport DB preload failed:', err))
+  .finally(() => { if (window._aaSplash) window._aaSplash.done(); });
 
 // Fetch pilot 3-letter codes from the Recip Tracker Gist so Active Airports
 // can build the SimBrief fltnum independently — no longer requires the Tracker
@@ -6950,6 +7045,7 @@ async function loadGistPilotCodes() {
   try {
     const r = await fetch(RECIP_GIST_RAW_URL + '?t=' + Date.now());
     if (!r.ok) return;
+    if (window._aaSplash) window._aaSplash.label('Pilot directory');
     const data = await r.json();
     if (!data.pilots || !Array.isArray(data.pilots)) return;
     for (const p of data.pilots) {
@@ -7000,7 +7096,7 @@ function autoLoadDefaultKML() {
   const kmlUrl = params.get('kml') || DEFAULT_KML_URL;
   if (!kmlUrl) return;
 
-  fetch(kmlUrl)
+  return fetch(kmlUrl)
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
@@ -14010,12 +14106,36 @@ function _afkBulkSetSoundMenu(e) {
   const menu = document.createElement('div');
   menu.className = 'afk-test-sound-menu';
   menu.id = 'afkBulkSoundMenu';
+  // v3.3.0 — Two sections: pick one sound for every alarm, OR set the
+  // "Sound for" (auto-dismiss) duration on every alarm. Duration rows are
+  // tagged data-dur-mode / data-dur-sec so the shared click handler can
+  // tell them apart from the sound rows.
+  const durRows = [
+    { mode: 'indefinite', sec: 0,   label: 'Indefinite (until dismissed)' },
+    { mode: 'seconds',    sec: 5,   label: 'Auto-dismiss after 5 s' },
+    { mode: 'seconds',    sec: 10,  label: 'Auto-dismiss after 10 s' },
+    { mode: 'seconds',    sec: 30,  label: 'Auto-dismiss after 30 s' },
+    { mode: 'seconds',    sec: 60,  label: 'Auto-dismiss after 60 s' },
+  ];
+  // v3.4.5 — phrase the scope naturally: one → "the alarm", two → "both
+  // alarms" (v3.4.6), three+ → "all N alarms".
+  const bulkScope = (alarms.length === 1) ? 'the alarm'
+                  : (alarms.length === 2) ? 'both alarms'
+                  : ('all ' + alarms.length + ' alarms');
   menu.innerHTML =
-    '<div class="afk-test-sound-menu-hdr">Apply to all ' + alarms.length + ' alarm' + (alarms.length === 1 ? '' : 's') + '</div>' +
+    '<div class="afk-test-sound-menu-hdr">Set sound on ' + bulkScope + '</div>' +
     _AFK_SOUNDS.map(s =>
       '<button class="afk-test-sound-menu-row" data-sound-id="' + s.id + '">' +
         '<span class="afk-test-sound-menu-icon">🔊</span>' +
         '<span>' + s.name + '</span>' +
+      '</button>'
+    ).join('') +
+    '<div class="rg-pulldown-sep"></div>' +
+    '<div class="afk-test-sound-menu-hdr">Set "Sound for" on ' + bulkScope + '</div>' +
+    durRows.map(d =>
+      '<button class="afk-test-sound-menu-row" data-dur-mode="' + d.mode + '" data-dur-sec="' + d.sec + '">' +
+        '<span class="afk-test-sound-menu-icon">⏱</span>' +
+        '<span>' + d.label + '</span>' +
       '</button>'
     ).join('');
   document.body.appendChild(menu);
@@ -14034,20 +14154,49 @@ function _afkBulkSetSoundMenu(e) {
     const row = ev.target.closest('.afk-test-sound-menu-row');
     if (!row) return;
     const id = row.getAttribute('data-sound-id');
-    const sound = _AFK_SOUNDS.find(s => s.id === id);
-    if (sound) {
+    const durMode = row.getAttribute('data-dur-mode');
+    if (id != null) {
+      const sound = _AFK_SOUNDS.find(s => s.id === id);
+      if (sound) {
+        let n = 0;
+        _afkAlarms.list().forEach(a => {
+          if (a.sound !== sound.id) {
+            _afkAlarms.update(a.id, { sound: sound.id });
+            n++;
+          }
+        });
+        _afkRenderAlarmList();
+        if (n > 0) {
+          _aaRtToast('🔊 Set sound "' + sound.name + '" on ' + n + ' alarm' + (n === 1 ? '' : 's') + '.', 'ok');
+        } else {
+          _aaRtToast('🔊 No changes — every alarm already used "' + sound.name + '".', 'ok');
+        }
+      }
+    } else if (durMode != null) {
+      // v3.3.0 — Bulk-set the "Sound for" auto-dismiss duration. Indefinite
+      // ignores the seconds value; seconds mode also persists the chosen
+      // value as the user's default for future new alarms.
+      const secs = parseInt(row.getAttribute('data-dur-sec'), 10);
+      const isSec = (durMode === 'seconds') && isFinite(secs) && secs > 0;
       let n = 0;
       _afkAlarms.list().forEach(a => {
-        if (a.sound !== sound.id) {
-          _afkAlarms.update(a.id, { sound: sound.id });
-          n++;
-        }
+        const p = Object.assign({}, a.params || {});
+        const changed = isSec
+          ? (p.durationMode !== 'seconds' || parseInt(p.durationSec, 10) !== secs)
+          : (p.durationMode !== 'indefinite');
+        if (!changed) return;
+        p.durationMode = isSec ? 'seconds' : 'indefinite';
+        if (isSec) p.durationSec = secs;
+        _afkAlarms.update(a.id, { params: p });
+        n++;
       });
+      if (isSec && typeof _afkSetUserDefaultDurationSec === 'function') _afkSetUserDefaultDurationSec(secs);
       _afkRenderAlarmList();
+      const label = isSec ? ('auto-dismiss after ' + secs + ' s') : 'indefinite';
       if (n > 0) {
-        _aaRtToast('🔊 Set sound "' + sound.name + '" on ' + n + ' alarm' + (n === 1 ? '' : 's') + '.', 'ok');
+        _aaRtToast('⏱ Set "Sound for" to ' + label + ' on ' + n + ' alarm' + (n === 1 ? '' : 's') + '.', 'ok');
       } else {
-        _aaRtToast('🔊 No changes — every alarm already used "' + sound.name + '".', 'ok');
+        _aaRtToast('⏱ No changes — every alarm was already ' + label + '.', 'ok');
       }
     }
     _afkCloseBulkSoundMenu();
@@ -14647,16 +14796,32 @@ function _afkModalDurationSecChange() {
   });
 }
 // Seed both inputs to the user's saved preferred default — called from
-// the modal-open functions. Mode is reset to 'indefinite' each open so the
-// user explicitly picks seconds mode if they want it.
+// the modal-open functions. v3.3.0 — Mode now defaults to 'seconds' with
+// the user's saved value (10 s out of the box) so quick-add alarms
+// auto-dismiss rather than sounding forever; the user can still pick
+// Indefinite explicitly.
 function _afkSeedModalDuration(which) {
   const modeEl = document.getElementById('afk' + which + 'DurationMode');
   const secEl  = document.getElementById('afk' + which + 'DurationSec');
   const unitEl = document.getElementById('afk' + which + 'DurationSecUnit');
-  if (modeEl) modeEl.value = 'indefinite';
+  if (modeEl) modeEl.value = 'seconds';
   if (secEl)  secEl.value  = _afkGetUserDefaultDurationSec();
-  if (secEl)  secEl.style.display  = 'none';
-  if (unitEl) unitEl.style.display = 'none';
+  if (secEl)  secEl.style.display  = '';
+  if (unitEl) unitEl.style.display = '';
+}
+// v3.3.0 — Send-to-phone seed/read for the Geofence + Waypoint modals.
+// The row is only shown when a Mobile Alerts provider is configured;
+// the checkbox always opens unchecked.
+function _afkSeedModalMobile(which) {
+  const row = document.getElementById('afk' + which + 'MobileRow');
+  const cb  = document.getElementById('afk' + which + 'Mobile');
+  const on  = (typeof _maIsConfigured === 'function' && _maIsConfigured());
+  if (row) row.style.display = on ? '' : 'none';
+  if (cb)  cb.checked = false;
+}
+function _afkReadModalMobile(which) {
+  const cb = document.getElementById('afk' + which + 'Mobile');
+  return !!(cb && cb.checked);
 }
 // Read the chosen mode + sec back out — used by the modal save functions.
 // v2.97.12 — Null-guard each DOM lookup so this can't throw if the
@@ -14769,7 +14934,14 @@ const _afkPhase = (() => {
         // ground. The 200 fpm threshold is well below any real climb rate
         // (a Cessna 152 holds ~700 fpm; a heavy jet at MTOW holds ~500 fpm)
         // and well above ground-VS noise / gear compression.
-        if (now - cruiseCandidateSince >= 60000 && peakClimbVS > 200) {
+        // v3.3.0 — Cruise candidate window cut 60 s → 35 s to fire the
+        // Cruise Reached alert sooner after level-off. The VS used here is
+        // already a 30 s smoothed average (currentVSfpm), so the smoothing
+        // window itself provides the bulk of the transient rejection; the
+        // 35 s candidate on top still demands sustained level flight, and
+        // the peakClimbVS > 200 evidence gate is untouched so ground ops
+        // can never promote to cruise.
+        if (now - cruiseCandidateSince >= 35000 && peakClimbVS > 200) {
           next = 'cruise';
           cruiseCandidateSince = 0;
         }
@@ -14777,16 +14949,20 @@ const _afkPhase = (() => {
         cruiseCandidateSince = 0;
       }
       // Surprise descent during "climb" is unusual; require sustained
+      // (v3.3.0 — 60 s → 45 s).
       if (vs < descentTrigger) {
         if (!descentCandidateSince) descentCandidateSince = now;
-        if (now - descentCandidateSince >= 60000) { next = 'descent'; descentCandidateSince = 0; }
+        if (now - descentCandidateSince >= 45000) { next = 'descent'; descentCandidateSince = 0; }
       } else {
         descentCandidateSince = 0;
       }
     } else if (prev === 'cruise') {
       if (vs < descentTrigger) {
         if (!descentCandidateSince) descentCandidateSince = now;
-        if (now - descentCandidateSince >= 30000) { next = 'descent'; descentCandidateSince = 0; }
+        // v3.3.0 — Descent candidate window cut 30 s → 20 s. Same 30 s
+        // smoothed-VS basis means this still needs a genuine sustained
+        // descent, not a momentary altitude wobble.
+        if (now - descentCandidateSince >= 20000) { next = 'descent'; descentCandidateSince = 0; }
       } else {
         descentCandidateSince = 0;
       }
@@ -16172,6 +16348,15 @@ const _AFK_COND_PARAMS = [
 // v2.94.2 — Seconds-per-unit for the time-unit pulldown.
 const _AFK_TIME_UNIT_SEC = { seconds: 1, minutes: 60, hours: 3600 };
 function _afkCondParamDef(id) { return _AFK_COND_PARAMS.find(p => p.id === id) || null; }
+// v3.4.3 — Which conditional parameters may legitimately hold a negative
+// threshold. Vertical speed is signed (negative = descending). Altitude MSL
+// can be negative at below-sea-level airports (e.g. Schiphol ≈ −11 ft, fields
+// near the Dead Sea). Everything else — airspeeds, distances, times — is
+// physically non-negative, so a negative threshold is meaningless and gets
+// clamped to 0 (see _afkSetCondValue + _afkCondValDragStart).
+function _afkCondAllowsNegative(def) {
+  return !!def && (def.id === 'vs' || def.id === 'alt');
+}
 // v2.94.2 — Resolve the canonical seconds-multiplier for a condition's
 // chosen unit. Defaults to 1 (seconds) for backwards compat with pre-
 // v2.94.2 conditions that have no `valueUnit` field.
@@ -17564,6 +17749,21 @@ function _afkUpdateBadge() {
   if (n > 0) { badge.textContent = String(n); badge.classList.add('show'); }
   else { badge.classList.remove('show'); }
   _afkUpdateBtnState();
+  _maUpdateMenuBadge();
+}
+
+// v3.3.0 — Badge on the Live → Mobile Alerts menu row: count of active
+// (enabled) alarms that forward to the phone. Hidden when zero or when no
+// provider is configured (in which case mobile forwarding can't happen).
+function _maUpdateMenuBadge() {
+  const badge = document.getElementById('maMenuBadge');
+  if (!badge) return;
+  const configured = (typeof _maIsConfigured === 'function') && _maIsConfigured();
+  const n = configured
+    ? _afkAlarms.list().filter(a => a.enabled && a.mobileAlert).length
+    : 0;
+  if (n > 0) { badge.textContent = String(n); badge.classList.add('show'); }
+  else { badge.classList.remove('show'); }
 }
 
 // ---------------------- CONFIG MODAL --------------------------------------
@@ -18605,7 +18805,7 @@ function _afkRenderEditor(a) {
   const durMode = (a.params && a.params.durationMode) || 'indefinite';
   const durSec  = (a.params && a.params.durationSec)  || _afkGetUserDefaultDurationSec();
   const durSecInput = durMode === 'seconds'
-    ? '<input type="number" class="afk-input" style="width:70px;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" title="After this many seconds the alarm is auto-dismissed: sound stops, the trip-overlay row clears, and the alarm is disabled (same as a manual dismiss). Your value is saved as the default for new alarms.">' +
+    ? '<input type="number" class="afk-input" style="width:70px;cursor:ns-resize;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" onmousedown="_afkDurDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="After this many seconds the alarm is auto-dismissed: sound stops, the trip-overlay row clears, and the alarm is disabled (same as a manual dismiss). Your value is saved as the default for new alarms. Click and drag up/down to scrub.">' +
       '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">seconds</span>'
     : '';
   // v2.94.0 — Renamed "Set duration" → "Auto-dismiss after". The previous
@@ -18640,9 +18840,9 @@ function _afkRenderEditor(a) {
       '</div>' +
       (mode === 'countdown'
         ? '<div class="afk-edit-row"><span class="afk-edit-label">Countdown</span>' +
-            '<input type="number" class="afk-input" style="width:60px;" min="0" step="1" value="' + ch + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownH\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">h</span>' +
-            '<input type="number" class="afk-input" style="width:60px;" min="0" max="59" step="1" value="' + cm + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownM\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">m</span>' +
-            '<input type="number" class="afk-input" style="width:60px;" min="0" max="59" step="1" value="' + cs + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownS\', this.value)"><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">s</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" step="1" value="' + ch + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownH\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownH\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">h</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cm + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownM\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownM\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">m</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cs + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownS\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownS\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">s</span>' +
           '</div>'
         : '<div class="afk-edit-row"><span class="afk-edit-label">At time</span>' +
             '<input type="time" class="afk-input" style="width:130px;" value="' + clockStr + '" onchange="_afkSetTimerClock(' + a.id + ', this.value)" title="Local clock time when the alarm should fire — if past today, fires tomorrow at this time">' +
@@ -18668,7 +18868,7 @@ function _afkRenderEditor(a) {
       '</div>';
     const radiusRow =
       '<div class="afk-edit-row"><span class="afk-edit-label">Radius</span>' +
-        '<input type="number" class="afk-input" style="width:90px;" min="0.1" step="0.1" value="' + radiusVal + '" oninput="_afkSetGeofenceRadius(' + a.id + ', this.value)">' +
+        '<input type="number" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="' + radiusVal + '" oninput="_afkSetGeofenceRadius(' + a.id + ', this.value)" onmousedown="_afkRadiusDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub (0.1 nm steps).">' +
         '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>' +
       '</div>';
     body =
@@ -18734,7 +18934,7 @@ function _afkRenderEditor(a) {
                    : (cAltFt > 0 ? 'specific' : 'adaptive');
     const modeRow =
       '<div class="afk-edit-row"><span class="afk-edit-label">Mode</span>' +
-        '<select class="afk-select" onchange="_afkSetCruiseMode(' + a.id + ', this.value)" title="Adaptive: fires when the phase detector promotes flight phase to cruise (60 s of level flight after a sustained climb). Specific altitude: fires when the aircraft climbs through a chosen altitude.">' +
+        '<select class="afk-select" onchange="_afkSetCruiseMode(' + a.id + ', this.value)" title="Adaptive: fires when the phase detector promotes flight phase to cruise (35 s of level flight after a sustained climb). Specific altitude: fires when the aircraft climbs through a chosen altitude.">' +
           '<option value="adaptive"' + (mode === 'adaptive' ? ' selected' : '') + '>Adaptive — fire on detected cruise transition</option>' +
           '<option value="specific"' + (mode === 'specific' ? ' selected' : '') + '>At specific altitude — fire when climbing through</option>' +
         '</select>' +
@@ -18893,7 +19093,7 @@ function _afkRenderEditor(a) {
     const tMax  = (tUnit === 'seconds') ? 600 : 60;
     body =
       '<div class="afk-edit-row"><span class="afk-edit-label">Trip after</span>' +
-        '<input type="number" class="afk-input" style="width:80px;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 30 s (the pre-trip countdown has a 10 s display gate, so anything shorter would fire with little or no visible countdown). The watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold.">' +
+        '<input type="number" class="afk-input" style="width:80px;cursor:ns-resize;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" onmousedown="_afkTelLossDragStart(event,' + a.id + ',' + tMin + ',' + tMax + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 30 s (the pre-trip countdown has a 10 s display gate, so anything shorter would fire with little or no visible countdown). The watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold. Click and drag up/down to scrub.">' +
         '<select class="afk-select" style="width:auto" onchange="_afkSetTelemetryLossUnit(' + a.id + ', this.value)" title="Switch between minutes and seconds.">' +
           '<option value="minutes"' + (tUnit === 'minutes' ? ' selected' : '') + '>minutes</option>' +
           '<option value="seconds"' + (tUnit === 'seconds' ? ' selected' : '') + '>seconds</option>' +
@@ -18923,7 +19123,7 @@ function _afkRenderEditor(a) {
   return '<div class="afk-card-editor">' + body + soundRow + durationRow + mobileRow + '</div>';
 }
 
-function _afkSetAlarmMobileAlert(id, on) { _afkAlarms.update(id, { mobileAlert: !!on }); }
+function _afkSetAlarmMobileAlert(id, on) { _afkAlarms.update(id, { mobileAlert: !!on }); _maUpdateMenuBadge(); }
 
 function _afkToggleAlarm(id, on) {
   if (!on) _afkClearAlarmTimer(id);
@@ -19089,10 +19289,21 @@ function _afkAltWheel(event, id, kind) {
 // plus an ondragstart blocker on every wired input.
 function _afkInputDragStart(event, opts) {
   if (event.button !== 0) return;
-  event.preventDefault();
-  event.stopPropagation();
   const inp = (opts && opts.input) || event.currentTarget || event.target;
   if (!inp) return;
+  // v3.4.1 — Preserve the native up/down spinner on number inputs. The
+  // spinner buttons live in a ~22px zone on the right edge; a click there
+  // must NOT start a scrub and must NOT preventDefault (or the browser
+  // suppresses the spinner). Drag-to-scrub still works across the rest of
+  // the field, and text inputs (altitudes — no spinner) are unaffected.
+  if (inp.type === 'number') {
+    try {
+      const rect = inp.getBoundingClientRect();
+      if (rect.right - event.clientX <= 22) { event.stopPropagation(); return; }
+    } catch (_) {}
+  }
+  event.preventDefault();
+  event.stopPropagation();
   const startY = event.clientY;
   const parse  = (opts && opts.parse) || (s => { const v = parseFloat(s); return isFinite(v) ? v : 0; });
   const startV = parse(inp.value);
@@ -19133,8 +19344,19 @@ function _afkInputDragStart(event, opts) {
     document.removeEventListener('mousemove', move, true);
     document.removeEventListener('mouseup',   end,  true);
     document.body.style.cursor = '';
-    // Mouseup without movement = treat as click → focus the input for typing.
-    if (!moved && inp && typeof inp.focus === 'function') {
+    if (moved) {
+      // v3.4.2 — Swallow the synthetic click the browser fires after a drag.
+      // When the mouseup lands outside the modal (e.g. on the overlay
+      // backdrop), the click event's target is the nearest common ancestor
+      // of the mousedown input and the mouseup element — which is the modal
+      // overlay — so its onclick="if(event.target===this)…close" handler
+      // would fire and close the modal. Capture + stopPropagation the very
+      // next click so backdrop close-on-click is suppressed for this drag.
+      const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+      document.addEventListener('click', swallow, true);
+      setTimeout(() => document.removeEventListener('click', swallow, true), 0);
+    } else if (inp && typeof inp.focus === 'function') {
+      // Mouseup without movement = treat as click → focus the input for typing.
       try { inp.focus(); if (typeof inp.select === 'function') inp.select(); } catch (_) {}
     }
   }
@@ -19154,13 +19376,51 @@ function _afkAltDragStart(event, id, kind) {
 function _afkCondValDragStart(event, alarmId, idx) {
   const a = (typeof _afkAlarms !== 'undefined') ? _afkAlarms.get(alarmId) : null;
   const c = (a && a.params && Array.isArray(a.params.conditions)) ? a.params.conditions[idx] : null;
+  const def = (c && typeof _afkCondParamDef === 'function') ? _afkCondParamDef(c.param) : null;
   const isAlt = (c && c.param === 'alt');
+  // v3.4.3 — non-negative params (distances, times, speeds) can't scrub below 0.
+  const allowNeg = _afkCondAllowsNegative(def);
   _afkInputDragStart(event, {
     step:  isAlt ? 100 : 1,
     parse: isAlt ? _afkParseAlt : (s => { const v = parseFloat(s); return isFinite(v) ? v : 0; }),
     snap:  isAlt ? _afkSnapAlt100 : null,
+    min:   allowNeg ? undefined : 0,
     commit: v => _afkSetCondValue(alarmId, idx, v),
   });
+}
+// v3.3.0 — Drag-to-adjust wrappers for the remaining alarm-card numeric
+// fields plus the Geofence / Waypoint modal numeric fields. All route
+// through _afkInputDragStart so the click-and-drag gesture (up = increase,
+// down = decrease) matches the altitude inputs exactly.
+function _afkDurDragStart(event, id) {
+  _afkInputDragStart(event, { step: 1, min: 1, commit: v => _afkSetDurationSec(id, v) });
+}
+function _afkTimerDragStart(event, id, field) {
+  _afkInputDragStart(event, {
+    step: 1, min: 0,
+    max: (field === 'countdownH') ? Infinity : 59,
+    commit: v => _afkSetTimerCountdown(id, field, v),
+  });
+}
+function _afkRadiusDragStart(event, id) {
+  _afkInputDragStart(event, {
+    step: 0.1, min: 0.1,
+    snap: v => Math.round(v * 10) / 10,
+    commit: v => _afkSetGeofenceRadius(id, v),
+  });
+}
+function _afkTelLossDragStart(event, id, lo, hi) {
+  _afkInputDragStart(event, { step: 1, min: lo, max: hi, commit: v => _afkSetTelemetryLossThreshold(id, v) });
+}
+// Geofence / Waypoint MODAL scrubbers — the value is read out of the field
+// on save (there's no per-alarm id yet), so these just write inp.value.
+// The duration scrubber also persists the user's preferred default via the
+// same oninput hook the keyboard path uses.
+function _afkModalRadiusDragStart(event) {
+  _afkInputDragStart(event, { step: 0.1, min: 0.1, snap: v => Math.round(v * 10) / 10 });
+}
+function _afkModalDurDragStart(event) {
+  _afkInputDragStart(event, { step: 1, min: 1, commit: () => _afkModalDurationSecChange() });
 }
 
 // v2.98.0 — Conditional-alarm altitude-condition wheel handler. Same
@@ -19207,7 +19467,16 @@ function _afkFmtAltDisplay(ft) {
 
 function _afkSetAltMin(id, v) {
   const a = _afkAlarms.get(id); if (!a) return;
-  const parsed = _afkParseAlt(v);
+  let parsed = _afkParseAlt(v);
+  // v3.4.4 — clamp a typed negative altitude to 0 (the drag already enforces
+  // min 0; a negative crossing altitude is meaningless). Snap the input +
+  // text back to "0" so the display matches the stored threshold.
+  if (isFinite(parsed) && parsed < 0) {
+    parsed = 0; v = '0';
+    const hintEl = document.getElementById('afkAltHint_' + id);
+    const inp = hintEl && hintEl.parentElement ? hintEl.parentElement.querySelector('input.afk-input') : null;
+    if (inp) inp.value = '0';
+  }
   a.params.altText = v;
   a.params.altFt = isFinite(parsed) ? parsed : 0;
   a.state.fired = false;
@@ -19258,7 +19527,15 @@ function _afkSetCruiseMode(id, mode) {
 // alarm pre-fills with the user's typical cruise altitude.
 function _afkSetCruiseAlt(id, v) {
   const a = _afkAlarms.get(id); if (!a) return;
-  const parsed = _afkParseAlt(v);
+  let parsed = _afkParseAlt(v);
+  // v3.4.4 — clamp a typed negative cruise altitude to 0 (matches the drag's
+  // min 0; a negative cruise target is meaningless and would fire instantly).
+  if (isFinite(parsed) && parsed < 0) {
+    parsed = 0; v = '0';
+    const hintEl = document.getElementById('afkCruiseAltHint_' + id);
+    const inp = hintEl && hintEl.parentElement ? hintEl.parentElement.querySelector('input.afk-input') : null;
+    if (inp) inp.value = '0';
+  }
   a.params.cruiseAltText = v || '';
   a.params.cruiseAltFt   = isFinite(parsed) ? parsed : 0;
   // Typing a value implies Specific mode — keep the persisted flag in sync.
@@ -19452,10 +19729,20 @@ function _afkSetCondValue(id, idx, text) {
   const a = _afkAlarms.get(id); if (!a) return;
   const c = a.params.conditions && a.params.conditions[idx]; if (!c) return;
   const def = _afkCondParamDef(c.param); if (!def) return;
-  c.valueText = text || '';
   // v2.94.2 — pass valueUnit so plain numbers are multiplied by the
   // chosen time unit.
-  const parsed = _afkCondParseValue(def, text, c.valueUnit);
+  let parsed = _afkCondParseValue(def, text, c.valueUnit);
+  // v3.4.3 — Clamp physically-impossible negatives (distances, times,
+  // airspeeds) to 0; VS and altitude stay signed. When a negative is
+  // clamped, snap the typed text + the input field back to "0" so the
+  // displayed value matches the stored threshold.
+  if (isFinite(parsed) && parsed < 0 && !_afkCondAllowsNegative(def)) {
+    parsed = 0;
+    text = '0';
+    const inp = document.querySelector('.afk-card[data-afk-id="' + id + '"] .afk-cond-row[data-cond-idx="' + idx + '"] .afk-cond-val');
+    if (inp) inp.value = '0';
+  }
+  c.valueText = text || '';
   c.value = isFinite(parsed) ? parsed : 0;
   a.state.fired = false;
   _afkAlarms.update(id, { params: a.params, state: a.state });
@@ -19627,10 +19914,13 @@ function _afkAddAlarm(type) {
     };
     base.state = { targetMs: _afkComputeTimerTarget(base.params), fired: false };
   }
-  // Duration default — always indefinite for new alarms (the user's saved
-  // seconds preference is only applied when they explicitly switch the
-  // mode to 'seconds' on a card).
-  base.params.durationMode = 'indefinite';
+  // Duration default — v3.3.0: new alarms now default to Auto-dismiss after
+  // the user's saved seconds value (10 s out of the box) instead of
+  // Indefinite, so an unattended alarm stops on its own rather than
+  // sounding until manually dismissed. The user can switch any card back
+  // to Indefinite.
+  base.params.durationMode = 'seconds';
+  base.params.durationSec  = _afkGetUserDefaultDurationSec();
   const added = _afkAlarms.add(base);
   if (type === 'timer') _afkScheduleTimer(_afkAlarms.get(added.id));
   _afkRenderAlarmList();
@@ -19794,6 +20084,7 @@ function _afkOpenGeofenceModal() {
     if (radiusRow) radiusRow.style.display = 'none';
   }
   _afkSeedModalDuration('Gf');
+  _afkSeedModalMobile('Gf');
   m.classList.add('open');
 }
 
@@ -19866,6 +20157,7 @@ function _afkOpenWpAlarmModal(ident, lat, lng) {
   document.getElementById('afkWpAlarmPos').textContent = 'Position: ' + latS + ' / ' + lngS;
   document.getElementById('afkWpAlarmSound').innerHTML = _afkSoundOptionsHtml('digital-clock');
   _afkSeedModalDuration('Wp');
+  _afkSeedModalMobile('Wp');
   // Warn if a specific-waypoint alarm already covers this ident.
   const dup = _afkAlarms.list().some(a =>
     a.type === 'waypoint' &&
@@ -19889,6 +20181,7 @@ function _afkWpAlarmModalSave() {
   _afkAlarms.add({
     type: 'waypoint',
     sound,
+    mobileAlert: _afkReadModalMobile('Wp'),
     params: { scope: 'specific', fixIdents: [ident], durationMode: dur.durationMode, durationSec: dur.durationSec },
     state: {},
   });
@@ -19926,6 +20219,7 @@ function _afkGeofenceModalSave() {
   _afkAlarms.add({
     type: 'geofence',
     sound,
+    mobileAlert: _afkReadModalMobile('Gf'),
     params,
     state: { wasInside: null },
   });
@@ -24730,6 +25024,7 @@ function _rgToggleLiveMenu(ev)  {
   // polling. Closes don't need refreshing.
   if (!document.getElementById('rgLiveMenu').classList.contains('open')) {
     try { _rgRefreshLiveMenuDisabled(); } catch (_) {}
+    try { _maUpdateMenuBadge(); } catch (_) {}
   }
   _rgTogglePulldown('rgLiveMenu',  'rgLiveBtn',  ev);
 }
@@ -31464,6 +31759,16 @@ function rgSendToFlightPlanner() {
     <div class="modal-body">
 
       <div class="help-feature">
+        <div class="help-feature-icon">⏳</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Startup &amp; Loading Splash</div>
+          <div class="help-feature-desc">
+            On launch (v3.4.0+) a splash screen shows a <strong>progress bar</strong> and the name of each component as it loads &mdash; the airport database, region names, runways, airport categories, the aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. On a fast connection the names flick by too quickly to read; that&rsquo;s expected. The splash fades on its own once everything is ready, and a built-in safety timeout dismisses it even if a data source is slow or unreachable, so it can never trap you on the loading screen.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">✈</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Point-to-Point Distance</div>
@@ -31782,14 +32087,16 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 60&nbsp;s &mdash; works for both a Cessna 152 and a Boeing 777). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>Note:</strong> because Adaptive mode depends on having observed a real climb, arming a Cruise Reached alarm <em>while already in cruise</em> (e.g. set up after page-reload mid-flight, or after the alarm has already fired once) won&rsquo;t re-fire on its own.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 30 seconds). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 35&nbsp;s (shortened from 60&nbsp;s in v3.3.0 so the alert fires sooner) &mdash; works for both a Cessna 152 and a Boeing 777). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>Note:</strong> because Adaptive mode depends on having observed a real climb, arming a Cruise Reached alarm <em>while already in cruise</em> (e.g. set up after page-reload mid-flight, or after the alarm has already fired once) won&rsquo;t re-fire on its own.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 20 seconds, shortened from 30 s in v3.3.0). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
-            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Indefinite (until dismissed)</em> &mdash; the default for new alarms; the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row &mdash; OR <em>Set duration</em> with a seconds value. In seconds mode the sound auto-stops after the chosen interval and the alarm is dismissed automatically. The seconds value defaults to 10 the first time you use it; if you change it, your value is saved as the default for the next time you switch a different alarm into seconds mode. New alarms always default to indefinite &mdash; only flipping the picker applies the saved preference. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
+            <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
+            <strong>Send to phone from the quick-add modals</strong> (v3.3.0) &mdash; the Geofence and Add Waypoint Alarm pop-ups now carry a <em>Send to phone</em> checkbox, so you can forward those alarms to your phone at creation time instead of opening the alarm card afterward. The checkbox only appears once a Mobile Alerts provider is configured (Live &rarr; Mobile Alerts).<br/><br/>
+            <strong>Drag any number to scrub it</strong> (v3.3.0) &mdash; every numeric field in the Alerts panel and the Geofence / Waypoint pop-ups (timer h/m/s, geofence radius, auto-dismiss seconds, telemetry-loss threshold, altitudes) now supports the same click-and-drag gesture: press on the field and drag up to increase or down to decrease (drag farther to move faster). A plain click still focuses the field for keyboard entry.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right.<br/><br/>
             <em>List order IS sound priority</em>. There is no separate priority number &mdash; the alarm closest to the TOP of the list wins the audio channel when several alarms are tripped at once. Implications:
@@ -31821,6 +32128,8 @@ function rgSendToFlightPlanner() {
             <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads (with their <em>enabled</em> state preserved &mdash; that's distinct from file import, which always re-enables everything). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
             <strong>🔊 Test Sound</strong> (v2.87.0, picker in v2.88.0) &mdash; a button at the bottom of the Alerts modal that previews one of the five built-in sounds for ~2.5 seconds so you can verify audio is working without arming an alarm. Plain click cycles through the library. <strong>Shift-click</strong> or <strong>right-click</strong> opens a popup picker so you can preview any specific sound directly. If an alarm is actively tripped and sounding when you click, the preview takes over briefly and the original alarm sound resumes automatically afterwards.<br/><br/>
 
+            <strong>🔊&rarr;All &mdash; bulk set sound or duration</strong> (duration added v3.3.0) &mdash; a button at the bottom of the Alerts modal opens a two-section picker. The top section applies one chosen sound to every alarm at once; the bottom section sets the <em>Sound for</em> auto-dismiss duration (Indefinite, or 5 / 10 / 30 / 60 seconds) on every alarm at once. A toast confirms how many alarms changed.<br/><br/>
+
             <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>Clear History</strong> in the footer wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
             <strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
@@ -31849,7 +32158,9 @@ function rgSendToFlightPlanner() {
 
             <strong>Test before you trust it.</strong> The modal&rsquo;s <strong>▶ Test</strong> button sends a real notification using the values currently in the form (without saving them), and the status line below confirms <em>"✓ Test sent. Check your phone."</em> on success or shows the HTTP error on failure. Run this before relying on the setup &mdash; it&rsquo;s much better to discover a wrong topic / token / URL while still in the dialog than during a 7-hour cruise.<br/><br/>
 
-            <strong>Per-alarm opt-in.</strong> The Mobile alert toggle on each alarm card is independent &mdash; you might want <em>Descent Started</em> and <em>Geofence (Arrival)</em> forwarded to your phone but skip a frequent <em>Timer</em> alarm. Every newly-tripped alarm with the toggle on fires its own notification, so you get one buzz per event &mdash; even within a group.<br/><br/>
+            <strong>Per-alarm opt-in.</strong> The Mobile alert toggle on each alarm card is independent &mdash; you might want <em>Descent Started</em> and <em>Geofence (Arrival)</em> forwarded to your phone but skip a frequent <em>Timer</em> alarm. Every newly-tripped alarm with the toggle on fires its own notification, so you get one buzz per event &mdash; even within a group. <strong>v3.3.0:</strong> the Geofence and Add Waypoint Alarm quick-add pop-ups now include a <em>Send to phone</em> checkbox so you can opt these in at creation time.<br/><br/>
+
+            <strong>Menu badge.</strong> Once a provider is configured, the <strong>Live &rarr; 📱 Mobile Alerts</strong> menu row shows a red count badge of how many <em>active</em> (enabled) alarms are set to forward to your phone &mdash; an at-a-glance confirmation that something will actually reach you while you&rsquo;re away. It hides when the count is zero or no provider is configured.<br/><br/>
 
             <strong>Mobile Alerts adds to, never replaces.</strong> The in-tab alarm sound, full-screen overlay, and tab-title flash all behave exactly as before. The phone push is fire-and-forget on top &mdash; if the POST fails (offline, bad token, CORS), AA toasts a soft warning naming the alarm and the error, but the alarm itself still trips normally.<br/><br/>
 
@@ -31914,10 +32225,111 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.6</span>
+          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bulk sound menu says "both alarms" for two.</strong> Continuing the v3.4.5 grammar fix, the 🔊&rarr;All headers now read "both alarms" when exactly two alarms exist (rather than "all 2 alarms") &mdash; one alarm reads "the alarm", three or more "all N alarms".</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.5</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bulk sound menu reads correctly with one alarm.</strong> The 🔊&rarr;All picker headers said "Set sound on all 1 alarm" when only one alarm existed. They now read "Set sound on the alarm" / "Set &quot;Sound for&quot; on the alarm" in the singular, and "all N alarms" for two or more.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.4</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Altitude fields reject typed negatives too.</strong> Following the v3.4.3 conditional-alarm clamp, an audit found the Cruise Reached and Altitude (crossing) fields would still accept a negative value if you <em>typed</em> it (dragging was already blocked). A negative cruise target could fire the alarm instantly. Typing a negative altitude now snaps to 0, matching the drag behavior. Other Alerts fields (timer, geofence radius, auto-dismiss, telemetry-loss) and the Flight Demo autopilot (heading, altitude, speed) were checked and already clamp correctly.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.3</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Conditional alarms no longer accept impossible negative thresholds.</strong> Distance, time, and airspeed conditions now clamp to a minimum of 0 (a threshold like "distance &gt; &minus;5" could never mean anything). <em>Vertical speed</em> and <em>Altitude</em> are intentionally left signed: vertical speed uses negatives for descent (e.g. "VS &lt; &minus;1500 fpm"), and altitude can be negative at below-sea-level airports. Both typing a negative and dragging below zero are now prevented on the clamped fields.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.2</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dragging a number field no longer closes the dialog.</strong> When you dragged to adjust a value and released the mouse outside the dialog, the dialog would close (the browser treats a drag that ends on the backdrop as a click on the backdrop). The drag-release is now ignored for close-on-backdrop, so the dialog stays open; clicking the backdrop normally still closes it.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.4.1</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Up/down arrows work again on alarm number fields.</strong> The new click-and-drag scrubbing introduced in v3.3.0 was swallowing clicks on the little up/down spinner arrows of number inputs (timer h/m/s, geofence radius, auto-dismiss seconds, telemetry-loss threshold). The arrows now work normally again &mdash; click them to step the value &mdash; while click-and-drag still scrubs from anywhere else in the field.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.4.0</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Loading splash screen with progress bar.</strong> When the app starts it now shows a splash screen with a live progress bar and the name of each component as it loads &mdash; airport database, region names, runways, airport categories, aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. The component names flick by quickly on a fast connection; the screen fades away on its own once everything is ready (and never hangs &mdash; it dismisses after a safety timeout even if a data source is slow or offline).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.3.0</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Click-and-drag to scrub any alarm number.</strong> The drag-up/down gesture that already adjusted altitude fields now works on every numeric field in the Alerts panel &mdash; timer hours/minutes/seconds, geofence radius, auto-dismiss seconds, and the telemetry-loss threshold &mdash; plus the radius and auto-dismiss fields in the Geofence and Add Waypoint Alarm pop-ups. Press on the field and drag up to increase or down to decrease; a quick click still focuses it for typing.</li>
+          <li><strong>&ldquo;Send to phone&rdquo; checkbox in the Geofence and Add Waypoint Alarm pop-ups.</strong> You can now forward these alarms to your phone right when you create them, instead of opening the alarm card afterward to flip the toggle. The checkbox only appears once a Mobile Alerts provider is configured under Live &rarr; Mobile Alerts.</li>
+          <li><strong>New alarms auto-dismiss after 10 seconds by default.</strong> &ldquo;Sound for&rdquo; now defaults to <em>Auto-dismiss after&hellip;</em> (10 seconds, or your saved preference) rather than sounding indefinitely, so an alarm you miss stops on its own. Switch any alarm back to <em>Indefinite</em> if you want it to keep sounding until dismissed.</li>
+          <li><strong>Set &ldquo;Sound for&rdquo; on every alarm at once.</strong> The bulk button at the bottom of the Alerts panel (formerly sound-only) now also lets you apply an auto-dismiss duration &mdash; indefinite, 5, 10, 30, or 60 seconds &mdash; to all alarms in one click.</li>
+          <li><strong>Badge on the Mobile Alerts menu.</strong> Live &rarr; Mobile Alerts now shows a count of how many active alarms are set to forward to your phone, so you can tell at a glance whether anything will reach you while you&rsquo;re away.</li>
+          <li><strong>Faster Cruise Reached and Descent Started alerts.</strong> The phase detector now confirms a cruise transition after 35 seconds of level flight (was 60) and a descent after 20 seconds (was 30), so these alerts fire noticeably sooner after the real event. The climb-evidence guard and 30-second smoothing that prevent false alarms on the ground or during brief altitude wobbles are unchanged.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.2.0</span>
-          <span class="release-date">May 28, 2026 &middot; Current</span>
+          <span class="release-date">May 28, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -41351,12 +41763,14 @@ function rgSendToFlightPlanner() {
     _maCloseModal();
     // Re-render the alarm list so per-alarm Mobile alert toggles appear.
     if (typeof _afkRenderAlarmList === 'function') _afkRenderAlarmList();
+    if (typeof _maUpdateMenuBadge === 'function') _maUpdateMenuBadge();
   }
   function _maClearAndClose() {
     _maClearConfig();
     _aaRtToast('📱 Mobile Alerts settings cleared.', 'warn');
     _maCloseModal();
     if (typeof _afkRenderAlarmList === 'function') _afkRenderAlarmList();
+    if (typeof _maUpdateMenuBadge === 'function') _maUpdateMenuBadge();
   }
 </script>
 
@@ -41396,7 +41810,7 @@ function rgSendToFlightPlanner() {
              Enable All moved next to Disable/Delete because they share
              the "bulk state-flip" semantics. Counter relocated to title. -->
         <button class="afk-btn-secondary" onclick="_afkTestSound(event)" oncontextmenu="_afkTestSound(event);return false;" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; Shift-click or right-click to pick a specific sound from a menu.">🔊 Test Sound</button>
-        <button class="afk-btn-secondary" onclick="_afkBulkSetSoundMenu(event)" title="Apply one sound to every alarm in the queue at once. Click to open a sound picker; the chosen sound replaces each alarm's current per-card sound setting.">🔊→All</button>
+        <button class="afk-btn-secondary" onclick="_afkBulkSetSoundMenu(event)" title="Bulk-set every alarm at once. Opens a picker with two sections: choose one sound to apply to all alarms, or set the &quot;Sound for&quot; auto-dismiss duration (indefinite / 5 / 10 / 30 / 60 s) on all alarms.">🔊→All</button>
         <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
         <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
         <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
@@ -41478,8 +41892,15 @@ function rgSendToFlightPlanner() {
           <option value="indefinite">Indefinite (until dismissed)</option>
           <option value="seconds">Auto-dismiss after…</option>
         </select>
-        <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
+        <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub.">
         <span id="afkWpDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
+      </div>
+      <div class="afk-edit-row" id="afkWpMobileRow" style="margin-bottom:0.5rem;display:none;">
+        <span class="afk-edit-label">Send to phone</span>
+        <label class="afk-toggle" title="Also send a push notification to your phone when this alarm trips, using the provider configured under Live → Mobile Alerts.">
+          <input type="checkbox" id="afkWpMobile">
+        </label>
+        <span style="color:var(--muted);font-family:Rajdhani,sans-serif;font-size:0.88rem;">Forward to phone when tripped</span>
       </div>
       <div class="afk-footer-info" id="afkWpAlarmDupHint" style="margin-top:0.4rem;color:#ffaa55;display:none;">⚠ A specific-waypoint alarm already covers this fix. Adding another will create a duplicate.</div>
     </div>
@@ -41561,7 +41982,7 @@ function rgSendToFlightPlanner() {
            drew on the map and keep this row hidden. -->
       <div class="afk-edit-row" id="afkGfRadiusRow" style="margin-bottom:0.7rem;display:none;">
         <span class="afk-edit-label">Radius</span>
-        <input type="number" id="afkGfRadius" class="afk-input" style="width:90px;" min="0.1" step="0.1" value="5">
+        <input type="number" id="afkGfRadius" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="5" onmousedown="_afkModalRadiusDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub (0.1 nm steps).">
         <span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>
       </div>
       <div class="afk-edit-row" style="margin-bottom:0.7rem;">
@@ -41575,8 +41996,15 @@ function rgSendToFlightPlanner() {
           <option value="indefinite">Indefinite (until dismissed)</option>
           <option value="seconds">Auto-dismiss after…</option>
         </select>
-        <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()">
+        <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub.">
         <span id="afkGfDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
+      </div>
+      <div class="afk-edit-row" id="afkGfMobileRow" style="margin-bottom:0.7rem;display:none;">
+        <span class="afk-edit-label">Send to phone</span>
+        <label class="afk-toggle" title="Also send a push notification to your phone when this geofence trips, using the provider configured under Live → Mobile Alerts.">
+          <input type="checkbox" id="afkGfMobile">
+        </label>
+        <span style="color:var(--muted);font-family:Rajdhani,sans-serif;font-size:0.88rem;">Forward to phone when tripped</span>
       </div>
       <div class="afk-footer-info" id="afkGfCoords" style="margin-top:0.3rem;"></div>
     </div>
@@ -41633,7 +42061,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
-            <button class="rg-btn rg-pulldown-row" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle.">📱 <span class="rg-btn-label">Mobile Alerts…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone.">📱 <span class="rg-btn-label">Mobile Alerts…</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
             <div class="rg-pulldown-sep"></div>
             <!-- v2.89.2 — Removed the dedicated "Clear Flight Plan" row: the
                  SimBrief Flight Plan item above already doubles as a load /
