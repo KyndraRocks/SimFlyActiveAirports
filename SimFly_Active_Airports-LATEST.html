@@ -6126,7 +6126,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.6.11';
+const APP_VERSION = '3.6.14';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8691,7 +8691,7 @@ function _aaRtToast(msg, kind) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'aaRtToast';
-    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;';
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;pointer-events:none;';
     document.body.appendChild(el);
   }
   const bg = kind === 'err' ? 'rgba(180,40,60,0.95)' : kind === 'warn' ? 'rgba(180,120,20,0.95)' : 'rgba(20,120,80,0.95)';
@@ -10507,6 +10507,17 @@ function _liveAcRenderMarker(d) {
     _liveAcMarker.on('mouseover', e => _tipAPI && _tipAPI.showLive(_liveAcTooltipHtml, e.originalEvent.clientX, e.originalEvent.clientY));
     _liveAcMarker.on('mousemove', e => _tipAPI && _tipAPI.move(e.originalEvent.clientX, e.originalEvent.clientY));
     _liveAcMarker.on('mouseout',  () => _tipAPI && _tipAPI.hide());
+    _liveAcMarker.on('dblclick',  e => {
+      L.DomEvent.stopPropagation(e);
+      if (!_rgMap || !_liveAcLastData) return;
+      const lat2 = parseFloat(_liveAcLastData.lat), lng2 = parseFloat(_liveAcLastData.lng);
+      if (!isFinite(lat2) || !isFinite(lng2)) return;
+      _liveAcSetFollow(false);
+      const W = _rgMap.getContainer().clientWidth || 600;
+      const zoom = Math.log2(156543.03392 * Math.cos(lat2 * Math.PI / 180) * W / (3 * 1852));
+      _rgDblClickActive = true;
+      _rgMap.setView([lat2, lng2], Math.round(zoom), { animate: true });
+    });
   } else {
     _liveAcMarker.setLatLng([lat, lng]);
     _liveAcMarker.setIcon(icon);
@@ -32154,6 +32165,8 @@ function rgSendToFlightPlanner() {
 
             <strong>📍 Shift-click to pick an aircraft icon</strong> (v2.77.0+) &mdash; Shift-clicking the Follow A/C button opens a small picker with four silhouettes: <em>Airliner</em>, <em>Prop</em>, <em>Helicopter</em>, and <em>Business Jet</em>. Click any tile to switch the live-aircraft marker icon instantly &mdash; the change applies the moment you click and persists across sessions. All four icons are hand-rolled inline SVG so they stay crisp at every zoom and rotate cleanly to the live heading; the Helicopter uses a rotor-disc circle so it reads correctly at any heading.<br/><br/>
 
+            <strong>Double-click to zoom in</strong> (v3.6.12) &mdash; double-clicking the aircraft icon centers the map on the aircraft and zooms to a 3&nbsp;nm wide view (matching the airport double-click zoom). Follow mode is automatically turned off so the map stays at the zoomed position. Works for both FSUIPC and Demo sources.<br/><br/>
+
             <strong>Persistent breadcrumb trail</strong> &mdash; the green flight trail (fresh + archive tiers, up to ~10,000&nbsp;nm coverage) autosaves to <code>localStorage</code> every 5&nbsp;seconds while flying, so a browser close or crash mid-flight no longer loses your flown path. On the next page load the trail is re-rendered at map-init time. Manually stopping a live source also preserves the trail (it used to wipe on every stop) so switching FSUIPC&nbsp;&rarr;&nbsp;STKP, idle gaps, and reloads all keep the same flight's track visible. As of v2.75.1 the trail draws on its own dedicated map pane (z-index 670) so it sits above the SimBrief route line and waypoint markers &mdash; you can always see where the aircraft has actually been versus the planned route. <strong>The track auto-resets when a new flight starts</strong> &mdash; defined as a fresh SimBrief flight plan being loaded (a <em>different</em> <code>time_generated</code> than the last one we cleared against) AND the aircraft being on the ground (phase = <em>ground</em>, or GS&nbsp;&lt;&nbsp;5&nbsp;kt, or GS&nbsp;&lt;&nbsp;30&nbsp;kt and ALT&nbsp;&lt;&nbsp;1000&nbsp;ft). Re-fetching the same SimBrief plan after a reload is a no-op, and loading a new plan mid-flight (e.g.&nbsp;diverting) also preserves the trail &mdash; only the unambiguous "new plan + on ground" combination wipes the breadcrumb.<br/><br/>
 
             <strong>SimBrief flight plan persists across reload</strong> &mdash; the most recently plotted plan is saved to <code>localStorage</code> on every successful fetch (v2.75.1+). On the next page load it re-renders silently at map-init time &mdash; the route line, origin/destination rings, waypoint markers, and any waypoint-alarm rings all reappear without re-clicking <em>SimBrief Flight Plan</em>. The reload-restore path skips the success toast and the auto-fit reframe so it doesn't override your last viewport. Clicking <em>✕ Clear Flight Plan</em> wipes the cache.<br/><br/>
@@ -32546,10 +32559,46 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.14</span>
+          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Double-click aircraft now zooms to 3 nm width.</strong> The aircraft double-click zoom (added in v3.6.12) now zooms to a 3 nm wide view instead of 2 nm, matching the airport double-click zoom for a consistent feel.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.13</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Telemetry panel collapse/expand button no longer blocked by toast notifications.</strong> After a toast appeared (e.g. starting Flight Demo Mode), the faded-but-still-present notification in the bottom-right corner kept intercepting clicks — so the collapse/expand arrow on the telemetry data panel stopped responding (collapsing worked, but re-expanding didn't, because the collapsed arrow sat a few pixels lower, right under the toast). Toasts are now click-through, so they never swallow clicks on the controls beneath them.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.12</span>
+          <span class="release-date">May 29, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Double-click aircraft to zoom in to 2 nm width.</strong> When a live aircraft is displayed (FSUIPC or demo), double-clicking the aircraft icon centers the map on the aircraft and zooms to a 2 nm wide view. Follow mode is turned off so the map stays put after zooming.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.6.11</span>
-          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-date">May 29, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>

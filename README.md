@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.11**
+**Current version: v3.6.14**
 
 ---
 
@@ -205,6 +205,8 @@ No cloud round-trip, no API tokens, no handshakes that can silently fail. Positi
 While a live source is active, a **📍 Follow A/C** button appears next to the FSUIPC toggle. Click it to lock the map onto the aircraft — every position update smooth-pans the view (0.8 s tween) so the plane stays centred without jitter. Zoom is preserved; only the centre moves. Manually dragging the map turns Follow off automatically, so panning to look at something never fights the auto-centre. Your follow preference persists across sessions.
 
 **Pick an aircraft icon** — either Shift-click the 📍 Follow A/C button or use the **✈ Aircraft Icon…** row inside the **🔌 Live** pulldown. The picker offers four hand-rolled silhouettes: **Airliner**, **Prop**, **Helicopter**, and **Business Jet**. Click any tile to apply instantly; the change persists across sessions. The Helicopter silhouette uses a rotor-disc circle so it reads correctly at every heading.
+
+**Double-click the aircraft to zoom in** (v3.6.12+) — double-clicking the live aircraft icon centres the map on the aircraft and zooms to a close-up view (the same zoom the airport double-click uses). Follow mode is turned off automatically so the map stays put at the zoomed position. Works for both FSUIPC and Demo sources.
 
 **Clearing** — the **✈ SimBrief Flight Plan** row at the top of the **🔌 Live** pulldown doubles as a load/clear toggle: with no plan loaded it fetches, with a plan loaded it clears the route and wipes the local-storage cache (waypoint-alarm rings clear alongside). The aircraft breadcrumb trail is cleared from the map's filter strip: when a trail is present a green **Aircraft Track** pill appears there — click its ✕ to erase the trail (all three tiers — ultra-fresh, fresh, archive — and the local-storage track). *(v3.6.0 removed the old "Clear Aircraft Track" Live-menu row in favour of this pill.)*
 
