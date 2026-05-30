@@ -3078,6 +3078,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-center .dist-cat-btn { width:1.6rem; height:1.6rem; font-size:0.83rem; }
   .rg-hdr-center .dist-cat-invert-btn { font-size:0.78rem; padding:0.1rem 0.4rem; }
   .rg-hdr-center .dist-cat-filter-label { font-size:0.85rem; }
+  /* v3.6.19 — Equalise the All / None / Invert pills to the category circles'
+     height so the whole filter cluster reads as one consistent control group.
+     align-self:stretch tracks the circle height (the tallest item in the
+     cluster) across breakpoints without hard-coding a pixel value. */
+  .rg-hdr-center .rg-cat-acc-btn,
+  .rg-hdr-center .dist-cat-invert-btn { align-self:stretch; display:inline-flex; align-items:center; justify-content:center; }
   /* Breadcrumb filter status strip — map overlay to the right of the search bar */
   .rg-map-breadcrumbs { position:absolute; top:8px; left:256px; right:8px; z-index:1000; display:flex; align-items:center; gap:0.3rem; overflow:hidden; pointer-events:none; }
   .rg-bc { display:inline-flex; align-items:center; gap:0.275rem; padding:0.15rem 0.69rem; background:rgba(10,18,36,0.88); border:1px solid rgba(255,255,255,0.22); border-radius:999px; font-size:0.96rem; font-family:'Rajdhani',sans-serif; font-weight:600; white-space:nowrap; cursor:pointer; user-select:none; flex-shrink:0; color:rgba(255,255,255,0.78); letter-spacing:0.03em; transition:background 0.12s,border-color 0.12s; pointer-events:all; }
@@ -3678,6 +3684,26 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     background:rgba(255,72,180,0.25);
     border-color:rgba(255,72,180,0.7);
   }
+  /* v3.6.17 — Header graceful-degradation fix. The map header is a
+     `1fr auto 1fr` grid (left tools · centred category filter · right
+     controls). Only the LEFT column has `min-width:0`, so when the window is
+     too narrow for everything to fit, the left column alone gets crushed and
+     its buttons overflow rightward into the centred filter — the 🔔 Alerts
+     button visibly collides with the "All" button. The full-collapse rule
+     below only kicks in at ≤1500px, but the collision starts higher (~1610px,
+     and notably at the 1512px MacBook width). So collapse the LEFT trigger /
+     Alerts labels to icons earlier, before the overflow can occur. The
+     pulldown ROW labels keep their own !important rule, so the dropdown menus
+     stay fully labelled. */
+  @media (max-width: 1650px) {
+    .rg-hdr-left .rg-pulldown-trigger .rg-btn-label,
+    .rg-hdr-left #afkAlertsBtn .rg-btn-label { display:none; }
+    /* v3.6.18 — In compact mode the Airport Owners button drops its numeric
+       "active / total" count and shows just the name, so the button stays
+       narrow enough for the 🎨 palette to sit beside it without crowding. */
+    #rgMapOwnerBtnLabel { display:none; }
+  }
+
   /* Follow A/C button at very narrow widths: keep only the 📍 pin —
      the trailing space is stripped so the button is a tight square. The
      wider .rg-btn-label rule at 1500px also hides the label, but this
@@ -3689,6 +3715,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     .rg-hdr-left  { gap:0.35rem; }
     .rg-hdr-right { gap:0.35rem; }
     .rg-btn-label { display:none; }
+    /* v3.6.18 — Collapse the Scenery split button's mode word (Scenery /
+       Highlight / Only) to just its dot icon at the same width every other
+       header button drops its label, so it degrades in step with the rest of
+       the bar instead of staying conspicuously wide. The ✏ edit affordance and
+       the dot stay visible. */
+    .rg-sl-mode-text { display:none; }
   }
   .rg-phase-badge { display:inline-block; font-family:'Orbitron',monospace; font-size:0.87rem; font-weight:700; letter-spacing:0.06em; padding:0.225rem 0.75rem; border-radius:20px; margin-right:0.675rem; vertical-align:middle; }
   .rg-phase-badge.dep  { background:rgba(0,200,255,0.18); color:var(--accent); border:1px solid rgba(0,200,255,0.4); }
@@ -3749,7 +3781,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      by 25 % so they read closer to the size of the category 1-7 dots
      beside them. Keep them centred vertically with the surrounding flex
      row. */
-  #rgGlobalCatFilter .rg-cat-acc-btn { font-size:0.975rem; padding:0.19rem 0.5rem; line-height:1; align-self:center; }
+  #rgGlobalCatFilter .rg-cat-acc-btn { font-size:0.975rem; padding:0.19rem 0.5rem; line-height:1; align-self:stretch; display:inline-flex; align-items:center; justify-content:center; }
   .rg-cat-acc-btn:hover { border-color:var(--accent); color:var(--accent); }
   /* Dep/arr-themed All/None/Invert buttons — match the region-circle colors */
   #rgDepCatFilterRow .rg-cat-acc-btn,
@@ -3807,6 +3839,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-vsplit:hover, .rg-vsplit.rg-drag-active { background:linear-gradient(to bottom, transparent 2px, var(--accent) 2px, var(--accent) 3px, transparent 3px); }
   /* Owner filter dropdown */
   .rg-owner-wrap { position:relative; }
+  /* v3.6.18 — Keep the 🎨 palette button on the same line as the Airport
+     Owners button instead of letting it wrap below when the header is tight.
+     inline-flex (rather than the default inline-block flow) means the button +
+     palette never break onto a second line — which also stops the second line
+     from inflating the header row height and stretching the Scenery split
+     button taller than its neighbours.
+     v3.6.19 — align-self:stretch makes the wrap fill the header row height and
+     align-items:stretch passes that down to the Owners button + palette, so
+     both match the height of the other header buttons (Payout, Rating, Close…)
+     instead of sitting shorter. Tracks the row height automatically across
+     breakpoints — no hard-coded pixel height. */
+  .rg-hdr-right .rg-owner-wrap { display:inline-flex; align-items:stretch; align-self:stretch; }
+  .rg-hdr-right .rg-owner-btn { display:inline-flex; align-items:center; }
+  .rg-hdr-right .rg-owner-color-btn { display:inline-flex; align-items:center; justify-content:center; }
   .rg-owner-btn { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:600; padding:0.2rem 0.6rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; }
   .rg-owner-btn:hover, .rg-owner-btn.filtered { border-color:var(--accent); color:var(--accent); }
   /* 🎨 owner-color toggle button sits immediately to the right of the Airport
@@ -4565,8 +4611,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      modal layers. Bumping above #afkConfigModal so the natural stacking
      also covers any future scenario where both are technically open. */
   #afkHistoryModal { z-index:9510; }
-  #afkConfigModal .modal { max-width:clamp(720px,52vw,1080px); }
-  .afk-config-body { display:flex; gap:1.1rem; min-height:62vh; max-height:82vh; }
+  #afkConfigModal .modal { max-width:clamp(720px,52vw,1080px); min-height:62vh; }
+  /* v3.6.20 — The body keeps the modal a substantial size via the modal's own
+     min-height (above), NOT via its own min-height. Previously min-height:62vh
+     here pinned the body tall, so on shorter viewports the wrapping footer
+     (8 buttons → 2–3 rows) had nowhere to go and spilled out below the modal.
+     min-height:0 lets the body shrink to make room for the footer; the alarm
+     list column (.afk-list-col) already scrolls internally, so no content is
+     lost. The footer (flex-shrink:0) now always stays inside the panel. */
+  .afk-config-body { display:flex; gap:1.1rem; min-height:0; }
   .afk-add-col {
     flex:0 0 220px;
     display:flex; flex-direction:column; gap:0.5rem;
@@ -6150,7 +6203,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.6.15';
+const APP_VERSION = '3.6.20';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12835,8 +12888,50 @@ function _demoTick() {
   // here so the integrator (which works in true) gets a consistent
   // target. The managed auto-target is already true.
   const tgtHdg = _demoApMode.hdg === 'manual' ? _demoMagToTrue(_demoApSetpoints.hdg) : _demoApAutoTargetHdg();
-  const tgtAlt = _demoApMode.alt === 'manual' ? _demoApSetpoints.alt : _demoVnavManagedAlt(planBase);
+  let   tgtAlt = _demoApMode.alt === 'manual' ? _demoApSetpoints.alt : _demoVnavManagedAlt(planBase);
   const tgtGs  = _demoApMode.gs  === 'manual' ? _demoApSetpoints.gs  : planBase.gs;
+
+  // v3.6.16 — Top-of-Descent envelope clamp. The managed altitude target
+  // (VNAV waypoint interpolation or the time-phase profile) has no notion of
+  // "how much track is left to get back down," so on short routes the aircraft
+  // kept climbing toward a high cruise target with no room to descend, then
+  // arrived high. This clamps the managed target so it can never sit higher
+  // than the descent slope back from the FAF allows: ceiling = FAF glideslope
+  // altitude + (track miles to the FAF) × category descent gradient. The climb
+  // ray meets this descending ceiling at a self-limiting apex, so descent
+  // always begins in time and the aircraft lands — overriding/cancelling any
+  // excess climb or cruise. Only ever LOWERS the target, so normal/long flights
+  // (where the ceiling sits far above cruise until the real TOD) are unchanged.
+  // Skipped in manual ALT mode and once on the FAF→threshold final leg (the
+  // glideslope logic owns altitude there).
+  if (_demoApMode.alt !== 'manual' && _demoPlan && _demoPlan.timing
+      && _demoPlan.points && _demoPlan.points.length >= 2 && _demoPlan.perf) {
+    const T = _demoPlan.timing;
+    const lastIdx = _demoPlan.points.length - 1;
+    let fafIdx = -1;
+    for (let i = 0; i < _demoPlan.points.length; i++) {
+      if (_demoPlan.points[i].isFaf) { fafIdx = i; break; }
+    }
+    const anchorIdx = fafIdx >= 0 ? fafIdx : lastIdx;
+    // Govern only the cruise→TOD→FAF portion; on the final leg the FAF /
+    // glideslope altitude logic above already owns the descent.
+    if (_demoNextWptIdx <= anchorIdx) {
+      const fafNm = (fafIdx >= 0) ? (T.fafNm || 0) : 0;
+      // Glideslope intercept altitude at the anchor (matches _demoBuildPlan's
+      // FAF altFt); on no-FAF plans, descend to ~1500 ft AGL over the field.
+      const anchorAlt = (fafIdx >= 0)
+        ? T.destElev + fafNm * Math.tan(3 * Math.PI / 180) * 6076
+        : T.destElev + 1500;
+      const distToAnchor = Math.max(0, _demoRemainingRouteNm() - fafNm);
+      // Category descent gradient (ft/nm) at descent-phase speed — same basis
+      // as the descentNm budget in _demoBuildPlan (cruiseKts × 0.85).
+      const descGs   = Math.max(60, T.cruiseKts * 0.85);
+      const descFpm  = (_demoPlan.perf.descentFpm > 0) ? _demoPlan.perf.descentFpm : 1500;
+      const gradFtNm = descFpm / (descGs / 60);
+      const ceiling  = anchorAlt + distToAnchor * gradFtNm;
+      if (isFinite(ceiling) && tgtAlt > ceiling) tgtAlt = ceiling;
+    }
+  }
 
   _demoIntegrate(dt, tgtHdg, tgtAlt, tgtGs);
   _demoApMaybeAdvanceWpt();
@@ -24037,13 +24132,13 @@ function _slUpdateToggles() {
   if (!wrap || !lbl) return;
   wrap.classList.remove('sl-hl-active', 'sl-only-active');
   if (hasEntries && _rgOnlyScenery) {
-    lbl.innerHTML = '<span class="rg-sl-dot-icon"></span>Only';
+    lbl.innerHTML = '<span class="rg-sl-dot-icon"></span><span class="rg-sl-mode-text">Only</span>';
     wrap.classList.add('sl-only-active');
   } else if (hasEntries && _rgShowScenery) {
-    lbl.innerHTML = '<span class="rg-sl-dot-icon"></span>Highlight';
+    lbl.innerHTML = '<span class="rg-sl-dot-icon"></span><span class="rg-sl-mode-text">Highlight</span>';
     wrap.classList.add('sl-hl-active');
   } else {
-    lbl.textContent = '⬤ Scenery';
+    lbl.innerHTML = '⬤<span class="rg-sl-mode-text">Scenery</span>';
   }
   _rgUpdateBreadcrumbs();
 }
@@ -32237,7 +32332,7 @@ function rgSendToFlightPlanner() {
               <li><strong>Start</strong> &mdash; kicks off the demo with the selected aircraft and plan.</li>
             </ul>
 
-            <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it.<br/><br/>
+            <strong>Per-category performance</strong> &mdash; the demo synthesizes climb / cruise / descent from the SimFly category, not per-airframe data: Cat 1 (Light GA) sits at 4,000 ft / 110 kt, Cat 5 (Bizjet) at FL350 / 380 kt, Cat 7 (Widebody) at FL380 / 470 kt. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. A Top-of-Descent envelope (v3.6.16) also caps the climb to whatever the remaining track distance can still descend from, so even a very short hop tops out at a realistic altitude and flies a proper descent to landing instead of arriving high.<br/><br/>
 
             <strong>Runway selection &amp; final approach (v3.0.0)</strong> &mdash; before starting, the demo fetches the current METAR for the destination airport from CheckWX and selects the runway with the highest headwind component. If weather data isn&rsquo;t available within 4 seconds the runway is picked by best alignment with the route&rsquo;s inbound bearing. A virtual Final Approach Fix (FAF) is inserted into the route plan 8&nbsp;nm outbound from the selected landing threshold on the extended runway centerline, so the aircraft intercepts the final approach course and flies the last segment precisely aligned with the runway. The departure runway heading is held for the first 45&nbsp;seconds after takeoff (v3.6.8; earlier builds used 90&nbsp;s / 30&nbsp;s / 2,000&nbsp;ft AGL / 5&nbsp;nm) so the track lines up with the scenery centerline on the takeoff roll and initial climb before it turns to follow the plan.<br/><br/>
 
@@ -32607,10 +32702,72 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.20</span>
+          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alerts panel buttons no longer spill outside the panel on shorter screens.</strong> The row of footer buttons (Test Sound, Alert History, Save / Load, Enable&nbsp;/&nbsp;Disable&nbsp;/&nbsp;Delete All) wraps to two rows on narrower windows, and on shorter screens that second row was overflowing off the bottom of the Alerts panel. The panel now lets its alarm list shrink and scroll to make room, so the footer buttons always stay inside the panel — the list area keeps the same comfortable size whenever there's room for it.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.19</span>
+          <span class="release-date">May 30, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Consistent button heights across the map header.</strong> The header buttons had drifted to a few different heights — the Airport Owners button and the 🎨 palette button sat noticeably shorter than the rest. Every action button (Tools, Live, Alerts, Airport Owners, palette, Payout, Rating, Scenery, Close) is now a single uniform height, and the category filter chips (All / None / 1–7 / Invert) are all sized to match each other too, so the whole header reads as one coherent toolbar. The sizes track automatically as the window narrows, so they stay aligned at every width.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.18</span>
+          <span class="release-date">May 30, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery / Highlight button matches the other header buttons' height.</strong> The scenery split button was rendering taller than its neighbours on narrower screens. Its extra height came from the Airport Owners area growing to two lines (see below); with that fixed, the button now sits flush with Payout, Rating, and Close.</li>
+          <li><strong>🎨 palette button stays beside the Airport Owners menu instead of dropping below it.</strong> When the header got tight, the colour-palette button wrapped onto a second line under the Airport Owners button. It now stays inline, and the Airport Owners button drops its "active / total" count in compact mode so there's room — showing just "Airport Owners" until the window is wide again.</li>
+          <li><strong>Scenery button label collapses with the rest of the bar.</strong> At the width where every other header button drops its text label, the scenery button now collapses its mode word (Scenery / Highlight / Only) to just its dot icon too, instead of staying conspicuously wide. The ✏ edit affordance stays put.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.17</span>
+          <span class="release-date">May 30, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map header no longer collides at narrower screen widths.</strong> On screens around 1500–1650&nbsp;px wide (notably the 1512&nbsp;px MacBook width), the 🔔 Alerts button could overlap the "All" button of the category filter because the left-hand tools were getting crushed while the right-hand controls held their width. The header now collapses the Tools / Live / Alerts buttons to their icons a little earlier, before anything can overlap, so it stays clean and readable as the window narrows. The dropdown menus keep their full text labels.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.6.16</span>
+          <span class="release-date">May 30, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight Demo Mode now always leaves room to descend on short flights.</strong> On short routes the demo aircraft could still be climbing toward a high cruise altitude when it was already time to come down, then arrive at the destination far too high. The demo now caps the climb to a Top-of-Descent envelope: it never climbs higher than the remaining track distance can bring it back down from, so it tops out at a sensible altitude and flies a realistic descent to landing every time. Normal and long flights — which already have room to climb and descend — are unchanged.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.6.15</span>
-          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-date">May 30, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -42714,7 +42871,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
-          <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤ Scenery</span>
+          <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤<span class="rg-sl-mode-text">Scenery</span></span>
           <span class="rg-sl-sep"></span>
           <span class="rg-sl-edit" onclick="openSceneryModal()" title="Manage scenery library">✏</span>
         </div>

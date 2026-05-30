@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.15**
+**Current version: v3.6.20**
 
 ---
 
@@ -293,7 +293,7 @@ For demos and presentations at locations where MSFS / FSUIPC is unavailable (cor
 
 **Save / Load demo flight plans to disk** — the configuration modal's *Save Demo Flight Plan* button distills the currently-loaded SimBrief plan into a compact JSON file containing departure, destination, and every waypoint (name + lat/lon). *Load Demo Flight Plan* reads one back so you can carry a library of demo routes between machines or to sites that block SimBrief. The suggested filename and saved content always track the **currently selected** SimBrief plan (v2.98.8+), so changing the SimBrief plan after loading a demo file produces a save that reflects the new airports rather than the stale ones.
 
-**Per-SimFly-category performance profiles** — the aircraft pulldown lists every aircraft in the database, sorted by SimFly category (1 → 7) then alphabetically. The engine synthesizes climb / cruise / descent from the chosen aircraft's category (Cat 1: 4,000 ft / 110 kt up to Cat 7: FL380 / 470 kt), so any aircraft in a category gets the right kind of profile. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. Defaults to your current AA aircraft pick; if none is selected, falls back to a Cat 6 aircraft.
+**Per-SimFly-category performance profiles** — the aircraft pulldown lists every aircraft in the database, sorted by SimFly category (1 → 7) then alphabetically. The engine synthesizes climb / cruise / descent from the chosen aircraft's category (Cat 1: 4,000 ft / 110 kt up to Cat 7: FL380 / 470 kt), so any aircraft in a category gets the right kind of profile. Short routes auto-scale the V-profile so the aircraft still reaches a sensible step-cruise altitude rather than spiking through it. A Top-of-Descent envelope (v3.6.16) caps the climb to whatever the remaining track distance can still descend from, so even a very short hop tops out at a realistic altitude and flies a proper descent down to landing instead of arriving high. Defaults to your current AA aircraft pick; if none is selected, falls back to a Cat 6 aircraft.
 
 **Real per-waypoint VNAV from SimBrief altitudes** — when the loaded plan came from SimBrief, every navlog fix's planned cruise altitude (`altitude_feet`) is captured and used as a real VNAV altitude target. The Managed ALT mode interpolates linearly between adjacent constrained fixes along the current leg, so a route with TOC at FL120 over the first waypoint, step-climb to FL360 by mid-flight, TOD over the descent fix, and step-descent into the destination produces a realistic profile instead of a single climb→cruise→descend triangle. Missing intermediate altitudes are back-filled by interpolating from nearest specified neighbours. Save/Load Demo Flight Plan JSON preserves the altitude constraints round-trip. Falls back to the single-triangle phase model when no waypoint has altitude data.
 
