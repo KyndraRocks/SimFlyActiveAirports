@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.14**
+**Current version: v3.6.15**
 
 ---
 
@@ -299,7 +299,7 @@ For demos and presentations at locations where MSFS / FSUIPC is unavailable (cor
 
 **Realistic turn radii at waypoints** — instead of snapping the marker bearing at each waypoint, the engine expands every interior waypoint into a coordinated-turn arc sized by the aviation formula `R = V² / (g · tan(25°))`. Per-waypoint radius uses the expected groundspeed at that point on the route, so Light GA waypoints get tight ~0.4 nm turns and jet cruise waypoints get realistic ~5.5 nm arcs. The marker actually flies the arc; heading changes continuously rather than stepping. Turns too tight to fit on either adjacent leg fall back to a hard corner.
 
-**Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (1× / 3× / 10× — v3.6.5) plus a free-slider for arbitrary 0.1× – 25× playback, and an elapsed / total time readout. **Stale**, **Disconnect**, and **Exit** sit on a centered second row (v3.6.5). The **total flight time** shown next to the scrub bar refines as the flight progresses (v3.6.2) — it learns the pace you're actually flying and converges on the true arrival time, and stops counting at touchdown.
+**Floating playback control bar** — while the demo runs, a control bar appears at the bottom of the map with **⏸ Pause / ▶ Play**, **⏮ Restart**, **📍 Follow** (center and pan the map with the aircraft), **✈ AP** (autopilot panel — see below), a **scrub slider** to jump anywhere along the flight, the current phase (GROUND / CLIMB / CRUISE / DESCENT / APPROACH), **speed presets** (1× / 3× / 10× — v3.6.5) plus a free-slider for arbitrary 0.1× – 25× playback, and an elapsed / total time readout. **Stale**, **Disconnect**, and **Exit** sit on a centered second row (v3.6.5). The **total flight time** shown next to the scrub bar refines as the flight progresses (v3.6.2) — it learns the pace you're actually flying and converges on the true arrival time, and stops counting at touchdown. A **⏷ / ⏶ collapse / expand toggle** in the bottom-right corner of the bar (v3.6.15) — the same show/hide control the telemetry panel has — hides every playback control and shrinks the bar to a compact pill so it stops covering the map; the collapsed state is remembered across sessions.
 
 **Realistic takeoff & climb-out** (v3.6.7) — the synthetic aircraft performs a proper takeoff roll: it accelerates down the departure runway at field elevation until rotation speed, *then* rotates and climbs (rather than ascending vertically before it has any speed). It holds runway heading for the first 45 seconds after takeoff (v3.6.8) so the roll and initial climb-out line up with the scenery centerline before turning to follow the plan.
 

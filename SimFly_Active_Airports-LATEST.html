@@ -3331,6 +3331,30 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     flex-basis:100%; width:100%;
     display:flex; justify-content:center; align-items:center; gap:0.45rem;
   }
+  /* Collapse / expand toggle for the demo control bar — mirrors the
+     telemetry panel's show/hide button. Pinned to the bottom-right corner
+     of the bar. When collapsed, every control hides and only the 🎬 Demo
+     label + this toggle remain. */
+  .demo-collapse-btn {
+    position:absolute; right:8px; bottom:8px;
+    background:none; border:1px solid rgba(255,120,210,0.45);
+    color:rgba(255,120,210,0.95); cursor:pointer;
+    width:24px; height:24px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.85rem; padding:0; line-height:1;
+    transition:color 0.12s, border-color 0.12s;
+  }
+  .demo-collapse-btn:hover { color:#fff; border-color:rgba(255,120,210,0.9); }
+  body.light-mode .demo-collapse-btn { color:#7a1a8a; border-color:rgba(160,40,180,0.45); }
+  body.light-mode .demo-collapse-btn:hover { color:#7a1a8a; border-color:rgba(160,40,180,0.85); }
+  /* Keep the centered second-row controls clear of the corner toggle. */
+  .demo-floating .demo-row2 { padding:0 2.2rem; }
+  .demo-floating.collapsed > *:not(.demo-floating-label):not(.demo-collapse-btn) { display:none; }
+  /* Collapsed: reserve room on the right for the corner toggle and centre
+     it vertically in the now single-line pill. */
+  .demo-floating.collapsed { padding-right:2.6rem; }
+  .demo-floating.collapsed .demo-collapse-btn { bottom:auto; top:50%; transform:translateY(-50%); }
+  .demo-floating.collapsed .demo-floating-label { border-right:none; margin-right:0; padding-right:0; }
 
   /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
      conventions used by the SimBrief settings modal so the look is
@@ -6126,7 +6150,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.6.14';
+const APP_VERSION = '3.6.15';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -13170,11 +13194,34 @@ function _demoApplyLockdown(on) {
 }
 
 // ── UI: floating control bar ──
+const _DEMO_LS_BAR = 'simfly_aa_demo_bar_collapsed';   // demo control-bar collapsed state
+
+// Collapse / expand the demo control bar — same show/hide pattern as the
+// telemetry data panel (_afkToggleDataPanel). Collapsed leaves only the
+// 🎬 Demo label + this toggle; state persists across sessions.
+function _demoToggleBar() {
+  const bar = document.getElementById('demoFloating');
+  const btn = document.getElementById('demoCollapseBtn');
+  if (!bar || !btn) return;
+  const collapsed = bar.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '⏶' : '⏷';
+  try { localStorage.setItem(_DEMO_LS_BAR, collapsed ? '1' : '0'); } catch (_) {}
+  // Bar height changed — keep the AP panel docked above it.
+  const panel = document.getElementById('demoApPanel');
+  if (panel && panel.classList.contains('show')) _demoApRepositionPanel();
+}
+
 function _demoShowFloatingBar(on) {
   const bar = document.getElementById('demoFloating');
   if (!bar) return;
   bar.classList.toggle('show', !!on);
   if (on) {
+    // Restore the persisted collapsed state for the control bar.
+    let demoBarCollapsed = false;
+    try { demoBarCollapsed = localStorage.getItem(_DEMO_LS_BAR) === '1'; } catch (_) {}
+    bar.classList.toggle('collapsed', demoBarCollapsed);
+    const cbtn = document.getElementById('demoCollapseBtn');
+    if (cbtn) cbtn.textContent = demoBarCollapsed ? '⏶' : '⏷';
     _demoUpdatePauseBtn();
     _demoUpdateSpeedUI();
     _demoUpdateBar();
@@ -32205,6 +32252,7 @@ function rgSendToFlightPlanner() {
               <li><strong>📡✖ Stale</strong> &mdash; stops emitting packets but keeps the marker. After 30 s the icon greys out and any configured Loss-of-Telemetry alarms trip per their thresholds. Click again to resume the stream.</li>
               <li><strong>⛓✖ Disconnect</strong> &mdash; clears the live-aircraft marker entirely (mirrors a full FSUIPC drop). Click again to reconnect.</li>
               <li><strong>✕ Exit</strong> &mdash; end the demo and clear the synthetic aircraft.</li>
+              <li><strong>⏷ / ⏶ Collapse / expand</strong> (v3.6.15) &mdash; the small toggle in the bottom-right corner of the bar hides all the playback controls and shrinks the bar to a compact pill so it stops covering the map; click again to bring the controls back. Works just like the telemetry panel's show/hide button, and the collapsed state is remembered across sessions.</li>
             </ul>
 
             <strong>Telemetry seam</strong> &mdash; the demo engine emits packets through the same <code>_liveAcRenderMarker</code> function the FSUIPC integration uses, so every downstream consumer (AFK alerts, data panel, breadcrumb trail, follow-aircraft mode, stale-check, mobile alerts) behaves identically to a real flight. The only thing that knows it's a demo is the engine itself.<br/><br/>
@@ -32559,10 +32607,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.6.15</span>
+          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Collapse / expand button on the Flight Demo control bar.</strong> The demo control bar now has the same show/hide toggle as the telemetry panel — a small ⏷ / ⏶ button in the bottom-right corner of the bar. Collapsing hides all the playback controls and shrinks the bar to a compact pill so it stops covering the map; clicking again brings the controls back. The collapsed state is remembered across sessions.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.6.14</span>
-          <span class="release-date">May 29, 2026 &middot; Current</span>
+          <span class="release-date">May 29, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -42787,6 +42847,7 @@ function rgSendToFlightPlanner() {
           <button class="rg-btn" id="demoDisconnectBtn" onclick="_demoSimDisconnect()" title="Simulate a full live-aircraft disconnect — clears the marker entirely. Click again to reconnect.">⛓✖ Disconnect</button>
           <button class="rg-btn" onclick="_demoStop()" title="Exit Flight Demo Mode and clear the synthetic aircraft">✕ Exit</button>
         </div>
+        <button class="demo-collapse-btn" id="demoCollapseBtn" onclick="_demoToggleBar()" title="Collapse / expand the demo control bar">⏷</button>
       </div>
 
       <!-- Autopilot panel (v2.97.6) — compact MCP-style strip, opens above
