@@ -6203,7 +6203,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.6.20';
+const APP_VERSION = '3.6.21';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -26797,52 +26797,15 @@ function _rgHdrChipTip(icao, role, depIcao, cx, cy) {
   }, cx, cy);
 }
 
+// v3.6.21 — The dot-selected departure → arrival route now surfaces as a
+// breadcrumb pill (built in _rgUpdateBreadcrumbs, alongside the Flight Plan and
+// Aircraft Track pills) instead of the old header "✕ Clear route" button plus an
+// oversized centre ICAO readout. That readout (1.55rem text in the left header
+// column) collided with the centred category filter on narrow / low-res screens.
+// The function name is kept so its existing callers stay unchanged; it just
+// refreshes the breadcrumb row now.
 function _rgUpdateClearDotBtn() {
-  const btn = document.getElementById('rgClearDotSelBtn');
-  if (btn) btn.style.display = (_rgDotSelDep || _rgDotSelArr) ? '' : 'none';
-
-  const hdr = document.getElementById('rgHdrRoute');
-  if (!hdr) return;
-
-  if (!_rgDotSelDep && !_rgDotSelArr) {
-    hdr.className = '';
-    hdr.innerHTML = '';
-    return;
-  }
-
-  function _riChip(icao, role, depIcao) {
-    if (!icao) return `<span class="rg-hdr-ri rg-hdr-ri-pending">—</span>`;
-    const col   = _rgCatOf(icao);
-    const style = col ? ` style="color:${col}"` : '';
-    const tip   = ` onmouseenter="_rgHdrChipTip('${icao}','${role||''}','${depIcao||''}',event.clientX,event.clientY)"` +
-                  ` onmouseleave="if(window._tipAPI)_tipAPI.hide()"` +
-                  ` onmousemove="if(window._tipAPI)_tipAPI.move(event.clientX,event.clientY)"`;
-    // Weather slot — _wxApplyBadges() populates from _wxCache. pointer-events:none
-    // on the slot (see CSS above) keeps the chip's onmouseenter in control of
-    // tooltip rendering, so the dot doesn't fight with the chip tooltip that
-    // already includes the decoded weather section.
-    const wxSlot = `<span class="wx-badge-slot" data-wx-icao="${icao}"></span>`;
-    const owned  = _rgOwnerMap && _rgOwnerMap.has(icao.toUpperCase());
-    if (owned) {
-      return `<a class="rg-hdr-ri" href="https://simfly.io/assets/airport/${icao}/details"` +
-             ` target="_blank" rel="noopener"${style}${tip}>${icao}${wxSlot}</a>`;
-    }
-    return `<span class="rg-hdr-ri"${style}${tip}>${icao}${wxSlot}</span>`;
-  }
-
-  hdr.className = 'visible';
-  // When both endpoints are set, the separator becomes an interactive ⇄ swap
-  // button. While only the departure is chosen (mid-route-selection), keep the
-  // simple → arrow so it doesn't suggest an action that would do nothing.
-  const sep = (_rgDotSelDep && _rgDotSelArr)
-    ? `<button class="dist-owner-swap-btn rg-hdr-ri-swap" onclick="_rgSwapDotSel()" title="Swap departure and arrival" tabindex="-1">⇄</button>`
-    : `<span class="rg-hdr-ri-sep">→</span>`;
-  hdr.innerHTML = _riChip(_rgDotSelDep, 'dep', '') + sep + _riChip(_rgDotSelArr || null, 'arr', _rgDotSelDep);
-  // Populate the wx-badge-slot inside each chip from the existing cache.
-  // _wxFetchOne and _wxFetch each call this on their own, but the header chips
-  // can re-render via dot clicks while a cached METAR is already in hand —
-  // calling it here paints the dot immediately on re-render.
-  if (typeof _wxApplyBadges === 'function') _wxApplyBadges();
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
 }
 
 // Swap the dot-selected departure and arrival, keeping the route line, matrix
@@ -26871,6 +26834,8 @@ function _rgClearDotSel() {
   document.getElementById('rgSelRoute').classList.remove('visible');
   _rgClearRouteHL();
   _rgHighlightDots();
+  // v3.6.21 — refresh the breadcrumb row so the route pill disappears.
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
 }
 
 // ── Drag / resize helpers ──────────────────────────────────────────────
@@ -30263,6 +30228,19 @@ function _rgUpdateBreadcrumbs() {
     chip.appendChild(x);
     return chip;
   }
+  // v3.6.21 — Selected departure → arrival route pill (replaces the old header
+  // "✕ Clear route" button + centre ICAO readout). ✕ clears the route; once
+  // both ends are chosen, clicking the pill body swaps departure / arrival.
+  if (typeof _rgDotSelDep !== 'undefined' && (_rgDotSelDep || _rgDotSelArr)) {
+    const bothSet = !!(_rgDotSelDep && _rgDotSelArr);
+    const routeLabel = '✈ ' + (_rgDotSelDep || '…') + ' → ' + (_rgDotSelArr || '…');
+    container.appendChild(mkMiniChip(routeLabel,
+      bothSet ? 'Selected route — click to swap departure / arrival · ✕ to clear'
+              : 'Departure selected — pick an arrival on the map, or ✕ to clear',
+      () => { _rgClearDotSel(); },
+      '#7ee0ff',
+      bothSet ? () => _rgSwapDotSel() : null));
+  }
   const sbLoaded = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) ||
                    (typeof _sbOfpLayers !== 'undefined' && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0);
   if (sbLoaded) {
@@ -32461,7 +32439,7 @@ function rgSendToFlightPlanner() {
             <strong>Step 2 — Arrival region:</strong> after releasing, the cursor switches to ruler mode — moving the mouse shows the distance from the departure center. Click and drag again to draw the arrival region circle the same way.<br/><br/>
             <strong>Cancelling mid-draw:</strong> <strong>right-click</strong> anywhere on the map during the region-drawing sequence (before or after the departure is locked, while drawing the arrival circle) to instantly cancel the operation and return to the explore state. Equivalent to clicking the Undo / Cancel button without having to move the cursor off the map.<br/><br/>
             Once both regions are set, a <strong>results bar</strong> appears with controls arranged around the centered route count. On the left: <em>Sort</em> order, a <strong>Dep Owners ▾</strong> dropdown, and the <strong>Dep</strong> category filter group. On the right: the <strong>Arr</strong> category filter group, an <strong>Arr Owners ▾</strong> dropdown, and the <em>Max per region</em> cap. The two owner menus filter independently — use <em>Dep Owners</em> to restrict departure rows and <em>Arr Owners</em> to restrict arrival columns. Each menu has a <strong>search box</strong> at the top: type any letters to instantly narrow the list to matching owners; press <strong>Enter</strong> to clear the search and return to the full list (selections are preserved). While search text is active, <strong>All</strong> and <strong>None</strong> apply only to the visible rows — hidden rows keep their current state. Use <strong>All</strong> or <strong>None</strong> with no search text to select or clear the complete list, or toggle individual owners by clicking their row. The matrix and map dots update in real time as you filter. If at least one owner is hidden, moving or resizing a region preserves that selection — hidden owners stay hidden, and any new owners entering the region appear visible by default. If all owners are visible, the list auto-refreshes when the region changes.<br/><br/>
-            <strong>Map dot selection</strong> — click any airport dot on the map to build a route. Behavior depends on whether the matrix is visible: <em>before</em> both regions are drawn (or for clicks outside both region circles), it follows a fixed-departure anchor model — the <strong>first click</strong> sets the departure, the next click sets the arrival, subsequent clicks replace the arrival, and re-clicking the current departure clears the entire route. <em>Once both regions are drawn and the matrix is visible</em>, clicking inside the <strong>dep region</strong> always sets / changes the departure, and clicking inside the <strong>arr region</strong> always sets / changes the arrival — order doesn&rsquo;t matter, so you can adjust either endpoint by clicking another in-region airport at any time. Use the <strong>✕ Clear route</strong> button to reset. Overlap airports (inside both circles) toggle to whichever slot they aren&rsquo;t already in. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not affect the route selection.<br/><br/>
+            <strong>Map dot selection</strong> — click any airport dot on the map to build a route. Behavior depends on whether the matrix is visible: <em>before</em> both regions are drawn (or for clicks outside both region circles), it follows a fixed-departure anchor model — the <strong>first click</strong> sets the departure, the next click sets the arrival, subsequent clicks replace the arrival, and re-clicking the current departure clears the entire route. <em>Once both regions are drawn and the matrix is visible</em>, clicking inside the <strong>dep region</strong> always sets / changes the departure, and clicking inside the <strong>arr region</strong> always sets / changes the arrival — order doesn&rsquo;t matter, so you can adjust either endpoint by clicking another in-region airport at any time. The selected route appears as a compact <strong>✈ DEP → ARR</strong> pill in the breadcrumb strip above the map (next to the Flight Plan and Aircraft Track pills) — click its <strong>✕</strong> to reset the route, or click the pill itself to swap departure and arrival. Overlap airports (inside both circles) toggle to whichever slot they aren&rsquo;t already in. Selecting a departure/arrival pair this way immediately updates the main screen departure and arrival fields and triggers owner auto-selection — no separate Send to Flight Planner click needed for that. <strong>Double-click</strong> any dot to zoom the map to that airport instead; double-clicking does not affect the route selection.<br/><br/>
             <strong>Unique Arrivals mode</strong> — the small Venn-icon button in the results bar (next to <em>Max per region</em>) is a <em>three-state cycle</em>: <em>Off</em> → <em>↗ Far</em> → <em>↘ Near</em> → <em>Off</em>. When active, the matrix keeps every departure row but hides any arrival column whose airport also appears in the departure region, so the grid shows only routes that <em>land</em> at airports unique to the arr region. Map dots are not affected — every airport in either region stays visible, so you can still route via dot clicks. While the mode is active, <em>Max per region</em> applies asymmetrically: the dep cap always keeps the N airports closest to the dep center, but the arr cap follows whichever direction is selected — <em>↗ Far</em> (default on activation) keeps the N airports farthest from the arr center (favours the edge of the arr region where overlap with dep is least likely, so more truly-unique arrivals survive the column filter); <em>↘ Near</em> keeps the N airports closest to the arr center instead. The current direction shows directly on the button as a coloured badge, and the tooltip explains what the next click will do. The icon shows an asymmetric Venn: dep circle outlined on the left, arr-minus-dep crescent filled in the arrival orange on the right when active. Below ~1500 px the &ldquo;Unique Arrivals&rdquo; label is hidden and only the Venn icon + direction badge show; the tooltip still explains the effect.<br/><br/>
             <strong>Crosses antimeridian</strong> — when a route, measurement, or dep&rarr;arr region distance crosses ±180° longitude (e.g. New Zealand to Hawaii), Leaflet draws the visual line the long way across the map even though the displayed distance is the short-way figure. In that case the on-map distance label shows a second row reading <em>Crosses antimeridian</em>, and the line itself switches to a dashed style so the apparent mismatch is explained at a glance.<br/><br/>
             <strong>Map category filter</strong> — the <strong>Map</strong> filter buttons at the top of the region screen also control the main screen departure and arrival category filters: toggling a category on the map instantly applies the same selection to both the Dep and Arr filter rows on the main screen.<br/><br/>
@@ -32702,10 +32680,22 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.6.21</span>
+          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Selected route now shows as a breadcrumb pill instead of crowding the header.</strong> When you pick a departure and arrival by clicking map dots, the route used to display as large ICAO text in the header and add a separate <em>✕ Clear route</em> button — on smaller screens that text collided with the category filter in the middle of the header. The route now appears as a compact <strong>✈ DEP → ARR</strong> pill alongside the Flight Plan and Aircraft Track pills: click its ✕ to clear the route, or click the pill to swap departure and arrival. The old header button is gone.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.6.20</span>
-          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-date">May 30, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -42792,7 +42782,8 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn" id="rgSelectBtn" onclick="_rgBeginSelection()" title="Draw departure and arrival circles on the map to define the route matrix" style="display:none !important">⊙ Select Regions</button>
         <button class="rg-btn" id="rgUndoBtn" onclick="rgUndo()" disabled style="display:none" title="Undo the last region drawing step">↩ Undo</button>
         <button class="rg-btn" id="rgNewRegionsBtn" onclick="rgExploreReturn()" style="display:none !important">⊙ DONE</button>
-        <button class="rg-btn" id="rgClearDotSelBtn" onclick="_rgClearDotSel()" style="display:none" title="Clear selected airport pair from map">✕ Clear route</button>
+        <!-- v3.6.21 — "✕ Clear route" button removed; the dot-selected route now
+             shows as a breadcrumb pill (see _rgUpdateBreadcrumbs) whose ✕ clears it. -->
 
         <!-- 🛠 Tools pulldown — groups Region Select + Measurement.
              SimBrief Flight Plan moved to Live menu in v2.89.0. -->
@@ -42826,7 +42817,9 @@ function rgSendToFlightPlanner() {
 
         <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
         <span class="rg-phase-text" id="rgPhaseText"></span>
-        <div id="rgHdrRoute"></div>
+        <!-- v3.6.21 — #rgHdrRoute (oversized centre dep→arr readout) removed; the
+             selected route now shows as a compact breadcrumb pill instead, so it
+             no longer collides with the category filter on narrow screens. -->
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
         <span class="dist-cat-filter-label" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>

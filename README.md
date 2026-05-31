@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.20**
+**Current version: v3.6.21**
 
 ---
 
@@ -136,6 +136,7 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 | **[Continent name]** / **N Continents** | Continent filter active (via search) | ✕ clears continent filter; hover "N Continents" to see list |
 | **[ICAO]** / **N Pinned** | Specific airport(s) pinned via ICAO search | ✕ clears pinned airports |
 | **−[name]** *(red chip)* | Negation filter active | ✕ un-excludes that item |
+| **✈ DEP → ARR** *(cyan)* | A departure / arrival route is selected by clicking map dots (v3.6.21+) | Click the pill to swap departure ↔ arrival; ✕ clears the route |
 | **✈ Flight Plan** | A SimBrief flight plan is plotted (v3.5.0+) | Click the body to zoom to the plan (v3.6.1); ✕ removes it |
 | **Aircraft Track** *(green)* | A live aircraft breadcrumb trail is on the map (v3.5.0+) | Click the body to zoom to the track (v3.6.1); ✕ erases it |
 
