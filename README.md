@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.6.21**
+**Current version: v3.7.4**
 
 ---
 
@@ -18,6 +18,9 @@ Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFl
 
 ### Loading Splash
 On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of each component as it loads — the airport database, region names, runways, airport categories, the aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. On a fast connection the names flick by too quickly to read; that's expected. The splash fades away on its own once everything is ready, and a built-in safety timeout dismisses it even if a data source is slow or unreachable, so it can never trap you on the loading screen.
+
+### Startup Choice — Owner View or Explore Map
+After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'd like to do. **Show airports by Owner** takes you to the classic distance matrix — pick this when you already know which pilots own the airports you want for departure and arrival. **Explore map** opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking live flights, and setting up in-flight alerts. A small *Skip* link (or pressing **Esc**) dismisses the choice and drops you on the matrix. The choice is **bypassed automatically** when Recip Tracker or Relationship Manager Lite launches AA with a specific intent: a `dep` / `arr` / `depOwner` / `arrOwner` URL parameter sends you straight to the matrix with the route prefilled, and a `pilots=` parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters — so cross-app shortcuts still go direct.
 
 ### Point-to-Point Distance
 Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click. Typing a valid owned ICAO auto-selects that pilot's owner entry in the matrix dropdowns.

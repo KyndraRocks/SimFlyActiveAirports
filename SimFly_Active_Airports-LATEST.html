@@ -3092,9 +3092,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-bc-x:hover { opacity:1; }
   /* v2.98.0 — Clear-all chip: circled ⊗ glyph, slightly warmer border so
      it reads as the special "remove everything" affordance rather than a
-     normal toggle. Hover brightens. */
-  .rg-bc.rg-bc-clear { color:#ffb1b1; border-color:rgba(255,120,120,0.55); font-weight:700; }
+     normal toggle. Hover brightens.
+     v3.7.2 — rendered as a perfect round circle the same height as the
+     sibling pills. The pill height is driven by font-size × line-height +
+     padding + border on .rg-bc (≈1.81rem at 0.96rem font / normal line
+     height). We match it explicitly here with equal width = height; using
+     the same font-size keeps it in sync if the design ever changes. Padding
+     zeroed and content centered with flex so the ⊗ glyph sits on-center. */
+  .rg-bc.rg-bc-clear { color:#ffb1b1; border-color:rgba(255,120,120,0.55); font-weight:700;
+    padding:0; width:1.81rem; height:1.81rem; min-width:0;
+    justify-content:center; align-items:center; gap:0;
+    font-size:0.96rem; line-height:1; }
   .rg-bc.rg-bc-clear:hover { background:rgba(80,20,25,0.92); border-color:#ff8c8c; color:#fff; }
+  /* v3.7.4 — center the ⊗ glyph geometrically with line-height:1 + flex on the
+     parent. The earlier translate(-1px, 2px) shifted the glyph noticeably off
+     center; reverted. The inner span is kept (no transform) so future micro-
+     adjustments stay possible without touching the JS. */
+  .rg-bc.rg-bc-clear .rg-bc-clear-glyph { display:block; line-height:1; }
   /* Category-data unavailable warning — shown only when both Gist fetch and localStorage cache fail */
   .rg-cat-warning { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); z-index:1100; display:none; align-items:center; gap:0.5rem; padding:0.45rem 0.9rem; background:rgba(80,30,0,0.94); border:1px solid rgba(255,160,60,0.6); border-radius:6px; font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:#ffd9a0; pointer-events:all; max-width:80%; box-shadow:0 2px 10px rgba(0,0,0,0.45); }
   .rg-cat-warning.visible { display:flex; }
@@ -5888,10 +5902,108 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   // Safety net: never trap the user if a fetch hangs or the machine is offline.
   setTimeout(done, 15000);
+  function afterDone(){
+    // Reveal the startup choice screen *underneath* the still-opaque splash, so
+    // the choice has time to fade in (≈350ms) before the splash starts fading
+    // (320ms after done()) and finishes fading (≈870ms after done()). Without
+    // this ordering the main app shows through during the splash fade window.
+    // _aaChoiceShowIfNeeded is defined further down in the main script and
+    // decides whether to display the dual-choice or bypass it based on URL params.
+    try { if (typeof window._aaChoiceShowIfNeeded === 'function') window._aaChoiceShowIfNeeded(); } catch(e){}
+  }
+  var _origDone = done;
+  done = function(){ var f=finished; if(!f) afterDone(); _origDone(); };
   window._aaSplash = { set:set, step:step, label:publicLabel, done:done };
   set(5, 'Starting SimFly Active Airports');
 })();
 </script>
+
+<!-- ── Startup choice screen (v3.7.0) — shown after the splash fades when no
+     RT/RM Lite URL handoff is present. Lets the user pick between owner-mode
+     (matrix) and map-mode (region modal) before touching the rest of the app. -->
+<div id="aaChoice" role="dialog" aria-modal="true" aria-labelledby="aaChoiceTitle" hidden>
+  <div class="aa-choice-inner">
+    <div class="aa-choice-eyebrow">SimFly Active Airports</div>
+    <div class="aa-choice-title" id="aaChoiceTitle">What would you like to do?</div>
+    <div class="aa-choice-sub">Pick a starting point &mdash; you can switch any time from inside the app.</div>
+    <div class="aa-choice-grid">
+      <button type="button" class="aa-choice-card" id="aaChoiceOwner" autofocus>
+        <div class="aa-choice-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="22" cy="22" r="8"/>
+            <circle cx="44" cy="24" r="6.5"/>
+            <path d="M8 50c1.5-7.5 7.4-12 14-12s12.5 4.5 14 12"/>
+            <path d="M34 50c1-5.6 5-9.2 10-9.2s9 3.6 10 9.2"/>
+          </svg>
+        </div>
+        <div class="aa-choice-name">Show airports by Owner</div>
+        <div class="aa-choice-desc">I already know the owners of the airports I want for my departure and arrival.</div>
+        <div class="aa-choice-cta">Open owner view <span aria-hidden="true">&rsaquo;</span></div>
+      </button>
+      <button type="button" class="aa-choice-card" id="aaChoiceMap">
+        <div class="aa-choice-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 14l16-6 16 6 16-6v42l-16 6-16-6-16 6z"/>
+            <path d="M24 8v42"/>
+            <path d="M40 14v42"/>
+            <circle cx="32" cy="30" r="3.5" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <div class="aa-choice-name">Explore map</div>
+        <div class="aa-choice-desc">Explore airports based on location, payout, region, etc. Track flights and set up in-flight alerts for key events.</div>
+        <div class="aa-choice-cta">Open the map <span aria-hidden="true">&rsaquo;</span></div>
+      </button>
+    </div>
+    <button type="button" class="aa-choice-skip" id="aaChoiceSkip">Skip &mdash; just take me to the app</button>
+  </div>
+</div>
+<style>
+  #aaChoice{position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 35%, #0c1730 0%, #060a16 70%, #03060e 100%);
+    font-family:'Rajdhani',sans-serif;opacity:0;pointer-events:none;transition:opacity .35s ease;}
+  #aaChoice[hidden]{display:none;}
+  #aaChoice.aa-choice-show{opacity:1;pointer-events:auto;}
+  .aa-choice-inner{width:min(1100px,92vw);text-align:center;padding:clamp(1rem,3vh,2.4rem) 1.4rem;}
+  .aa-choice-eyebrow{font-family:'Orbitron',sans-serif;letter-spacing:.18em;font-size:.85rem;
+    color:#7da2c8;text-transform:uppercase;margin-bottom:.6rem;}
+  .aa-choice-title{font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:.04em;
+    font-size:clamp(1.5rem,3.2vw,2.2rem);color:#eaf4ff;text-shadow:0 0 18px rgba(0,200,255,.35);
+    margin-bottom:.55rem;}
+  .aa-choice-sub{color:#bcd6f0;font-size:1.02rem;letter-spacing:.02em;margin-bottom:2rem;}
+  .aa-choice-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:clamp(.8rem,2vw,1.4rem);align-items:stretch;}
+  .aa-choice-card{appearance:none;cursor:pointer;text-align:left;
+    background:linear-gradient(180deg, rgba(12,40,72,.55) 0%, rgba(8,22,48,.78) 100%);
+    border:1px solid rgba(0,200,255,.28);border-radius:14px;
+    padding:clamp(1.4rem,3vh,2.2rem) clamp(1.2rem,2.4vw,1.8rem);
+    color:#eaf4ff;font-family:'Rajdhani',sans-serif;
+    box-shadow:0 6px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.02);
+    transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    display:flex;flex-direction:column;gap:.55rem;min-height:220px;}
+  .aa-choice-card:hover, .aa-choice-card:focus-visible{
+    transform:translateY(-3px);border-color:#00c8ff;
+    box-shadow:0 10px 36px rgba(0,200,255,.32), inset 0 0 0 1px rgba(0,200,255,.18);
+    background:linear-gradient(180deg, rgba(16,52,90,.7) 0%, rgba(10,28,58,.86) 100%);
+    outline:none;}
+  .aa-choice-icon{color:#00c8ff;filter:drop-shadow(0 0 10px rgba(0,200,255,.45));
+    margin-bottom:.4rem;}
+  .aa-choice-name{font-family:'Orbitron',sans-serif;font-weight:700;letter-spacing:.04em;
+    font-size:1.2rem;color:#ffffff;}
+  .aa-choice-desc{font-size:1rem;line-height:1.45;color:#bcd6f0;flex:1;}
+  .aa-choice-cta{margin-top:.6rem;font-family:'Orbitron',sans-serif;font-weight:600;
+    letter-spacing:.08em;font-size:.85rem;color:#00c8ff;text-transform:uppercase;}
+  .aa-choice-cta span{margin-left:.25rem;display:inline-block;transition:transform .18s ease;}
+  .aa-choice-card:hover .aa-choice-cta span, .aa-choice-card:focus-visible .aa-choice-cta span{
+    transform:translateX(4px);}
+  .aa-choice-skip{margin-top:1.6rem;background:transparent;border:none;cursor:pointer;
+    color:#7da2c8;font-family:'Rajdhani',sans-serif;font-size:.95rem;letter-spacing:.04em;
+    padding:.4rem .8rem;border-radius:6px;transition:color .18s ease, background .18s ease;}
+  .aa-choice-skip:hover, .aa-choice-skip:focus-visible{color:#eaf4ff;background:rgba(0,200,255,.08);outline:none;}
+  @media (prefers-reduced-motion: reduce){
+    #aaChoice, .aa-choice-card, .aa-choice-cta span{transition:none;}
+    .aa-choice-card:hover, .aa-choice-card:focus-visible{transform:none;}
+  }
+</style>
 <div id="simfly-clock">
   <div><span class="ck-lbl">LCL</span><span id="ck-lcl"></span></div>
   <div><span class="ck-lbl">UTC</span><span id="ck-utc"></span></div>
@@ -6203,7 +6315,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.6.21';
+const APP_VERSION = '3.7.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8103,6 +8215,52 @@ const _urlParams = (() => {
 
 // Expose for future aircraft-aware filtering
 window._urlAc = _urlParams.ac;
+
+// ── Startup choice screen (v3.7.0) ──────────────────────────────────────────
+// Shown after the splash fades, unless an RT/RM Lite handoff already told us
+// which mode the user wants. dep/arr/depOwner/arrOwner → owner/matrix mode;
+// pilots= → map mode (already opened by _applyUrlParams). Either case bypasses.
+// Wiring lives at module scope (not inside _applyUrlParams) so it works even
+// when no URL params are present — that's the case where the choice matters.
+window._aaChoiceShowIfNeeded = function _aaChoiceShowIfNeeded(){
+  try {
+    const goneToMatrix = !!(_urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner);
+    const goneToMap    = !!_urlParams.pilots;
+    if (goneToMatrix || goneToMap) return;
+    const ov = document.getElementById('aaChoice');
+    if (!ov) return;
+    ov.hidden = false;
+    requestAnimationFrame(() => ov.classList.add('aa-choice-show'));
+    const focusTarget = document.getElementById('aaChoiceOwner');
+    if (focusTarget) focusTarget.focus({ preventScroll: true });
+  } catch(e) { console.warn('Startup choice show failed:', e); }
+};
+function _aaChoiceHide(){
+  const ov = document.getElementById('aaChoice');
+  if (!ov) return;
+  ov.classList.remove('aa-choice-show');
+  setTimeout(() => { ov.hidden = true; }, 350);
+}
+(function _aaChoiceWire(){
+  const ownerBtn = document.getElementById('aaChoiceOwner');
+  const mapBtn   = document.getElementById('aaChoiceMap');
+  const skipBtn  = document.getElementById('aaChoiceSkip');
+  if (ownerBtn) ownerBtn.addEventListener('click', () => {
+    _aaChoiceHide();
+    const dep = document.getElementById('distDep');
+    if (dep) setTimeout(() => dep.focus({ preventScroll: false }), 380);
+  });
+  if (mapBtn) mapBtn.addEventListener('click', () => {
+    _aaChoiceHide();
+    setTimeout(() => { try { openRegionModal(); } catch(e) { console.warn('openRegionModal failed:', e); } }, 360);
+  });
+  if (skipBtn) skipBtn.addEventListener('click', () => _aaChoiceHide());
+  document.addEventListener('keydown', (e) => {
+    const ov = document.getElementById('aaChoice');
+    if (!ov || ov.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); _aaChoiceHide(); }
+  });
+})();
 
 // Flight number passed from Recip Tracker (depCode + arrCode). Nulled when
 // either owner dropdown is changed manually so a stale value is never filed.
@@ -29994,10 +30152,14 @@ function _rgUpdateBreadcrumbs() {
     const clearChip = document.createElement('span');
     clearChip.className = 'rg-bc rg-bc-clear';
     clearChip.title = 'Clear every applied filter and return to default display (color + scenery only)';
-    clearChip.textContent = '⊗';
-    clearChip.style.fontSize = '1.05rem';
-    clearChip.style.padding = '0.05rem 0.55rem';
-    clearChip.style.lineHeight = '1.1';
+    // v3.7.2 — sizing handled entirely by CSS (.rg-bc.rg-bc-clear) so the chip
+    // renders as a perfect circle the same height as the sibling pills.
+    // v3.7.3 — glyph wrapped in an inner span so CSS can nudge it 1px left + 2px
+    // down to sit visually centered (optical centering offset for the ⊗ char).
+    const glyph = document.createElement('span');
+    glyph.className = 'rg-bc-clear-glyph';
+    glyph.textContent = '⊗';
+    clearChip.appendChild(glyph);
     clearChip.addEventListener('click', _rgClearAllFilters);
     container.appendChild(clearChip);
   }
@@ -32219,6 +32381,16 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">🧭</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Startup Choice &mdash; Owner View or Explore Map</div>
+          <div class="help-feature-desc">
+            After the loading splash fades (v3.7.0+) a friendly choice screen asks what you&rsquo;d like to do. <strong>Show airports by Owner</strong> takes you to the classic distance matrix &mdash; pick this when you already know which pilots own the airports you want for departure and arrival. <strong>Explore map</strong> opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking flights, and setting up in-flight alerts. A small <em>Skip</em> link (or pressing <kbd>Esc</kbd>) dismisses the choice and drops you on the matrix. The choice is <strong>bypassed automatically</strong> when Recip Tracker or RM Lite hands you off with a specific intent &mdash; a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> URL parameter sends you straight to the matrix with the route prefilled, and a <code>pilots=</code> URL parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">✈</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Point-to-Point Distance</div>
@@ -32680,10 +32852,58 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.7.4</span>
+          <span class="release-date">June 1, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Clear-All circle glyph properly centered.</strong> v3.7.3 nudged the <strong>&otimes;</strong> glyph 1px left and 2px down to try to optically correct font metrics &mdash; that overshot and pushed it off-center the other way. Removed the offset; the glyph is now centered geometrically inside the circle by simple flex + <code>line-height:1</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.7.2</span>
+          <span class="release-date">June 1, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map breadcrumb &ldquo;Clear All&rdquo; button is now a round circle that matches the height of the other filter pills.</strong> The <strong>&otimes;</strong> chip used to render as a wider rounded capsule that was visibly taller and a different shape from the sibling pills (Color Mode, Scenery Indicator, owner / category filters), making the breadcrumb strip look uneven. It&rsquo;s now a perfect circle the same height as those pills, so the strip reads as a tidy row of equal-height controls with the circle clearly distinct as the &ldquo;remove everything&rdquo; action.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.7.1</span>
+          <span class="release-date">June 1, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Main app no longer flashes briefly before the startup choice appears.</strong> In v3.7.0 the choice overlay was revealed about 600&thinsp;ms after the splash started fading, so during the splash&rsquo;s ~550&thinsp;ms fade-out the matrix showed through underneath. The choice now begins its fade-in <em>at the moment the splash starts dismissing</em>, so the choice is already fully painted (under the still-opaque splash) by the time the splash reaches transparency &mdash; the user sees the splash dissolve directly into the choice screen.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.7.0</span>
+          <span class="release-date">June 1, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Startup choice screen — pick owner mode or map mode before diving in.</strong> Once the loading splash fades, you now see a friendly dual-choice screen asking what you&rsquo;d like to do: <em>Show airports by Owner</em> (jump to the classic matrix when you already know the dep/arr owners you want) or <em>Explore map</em> (open the interactive map to browse by location, payout, region, and to track flights or set up in-flight alerts). The choice is bypassed automatically when Recip Tracker or RM Lite hands you off with a specific intent &mdash; if a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> param is present you go straight to the matrix, and a <code>pilots=</code> param goes straight to the map &mdash; so the launch shortcuts from those apps still work without an extra click. A <em>Skip</em> link and the <kbd>Esc</kbd> key both dismiss the choice and leave you on the matrix.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.6.21</span>
-          <span class="release-date">May 30, 2026 &middot; Current</span>
+          <span class="release-date">May 30, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
