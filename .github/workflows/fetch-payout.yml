@@ -65,14 +65,19 @@ jobs:
               }
             }
 
-            // Preserve first_seen from existing file; stamp today for new ICAOs
+            // Preserve first_seen for existing airports; stamp today only for ICAOs
+            // that are genuinely new (absent from the previous snapshot entirely).
+            // Airports that existed before without a first_seen are old — leave them unset.
             let existing = {};
             try { existing = JSON.parse(fs.readFileSync('payout-data.json', 'utf8')); } catch(e) {}
             const today = new Date().toISOString().slice(0, 10);
             for (const icao of Object.keys(db)) {
-              db[icao].first_seen = (existing[icao] && existing[icao].first_seen)
-                ? existing[icao].first_seen
-                : today;
+              if (existing[icao] && existing[icao].first_seen) {
+                db[icao].first_seen = existing[icao].first_seen;
+              } else if (!existing[icao]) {
+                db[icao].first_seen = today;
+              }
+              // existing airport with no first_seen = old; omit first_seen so it never shows the ring
             }
 
             fs.writeFileSync('payout-data.json', JSON.stringify(db));
