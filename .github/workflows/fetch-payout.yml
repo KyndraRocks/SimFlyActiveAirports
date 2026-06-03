@@ -83,3 +83,191 @@ jobs:
             git commit -m "chore: payout data $(date -u '+%Y-%m-%d %H:%M UTC')"
             git push
           fi
+
+      - name: Update owner and category Gists
+        env:
+          GIST_PAT: ${{ secrets.GIST_PAT }}
+        run: |
+          node << 'SCRIPT'
+          const https = require('https');
+          const fs    = require('fs');
+
+          const OWNER_GIST_ID    = '9cae932383ce289378fff9de8a23f631';
+          const OWNER_FILENAME   = 'SimFlyActivePlayerOwnedAirports.txt';
+          const CAT_GIST_ID      = 'ea789dd01cf6148900290a9c3af3ca5a';
+          const CAT_FILENAME     = 'SimFly_Airport_Categories.csv';
+
+          function rawGet(url) {
+            return new Promise((resolve, reject) => {
+              https.get(url, { headers: { 'User-Agent': 'SimFly-RT-Sync/1.0' } }, res => {
+                let d = '';
+                res.on('data', c => d += c);
+                res.on('end', () => resolve(d));
+              }).on('error', reject);
+            });
+          }
+
+          function patchGist(gistId, filename, content, token) {
+            return new Promise((resolve, reject) => {
+              const body = JSON.stringify({ files: { [filename]: { content } } });
+              const req  = https.request({
+                hostname: 'api.github.com',
+                path:     `/gists/${gistId}`,
+                method:   'PATCH',
+                headers:  {
+                  'Authorization':        `Bearer ${token}`,
+                  'User-Agent':           'SimFly-RT-Sync/1.0',
+                  'Accept':               'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                  'Content-Type':         'application/json',
+                  'Content-Length':       Buffer.byteLength(body)
+                }
+              }, res => {
+                let d = '';
+                res.on('data', c => d += c);
+                res.on('end', () => resolve(res.statusCode));
+              });
+              req.on('error', reject);
+              req.write(body);
+              req.end();
+            });
+          }
+
+          async function updateOwnerGist(payout, token) {
+            const txt = await rawGet(
+              `https://gist.githubusercontent.com/KyndraRocks/${OWNER_GIST_ID}/raw/${OWNER_FILENAME}?t=${Date.now()}`
+            );
+
+            // Parse existing owner file: "Name: ICAO1 ICAO2 ..."
+            const owners = new Map();
+            for (const rawLine of txt.split('\n')) {
+              const line  = rawLine.trim();
+              const colon = line.indexOf(':');
+              if (colon < 0) continue;
+              const name = line.slice(0, colon).trim();
+              if (!name) continue;
+              const key = name.toLowerCase();
+              if (!owners.has(key)) owners.set(key, { name, icaos: new Set() });
+              line.slice(colon + 1).trim().split(/\s+/).filter(Boolean)
+                  .forEach(ic => owners.get(key).icaos.add(ic.toUpperCase()));
+            }
+
+            let added = 0, transferred = 0;
+            for (const [icao, info] of Object.entries(payout)) {
+              const owner = info.o;
+              if (!owner) continue;
+              const upperIcao  = icao.toUpperCase();
+              const targetKey  = owner.toLowerCase();
+
+              // Remove from any prior different owner
+              let hadPrior = false;
+              for (const [key, entry] of owners) {
+                if (key === targetKey) continue;
+                if (entry.icaos.has(upperIcao)) {
+                  entry.icaos.delete(upperIcao);
+                  if (entry.icaos.size === 0) owners.delete(key);
+                  hadPrior = true;
+                  transferred++;
+                }
+              }
+
+              let tgt = owners.get(targetKey);
+              const alreadyOwned = !!(tgt && tgt.icaos.has(upperIcao));
+              if (!tgt) { tgt = { name: owner, icaos: new Set() }; owners.set(targetKey, tgt); }
+              tgt.icaos.add(upperIcao);
+              if (!hadPrior && !alreadyOwned) added++;
+            }
+
+            if (!added && !transferred) {
+              console.log('Owner Gist: no changes');
+              return;
+            }
+
+            const content = [...owners.values()]
+              .filter(o => o.icaos.size)
+              .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+              .map(o => `${o.name}: ${[...o.icaos].sort().join(' ')}`)
+              .join('\n');
+
+            const status = await patchGist(OWNER_GIST_ID, OWNER_FILENAME, content, token);
+            if (status === 200) {
+              console.log(`Owner Gist updated — ${added} added, ${transferred} transferred`);
+            } else {
+              console.error(`Owner Gist PATCH failed: HTTP ${status}`);
+              process.exit(1);
+            }
+          }
+
+          async function updateCategoryGist(payout, token) {
+            const txt   = await rawGet(
+              `https://gist.githubusercontent.com/KyndraRocks/${CAT_GIST_ID}/raw/${CAT_FILENAME}?t=${Date.now()}`
+            );
+            const lines = txt.split('\n').filter(l => l.trim());
+            if (!lines.length) throw new Error('Category CSV is empty');
+
+            const header = lines[0];
+            const cols   = header.split(',').map(c => c.trim().toUpperCase());
+            const iIcao  = cols.indexOf('ICAO');
+            const iCat   = cols.indexOf('CAT');
+            if (iIcao < 0 || iCat < 0) throw new Error('Category CSV missing ICAO/CAT columns');
+
+            // Parse existing rows — preserve extra columns verbatim
+            const rows = new Map();
+            for (let i = 1; i < lines.length; i++) {
+              const parts = lines[i].split(',');
+              const icao  = (parts[iIcao] || '').trim().toUpperCase();
+              if (icao) rows.set(icao, parts);
+            }
+
+            let added = 0, changed = 0;
+            for (const [icao, info] of Object.entries(payout)) {
+              if (info.c == null) continue;
+              const catStr   = String(info.c).trim();
+              const upperIcao = icao.toUpperCase();
+              if (rows.has(upperIcao)) {
+                const parts = rows.get(upperIcao).slice();
+                while (parts.length <= iCat) parts.push('');
+                if ((parts[iCat] || '').trim() !== catStr) {
+                  parts[iCat] = catStr;
+                  rows.set(upperIcao, parts);
+                  changed++;
+                }
+              } else {
+                const parts = new Array(cols.length).fill('');
+                parts[iIcao] = upperIcao;
+                parts[iCat]  = catStr;
+                rows.set(upperIcao, parts);
+                added++;
+              }
+            }
+
+            if (!added && !changed) {
+              console.log('Category Gist: no changes');
+              return;
+            }
+
+            const content = header + '\n' + [...rows.entries()]
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([, parts]) => parts.join(','))
+              .join('\n');
+
+            const status = await patchGist(CAT_GIST_ID, CAT_FILENAME, content, token);
+            if (status === 200) {
+              console.log(`Category Gist updated — ${added} added, ${changed} changed`);
+            } else {
+              console.error(`Category Gist PATCH failed: HTTP ${status}`);
+              process.exit(1);
+            }
+          }
+
+          async function main() {
+            const token = process.env.GIST_PAT;
+            if (!token) { console.error('GIST_PAT secret not set'); process.exit(1); }
+
+            const payout = JSON.parse(fs.readFileSync('payout-data.json', 'utf8'));
+            await updateOwnerGist(payout, token);
+            await updateCategoryGist(payout, token);
+          }
+
+          main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
+          SCRIPT
