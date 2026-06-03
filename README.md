@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.9.3**
+**Current version: v3.10.0**
 
 ---
 
@@ -122,6 +122,11 @@ The map includes a **📐 Measurement** ruler — click **📐 Measurement** in 
 **Region Selection lives in the Tools menu** (v2.88.0+) — open the **🛠 Tools** pulldown and choose **⊙ Select Regions** to begin a selection. The same menu entry self-relabels to **Dismiss Regions** while a matrix is on screen and to **Cancel Selection** during the in-progress drawing flow. During drawing, a floating **STEP 1** / **STEP 2** overlay appears centred on the map with its own inline **✕ Cancel** button so the abort action is reachable without leaving the map area. A pure **right-click** anywhere on the map during region drawing also cancels the operation and returns to explore mode — handy for aborting mid-draw without moving the cursor off the map. (Right-click *drag* always pans the map, so the cancel gesture is specifically the click-without-movement form.) **↩ Undo** appears in the header during drawing to step back one phase. To dismiss a live matrix and return to free exploration, click the **✕** at the far right of the matrix results bar — region circles stay visible for reference. **✕ Close** closes the map entirely. The main-screen **✕ Reset** button also closes the map and clears all region state.
 
 **Matrix honors every map filter** — every visibility filter that controls the dot layer (country, region / state, continent, pinned, exclusion sets, scenery toggle, scenery developer, payout threshold, star rating, global category) also gates which airports appear in the region matrix. The matrix and the dot layer go through a single chokepoint, so an airport hidden on the map can never show up in the matrix. Changing any filter while regions are drawn re-filters the matrix live alongside the dots.
+
+### New Airports
+Airports added to SimFly within the last **30 days** are highlighted on the map with a pulsing amber/gold ring — a double radar-sweep animation that radiates outward from the airport dot. The ring makes it easy to spot newly listed airports at a glance without needing to cross-reference any external list.
+
+The ring disappears automatically once an airport is more than 30 days old — no manual upkeep needed. Date-added data is maintained by the hourly data pipeline and stored alongside the payout data.
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.

@@ -6370,7 +6370,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.9.3';
+const APP_VERSION = '3.10.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6508,6 +6508,7 @@ const OVERRIDE_GIST_FILENAME = 'SimFly_Airport_Overrides.json';
 const OVERRIDE_URL           = `https://gist.githubusercontent.com/KyndraRocks/${CATEGORY_GIST_ID}/raw/${OVERRIDE_GIST_FILENAME}`;
 const AA_GIST_ID             = '9cae932383ce289378fff9de8a23f631';
 const PAYOUT_URL             = `https://gist.githubusercontent.com/KyndraRocks/${AA_GIST_ID}/raw/SimFly_Pilot_Payouts.json`;
+const PAYOUT_DATA_URL        = 'https://raw.githubusercontent.com/KyndraRocks/SimFlyActiveAirports/main/payout-data.json';
 
 const RECIP_GIST_ID       = '2a6f1d36fdbdc51ac4bf3b4e3e2ee47d';
 const RECIP_GIST_RAW_URL  = `https://gist.githubusercontent.com/KyndraRocks/${RECIP_GIST_ID}/raw/SimFly_Pilot_Reciprocation.json`;
@@ -6520,6 +6521,7 @@ let runwayDB           = null;
 let runwaySupplementDB = null; // Map: ICAO → runway array; loaded from SimFly_Airport_Overrides.json
 let categoryDB         = null;
 let payoutDB           = null; // Map: ICAO.toUpperCase() → percToUser (0–100); loaded from localStorage
+let newAirportsDB      = null; // Set of ICAO.toUpperCase() added within the last 30 days (from payout-data.json first_seen)
 let aircraftDB = new Map();   // Map: ICAO_Code → {label, brand, model, cat, simfly_cat, mtow_ft, land_ft, pavedOnly, range_nm}
 let dbLookupDB = new Map(); // Map: SimFly code → OurAirports ident (DB_LOOKUP cross-mappings, e.g. EGON → GB-0464)
 let dbLoadPromise = null;
@@ -6586,8 +6588,9 @@ function loadAirportDB() {
     // here until the cache expires, even on a hard refresh.
     fetch(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}').then(v => { _bootTick('Field overrides'); return v; }),
     fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null).then(v => { _bootTick('Pilot payouts'); return v; }),
+    fetch(PAYOUT_DATA_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
   ])
-    .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson]) => {
+    .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson, payoutDataJson]) => {
 
       if (window._aaSplash) window._aaSplash.set(74, 'Building airport index');
 
@@ -6595,6 +6598,16 @@ function loadAirportDB() {
       if (payoutJson && typeof payoutJson === 'object') {
         payoutDB = new Map(Object.entries(payoutJson).map(([k, v]) => [k.toUpperCase(), +v]));
         try { localStorage.setItem('simfly_payout_db', JSON.stringify(payoutJson)); } catch(e) {}
+      }
+
+      // ── Build new-airports set (airports with first_seen within the last 30 days) ──
+      if (payoutDataJson && typeof payoutDataJson === 'object') {
+        const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        newAirportsDB = new Set();
+        for (const [icao, info] of Object.entries(payoutDataJson)) {
+          if (info.first_seen && new Date(info.first_seen).getTime() >= cutoff)
+            newAirportsDB.add(icao.toUpperCase());
+        }
       }
 
       // ── Build region name map ──
@@ -25201,6 +25214,7 @@ function _slHandleDroppedFile(file) {
 let _rgMap        = null;
 let _rgMapReady   = false;
 let _rgDotLayer   = null;   // canvas layer: all airport dots (excludes region airports)
+let _rgPulseLayer = null;   // divIcon layer: pulsing rings for newly added airports
 let _rgRegionIcaos = null;  // Set of ICAOs in either full region — owned exclusively by _rgHiLayer
 let _rgHiLayer    = null;   // canvas layer: highlighted dots after selection
 let _rgOwnerMap   = new Map(); // ICAO.toUpperCase() → owner name (built in _rgRenderDots)
@@ -26415,12 +26429,14 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
 
 function _rgRenderDots() {
   if (!_rgMap) return;
-  if (_rgDotLayer) { _rgDotLayer.remove(); _rgDotLayer = null; }
+  if (_rgDotLayer)   { _rgDotLayer.remove();   _rgDotLayer   = null; }
+  if (_rgPulseLayer) { _rgPulseLayer.remove(); _rgPulseLayer = null; }
   // Shared renderer — created once, reused by both dot and hi layers.
   // Tooltip HTML cache reset here so it rebuilds with current owner data.
   if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
   _rgTipHtmlCache = new Map();
-  _rgDotLayer = L.layerGroup().addTo(_rgMap);
+  _rgDotLayer   = L.layerGroup().addTo(_rgMap);
+  if (newAirportsDB && newAirportsDB.size) _rgPulseLayer = L.layerGroup().addTo(_rgMap);
   _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
@@ -26483,6 +26499,12 @@ function _rgRenderDots() {
     });
     m.addTo(_rgDotLayer);
     _rgVisibleIcaosFromDots.add(ap.icao.toUpperCase());
+    if (_rgPulseLayer && newAirportsDB && newAirportsDB.has(ap.icao.toUpperCase())) {
+      L.marker([rec.latitude, rec.longitude], {
+        icon: L.divIcon({ className: '', html: '<div class="aa-new-ring"></div><div class="aa-new-ring aa-ring-delay"></div>', iconSize: [30, 30], iconAnchor: [15, 15] }),
+        interactive: false, keyboard: false, pane: 'shadowPane'
+      }).addTo(_rgPulseLayer);
+    }
     if (_rgShowScenery && _slHas(ap.icao)) {
       L.circleMarker([rec.latitude, rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
@@ -32832,6 +32854,17 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">🆕</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">New Airports</div>
+          <div class="help-feature-desc">
+            Airports that have been added to SimFly within the <strong>last 30 days</strong> are highlighted on the map with a pulsing amber/gold ring — a double radar-sweep animation that radiates outward from the airport dot. This makes it easy to spot airports that are new to the community without having to compare lists.<br/><br/>
+            The ring disappears automatically once the airport is more than 30 days old — no manual upkeep needed. The date each airport first appeared is recorded by the hourly data pipeline and stored alongside the payout data.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">⬤</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Library</div>
@@ -33046,10 +33079,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.10.0</span>
+          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New-airport pulse rings on the map.</strong> Airports added to SimFly within the last 30 days now display an animated amber/gold pulsing ring on the map so they are easy to spot at a glance. The ring is a double radar-sweep effect that radiates outward from the airport dot and fades; it disappears automatically once the airport is more than 30 days old. Date-added data comes from <code>payout-data.json</code>, which is stamped with a <code>first_seen</code> date by the hourly GitHub Action the first time each airport appears.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.9.3</span>
-          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-date">June 3, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -42886,6 +42931,9 @@ function rgSendToFlightPlanner() {
   .ma-status.err  { color:#ff8090; }
   .ma-status.info { color:var(--muted); }
   body.light-mode .ma-blurb { background:rgba(0,150,200,0.07); border-color:rgba(0,150,200,0.45); }
+  @keyframes aa-pulse{0%{transform:scale(.9);opacity:.75}100%{transform:scale(2.4);opacity:0}}
+  .aa-new-ring{position:absolute;width:20px;height:20px;top:5px;left:5px;border-radius:50%;border:2px solid #f5a623;animation:aa-pulse 2.5s ease-out infinite;pointer-events:none;transform-origin:center}
+  .aa-ring-delay{animation-delay:1.25s}
 </style>
 <div class="modal-overlay" id="maModal" onclick="if(event.target===this)_maCloseModal()">
   <div class="modal">
