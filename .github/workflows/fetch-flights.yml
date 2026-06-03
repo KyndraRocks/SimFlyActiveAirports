@@ -1,0 +1,133 @@
+name: Fetch SimFly Flight Data
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch:
+
+env:
+  OWNER_USERNAME: Kyndra
+
+jobs:
+  fetch-flights:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch inbound flight data
+        run: |
+          node << 'SCRIPT'
+          const https = require('https');
+          const fs    = require('fs');
+
+          function get(path) {
+            return new Promise((resolve, reject) => {
+              https.get({ hostname: 'simfly.io', path, headers: { 'User-Agent': 'SimFly-RT-Sync/1.0' } }, res => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => {
+                  try { resolve(JSON.parse(data)); }
+                  catch(e) { reject(new Error('Parse error on ' + path + ': ' + data.slice(0, 200))); }
+                });
+              }).on('error', reject);
+            });
+          }
+
+          async function fetchFlightsPage(icao, page) {
+            return get(`/api/user/assets/airport/${icao}/flights?page=${page}`);
+          }
+
+          async function main() {
+            const owner = process.env.OWNER_USERNAME;
+
+            // Load owned airports from payout-data.json
+            const payout = JSON.parse(fs.readFileSync('payout-data.json', 'utf8'));
+            const ownedIcaos = Object.entries(payout)
+              .filter(([, v]) => v.o && v.o.toLowerCase() === owner.toLowerCase())
+              .map(([icao]) => icao);
+            console.log(`Owner: ${owner} · ${ownedIcaos.length} airports: ${ownedIcaos.join(', ')}`);
+
+            // Load cutoff timestamp
+            let state = {};
+            try { state = JSON.parse(fs.readFileSync('sync-state.json', 'utf8')); } catch(e) {}
+            const cutoffTs = state.cutoffTs || Math.floor(Date.now() / 1000);
+            console.log(`Cutoff: ${new Date(cutoffTs * 1000).toISOString()}`);
+
+            const flights = [];
+            let newestTs = cutoffTs;
+
+            for (const icao of ownedIcaos) {
+              let page = 1, done = false, airportFlights = 0;
+              while (!done) {
+                let resp;
+                try { resp = await fetchFlightsPage(icao, page); }
+                catch(e) { console.warn(`  ${icao} page ${page} failed: ${e.message}`); break; }
+
+                const items = resp.flights || [];
+                if (!items.length) break;
+
+                for (const f of items) {
+                  // Inbound only — destination must be this airport
+                  if ((f.destination?.icao || '').toUpperCase() !== icao.toUpperCase()) continue;
+                  if (f.status !== 'Success') continue;
+
+                  const landingTs = f.landingTime ? Math.floor(new Date(f.landingTime).getTime() / 1000) : 0;
+                  if (landingTs <= cutoffTs) { done = true; break; }
+
+                  const username = f.pilot?.username || f.licence?.owner?.username || f.airplane?.owner?.username;
+                  if (!username) continue;
+
+                  const nonce = f.pilot?.nonce || f.licence?.owner?.nonce;
+                  flights.push({
+                    flightId:   f.flightID,
+                    username,
+                    profileUrl: nonce ? `https://simfly.io/logbook/${encodeURIComponent(username)}/${nonce}` : null,
+                    ts:         f.landingTime,
+                    walletTs:   landingTs,
+                    airportIcao: icao,
+                    originIcao: f.origin?.icao || null,
+                    pax:        f.pax || 0
+                  });
+                  if (landingTs > newestTs) newestTs = landingTs;
+                  airportFlights++;
+                }
+
+                if (done || items.length < 4) break;  // 4 = server page size
+                page++;
+              }
+              if (airportFlights > 0) console.log(`  ${icao}: ${airportFlights} new inbound flights`);
+            }
+
+            console.log(`Total new inbound flights: ${flights.length}`);
+
+            // Write flight-data.json (newest first)
+            flights.sort((a, b) => b.walletTs - a.walletTs);
+            fs.writeFileSync('flight-data.json', JSON.stringify({
+              generatedAt: new Date().toISOString(),
+              cutoffTs,
+              flights
+            }));
+
+            // Advance cutoff to newest flight seen (or keep current if nothing new)
+            state.cutoffTs = newestTs;
+            delete state.note;
+            fs.writeFileSync('sync-state.json', JSON.stringify(state));
+          }
+
+          main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
+          SCRIPT
+
+      - name: Commit if changed
+        run: |
+          git add flight-data.json sync-state.json
+          if git diff --cached --quiet; then
+            echo "No new flights — skipping commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: flight data $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
