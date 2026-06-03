@@ -3376,6 +3376,57 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .demo-floating.collapsed .demo-collapse-btn { bottom:auto; top:50%; transform:translateY(-50%); }
   .demo-floating.collapsed .demo-floating-label { border-right:none; margin-right:0; padding-right:0; }
 
+  /* SimBrief route pill — slides up from the bottom-centre of the map when
+     both dep and arr are set. Dismissible per-route; re-appears on route change. */
+  .sb-route-pill {
+    position:absolute; bottom:14px; left:50%;
+    transform:translateX(-50%) translateY(calc(100% + 24px));
+    z-index:1003;
+    background:rgba(10,14,28,0.96);
+    border:1px solid rgba(0,200,255,0.28);
+    border-radius:10px;
+    padding:10px 14px;
+    box-shadow:0 4px 22px rgba(0,0,0,0.65),0 0 0 1px rgba(0,200,255,0.06);
+    pointer-events:all; user-select:none;
+    font-family:'Rajdhani',sans-serif;
+    display:flex; align-items:center; gap:12px;
+    opacity:0;
+    transition:opacity 0.22s ease, transform 0.25s cubic-bezier(0.34,1.2,0.64,1);
+    white-space:nowrap;
+  }
+  .sb-route-pill.visible { opacity:1; transform:translateX(-50%) translateY(0); }
+  .sb-route-pill-body { display:flex; flex-direction:column; gap:1px; }
+  .sb-route-pill-route { font-size:1.28rem; font-weight:700; color:#fff; letter-spacing:0.04em; }
+  .sb-route-pill-meta  { font-size:0.8rem; color:rgba(255,255,255,0.5); letter-spacing:0.02em; }
+  .sb-route-pill-meta strong { color:rgba(255,255,255,0.82); font-weight:600; }
+  .sb-route-pill-divider { width:1px; height:28px; background:rgba(255,255,255,0.12); flex-shrink:0; }
+  .sb-route-pill-file-btn {
+    background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.38);
+    color:#00c8ff; font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:700;
+    padding:0.35rem 0.9rem; border-radius:6px; cursor:pointer; letter-spacing:0.04em;
+    transition:background 0.13s, border-color 0.13s, color 0.13s; flex-shrink:0;
+  }
+  .sb-route-pill-file-btn:hover { background:rgba(0,200,255,0.25); border-color:rgba(0,200,255,0.65); color:#fff; }
+  .sb-route-pill-x {
+    background:none; border:none; color:rgba(255,255,255,0.3);
+    font-size:0.95rem; cursor:pointer; padding:0; line-height:1; flex-shrink:0;
+    transition:color 0.12s;
+  }
+  .sb-route-pill-x:hover { color:rgba(255,255,255,0.7); }
+  body.light-mode .sb-route-pill {
+    background:rgba(240,245,255,0.97); border-color:rgba(0,120,180,0.35);
+    box-shadow:0 4px 22px rgba(0,0,0,0.18),0 0 0 1px rgba(0,120,180,0.08);
+  }
+  body.light-mode .sb-route-pill-route { color:#111827; }
+  body.light-mode .sb-route-pill-meta  { color:rgba(30,40,60,0.5); }
+  body.light-mode .sb-route-pill-meta strong { color:rgba(30,40,60,0.8); }
+  body.light-mode .sb-route-pill-divider { background:rgba(0,0,0,0.12); }
+  body.light-mode .sb-route-pill-file-btn { background:rgba(0,100,200,0.1); border-color:rgba(0,100,200,0.35); color:#0064c8; }
+  body.light-mode .sb-route-pill-file-btn:hover { background:rgba(0,100,200,0.2); border-color:rgba(0,100,200,0.6); color:#003e8f; }
+  body.light-mode .sb-route-pill-x { color:rgba(20,30,50,0.3); }
+  body.light-mode .sb-route-pill-x:hover { color:rgba(20,30,50,0.65); }
+
+
   /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
      conventions used by the SimBrief settings modal so the look is
      consistent across all AA setting modals. */
@@ -3777,6 +3828,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #rgMapContainer.rg-grab,    #rgMapContainer.rg-grab    .leaflet-interactive { cursor:grabbing  !important; }
   #rgMapContainer.rg-ruler,   #rgMapContainer.rg-ruler   .leaflet-interactive { cursor:crosshair !important; }
   #rgMapContainer.rg-resize,  #rgMapContainer.rg-resize  .leaflet-interactive { cursor:ew-resize !important; }
+  #rgMapContainer.rg-zoom,    #rgMapContainer.rg-zoom    .leaflet-interactive { cursor:ns-resize !important; }
   #rgMapContainer.rg-pointer, #rgMapContainer.rg-pointer .leaflet-interactive { cursor:pointer  !important; }
   .rg-resize-handle { width:20px; height:20px; border-radius:50%; border:2.5px solid; background:rgba(0,8,18,0.78); box-sizing:border-box; box-shadow:0 0 7px 2px rgba(0,0,0,0.55); }
   /* Close-measurement handle — sits on the circumference opposite the resize handle. Click removes that specific measurement. */
@@ -6315,7 +6367,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.7.4';
+const APP_VERSION = '3.9.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8836,6 +8888,52 @@ function _buildSimbriefTooltip() {
 
 function _refreshSimbriefTooltip() {
   if (window._tipAPI) _tipAPI.refreshLive();
+  if (typeof _sbPillUpdate === 'function') { try { _sbPillUpdate(); } catch (_) {} }
+  if (typeof L !== 'undefined' && L.DomEvent && !window._sbPillGuardApplied) {
+    const _pillEl = document.getElementById('sbRoutePill');
+    if (_pillEl) {
+      try { L.DomEvent.disableClickPropagation(_pillEl); } catch (_) {}
+      try { L.DomEvent.disableScrollPropagation(_pillEl); } catch (_) {}
+      window._sbPillGuardApplied = true;
+    }
+  }
+}
+
+let _sbPillDismissedRoute = '';
+let _sbPillLastRoute      = '';
+
+function _sbPillUpdate() {
+  const pill = document.getElementById('sbRoutePill');
+  if (!pill) return;
+  const dep = (document.getElementById('distDep')?.value || '').trim();
+  const arr = (document.getElementById('distArr')?.value || '').trim();
+  if (!dep || !arr) { pill.classList.remove('visible'); return; }
+  const route = dep + '→' + arr;
+  // Any route change (even back to a previously dismissed route) clears the dismiss
+  if (route !== _sbPillLastRoute) { _sbPillDismissedRoute = ''; _sbPillLastRoute = route; }
+  if (_sbPillDismissedRoute === route) return;
+  const acCode = window._acSelectedCode || '';
+  const ac = (typeof aircraftDB !== 'undefined' && acCode) ? aircraftDB.get(acCode) : null;
+  const fltnum = (typeof _simbriefFltnum === 'function') ? _simbriefFltnum(dep, arr) : '';
+  const routeEl = document.getElementById('sbPillRoute');
+  const metaEl  = document.getElementById('sbPillMeta');
+  if (routeEl) routeEl.textContent = dep + ' → ' + arr;
+  if (metaEl) {
+    const parts = [];
+    if (acCode) parts.push(ac ? acCode + ' — ' + (ac.model || ac.label || '') : acCode);
+    if (fltnum) parts.push('Flt ' + fltnum);
+    metaEl.innerHTML = parts.map(p => '<strong>' + p + '</strong>').join('<span style="margin:0 5px;opacity:0.35">·</span>');
+    metaEl.style.display = parts.length ? '' : 'none';
+  }
+  pill.classList.add('visible');
+}
+
+function _sbPillDismiss() {
+  const dep = (document.getElementById('distDep')?.value || '').trim();
+  const arr = (document.getElementById('distArr')?.value || '').trim();
+  _sbPillDismissedRoute = dep + '→' + arr;
+  const pill = document.getElementById('sbRoutePill');
+  if (pill) pill.classList.remove('visible');
 }
 
 function _getRecipPat() {
@@ -11243,6 +11341,7 @@ function _fsuipcStop() {
   _fsuipcRetryCount  = 0;
   if (_liveAcSource === 'fsuipc') _liveAcClear();
   _fsuipcUpdateButtonState(false);
+  if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(false);
 }
 
 function _fsuipcUpdateButtonState(active) {
@@ -11345,6 +11444,7 @@ function _fsuipcOpenWs() {
     _aaRtToast(_wasAuto
       ? '🔌 Reconnected to FSUIPC after reload.'
       : '🔌 Tracking via FSUIPC (cadence adapts to flight phase).', 'ok');
+    if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(true);
   };
   _fsuipcWs.onmessage = (ev) => {
     let msg;
@@ -13200,6 +13300,7 @@ function _demoLaunch(plan, raw) {
   _demoApSetpoints.hdg = 0; _demoApSetpoints.alt = 0; _demoApSetpoints.gs = 0;
   if (typeof _liveAcStopOthers === 'function') _liveAcStopOthers('demo');
   _liveAcSource = 'demo';
+  if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(true);
 
   // Plot the route. Build the SimBrief shape from plan.points (not raw) so
   // the FAF waypoint and the redirected runway threshold show up in the
@@ -13306,6 +13407,7 @@ function _demoStop() {
   if (typeof _afkRenderElapsedField === 'function'){ try { _afkRenderElapsedField(); } catch (_) {} }
   _demoShowFloatingBar(false);
   _demoApplyLockdown(false);
+  if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(false);
   if (typeof _aaRtToast === 'function') _aaRtToast('🎬 Demo stopped.', 'ok');
 }
 
@@ -21427,9 +21529,10 @@ function _afkUpdateDataPanel(ac) {
   _afkDpSet('afkDpIas', (ac.ias != null && isFinite(ac.ias)) ? (Math.round(ac.ias) + ' kt') : '—');
   const vs = _afkPhase.vsFpm();
   if (isFinite(vs)) {
+    const rounded = Math.round(vs) || 0;
     const arrow = vs > 50 ? '↑' : vs < -50 ? '↓' : '–';
     _afkDpSet('afkDpVs',
-      arrow + ' ' + Math.abs(Math.round(vs)).toLocaleString() + ' fpm',
+      (rounded === 0 ? '' : arrow + ' ') + Math.abs(rounded).toLocaleString() + ' fpm',
       'afk-dp-value' + (vs < -1500 ? ' warn' : ''));
   } else {
     _afkDpSet('afkDpVs', '—', 'afk-dp-value');
@@ -21693,6 +21796,20 @@ function _afkToggleDataPanel() {
   try { localStorage.setItem(_AFK_LS_DP, collapsed ? '1' : '0'); } catch (_) {}
 }
 
+function _afkDataPanelSetVisible(visible) {
+  const dp = document.getElementById('afkDataPanel');
+  const btn = document.getElementById('afkDpToggleBtn');
+  if (!dp || !btn) return;
+  if (visible) {
+    dp.classList.remove('collapsed');
+    btn.textContent = '⏷';
+  } else {
+    dp.classList.add('collapsed');
+    btn.textContent = '⏶';
+  }
+  try { localStorage.setItem(_AFK_LS_DP, visible ? '0' : '1'); } catch (_) {}
+}
+
 // Wire the Enter key to a modal's primary action. Only fires while the modal
 // has the .open class. Skips if focus is on a BUTTON (browsers handle Enter
 // natively on buttons) so the user can Tab to Cancel and press Enter to cancel.
@@ -21717,14 +21834,12 @@ function _afkInit() {
   // Sweep saved alarm groups — drops any that have < 2 members (e.g.
   // alarms got deleted while the modal was closed). v2.83.0+.
   try { _afkGroups._gc(); } catch (_) {}
-  // Restore data panel collapsed state
+  // Telemetry panel always starts collapsed; auto-expands when data starts
   try {
-    if (localStorage.getItem(_AFK_LS_DP) === '1') {
-      const dp = document.getElementById('afkDataPanel');
-      const btn = document.getElementById('afkDpToggleBtn');
-      if (dp) dp.classList.add('collapsed');
-      if (btn) btn.textContent = '⏶';
-    }
+    const dp = document.getElementById('afkDataPanel');
+    const btn = document.getElementById('afkDpToggleBtn');
+    if (dp) dp.classList.add('collapsed');
+    if (btn) btn.textContent = '⏶';
   } catch (_) {}
   // Enter key on the per-geofence / per-waypoint modals = primary action.
   // The main Alerts config modal is a list manager (no single primary action)
@@ -25443,6 +25558,13 @@ let _rgDragMeasSnap  = null;  // saved {origin,toLL,mouseLat,mouseLng} at meas-d
 let _rgRightPanLast      = null;
 let _rgRightPanStart     = null;
 let _rgRightPanMoved     = false;
+// Dual-mouse (left+right) zoom state
+let _dmZoomActive    = false;
+let _dmZoomStartY    = 0;
+let _dmZoomCurrentY  = 0;
+let _dmZoomCenter    = null;
+let _dmZoomRaf       = null;
+let _dmZoomJustEnded = false;
 let _rgRightPanJustEnded = false;
 // Date.now() of the last Quick-Rate popover open (a dot right-click / long-press).
 // _rgMapContextMenu reads it to tell a dot right-click from an empty-map one.
@@ -25464,6 +25586,7 @@ function openRegionModal(forceOwnerFilter) {
   const modal = document.getElementById('regionModal');
   modal.classList.add('open');
   document.body.style.overflow = 'hidden';
+  if (typeof _sbPillUpdate === 'function') { try { _sbPillUpdate(); } catch (_) {} }
   document.addEventListener('mouseup', _rgDocMouseUp);
   const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
   const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
@@ -26349,7 +26472,7 @@ function _rgRenderDots() {
       // Right-mouse drag is the universal pan affordance in region mode;
       // when it just ended, suppress the rate popover that would otherwise
       // trigger on the same right-mouse interaction.
-      if (_rgRightPanJustEnded) return;
+      if (_rgRightPanJustEnded || _dmZoomJustEnded) return;
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
@@ -27586,6 +27709,50 @@ function _rgCrossesAM(lng1, lng2) {
 // state (where the "⊙ Select Regions" button is visible again). Right-click in
 // explore/results is left to the marker-level handlers (Quick-Rate popover) and
 // to the browser's default context menu suppression.
+// ── Dual-mouse (left+right) zoom ────────────────────────────────────────
+// Hold both mouse buttons and drag vertically to zoom: up = in, down = out.
+// Speed is proportional to distance from the grab point (joystick style).
+// Centred on the cursor position captured at the moment both buttons engaged.
+// Scroll-wheel zoom is completely untouched by this feature.
+function _dmZoomBegin(oe) {
+  _dmZoomActive   = true;
+  _dmZoomStartY   = oe.clientY;
+  _dmZoomCurrentY = oe.clientY;
+  const el = _rgMap.getContainer();
+  const r  = el.getBoundingClientRect();
+  _dmZoomCenter = _rgMap.containerPointToLatLng(L.point(oe.clientX - r.left, oe.clientY - r.top));
+  _rgMap.options.zoomSnap = 0;  // allow fractional zoom during gesture
+  try { _rgMap.dragging.disable(); } catch (_) {}
+  el.classList.add('rg-zoom');
+  _dmZoomRaf = requestAnimationFrame(_dmZoomTick);
+}
+function _dmZoomTick() {
+  _dmZoomRaf = null;
+  if (!_dmZoomActive) return;
+  const offset = _dmZoomCurrentY - _dmZoomStartY;
+  const abs    = Math.abs(offset);
+  if (abs > 8) {
+    const delta = -(Math.sign(offset) * (abs - 8)) * 0.001;
+    const next  = Math.max(_rgMap.getMinZoom() || 0,
+                           Math.min(_rgMap.getMaxZoom() || 19, _rgMap.getZoom() + delta));
+    _rgMap.setZoomAround(_dmZoomCenter, next, { animate: false });
+  }
+  _dmZoomRaf = requestAnimationFrame(_dmZoomTick);
+}
+function _dmZoomFinish() {
+  if (!_dmZoomActive) return;
+  _dmZoomActive = false;
+  if (_dmZoomRaf) { cancelAnimationFrame(_dmZoomRaf); _dmZoomRaf = null; }
+  _dmZoomCenter = null;
+  const el = document.getElementById('rgMapContainer');
+  if (el) el.classList.remove('rg-zoom');
+  _rgMap.options.zoomSnap = 1;  // restore integer-step scroll-wheel zoom
+  try { _rgMap.dragging.enable(); } catch (_) {}
+  _rgRestoreCursor();
+  _dmZoomJustEnded = true;
+  setTimeout(() => { _dmZoomJustEnded = false; }, 300);
+}
+
 function _rgMapContextMenu(e) {
   // Right-mouse is universally reserved for map panning in region mode —
   // always suppress the browser context menu. The cancel-on-right-click
@@ -27620,6 +27787,14 @@ function _rgMapMouseDown(e) {
   // without exiting whatever workflow is active. Captures start coords +
   // resets the moved flag; the per-frame panBy and movement detection live
   // in _rgMapMouseMoveBody, cleanup in both mouseup paths.
+  // Both buttons held → dual-mouse zoom (takes priority over right-pan).
+  if (e.originalEvent && e.originalEvent.buttons === 3) {
+    _rgRightPanStart = null; _rgRightPanLast = null; _rgRightPanMoved = false;
+    if (e.originalEvent.preventDefault) e.originalEvent.preventDefault();
+    L.DomEvent.stopPropagation(e);
+    _dmZoomBegin(e.originalEvent);
+    return;
+  }
   if (e.originalEvent && e.originalEvent.button === 2) {
     _rgRightPanStart = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
     _rgRightPanLast  = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
@@ -27810,6 +27985,9 @@ function _rgMapMouseMove(e) {
 
 function _rgMapMouseMoveBody(e) {
   const cp  = e.originalEvent;
+
+  // Dual-mouse zoom — just track Y; rAF tick handles the actual zoom.
+  if (_dmZoomActive) { if (cp) _dmZoomCurrentY = cp.clientY; return; }
 
   // Right-mouse pan (universal in region map). Compute delta from the previous
   // client coords and panBy the inverse so the content tracks the cursor.
@@ -28026,6 +28204,7 @@ function _rgCommitMeasureDraw() {
 }
 
 function _rgMapMouseUp() {
+  if (_dmZoomActive) { _dmZoomFinish(); return; }
   // End right-mouse pan first — it can be active in any phase and does not
   // touch any other state (no drag mode, no measurement-in-progress).
   if (_rgRightPanLast) {
@@ -28052,6 +28231,7 @@ function _rgMapMouseUp() {
 }
 
 function _rgDocMouseUp() {
+  if (_dmZoomActive) { _dmZoomFinish(); return; }
   // Mirror _rgMapMouseUp's right-pan cleanup — covers the case where the user
   // releases the right button off the map (e.g. cursor exited the map area
   // during a fast pan).
@@ -29128,7 +29308,15 @@ function _rgPayoutPaletteRender() {
     colorIn.value = _rgPayoutSanitizeHex(s.color) || '#ffffff';
     colorIn.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:1px solid rgba(255,255,255,0.25);border-radius:3px;background:none;padding:0;cursor:pointer;';
     colorIn.title = 'Stop color';
-    colorIn.addEventListener('input', () => { _rgPayoutPalette[i].color = _rgPayoutSanitizeHex(colorIn.value) || s.color; _rgPayoutPaletteCommit(); });
+    colorIn.addEventListener('input', () => {
+      const newHex = _rgPayoutSanitizeHex(colorIn.value) || s.color;
+      _rgPayoutPalette[i].color = newHex;
+      _rgPayoutPaletteCommit();
+      // Live-update the tick handle color in-place without rebuilding DOM
+      const _prev = document.getElementById('rgPayoutPalettePreview');
+      if (_prev) { const _tw = _prev.querySelector('[data-stop-idx="' + i + '"]'); if (_tw && _tw.children[1]) _tw.children[1].style.background = newHex; }
+    });
+    colorIn.addEventListener('change', () => { _rgPayoutPaletteRender(); });
     swatchWrap.appendChild(colorIn);
 
     const pctIn = document.createElement('input');
@@ -29210,7 +29398,10 @@ function _rgPayoutPaletteCommit() {
   _rgPayoutPaletteSave();
   _rgPayoutSyncBarGrad();
   const preview = document.getElementById('rgPayoutPalettePreview');
-  if (preview) preview.style.background = _rgPayoutGradientCss();
+  if (preview) {
+    const _cParts = (_rgPayoutPalette || []).map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%');
+    preview.style.background = 'linear-gradient(to right,' + _cParts.join(',') + ')';
+  }
   if (_rgPayoutMode) {
     try { _rgRenderDots(); } catch (_) {}
     try { _rgHighlightDots(); } catch (_) {}
@@ -32406,7 +32597,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">File on SimBrief</div>
           <div class="help-feature-desc">
             Once both departure and arrival ICAOs are valid, the <strong>File on SimBrief →</strong> button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.<br/><br/>
-            <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.
+            <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.<br/><br/>
+            <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the same information at a glance (route, aircraft, flight number). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. Dismiss it with ✕ &mdash; it won&rsquo;t reappear for that specific route until you change it.
           </div>
         </div>
       </div>
@@ -32823,7 +33015,7 @@ function rgSendToFlightPlanner() {
             <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE, and <strong>NEXT</strong> (the ident of the next un-passed waypoint on the loaded SimBrief route; v3.6.0 — shows &mdash; without a plan). A <strong>TRK DEV</strong> field (v3.6.2 — cross-track distance in nm abeam the SimBrief route) is also available but hidden by default; add it from the ⚙ menu under <em>Navigation</em>. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
             <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. <strong>In Flight Demo Mode</strong> (v3.6.5) ELAPSED shows <em>simulated</em> time since takeoff — matching the scrub bar — rather than wall-clock, so a sped-up demo reports the flight time it represents.<br/><br/>
             <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.<br/><br/>
-            Click the small <strong>⏷</strong> chevron on the right of the panel to collapse it (state persists across sessions). The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
+            The panel starts collapsed on every page load and auto-expands as soon as live data begins flowing (FSUIPC connected or demo started); it returns to collapsed when the source stops. Click the small <strong>⏷</strong> chevron to toggle it manually at any time. The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
 
             <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Navigation</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
             <strong>FSUIPC offset note</strong> &mdash; IAS reads FSUIPC offset <code>0x02BC</code> (uint, knots&nbsp;&times;&nbsp;128). STKP doesn&rsquo;t expose IAS separately, so the IAS field shows &mdash; when STKP is the active source.
@@ -32851,11 +33043,109 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.9.2</span>
+          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Route pill &ldquo;File on SimBrief&rdquo; button now works.</strong> Clicking the button inside the map had no effect because Leaflet&rsquo;s drag handler was intercepting the <code>mousedown</code> before the button&rsquo;s click event could form a trusted user gesture (same root cause as the demo bar slider fix in v2.97.7). Applied <code>L.DomEvent.disableClickPropagation</code> + <code>disableScrollPropagation</code> to the pill element the first time a route is set, identical to the protection on <code>#demoFloating</code>.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.9.1</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scroll-wheel zoom step size restored.</strong> v3.9.0 set <code>zoomSnap:0</code> globally so the dual-mouse zoom rAF loop could use fractional zoom levels &mdash; but Leaflet&rsquo;s internal sigmoid formula halves the per-notch step size when <code>zoomSnap</code> is 0, making scroll-wheel zoom require ~2&times; as many notches to cover the same distance. Fixed by reverting <code>zoomSnap</code> to its default (1) at map init; the dual-mouse zoom gesture now temporarily sets it to 0 on begin and restores it to 1 on release, so fractional zoom is available only during the gesture.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.9.0</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dual-mouse zoom.</strong> Hold both left and right mouse buttons simultaneously and drag vertically to zoom: up zooms in, down zooms out. Speed is proportional to how far you drag from the grab point (joystick style &mdash; return to the start position to stop). The zoom is centred on the cursor location where both buttons were first pressed. Cursor changes to a vertical-resize arrow while active. Scroll-wheel zoom is completely untouched.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.8.3</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Reverted smooth wheel zoom (v3.8.2).</strong> The custom scroll handler reduced sensitivity and introduced per-frame lag that made zooming feel slower and choppier than Leaflet&rsquo;s default. <code>zoomSnap:0</code> and the custom wheel listener removed; Leaflet&rsquo;s built-in scroll wheel zoom restored.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.8.2</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Smooth wheel zoom.</strong> <em>Reverted in v3.8.3 &mdash; sensitivity and frame-rate felt worse than the Leaflet default.</em></li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.8.1</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Route pill re-appears after navigating away and back.</strong> Dismissing the SimBrief pill for a given route now only suppresses it until the route changes &mdash; even changing back to the same dep/arr pair re-shows the pill. Previously the dismiss was sticky for the lifetime of the session regardless of subsequent route changes.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.8.0</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief route pill on the map.</strong> Whenever both a departure and arrival are set, a pill slides up from the bottom centre of the interactive map showing the route (<em>DEP → ARR</em>), selected aircraft, and synthesized flight number &mdash; the same information shown when hovering the <em>File on SimBrief →</em> button in the main planner. The pill has its own <em>✈ File on SimBrief →</em> button so you can dispatch directly from the map without switching back to the planner. Dismiss with ✕; the pill stays hidden for that specific route and re-appears automatically if you change either endpoint.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.7.5</span>
+          <span class="release-date">June 3, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Telemetry panel starts collapsed.</strong> The data panel now defaults to minimised on every page load and auto-expands only when live data is flowing (FSUIPC connected or demo running). It auto-collapses again when the source disconnects or demo stops. The manual toggle still works as before.</li>
+          <li><strong>Zero vertical speed no longer shows a sign prefix.</strong> When VS rounds to 0&thinsp;fpm the level-flight dash was displayed as a prefix (<em>– 0 fpm</em>). The dash is now suppressed at exactly zero so it reads <em>0 fpm</em>.</li>
+          <li><strong>Payout palette bar live-refreshes while the colour picker is open.</strong> Changing a stop&rsquo;s colour via the native picker now updates the tick handle swatch in-place on every <code>input</code> event, and triggers a full re-render when the picker closes (&ldquo;change&rdquo; event). Previously the bar only updated after separately clicking a tick handle.</li>
+        </ul>
+      </div>
+
 
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.7.4</span>
-          <span class="release-date">June 1, 2026 &middot; Current</span>
+          <span class="release-date">June 1, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -43289,6 +43579,16 @@ function rgSendToFlightPlanner() {
 
         </div>
       </div>
+    <div class="sb-route-pill" id="sbRoutePill"
+         onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <div class="sb-route-pill-body">
+        <div class="sb-route-pill-route" id="sbPillRoute">— → —</div>
+        <div class="sb-route-pill-meta" id="sbPillMeta" style="display:none"></div>
+      </div>
+      <div class="sb-route-pill-divider"></div>
+      <button class="sb-route-pill-file-btn" onclick="fileOnSimbrief()">✈ File on SimBrief →</button>
+      <button class="sb-route-pill-x" onclick="_sbPillDismiss()" title="Dismiss">✕</button>
+    </div>
     </div>
     <div id="afkDataPanel">
       <!-- Dynamic content — _afkDpRender() builds field rows + spacers
