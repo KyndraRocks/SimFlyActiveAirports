@@ -65,6 +65,16 @@ jobs:
               }
             }
 
+            // Preserve first_seen from existing file; stamp today for new ICAOs
+            let existing = {};
+            try { existing = JSON.parse(fs.readFileSync('payout-data.json', 'utf8')); } catch(e) {}
+            const today = new Date().toISOString().slice(0, 10);
+            for (const icao of Object.keys(db)) {
+              db[icao].first_seen = (existing[icao] && existing[icao].first_seen)
+                ? existing[icao].first_seen
+                : today;
+            }
+
             fs.writeFileSync('payout-data.json', JSON.stringify(db));
             console.log(`Wrote ${Object.keys(db).length} airports to payout-data.json`);
           }
