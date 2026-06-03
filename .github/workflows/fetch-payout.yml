@@ -1,0 +1,85 @@
+name: Fetch SimFly Payout Data
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch:
+
+jobs:
+  fetch-payout:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and compile payout data
+        run: |
+          node << 'SCRIPT'
+          const https = require('https');
+          const fs    = require('fs');
+
+          function post(page) {
+            return new Promise((resolve, reject) => {
+              const body = JSON.stringify({ icao: '', country: '', category: '', page });
+              const req  = https.request({
+                hostname: 'simfly.io',
+                path:     '/api/airports/rewards',
+                method:   'POST',
+                headers:  { 'Content-Type': 'text/plain;charset=UTF-8',
+                            'Content-Length': Buffer.byteLength(body) }
+              }, res => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                  try { resolve(JSON.parse(data)); }
+                  catch(e) { reject(new Error('Parse error on page ' + page + ': ' + data.slice(0, 200))); }
+                });
+              });
+              req.on('error', reject);
+              req.write(body);
+              req.end();
+            });
+          }
+
+          async function main() {
+            const first      = await post(1);
+            const totalPages = first.totalPages || 1;
+            console.log(`Fetching ${totalPages} page(s) — ${first.totalItems} airports total`);
+
+            const pages = [first];
+            for (let p = 2; p <= totalPages; p++) {
+              pages.push(await post(p));
+              if (p % 5 === 0 || p === totalPages) console.log(`  Page ${p}/${totalPages}`);
+            }
+
+            const db = {};
+            for (const page of pages) {
+              for (const ap of page.list || []) {
+                db[ap.icao] = {
+                  p: ap.percToUser,
+                  o: (ap.owner && ap.owner.username) ? ap.owner.username : null,
+                  c: ap.category != null ? ap.category : null
+                };
+              }
+            }
+
+            fs.writeFileSync('payout-data.json', JSON.stringify(db));
+            console.log(`Wrote ${Object.keys(db).length} airports to payout-data.json`);
+          }
+
+          main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
+          SCRIPT
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet payout-data.json; then
+            echo "No changes — skipping commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add payout-data.json
+            git commit -m "chore: payout data $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
