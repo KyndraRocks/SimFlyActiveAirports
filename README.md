@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.12.1**
+**Current version: v3.12.3**
 
 ---
 
@@ -146,7 +146,7 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 | **[Continent name]** / **N Continents** | Continent filter active (via search) | ✕ clears continent filter; hover "N Continents" to see list |
 | **[ICAO]** / **N Pinned** | Specific airport(s) pinned via ICAO search | ✕ clears pinned airports |
 | **−[name]** *(red chip)* | Negation filter active | ✕ un-excludes that item |
-| **✈ DEP → ARR** *(cyan)* | A departure / arrival route is selected by clicking map dots (v3.6.21+) | Click the pill to swap departure ↔ arrival; ✕ clears the route |
+| **✈ DEP → ARR** *(cyan)* | A departure / arrival route is selected by clicking map dots (v3.6.21+) | Click the pill to swap departure ↔ arrival — the region circles swap roles and the matrix rows/cols rebuild; ✕ clears the route |
 | **✈ Flight Plan** | A SimBrief flight plan is plotted (v3.5.0+) | Click the body to zoom to the plan (v3.6.1); ✕ removes it |
 | **Aircraft Track** *(green)* | A live aircraft breadcrumb trail is on the map (v3.5.0+) | Click the body to zoom to the track (v3.6.1); ✕ erases it |
 
@@ -183,7 +183,7 @@ The departure and arrival airports auto-fetch a METAR the moment you set or chan
 ### File on SimBrief
 Once departure and arrival ICAOs are set, the **File on SimBrief →** button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click. Airports that SimFly identifies with a short local code (e.g. `1G4`) are automatically converted to the ICAO form SimBrief expects (`K1G4`), so the dispatch page resolves them correctly.
 
-**Route pill on the map** (v3.8.0+) — whenever a complete dep→arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and synthesised flight number. Click **✈ File on SimBrief →** on the pill to dispatch directly from the map without returning to the main planner. **Click the DEP → ARR route text** to swap departure and arrival — the map breadcrumb and main-screen fields update together. Dismiss with ✕; the pill re-appears automatically if you change either endpoint.
+**Route pill on the map** (v3.8.0+) — whenever a complete dep→arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and synthesised flight number. Click **✈ File on SimBrief →** on the pill to dispatch directly from the map without returning to the main planner. **Click the DEP → ARR route text** to swap departure and arrival — when both region circles are drawn, the circles swap roles (blue ↔ orange), the cross-region matrix rebuilds with the new dep airports as rows and new arr airports as columns, and the selected cell highlights in the rebuilt matrix; the breadcrumb strip and main-screen fields update together in all cases. Dismiss with ✕; the pill re-appears automatically if you change either endpoint.
 
 ### SimBrief Flight Plan — plot the route on the map
 Open the interactive map and click **✈ SimBrief Flight Plan** in the **🔌 Live** pulldown (the first item; promoted from Tools to Live in v2.89.0 since plan data drives so much of the live-flight surface). The app fetches your most recent SimBrief flight plan via SimBrief's public API and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots, plus magenta rings at the origin and destination. Each waypoint shows its ident as a permanent label by default; hovering the origin / destination ring brings up the route summary (flight number, total air distance, waypoint count, the SimBrief route string).

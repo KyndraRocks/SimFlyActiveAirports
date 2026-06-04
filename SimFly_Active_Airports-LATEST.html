@@ -6405,7 +6405,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.12.1';
+const APP_VERSION = '3.12.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -22037,8 +22037,47 @@ function _distPivotClick(e, icao, axis) {
 }
 
 // Swap hint: when set, renderDistMatrix uses these ICAOs instead of reading
-// the live DOM highlight — used by _distSwapOwners to cross the highlights.
+// the live DOM highlight — used by _distSwapOwners and _distSwapOwnersOnly to cross the highlights.
 let _distSwapHint = null;  // { rowIcao, colIcao } | null
+
+// Swap dep/arr owner dropdowns and sort axes, then re-render the matrix.
+// Does NOT touch ICAO inputs or pins — call AFTER those are already in their new positions.
+// No-op when both owners are unset.
+function _distSwapOwnersOnly() {
+  const depSel = document.getElementById('distDepOwner');
+  const arrSel = document.getElementById('distArrOwner');
+  if (!depSel || !arrSel) return;
+  const oldDep = depSel.value;
+  const oldArr = arrSel.value;
+  if (!oldDep && !oldArr) return;
+
+  // Capture current highlights before any re-render (matrix DOM still shows old state)
+  const tbl = document.getElementById('distMatrix');
+  const activeRowCell = tbl ? tbl.querySelector('tr.row-highlight td.clickable-row[data-icao]') : null;
+  const activeColHdr  = tbl ? tbl.querySelector('th.col-highlight[data-icao]') : null;
+  const prevRowIcao   = activeRowCell ? activeRowCell.dataset.icao : null;
+  const prevColIcao   = activeColHdr  ? activeColHdr.dataset.icao  : null;
+
+  depSel.value = oldArr;
+  arrSel.value = oldDep;
+  _distSyncOwnerBtn('dep');
+  _distSyncOwnerBtn('arr');
+
+  // Swap sort axes and pivots together
+  const tmp = _distSort.col;
+  _distSort.col = _distSort.row;
+  _distSort.row = tmp;
+  const tmpPivot = _distSort.pivotRow;
+  _distSort.pivotRow = _distSort.pivotCol;
+  _distSort.pivotCol = tmpPivot;
+
+  // Cross highlights: old dep row → new arr col, old arr col → new dep row
+  if (prevRowIcao || prevColIcao) {
+    _distSwapHint = { rowIcao: prevColIcao, colIcao: prevRowIcao };
+  }
+
+  renderDistMatrix();
+}
 
 function _distSwapOwners() {
   const depSel = document.getElementById('distDepOwner');
@@ -22112,7 +22151,15 @@ function _distSwapIcaos() {
   _distSyncPinnedDropdown('dep');
   _distSyncPinnedDropdown('arr');
   window._urlFltNum = '';
-  _calcDistance();
+  // If owners are set, swap them and re-render the matrix with crossed highlights
+  // (renderDistMatrix calls _calcDistance internally); otherwise just recalc distance.
+  const depSel = document.getElementById('distDepOwner');
+  const arrSel = document.getElementById('distArrOwner');
+  if (depSel && arrSel && (depSel.value || arrSel.value)) {
+    _distSwapOwnersOnly();
+  } else {
+    _calcDistance();
+  }
   _distRefreshAllColTooltips();
   _distApplyFilter();
   _refreshSimbriefTooltip();
@@ -27181,15 +27228,66 @@ function _rgUpdateClearDotBtn() {
   if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
 }
 
+// Swap all dep/arr region state: Leaflet circle layers (recolored), handle
+// markers, center/radius, airport arrays, cat/owner filters, stripe owner,
+// and pivot state. Syncs cat-button active classes, then rebuilds the matrix
+// and re-renders map dots. Call BEFORE _rgFinishRouteClick so the rebuilt
+// matrix already has the swapped row/col structure when cell selection runs.
+function _rgSwapRegions() {
+  const DEP_BLUE   = '#00c8ff';
+  const ARR_ORANGE = '#ff6a00';
+
+  // Repaint circle layers to their new roles, then swap references
+  if (_rgDepFill) _rgDepFill.setStyle({ fillColor: ARR_ORANGE });
+  if (_rgDepRing) _rgDepRing.setStyle({ color: ARR_ORANGE });
+  if (_rgDepPin)  _rgDepPin.setStyle({ color: ARR_ORANGE, fillColor: ARR_ORANGE });
+  if (_rgArrFill) _rgArrFill.setStyle({ fillColor: DEP_BLUE });
+  if (_rgArrRing) _rgArrRing.setStyle({ color: DEP_BLUE });
+  if (_rgArrPin)  _rgArrPin.setStyle({ color: DEP_BLUE, fillColor: DEP_BLUE });
+  if (_rgDepHandle) _rgDepHandle.setIcon(_rgHandleIcon(ARR_ORANGE));
+  if (_rgArrHandle) _rgArrHandle.setIcon(_rgHandleIcon(DEP_BLUE));
+
+  let _t;
+  _t = _rgDepFill;         _rgDepFill         = _rgArrFill;         _rgArrFill         = _t;
+  _t = _rgDepRing;         _rgDepRing         = _rgArrRing;         _rgArrRing         = _t;
+  _t = _rgDepPin;          _rgDepPin          = _rgArrPin;          _rgArrPin          = _t;
+  _t = _rgDepHandle;       _rgDepHandle       = _rgArrHandle;       _rgArrHandle       = _t;
+  _t = _rgDepCenter;       _rgDepCenter       = _rgArrCenter;       _rgArrCenter       = _t;
+  _t = _rgDepRadiusNm;     _rgDepRadiusNm     = _rgArrRadiusNm;     _rgArrRadiusNm     = _t;
+  _t = _rgDepAirports;     _rgDepAirports     = _rgArrAirports;     _rgArrAirports     = _t;
+  _t = _rgDepAirportsFull; _rgDepAirportsFull = _rgArrAirportsFull; _rgArrAirportsFull = _t;
+  _t = _rgDepCatFilter;    _rgDepCatFilter    = _rgArrCatFilter;    _rgArrCatFilter    = _t;
+  _t = _rgDepOwnerFilter;  _rgDepOwnerFilter  = _rgArrOwnerFilter;  _rgArrOwnerFilter  = _t;
+  _t = _rgStripeOwnerDep;  _rgStripeOwnerDep  = _rgStripeOwnerArr;  _rgStripeOwnerArr  = _t;
+  _t = _rgPivotDep;        _rgPivotDep        = _rgPivotArr;        _rgPivotArr        = _t;
+
+  // Sync cat-filter button active classes with the swapped filter Sets
+  document.querySelectorAll('#rgDepCatFilterRow .dist-cat-btn').forEach(b => {
+    b.classList.toggle('active', _rgDepCatFilter.has(+b.dataset.rgCat));
+  });
+  document.querySelectorAll('#rgArrCatFilterRow .dist-cat-btn').forEach(b => {
+    b.classList.toggle('active', _rgArrCatFilter.has(+b.dataset.rgCat));
+  });
+
+  _rgRenderDots();
+  _rgRenderMatrix();
+}
+
 // Swap the dot-selected departure and arrival, keeping the route line, matrix
-// highlights, and main-screen ICAO inputs all in sync. Mirrors the existing
-// _distSwapIcaos pattern on the main screen for consistent UX.
+// rows/columns, and main-screen ICAO inputs all in sync.
 function _rgSwapDotSel() {
   if (!_rgDotSelDep || !_rgDotSelArr) return;
   const tmp = _rgDotSelDep;
   _rgDotSelDep = _rgDotSelArr;
   _rgDotSelArr = tmp;
-  _rgRouteFromDots(_rgDotSelDep, _rgDotSelArr);
+  // When both circles are drawn, swap the region data so the matrix rows/cols
+  // reflect the new dep/arr before _rgFinishRouteClick tries to select a cell.
+  if (_rgDepCenter && _rgArrCenter) _rgSwapRegions();
+  const selRoute = document.getElementById('rgSelRoute');
+  const selDep   = document.getElementById('rgSelDep');
+  const selArr   = document.getElementById('rgSelArr');
+  const selNm    = document.getElementById('rgSelNm');
+  _rgFinishRouteClick(selRoute, selDep, selArr, selNm);
   _rgUpdateClearDotBtn();
   _rgHighlightDots();
 }
@@ -33189,10 +33287,34 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.12.3</span>
+          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region map matrix swaps dep/arr rows and columns when route is reversed.</strong> Clicking the route text on the breadcrumb pill or the floating SimBrief pill now swaps the entire region setup — the dep (blue) and arr (orange) circles exchange roles, their airport arrays swap, the matrix rebuilds with the new dep airports as rows and the new arr airports as columns, and the selected cell highlights correctly in the rebuilt matrix. Map dot colours and the circle handle markers update to match. Previously the breadcrumb and pill text swapped but the matrix structure was unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.12.2</span>
+          <span class="release-date">June 4, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Route matrix swaps dep/arr owners when ICAOs are swapped on the main screen.</strong> Clicking ⇄ between the ICAO fields (or the route text on the SimBrief pill when no dot-selected route is active) now also swaps the owner dropdowns and matrix row/column structure — so the matrix immediately shows the new departure owner as rows and the new arrival owner as columns, with highlights crossed to the correct cell. Previously the ICAO inputs swapped but the matrix retained the old owner layout.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.12.1</span>
-          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-date">June 4, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
