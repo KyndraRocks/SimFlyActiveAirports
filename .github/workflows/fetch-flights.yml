@@ -50,18 +50,20 @@ jobs:
               .map(([icao]) => icao);
             console.log(`Owner: ${owner} · ${ownedIcaos.length} airports: ${ownedIcaos.join(', ')}`);
 
-            // Load cutoff timestamp
-            let state = {};
-            try { state = JSON.parse(fs.readFileSync('sync-state.json', 'utf8')); } catch(e) {}
-            const cutoffTs = state.cutoffTs || Math.floor(Date.now() / 1000);
-            console.log(`Cutoff: ${new Date(cutoffTs * 1000).toISOString()}`);
+            // Rolling 30-day retention window — emit ALL inbound flights newer
+            // than this on every run. No persisted cutoff: if RT is offline
+            // for hours or days, the next load still gets the full window.
+            // RT dedupes via existingFlightIds, so duplicates are harmless.
+            const RETENTION_DAYS          = 30;
+            const MAX_FLIGHTS_PER_AIRPORT = 1000;
+            const cutoffTs = Math.floor(Date.now() / 1000) - RETENTION_DAYS * 86400;
+            console.log(`Cutoff: ${new Date(cutoffTs * 1000).toISOString()} (${RETENTION_DAYS}-day window)`);
 
             const flights = [];
-            let newestTs = cutoffTs;
 
             for (const icao of ownedIcaos) {
               let page = 1, done = false, airportFlights = 0;
-              while (!done) {
+              while (!done && airportFlights < MAX_FLIGHTS_PER_AIRPORT) {
                 let resp;
                 try { resp = await fetchFlightsPage(icao, page); }
                 catch(e) { console.warn(`  ${icao} page ${page} failed: ${e.message}`); break; }
@@ -91,17 +93,17 @@ jobs:
                     originIcao: f.origin?.icao || null,
                     pax:        f.pax || 0
                   });
-                  if (landingTs > newestTs) newestTs = landingTs;
                   airportFlights++;
                 }
 
                 if (done || items.length < 4) break;  // 4 = server page size
                 page++;
               }
-              if (airportFlights > 0) console.log(`  ${icao}: ${airportFlights} new inbound flights`);
+              if (airportFlights > 0) console.log(`  ${icao}: ${airportFlights} inbound flights`);
+              if (airportFlights >= MAX_FLIGHTS_PER_AIRPORT) console.warn(`  ${icao}: hit ${MAX_FLIGHTS_PER_AIRPORT} cap`);
             }
 
-            console.log(`Total new inbound flights: ${flights.length}`);
+            console.log(`Total inbound flights in window: ${flights.length}`);
 
             // Write flight-data.json (newest first)
             flights.sort((a, b) => b.walletTs - a.walletTs);
@@ -110,11 +112,6 @@ jobs:
               cutoffTs,
               flights
             }));
-
-            // Advance cutoff to newest flight seen (or keep current if nothing new)
-            state.cutoffTs = newestTs;
-            delete state.note;
-            fs.writeFileSync('sync-state.json', JSON.stringify(state));
           }
 
           main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
@@ -122,9 +119,12 @@ jobs:
 
       - name: Commit if changed
         run: |
-          git add flight-data.json sync-state.json
+          # sync-state.json is deprecated as of the rolling-window rewrite —
+          # remove it from the repo if it's still around.
+          if [ -f sync-state.json ]; then git rm sync-state.json; fi
+          git add flight-data.json
           if git diff --cached --quiet; then
-            echo "No new flights — skipping commit."
+            echo "No changes — skipping commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
