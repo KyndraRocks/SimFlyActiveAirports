@@ -6373,7 +6373,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.11.0';
+const APP_VERSION = '3.12.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9041,22 +9041,42 @@ function _stampRecipInbox(newPilots) {
 
 // Lightweight toast for the AA→RT save flow. Reuses no existing element —
 // creates a fixed-position pill at the bottom-right that auto-dismisses.
-let _aaRtToastTmr = null;
+let _aaRtToastTmr      = null;
+let _aaRtToastDeadline = 0;
+function _aaRtToastDismiss() {
+  const el = document.getElementById('aaRtToast');
+  if (el) el.style.opacity = '0';
+  if (_aaRtToastTmr) { clearTimeout(_aaRtToastTmr); _aaRtToastTmr = null; }
+  _aaRtToastDeadline = 0;
+}
 function _aaRtToast(msg, kind) {
   let el = document.getElementById('aaRtToast');
   if (!el) {
     el = document.createElement('div');
     el.id = 'aaRtToast';
-    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;pointer-events:none;';
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;pointer-events:none;cursor:pointer;';
+    el.addEventListener('click', _aaRtToastDismiss);
     document.body.appendChild(el);
   }
   const bg = kind === 'err' ? 'rgba(180,40,60,0.95)' : kind === 'warn' ? 'rgba(180,120,20,0.95)' : 'rgba(20,120,80,0.95)';
   el.style.background = bg;
   el.textContent = msg;
+  el.style.pointerEvents = 'auto';
   requestAnimationFrame(() => { el.style.opacity = '1'; });
   if (_aaRtToastTmr) clearTimeout(_aaRtToastTmr);
-  _aaRtToastTmr = setTimeout(() => { el.style.opacity = '0'; _aaRtToastTmr = null; }, 4000);
+  _aaRtToastDeadline = Date.now() + 4000;
+  _aaRtToastTmr = setTimeout(_aaRtToastDismiss, 4000);
 }
+// v3.12.0 — defensive cleanup for the case where the page was backgrounded
+// (e.g. user tabbed into MSFS fullscreen) while a toast was on screen and
+// the auto-dismiss timer/CSS-transition got throttled or paused. When the
+// page becomes visible again, if the 4 s lifetime has already elapsed,
+// force-dismiss so the toast doesn't sit there forever.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _aaRtToastDeadline && Date.now() >= _aaRtToastDeadline) {
+    _aaRtToastDismiss();
+  }
+});
 
 async function _addPilotsToRecipGist(newPilots, pat) {
   // Inbox stamp first — survives every gist failure mode and reaches RT
@@ -29466,6 +29486,17 @@ function _rgToggleNewAirports() {
 }
 
 function _rgTogglePayoutMode(preserveFilter) {
+  // v3.12.0 — if mode is already on but the legend panel was closed via its ✕
+  // button, treat a Payout-button click as "re-open the panel" rather than
+  // turning the mode off. The mode is now only disabled by clicking 💰 Payout
+  // while the panel is visible, or by clicking the breadcrumb chip.
+  const legendEl = document.getElementById('rgPayoutLegend');
+  if (_rgPayoutMode && legendEl && legendEl.style.display === 'none') {
+    legendEl.style.display = '';
+    _rgPayoutSyncBarGrad();
+    _rgRepositionFilterPanels();
+    return;
+  }
   _rgPayoutMode = !_rgPayoutMode;
   const btn = document.getElementById('rgPayoutBtn');
   if (btn) btn.classList.toggle('active', _rgPayoutMode);
@@ -29788,6 +29819,15 @@ function _rgStarFiltCheck(icao) {
 }
 
 function _rgToggleStarFilter() {
+  // v3.12.0 — mirror the payout panel: if the filter is already engaged but
+  // the legend panel was closed via its ✕, treat a ⭐ Rating click as re-open
+  // rather than turn-off. The breadcrumb chip is the documented one-click off.
+  const legEl = document.getElementById('rgStarFilterLegend');
+  if (_rgStarFilterMode && legEl && legEl.style.display === 'none') {
+    legEl.style.display = '';
+    _rgRepositionFilterPanels();
+    return;
+  }
   _rgStarFilterMode = !_rgStarFilterMode;
   const btn = document.getElementById('rgStarFilterBtn');
   if (btn) btn.classList.toggle('active', _rgStarFilterMode);
@@ -29801,6 +29841,16 @@ function _rgToggleStarFilter() {
   _rgRepositionFilterPanels();
   _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
+}
+
+// v3.12.0 — Close a filter panel WITHOUT disabling the underlying filter/mode.
+// Wired to the ✕ in the Payout and Scenery-Rating legends. The mode/filter
+// stays applied to the map and matrix; the breadcrumb chip is the off switch.
+function _rgHideFilterPanel(which) {
+  const id = which === 'star' ? 'rgStarFilterLegend' : 'rgPayoutLegend';
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+  _rgRepositionFilterPanels();
 }
 
 // Recalculates the vertical offset of rgStarFilterLegend so it sits below
@@ -32918,7 +32968,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Scenery Star Rating Filter</div>
           <div class="help-feature-desc">
             The <strong>⭐ Rating</strong> button in the map header opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter.<br/><br/>
-            The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.
+            The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.<br/><br/>
+            <strong>Closing the panel keeps the filter on</strong> — clicking the panel's <strong>✕</strong> just hides the panel; the rating threshold stays applied to the map and matrix. To actually turn the filter off, click the <em>Rating ≥ N stars</em> chip in the breadcrumb strip. Clicking the <strong>⭐ Rating</strong> button again re-opens the panel without changing the filter.
           </div>
         </div>
       </div>
@@ -32930,6 +32981,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
             A legend in the lower-left corner of the map shows the gradient scale while the mode is active. Click the button again to return to standard category/owner coloring.<br/><br/>
+            <strong>Closing the legend keeps payout coloring on</strong> — clicking the legend's <strong>✕</strong> just hides the legend; the map keeps coloring dots by payout. To actually turn payout mode off, click the <em>Payout Colors</em> chip in the breadcrumb strip (or the <strong>💰 Payout</strong> button again with the legend visible). Clicking <strong>💰 Payout</strong> while the legend is hidden re-opens it without flipping the mode.<br/><br/>
             <strong>Quick toggle for 0% airports</strong> &mdash; click the gray dot on the legend to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue. The slider can still be used for any other threshold above 1%.<br/><br/>
             Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.<br/><br/>
             <strong>Custom palette (v2.98.0).</strong> Right-click the gradient bar in the legend to open a small palette editor. Place 2&ndash;5 color stops at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to the legend bar, the map dots, and the matrix, and persists in <code>localStorage</code> (key <code>simfly_aa_payout_palette</code>) so it survives across sessions. A <em>Reset</em> button restores the original red &rarr; orange &rarr; amber &rarr; yellow &rarr; green default. The 0% no-data grey is fixed and is not a user stop.<br/><br/>
@@ -33107,8 +33159,23 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.11.0</span>
+          <span class="release-version">v3.12.0</span>
           <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Closing the Payout / Rating panels keeps the filter on.</strong> Clicking the <em>✕</em> on the <em>Pilot Payout</em> or <em>Scenery Rating</em> legend now just hides that panel — the underlying color mode / filter stays applied to the map and matrix. Use the matching breadcrumb chip to actually turn it off. Clicking the <em>💰 Payout</em> or <em>⭐ Rating</em> button again re-opens the panel without flipping the mode. Removes a common stumble where peeking at the panel and then closing it would unexpectedly clear the filter.</li>
+          <li><strong>FSUIPC toast no longer sticks when tab regains focus.</strong> If the page is backgrounded (e.g. switching to MSFS) while the green <em>🔌 Tracking via FSUIPC…</em> toast is on screen, the browser pauses CSS transitions and throttles timers, so the toast could remain visible after returning. Added a visibility-aware dismissal: as soon as the page becomes visible again, any toast past its 4 s lifetime is force-removed. Clicking a toast also dismisses it immediately.</li>
+          <li><strong>Tools menu — Measurement moved above Select Regions.</strong> The 🛠 Tools pulldown now lists <em>📐 Measurement</em> first, then <em>⊙ Select Regions</em>, then <em>✦ Display New Airports</em>. Matches the order most use the tools in.</li>
+          <li><strong>KFLL flagged as a new airport.</strong> KFLL (Fort Lauderdale-Hollywood Intl) marked with <code>first_seen: 2026-06-01</code> in the public payout-data feed, so the magenta new-airport pulse and tooltip appear on the region map.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.11.0</span>
+          <span class="release-date">June 3, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -43405,10 +43472,10 @@ function rgSendToFlightPlanner() {
         <!-- 🛠 Tools pulldown — groups Region Select + Measurement.
              SimBrief Flight Plan moved to Live menu in v2.89.0. -->
         <div class="rg-pulldown-wrap" id="rgToolsWrap">
-          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Select Regions, Measurement">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
+          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Measurement, Select Regions">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgToolsMenu">
-            <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" title="Toggle new airport pulse indicators — airports added in the last 30 days" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
           </div>
         </div>
@@ -43519,7 +43586,7 @@ function rgSendToFlightPlanner() {
       <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span>
-          <button onclick="_rgTogglePayoutMode()" title="Close — same as clicking 💰 Payout" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          <button onclick="_rgHideFilterPanel('payout')" title="Close this panel — the payout filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <div id="rgPayoutZeroDot" onclick="_rgPayoutToggleZero()" title="Click to hide airports with 0% payout" style="width:21px;height:21px;border-radius:50%;background:#7a7a90;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;cursor:pointer;transition:box-shadow 0.12s,opacity 0.12s;"></div>
@@ -43541,7 +43608,7 @@ function rgSendToFlightPlanner() {
       <div id="rgStarFilterLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
           <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">SCENERY RATING</span>
-          <button onclick="_rgToggleStarFilter()" title="Close — same as clicking ⭐ Rating" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          <button onclick="_rgHideFilterPanel('star')" title="Close this panel — the scenery-rating filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
         </div>
         <span class="sl-stars sl-stars-interactive" id="rgStarFilterWidget"
               style="display:flex;justify-content:space-between;font-size:1.9rem;cursor:pointer;"

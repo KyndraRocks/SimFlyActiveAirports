@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.11.0**
+**Current version: v3.12.0**
 
 ---
 
@@ -165,14 +165,14 @@ The filter is **independent of the color mode**. Setting a threshold continues t
 
 The gray **0% dot** on the legend is also a one-click toggle — click it to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue.
 
-Click the **✕** in the legend's top-right corner to close the panel — same as clicking **💰 Payout** in the toolbar.
+Click the **✕** in the legend's top-right corner to close the panel **without disabling payout coloring** — the dots keep their payout colors and the filter (if any) stays applied. The *Payout Colors* breadcrumb chip is the one-click off switch. Click **💰 Payout** in the toolbar again to re-open the legend without flipping the mode.
 
 ### Scenery Rating Filter
 Click **⭐ Rating** in the map toolbar to open the Scenery Rating filter panel. Hover over the five stars to preview a minimum threshold, then click to set it — airports in your Scenery Library with a rating below that value are hidden from both the map dots and the distance matrix. Half-star increments are supported: hover or click the **left half** of a star to set a .5 threshold (e.g. 2.5★), the **right half** for the whole-star value. Click the same value again to clear the filter.
 
 Airports not in your Scenery Library, or in the library with no rating set, are always hidden when any threshold is active. When the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it with automatic spacing so both panels remain accessible.
 
-Click the **✕** in the panel's top-right corner to close it — same as clicking **⭐ Rating** in the toolbar.
+Click the **✕** in the panel's top-right corner to close it **without disabling the filter** — the rating threshold stays applied to the map and matrix. The *Rating ≥ N stars* breadcrumb chip is the one-click off switch. Click **⭐ Rating** in the toolbar again to re-open the panel without changing the filter.
 
 ### Departure / Arrival Info Panel
 As soon as a departure or arrival airport is set — by typing an ICAO, clicking a matrix row / column / cell, or selecting a dot on the interactive map — a panel beneath the matrix shows the full airport details for that endpoint. Each card renders independently: the departure card on the left, arrival on the right, and either card hides on its own when its own ICAO is cleared. Cards include city, owner, SimFly category, elevation, full runway list, aircraft-suitability verdict, and the cached METAR / weather summary when available — matching the matrix header tooltips so the information is in one persistent place instead of behind a hover. Replaces the v2.85 collapsible Route Map below the matrix — the interactive-map workflow is fully covered by the **⊙ Map** button, which is faster, drag-resizable, and integrates with Region Mode, the Scenery Library, METAR overlays, measurement tools, and SimBrief plotting.
