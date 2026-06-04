@@ -3399,17 +3399,18 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   .sb-route-pill.visible { opacity:1; transform:translateX(-50%) translateY(0); }
   .sb-route-pill-body { display:flex; flex-direction:column; gap:1px; }
-  .sb-route-pill-route { font-size:1.28rem; font-weight:700; color:#fff; letter-spacing:0.04em; }
-  .sb-route-pill-meta  { font-size:0.8rem; color:rgba(255,255,255,0.5); letter-spacing:0.02em; }
-  .sb-route-pill-meta strong { color:rgba(255,255,255,0.82); font-weight:600; }
+  .sb-route-pill-route { font-size:1.28rem; font-weight:700; color:#fff; letter-spacing:0.04em; cursor:pointer; }
+  .sb-route-pill-route:hover { opacity:0.75; }
+  .sb-route-pill-meta  { font-size:1.14rem; color:rgba(255,255,255,0.6); letter-spacing:0.02em; }
+  .sb-route-pill-meta strong { color:#fff; font-weight:600; }
   .sb-route-pill-divider { width:1px; height:28px; background:rgba(255,255,255,0.12); flex-shrink:0; }
   .sb-route-pill-file-btn {
-    background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.38);
-    color:#00c8ff; font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:700;
+    background:rgba(255,106,0,0.15); border:1px solid var(--accent2);
+    color:var(--accent2); font-family:'Rajdhani',sans-serif; font-size:0.9rem; font-weight:700;
     padding:0.35rem 0.9rem; border-radius:6px; cursor:pointer; letter-spacing:0.04em;
     transition:background 0.13s, border-color 0.13s, color 0.13s; flex-shrink:0;
   }
-  .sb-route-pill-file-btn:hover { background:rgba(0,200,255,0.25); border-color:rgba(0,200,255,0.65); color:#fff; }
+  .sb-route-pill-file-btn:hover { background:rgba(255,106,0,0.3); border-color:var(--accent2); color:#fff; }
   .sb-route-pill-x {
     background:none; border:none; color:rgba(255,255,255,0.3);
     font-size:0.95rem; cursor:pointer; padding:0; line-height:1; flex-shrink:0;
@@ -3424,8 +3425,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .sb-route-pill-meta  { color:rgba(30,40,60,0.5); }
   body.light-mode .sb-route-pill-meta strong { color:rgba(30,40,60,0.8); }
   body.light-mode .sb-route-pill-divider { background:rgba(0,0,0,0.12); }
-  body.light-mode .sb-route-pill-file-btn { background:rgba(0,100,200,0.1); border-color:rgba(0,100,200,0.35); color:#0064c8; }
-  body.light-mode .sb-route-pill-file-btn:hover { background:rgba(0,100,200,0.2); border-color:rgba(0,100,200,0.6); color:#003e8f; }
+  body.light-mode .sb-route-pill-file-btn { background:rgba(187,68,0,0.1); border-color:var(--accent2); color:var(--accent2); }
+  body.light-mode .sb-route-pill-file-btn:hover { background:rgba(187,68,0,0.22); border-color:var(--accent2); color:#fff; }
   body.light-mode .sb-route-pill-x { color:rgba(20,30,50,0.3); }
   body.light-mode .sb-route-pill-x:hover { color:rgba(20,30,50,0.65); }
 
@@ -3883,6 +3884,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Specificity override needed to beat Leaflet's default white background */
   .leaflet-tooltip.rg-dot-tip { background:rgba(0,8,18,0.96); border:1px solid rgba(0,200,255,0.65); border-radius:5px; padding:0.53rem 1.05rem; white-space:nowrap; box-shadow:0 2px 14px rgba(0,0,0,0.85), 0 0 6px rgba(0,200,255,0.15); pointer-events:none; color:#dff0ff; user-select:none; }
   .leaflet-tooltip.rg-dot-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.96); }
+  #rgNewAirportsBtn.active { background:rgba(212,0,170,0.18); border-color:#d400aa; color:#fff; }
+  .rg-dt-new  { display:block; background:#d400aa; color:#fff; font-family:'Orbitron',monospace; font-size:0.7rem; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; padding:0.22rem 0.6rem; border-radius:4px; margin-bottom:0.4rem; text-align:center; }
   .rg-dt-icao { font-family:'Courier New',Courier,monospace; font-size:1.58rem; font-weight:700; color:#fff; }
   .rg-dt-cat  { font-family:'Rajdhani',sans-serif; font-size:1.28rem; color:rgba(180,220,255,0.75); margin-left:0.45rem; }
   .rg-dt-name { display:block; font-family:'Rajdhani',sans-serif; font-size:1.35rem; color:rgba(200,230,255,0.85); margin-top:0.08rem; }
@@ -6370,7 +6373,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.10.0';
+const APP_VERSION = '3.11.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -6607,6 +6610,10 @@ function loadAirportDB() {
         for (const [icao, info] of Object.entries(payoutDataJson)) {
           if (info.first_seen && new Date(info.first_seen).getTime() >= cutoff)
             newAirportsDB.add(icao.toUpperCase());
+        }
+        if (newAirportsDB.size > 0) {
+          const newBtn = document.getElementById('rgNewAirportsBtn');
+          if (newBtn) { newBtn.style.display = ''; newBtn.classList.add('active'); }
         }
       }
 
@@ -8937,7 +8944,7 @@ function _sbPillUpdate() {
   if (metaEl) {
     const parts = [];
     if (acCode) parts.push(ac ? acCode + ' — ' + (ac.model || ac.label || '') : acCode);
-    if (fltnum) parts.push('Flt ' + fltnum);
+    if (fltnum) parts.push('Flt: ' + fltnum);
     metaEl.innerHTML = parts.map(p => '<strong>' + p + '</strong>').join('<span style="margin:0 5px;opacity:0.35">·</span>');
     metaEl.style.display = parts.length ? '' : 'none';
   }
@@ -10222,7 +10229,7 @@ function _sbOfpClearCache() {
   try { localStorage.removeItem(_SB_OFP_LS); } catch (_) {}
 }
 
-// ── Flight Plan settings (localStorage-backed, surfaced via shift-click modal)
+// ── Flight Plan settings (localStorage-backed, surfaced via right-click modal)
 const _FP_DEFAULT_COLOR  = '#ff3da8';
 const _FP_DEFAULT_LABELS = true;
 
@@ -10292,10 +10299,10 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else _fpBindModalLiveControls();
 
 function _sbOfpButtonClick(e) {
-  // Shift-click opens the Flight Plan Settings modal (Pilot ID, waypoint
+  // Right-click opens the Flight Plan Settings modal (Pilot ID, waypoint
   // labels toggle, route color). The modal also writes Pilot ID to
   // localStorage, replacing the old shift-click → clear-pid behaviour.
-  if (e && e.shiftKey) { _fpOpenModal(); return; }
+  if (e && e.type === 'contextmenu') { _fpOpenModal(); return; }
   if (_sbOfpLayers.length) { _sbOfpClear(); return; }
   _sbOfpPlot();
 }
@@ -10311,7 +10318,7 @@ async function _sbOfpPlot() {
     // an entire log file / clipboard contents. Real SimBrief IDs are
     // numeric and well under 32 chars; 64 leaves headroom for any
     // future format change.
-    pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nIt is saved locally so you only enter it once. Shift-click the button later to open Flight Plan settings (Pilot ID, waypoint labels, route color).') || '').trim().slice(0, 64);
+    pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nIt is saved locally so you only enter it once. Right-click the button later to open Flight Plan settings (Pilot ID, waypoint labels, route color).') || '').trim().slice(0, 64);
     if (!pid) return;
     _fpSetPid(pid);
   }
@@ -10323,7 +10330,7 @@ async function _sbOfpPlot() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     data = await resp.json();
   } catch (err) {
-    _aaRtToast('✕ SimBrief fetch failed (' + (err && err.message ? err.message : err) + ') — shift-click the button to open settings, or check your network.', 'err');
+    _aaRtToast('✕ SimBrief fetch failed (' + (err && err.message ? err.message : err) + ') — right-click the button to open settings, or check your network.', 'err');
     return;
   }
   if (data && data.fetch && data.fetch.status && /^Error/i.test(String(data.fetch.status))) {
@@ -10478,7 +10485,7 @@ function _sbOfpRender(data, opts) {
     const lbl = btn.querySelector('.rg-btn-label');
     if (lbl) lbl.textContent = 'Clear Flight Plan';
     btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✕ ');
-    btn.title = 'Remove the plotted SimBrief flight plan — Shift-click to open Flight Plan settings';
+    btn.title = 'Remove the plotted SimBrief flight plan — Right-click to open Flight Plan settings';
   }
   // v2.90.4 — SimBrief plan moved from Tools to Live menu in v2.89.0; the
   // plan-loaded indicator now lights the Live dot rather than the Tools dot.
@@ -10524,7 +10531,7 @@ function _sbOfpClear() {
     const lbl = btn.querySelector('.rg-btn-label');
     if (lbl) lbl.textContent = 'SimBrief Flight Plan';
     btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✈ ');
-    btn.title = 'Fetch and plot your most recent SimBrief flight plan — Shift-click to open Flight Plan settings (Pilot ID, waypoint labels, route color)';
+    btn.title = 'Fetch and plot your most recent SimBrief flight plan — Right-click to open Flight Plan settings (Pilot ID, waypoint labels, route color)';
   }
   // v2.90.4 — SimBrief plan-loaded indicator now lights the Live dot
   // (SimBrief moved from Tools to Live in v2.89.0).
@@ -25301,7 +25308,8 @@ function _rgMeasCircleStyle() {
     ? { color: c, weight: 2, opacity: 0,    dashArray: '8 5', fillColor: c, fillOpacity: 0    }
     : { color: c, weight: 2, opacity: 0.65, dashArray: '8 5', fillColor: c, fillOpacity: 0.04 };
 }
-let _rgPayoutMode     = false;  // true = color dots by pilot payout % (red→orange→green gradient)
+let _rgPayoutMode         = false;  // true = color dots by pilot payout % (red→orange→green gradient)
+let _rgNewAirportsVisible = true;   // false = pulse rings hidden via toolbar toggle
 let _rgPayoutFilter   = 0;     // minimum payout % to show; airports below this are hidden in payout mode
 let _rgStarFilterMode = false;  // star rating filter panel active
 let _rgStarFilter     = 0;      // minimum star rating to show (0 = off, 1–5)
@@ -26389,11 +26397,15 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       const col = pct > 50 ? 'hsl(120,100%,42%)' : pct >= 50 ? 'hsl(60,100%,50%)' : pct >= 25 ? 'hsl(45,100%,60%)' : pct > 0 ? 'hsl(18,100%,62%)' : '#888';
       return `<span class="rg-dt-payout" style="color:${col}">Pilot Payout: ${pct}%</span>`;
     })();
+    const newBadgeHtml = (newAirportsDB && newAirportsDB.has(icaoUpper))
+      ? `<span class="rg-dt-new">✦ New Airport</span>`
+      : '';
+    const _esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     html =
-      `<div><span class="rg-dt-icao" data-cat="${catNum || ''}" style="color:${catCol}">${icao}</span>` +
+      `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
       (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
-      (rec.name ? `<span class="rg-dt-name">${rec.name}</span>` : '') +
-      (ownerName ? `<span class="rg-dt-owner">${ownerName}</span>` : '') +
+      (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
+      (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
       payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml +
       `</div>`;
     _rgTipHtmlCache.set(cacheKey, html);
@@ -26436,7 +26448,10 @@ function _rgRenderDots() {
   if (!_rgCanvasRenderer) _rgCanvasRenderer = L.canvas({ padding: 0.5 });
   _rgTipHtmlCache = new Map();
   _rgDotLayer   = L.layerGroup().addTo(_rgMap);
-  if (newAirportsDB && newAirportsDB.size) _rgPulseLayer = L.layerGroup().addTo(_rgMap);
+  if (newAirportsDB && newAirportsDB.size) {
+    _rgPulseLayer = L.layerGroup();
+    if (_rgNewAirportsVisible) _rgPulseLayer.addTo(_rgMap);
+  }
   _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
@@ -26501,8 +26516,8 @@ function _rgRenderDots() {
     _rgVisibleIcaosFromDots.add(ap.icao.toUpperCase());
     if (_rgPulseLayer && newAirportsDB && newAirportsDB.has(ap.icao.toUpperCase())) {
       L.marker([rec.latitude, rec.longitude], {
-        icon: L.divIcon({ className: '', html: '<div class="aa-new-ring"></div><div class="aa-new-ring aa-ring-delay"></div>', iconSize: [30, 30], iconAnchor: [15, 15] }),
-        interactive: false, keyboard: false, pane: 'shadowPane'
+        icon: L.divIcon({ className: '', html: '<div class="aa-new-ring"></div><div class="aa-new-ring aa-ring-delay"></div><div class="aa-new-star">★</div>', iconSize: [44, 44], iconAnchor: [22, 22] }),
+        interactive: false, keyboard: false, pane: 'markerPane'
       }).addTo(_rgPulseLayer);
     }
     if (_rgShowScenery && _slHas(ap.icao)) {
@@ -29440,6 +29455,16 @@ function _rgPayoutPaletteCommit() {
 // switch and continues hiding airports below it regardless of color mode.
 // The explicit 💰 Payout button passes the default (false) so clicking it
 // to turn the mode off still resets the filter, matching the prior UX.
+function _rgToggleNewAirports() {
+  _rgNewAirportsVisible = !_rgNewAirportsVisible;
+  if (_rgPulseLayer) {
+    if (_rgNewAirportsVisible) _rgPulseLayer.addTo(_rgMap);
+    else _rgPulseLayer.remove();
+  }
+  const btn = document.getElementById('rgNewAirportsBtn');
+  if (btn) btn.classList.toggle('active', _rgNewAirportsVisible);
+}
+
 function _rgTogglePayoutMode(preserveFilter) {
   _rgPayoutMode = !_rgPayoutMode;
   const btn = document.getElementById('rgPayoutBtn');
@@ -32623,7 +32648,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Once both departure and arrival ICAOs are valid, the <strong>File on SimBrief →</strong> button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.<br/><br/>
             <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.<br/><br/>
-            <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the same information at a glance (route, aircraft, flight number). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. Dismiss it with ✕ &mdash; it won&rsquo;t reappear for that specific route until you change it.
+            <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and flight number (<em>Flt: XXXXXX</em>). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. <strong>Click the DEP → ARR route text</strong> to swap departure and arrival in one click — the map breadcrumb, highlight, and main-screen fields all update together. Dismiss with ✕ &mdash; the pill reappears automatically if you change either endpoint.
           </div>
         </div>
       </div>
@@ -32636,7 +32661,7 @@ function rgSendToFlightPlanner() {
             Open the interactive map (the <strong>⊙ Map</strong> button at the top of the Flight Planner) and click <strong>✈ SimBrief Flight Plan</strong> in the header bar, just to the right of <strong>📐 Measurement</strong>. The app calls SimBrief's public API for your most recent flight plan and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots. Hover the magenta origin or destination ring for the route summary (flight number, total distance, waypoint count, SimBrief route string).<br/><br/>
             The first click prompts once for your <strong>SimBrief Pilot ID</strong> — find it at <em>simbrief.com → Account → Pilot ID</em>. It's stored locally so subsequent clicks fetch instantly. Clicking the button while a flight plan is plotted clears it.<br/><br/>
 
-            <strong>Shift-click the button to open Flight Plan Settings.</strong> The modal lets you change:
+            <strong>Right-click the button to open Flight Plan Settings.</strong> The modal lets you change:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>SimBrief Pilot ID</strong> — replace the value you entered on first use.</li>
               <li><strong>Display waypoint labels</strong> (default On) — when on, each waypoint's ident is shown as a permanent label next to its dot. When off, idents only appear on hover (along with altitude, via-airway, and flight stage).</li>
@@ -32858,8 +32883,9 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">New Airports</div>
           <div class="help-feature-desc">
-            Airports that have been added to SimFly within the <strong>last 30 days</strong> are highlighted on the map with a pulsing amber/gold ring — a double radar-sweep animation that radiates outward from the airport dot. This makes it easy to spot airports that are new to the community without having to compare lists.<br/><br/>
-            The ring disappears automatically once the airport is more than 30 days old — no manual upkeep needed. The date each airport first appeared is recorded by the hourly data pipeline and stored alongside the payout data.
+            Airports added to SimFly within the <strong>last 30 days</strong> are highlighted on the map with a pulsing magenta ring and a <strong>✦ New Airport</strong> banner in their tooltip. The ring is a double radar-sweep animation that radiates outward from the dot at a slow 6-second cycle so it's noticeable without being distracting.<br/><br/>
+            The ring disappears automatically once the airport is more than 30 days old — no manual upkeep needed. The date each airport first appeared is recorded by the hourly data pipeline.<br/><br/>
+            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and click <strong>✦ Display New Airports</strong> to show or hide the indicators. The item only appears when new airports are present; it is highlighted magenta when active.
           </div>
         </div>
       </div>
@@ -33079,10 +33105,27 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.11.0</span>
+          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief pill — click route to swap dep/arr.</strong> Clicking the <em>DEP → ARR</em> text on the floating SimBrief pill now swaps departure and arrival in one click. When a dot-selected route is active the map breadcrumb and highlight update too; otherwise the main-screen fields swap. The route text shows a pointer cursor and dims on hover as a visual affordance.</li>
+          <li><strong>SimBrief Flight Plan settings — right-click instead of Shift-click.</strong> Right-clicking the <em>✈ SimBrief Flight Plan</em> item in the Live menu now opens Flight Plan settings (Pilot ID, waypoint labels, route color). All tooltips, prompts, and help text updated accordingly.</li>
+          <li><strong>SimBrief pill — improved readability.</strong> The flight number label now reads <em>Flt: XXXXXX</em>, the meta line font is larger (1.14 rem), the text is full white, and the <em>File on SimBrief</em> button uses the same orange accent color as the main-screen button. Tooltips added to all pill elements.</li>
+          <li><strong>New-airport indicator — Tools menu toggle.</strong> A <em>✦ Display New Airports</em> item in the Tools menu lets you show or hide the new-airport pulse rings. The item only appears when there are airports with a <code>first_seen</code> within the last 30 days. Active state is highlighted magenta.</li>
+          <li><strong>New-airport indicator — magenta color.</strong> The pulse ring, star badge, and tooltip banner are now magenta (<code>#d400aa</code>), with a white <em>✦ New Airport</em> label on the tooltip. Ring cycle slowed to 6 s for a subtler, less distracting animation.</li>
+          <li><strong>Security — XSS fix in map dot tooltips.</strong> Airport names, owner names, and ICAO codes are now HTML-escaped before being interpolated into the region-map tooltip HTML string, closing a potential XSS path via the upstream OurAirports data source.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.10.0</span>
-          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-date">June 3, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -42931,9 +42974,10 @@ function rgSendToFlightPlanner() {
   .ma-status.err  { color:#ff8090; }
   .ma-status.info { color:var(--muted); }
   body.light-mode .ma-blurb { background:rgba(0,150,200,0.07); border-color:rgba(0,150,200,0.45); }
-  @keyframes aa-pulse{0%{transform:scale(.9);opacity:.75}100%{transform:scale(2.4);opacity:0}}
-  .aa-new-ring{position:absolute;width:20px;height:20px;top:5px;left:5px;border-radius:50%;border:2px solid #f5a623;animation:aa-pulse 2.5s ease-out infinite;pointer-events:none;transform-origin:center}
-  .aa-ring-delay{animation-delay:1.25s}
+  @keyframes aa-pulse{0%{transform:scale(1);opacity:1}70%{opacity:.6}100%{transform:scale(2.1);opacity:0}}
+  .aa-new-ring{position:absolute;width:24px;height:24px;top:10px;left:10px;border-radius:50%;border:3px solid #d400aa;background:rgba(212,0,170,.15);animation:aa-pulse 6s linear infinite;pointer-events:none;transform-origin:center}
+  .aa-ring-delay{animation-delay:3s}
+  .aa-new-star{position:absolute;top:-2px;left:50%;transform:translateX(-50%);font-size:11px;line-height:1;color:#d400aa;text-shadow:0 0 4px rgba(0,0,0,.9),0 0 6px rgba(0,0,0,.9);pointer-events:none;user-select:none}
 </style>
 <div class="modal-overlay" id="maModal" onclick="if(event.target===this)_maCloseModal()">
   <div class="modal">
@@ -43365,6 +43409,7 @@ function rgSendToFlightPlanner() {
           <div class="rg-pulldown" id="rgToolsMenu">
             <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" title="Toggle new airport pulse indicators — airports added in the last 30 days" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
           </div>
         </div>
 
@@ -43373,7 +43418,7 @@ function rgSendToFlightPlanner() {
         <div class="rg-pulldown-wrap" id="rgLiveWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
-            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" title="Fetch and plot your most recent SimBrief flight plan — Shift-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
+            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
@@ -43645,12 +43690,12 @@ function rgSendToFlightPlanner() {
     <div class="sb-route-pill" id="sbRoutePill"
          onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
       <div class="sb-route-pill-body">
-        <div class="sb-route-pill-route" id="sbPillRoute">— → —</div>
-        <div class="sb-route-pill-meta" id="sbPillMeta" style="display:none"></div>
+        <div class="sb-route-pill-route" id="sbPillRoute" onclick="(typeof _rgSwapDotSel==='function'&&_rgDotSelDep&&_rgDotSelArr)?_rgSwapDotSel():_distSwapIcaos()" title="Click to swap departure ↔ arrival">— → —</div>
+        <div class="sb-route-pill-meta" id="sbPillMeta" style="display:none" title="Selected aircraft · flight number"></div>
       </div>
       <div class="sb-route-pill-divider"></div>
-      <button class="sb-route-pill-file-btn" onclick="fileOnSimbrief()">✈ File on SimBrief →</button>
-      <button class="sb-route-pill-x" onclick="_sbPillDismiss()" title="Dismiss">✕</button>
+      <button class="sb-route-pill-file-btn" onclick="fileOnSimbrief()" title="Open SimBrief with this route pre-filled">✈ File on SimBrief →</button>
+      <button class="sb-route-pill-x" onclick="_sbPillDismiss()" title="Dismiss — pill reappears if route changes">✕</button>
     </div>
     </div>
     <div id="afkDataPanel">

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.10.0**
+**Current version: v3.11.0**
 
 ---
 
@@ -124,9 +124,9 @@ The map includes a **📐 Measurement** ruler — click **📐 Measurement** in 
 **Matrix honors every map filter** — every visibility filter that controls the dot layer (country, region / state, continent, pinned, exclusion sets, scenery toggle, scenery developer, payout threshold, star rating, global category) also gates which airports appear in the region matrix. The matrix and the dot layer go through a single chokepoint, so an airport hidden on the map can never show up in the matrix. Changing any filter while regions are drawn re-filters the matrix live alongside the dots.
 
 ### New Airports
-Airports added to SimFly within the last **30 days** are highlighted on the map with a pulsing amber/gold ring — a double radar-sweep animation that radiates outward from the airport dot. The ring makes it easy to spot newly listed airports at a glance without needing to cross-reference any external list.
+Airports added to SimFly within the last **30 days** are highlighted on the map with a pulsing magenta ring and a **✦ New Airport** banner in their tooltip. The ring is a slow 6-second radar-sweep animation — noticeable but not distracting.
 
-The ring disappears automatically once an airport is more than 30 days old — no manual upkeep needed. Date-added data is maintained by the hourly data pipeline and stored alongside the payout data.
+The ring disappears automatically once the airport is more than 30 days old — no manual upkeep needed. To hide the indicators, open the **🛠 Tools** menu and click **✦ Display New Airports** (the item only appears when new airports are present).
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.
@@ -183,14 +183,14 @@ The departure and arrival airports auto-fetch a METAR the moment you set or chan
 ### File on SimBrief
 Once departure and arrival ICAOs are set, the **File on SimBrief →** button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click. Airports that SimFly identifies with a short local code (e.g. `1G4`) are automatically converted to the ICAO form SimBrief expects (`K1G4`), so the dispatch page resolves them correctly.
 
-**Route pill on the map** (v3.8.0+) — whenever a complete dep→arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and synthesised flight number at a glance. Click **✈ File on SimBrief →** on the pill to dispatch directly from the map without returning to the main planner. Dismiss it with ✕; it re-appears automatically if you change either endpoint.
+**Route pill on the map** (v3.8.0+) — whenever a complete dep→arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and synthesised flight number. Click **✈ File on SimBrief →** on the pill to dispatch directly from the map without returning to the main planner. **Click the DEP → ARR route text** to swap departure and arrival — the map breadcrumb and main-screen fields update together. Dismiss with ✕; the pill re-appears automatically if you change either endpoint.
 
 ### SimBrief Flight Plan — plot the route on the map
 Open the interactive map and click **✈ SimBrief Flight Plan** in the **🔌 Live** pulldown (the first item; promoted from Tools to Live in v2.89.0 since plan data drives so much of the live-flight surface). The app fetches your most recent SimBrief flight plan via SimBrief's public API and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots, plus magenta rings at the origin and destination. Each waypoint shows its ident as a permanent label by default; hovering the origin / destination ring brings up the route summary (flight number, total air distance, waypoint count, the SimBrief route string).
 
 The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrief.com → Account → Pilot ID*). The ID is saved in your browser's localStorage so subsequent clicks fetch instantly. **The button itself toggles**: with no plan loaded it fetches, with a plan loaded it clears the route and wipes the local cache.
 
-**Shift-click the button to open Flight Plan Settings.** The modal lets you change three things, all persisted to localStorage:
+**Right-click the button to open Flight Plan Settings.** The modal lets you change three things, all persisted to localStorage:
 - **SimBrief Pilot ID** — replace the value you entered on first use.
 - **Display waypoint labels** *(default On)* — when on, each waypoint's ident is shown as a permanent label next to its dot. When off, idents only appear on hover, along with altitude, via-airway, and flight stage (climb / cruise / descent).
 - **Route color** *(default magenta)* — a color picker plus a hex input. Applies to the polyline, waypoint dots, and origin / destination rings.
