@@ -16,7 +16,7 @@
     --accent2:   #ff6a00;
     --green:     #00ff9d;
     --text:      #c8dff5;
-    --muted:     #6a8ab8;
+    --muted:     #8facd4;
     --danger:    #ff3d5a;
     --glow:      0 0 20px rgba(0,200,255,0.3);
     --glow2:     0 0 20px rgba(255,106,0,0.4);
@@ -93,11 +93,11 @@
   body.light-mode .dist-matrix td.dist-cell.dist-cat-dim,
   body.light-mode .dist-matrix td.dist-cell.dist-ac-dim,
   body.light-mode .dist-matrix td.dist-cell.dist-cat-dim.dist-best,
-  body.light-mode .dist-matrix td.dist-cell.dist-ac-dim.dist-best  { color: rgba(15,30,46,0.18); }
+  body.light-mode .dist-matrix td.dist-cell.dist-ac-dim.dist-best  { color: rgba(15,30,46,0.38); }
   body.light-mode .dist-matrix th.dist-label-dim > span,
   body.light-mode .dist-matrix td.dist-label-dim > span,
   body.light-mode .dist-matrix th.dist-ac-label-dim > span,
-  body.light-mode .dist-matrix td.dist-ac-label-dim > span          { color: rgba(15,30,46,0.18); }
+  body.light-mode .dist-matrix td.dist-ac-label-dim > span          { color: rgba(15,30,46,0.38); }
   /* Orbitron 400 renders very thin on Windows — bump unlabelled elements to 600 */
   body.light-mode .tab, body.light-mode .btn, body.light-mode select,
   body.light-mode .metric-label, body.light-mode .theme-toggle { font-weight: 600; }
@@ -211,7 +211,8 @@
     transition: all 0.2s;
     user-select: none;
   }
-  .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .theme-toggle:hover        { border-color: var(--accent); color: var(--accent); }
+  .theme-toggle:focus-visible { border-color: var(--accent); color: var(--accent); outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .app {
     position: relative;
@@ -1717,6 +1718,11 @@
     background: rgba(0,200,255,0.22);
     border-color: var(--rg-cat-color, rgba(0,200,255,0.65));
   }
+  .dist-cat-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    opacity: 1;
+  }
 
   /* Invert button — same rounded pill shape, muted tint */
   .dist-cat-invert-btn {
@@ -1742,6 +1748,11 @@
     opacity: 0.85;
     background: rgba(200,223,245,0.11);
     border-color: rgba(200,223,245,0.32);
+  }
+  .dist-cat-invert-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    opacity: 1;
   }
 
   /* Hide filtered button — pill shape, amber tint */
@@ -1782,6 +1793,11 @@
   .dist-cat-hide-btn.active:hover {
     background: rgba(255,180,0,0.22);
     border-color: rgba(255,180,0,0.65);
+  }
+  .dist-cat-hide-btn:focus-visible {
+    outline: 2px solid #ffb800;
+    outline-offset: 2px;
+    opacity: 1;
   }
 
 
@@ -2120,6 +2136,15 @@
     position: absolute; width: 1px; height: 1px; padding: 0;
     margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0;
   }
+  /* Skip-to-content link — hidden off-screen until keyboard-focused */
+  .skip-link {
+    position: fixed; top: -100%; left: 0.5rem; z-index: 99999;
+    background: var(--accent); color: #000; padding: 0.4rem 0.9rem;
+    border-radius: 4px; font-family: 'Rajdhani', sans-serif; font-size: 1rem;
+    font-weight: 600; text-decoration: none; white-space: nowrap;
+    transition: top 0.1s;
+  }
+  .skip-link:focus { top: 0.5rem; outline: 2px solid #000; outline-offset: 2px; }
   /* Light mode overrides for perf table */
   body.light-mode .ac-perf-col-hdr { border-color: rgba(0,0,0,0.1); }
   body.light-mode .ac-perf-table:not(.adj-active) .ac-perf-mtow { color: var(--text); }
@@ -2325,6 +2350,11 @@
   .dist-ac-filter-btn.active:hover {
     background: rgba(255, 106, 0, 0.22);
     border-color: rgba(255, 106, 0, 0.7);
+  }
+  .dist-ac-filter-btn:focus-visible {
+    outline: 2px solid var(--accent2);
+    outline-offset: 2px;
+    opacity: 1;
   }
 
   /* Dim label cells (th header / td row label) when airport's category is hidden */
@@ -5895,6 +5925,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
+<a href="#mainContent" class="skip-link">Skip to main content</a>
 <!-- ── Boot splash (v3.4.0) — progress bar + live component readout. Placed
      first in <body> so it paints before the main app script parses. The
      _aaSplash API is defined immediately below so the loaders can drive it. -->
@@ -6082,7 +6113,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 
 <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Switch between dark and light mode">🌙 Dark Mode</button>
 
-<div class="app">
+<main class="app" id="mainContent" tabindex="-1">
 
   <header>
     <div class="logo-line">
@@ -6118,11 +6149,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
                       onclick="_distLookupOwner('arr')" aria-label="Look up arrival airport owner">🔍</button>
             </div>
             <input class="dist-input" id="distDep" type="text" maxlength="7" placeholder="ICAO"
-                   autocomplete="off" spellcheck="false" aria-label="Departure ICAO"
+                   spellcheck="false" aria-label="Departure ICAO"
                    oninput="onDistInput(this)" onkeydown="onDistKeydown(event)"/>
-            <button class="dist-owner-swap-btn" id="distIcaoSwapBtn" onclick="_distSwapIcaos()" title="Swap Departure and Arrival ICAOs" tabindex="-1" disabled>⇄</button>
+            <button class="dist-owner-swap-btn" id="distIcaoSwapBtn" onclick="_distSwapIcaos()" title="Swap Departure and Arrival ICAOs" aria-label="Swap Departure and Arrival ICAOs" tabindex="-1" disabled>⇄</button>
             <input class="dist-input" id="distArr" type="text" maxlength="7" placeholder="ICAO"
-                   autocomplete="off" spellcheck="false" aria-label="Arrival ICAO"
+                   spellcheck="false" aria-label="Arrival ICAO"
                    oninput="onDistInput(this)" onkeydown="onDistKeydown(event)"/>
           </div>
           <div class="dist-result" id="distResult">
@@ -6131,6 +6162,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         </div>
         <!-- col 2: Get Weather button — centered horizontally in panel -->
         <button id="distWxBtn" class="btn-wx btn-wx-hdr" onclick="_wxFetch()" tabindex="-1"
+                aria-label="Get weather for entered airports"
                 title="Enter a departure or arrival ICAO first" disabled>⛅</button>
         <!-- col 3: Help / Reset / SimBrief — right-aligned -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.35rem;justify-self:end;">
@@ -6276,7 +6308,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             </div>
           </div>
         </div>
-        <button class="dist-owner-swap-btn" id="distOwnerSwapBtn" onclick="_distSwapOwners()" title="Swap Departure and Arrival owners" tabindex="-1">⇄</button>
+        <button class="dist-owner-swap-btn" id="distOwnerSwapBtn" onclick="_distSwapOwners()" title="Swap Departure and Arrival owners" aria-label="Swap Departure and Arrival owners" tabindex="-1">⇄</button>
         <div class="dist-owner-field">
           <span class="dist-label dist-label--owner" id="distArrOwnerLabel" style="color:#ff6a00">Arrival Airport Owner</span>
           <select style="display:none" class="dist-select" id="distArrOwner" onchange="window._urlFltNum=''; _wxInvalidate(); renderDistMatrix(); _refreshSimbriefTooltip()" aria-label="Arrival airport owner">
@@ -6365,7 +6397,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     <div id="footerDbStats"></div>
   </footer>
 
-</div>
+</main>
 
 <!-- Global airport info tooltip — outside .app so z-index and overflow never clip it -->
 <div id="distTooltipGlobal"></div>
@@ -6373,7 +6405,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.12.0';
+const APP_VERSION = '3.12.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -33159,8 +33191,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
+          <span class="release-version">v3.12.1</span>
+          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>WCAG 2.2 accessibility pass — low-risk fixes.</strong> A targeted round of accessibility improvements with no functional or visual changes for sighted users: skip-to-content link added for keyboard navigation; app body wrapped in a semantic <code>&lt;main&gt;</code> landmark; <code>aria-label</code> added to the ⛅ weather, ⇄ ICAO swap, and ⇄ owner swap buttons (previously labelled only via <code>title</code>, which screen readers do not reliably expose); <code>:focus-visible</code> styles added to category filter, Invert, Hide filtered, and aircraft-filter buttons; dark-mode muted text lightened from <code>#6a8ab8</code> to <code>#8facd4</code> for improved contrast; dimmed matrix cells in light mode bumped from 18% to 38% opacity so filtered-out values remain legible; <code>autocomplete="off"</code> removed from ICAO inputs (the attribute was redundant alongside <code>spellcheck="false"</code> and unreliably honoured).</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
           <span class="release-version">v3.12.0</span>
-          <span class="release-date">June 3, 2026 &middot; Current</span>
+          <span class="release-date">June 3, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
