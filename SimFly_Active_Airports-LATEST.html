@@ -6404,7 +6404,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.13.1';
+const APP_VERSION = '3.14.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -23933,6 +23933,7 @@ function _slAdd(entry) {
   if (idx >= 0) arr[idx] = norm; else arr.push(norm);
   _slSave(arr);
   _slDirty++;
+  _slDirtyIcaos.add(u);
 }
 function _slClampRating(r) {
   const n = +r || 0;
@@ -23960,6 +23961,7 @@ function _slSetStore(icao, val) {
   }
   _slSave(arr);
   _slDirty++;
+  _slDirtyIcaos.add(u);
   _slSetBannerVisible(_slDirty);
 }
 function _slSetDeveloper(icao, val) {
@@ -23978,6 +23980,7 @@ function _slSetDeveloper(icao, val) {
   }
   _slSave(arr);
   _slDirty++;
+  _slDirtyIcaos.add(u);
   _slSetBannerVisible(_slDirty);
   // Developer change can invalidate the per-ICAO tooltip cache + active filter,
   // so push the change to the region map dots if it's open.
@@ -24007,12 +24010,20 @@ function _slSetRating(icao, rating) {
   }
   _slSave(arr);
   _slDirty++;
+  _slDirtyIcaos.add(u);
   _slSetBannerVisible(_slDirty);
   _rgApplySceneryState();
 }
 let _slMapMode  = false;
 let _slToastTmr = null;
 let _slDirty    = 0;  // count of changes since last export; 0 = clean
+// v3.14.0 — set of ICAOs touched (added / rated / store-or-dev-edited) since
+// the last save / load. When the modal opens with unsaved changes, these rows
+// float to the top of the list so the user can fill in store/dev metadata
+// without hunting for the airports they just shift-clicked or right-click-
+// rated on the map. Populated at every _slDirty++ site; cleared in
+// _slExportJson (Save) and after a successful _slReadJsonFile (Load).
+let _slDirtyIcaos = new Set();
 
 function _slDelete(icao) {
   const u = (icao || '').toUpperCase();
@@ -24310,6 +24321,20 @@ function _slRenderList(query) {
   } else {
     items.sort((a, b) => a.icao.localeCompare(b.icao));
   }
+  // v3.14.0 — when the library has unsaved changes, float any rows for ICAOs
+  // touched this session to the top of the list, preserving the user-selected
+  // sort within both the dirty and clean groups. Typical case: the user just
+  // right-clicked a handful of map dots to rate them, then opened the modal
+  // to add Store / Developer info — those rows should be at the top, not
+  // buried somewhere in the middle of the alphabetical list.
+  if (_slDirtyIcaos.size > 0) {
+    const dirty = [], clean = [];
+    for (const e of items) {
+      if (_slDirtyIcaos.has(e.icao.toUpperCase())) dirty.push(e);
+      else clean.push(e);
+    }
+    items = dirty.concat(clean);
+  }
 
   list.innerHTML = '';
   if (!items.length) {
@@ -24465,6 +24490,7 @@ function _slToggleFromMap(icao) {
     if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
   }
   _slDirty++;
+  _slDirtyIcaos.add(icao.toUpperCase());
   _slSetBannerVisible(_slDirty);  // apply glow immediately (modal may be closed)
   _slUpdateToggles();
   if (document.getElementById('sceneryModal')?.classList.contains('open'))
@@ -24709,6 +24735,14 @@ function _slReadJsonFile(file) {
         });
         added++;
       }
+      // v3.14.0 — Load merges every entry through _slAdd, which would otherwise
+      // mark every airport in the file as "dirty" and float them ALL to the top
+      // of the list (often hundreds of rows). After a successful load the local
+      // library matches the file, so reset the dirty state — "Save" and the
+      // float-to-top behaviour only apply to subsequent edits.
+      _slDirty = 0;
+      _slDirtyIcaos.clear();
+      _slSetBannerVisible(false);
       _slRenderList(document.getElementById('slSearch')?.value || '');
       _rgApplySceneryState();
       _slUpdateToggles();
@@ -24729,6 +24763,9 @@ function _slClearAll() {
   if (!_slLoad().length) return;
   if (!confirm('Remove all airports from your Scenery Library? This cannot be undone.')) return;
   _slSave([]);
+  _slDirty = 0;            // v3.14.0 — empty library has nothing left to be dirty about
+  _slDirtyIcaos.clear();
+  _slSetBannerVisible(false);
   _slRenderList('');
   _rgApplySceneryState();
   _slUpdateToggles();
@@ -24744,6 +24781,7 @@ function _slExportJson() {
   a.click();
   URL.revokeObjectURL(url);
   _slDirty = 0;
+  _slDirtyIcaos.clear();  // v3.14.0 — library is now in sync; nothing left to float
   _slSetBannerVisible(false);
 }
 
@@ -24957,6 +24995,7 @@ function _mvApplyRename(field, oldValue, newValue) {
     if ((e[field] || '').trim() === oldValue) {
       e[field] = newValue;
       touched += 1;
+      _slDirtyIcaos.add(e.icao.toUpperCase());  // v3.14.0 — bulk renames also float their rows to top
     }
   }
   if (touched) {
@@ -26238,6 +26277,12 @@ async function _rgInitMap() {
   // the map, stop chasing the plane. Programmatic panTo / setView calls do
   // NOT fire dragstart, so the follow loop itself doesn't disable itself.
   _rgMap.on('dragstart', () => { if (_liveAcFollow) _liveAcSetFollow(false); });
+  // v3.14.0 — same intent for the two other map-navigation gestures Leaflet
+  // can fire without going through 'dragstart': the box-zoom rectangle
+  // (Shift+drag) and AA's custom right-mouse pan. The right-pan cancel lives
+  // in _rgMapMouseMoveBody where the drag threshold first trips (see comment
+  // there); this hook covers the boxzoom case.
+  _rgMap.on('boxzoomstart', () => { if (_liveAcFollow) _liveAcSetFollow(false); });
   // Force-redraw the aircraft breadcrumb polylines on every zoomend so any
   // phantom remnants from the canvas transform get wiped at the new zoom
   // level. Combined with the 0.5 padding on the trail renderer, this kills
@@ -28211,7 +28256,13 @@ function _rgMapMouseMoveBody(e) {
     if (_rgRightPanStart) {
       const tx = cp.clientX - _rgRightPanStart.x;
       const ty = cp.clientY - _rgRightPanStart.y;
-      if (Math.abs(tx) > 3 || Math.abs(ty) > 3) _rgRightPanMoved = true;
+      if (Math.abs(tx) > 3 || Math.abs(ty) > 3) {
+        // v3.14.0 — first time we cross the drag threshold, cancel Follow A/C
+        // (mirrors the left-drag 'dragstart' cancel in _rgMap init). Only fires
+        // on the first crossing because _rgRightPanMoved guards re-entry.
+        if (!_rgRightPanMoved && _liveAcFollow) _liveAcSetFollow(false);
+        _rgRightPanMoved = true;
+      }
     }
     if (_rgMap) _rgMap.panBy([-dx, -dy], { animate: false });
     return;
@@ -32894,7 +32945,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.<br/><br/>
 
-            <strong>📍 Follow A/C button</strong> &mdash; while a live source (FSUIPC or STKP) is active, a <strong>📍 Follow A/C</strong> button appears next to the source button. Click it to lock the map onto the aircraft &mdash; every position update smooth-pans the view (Leaflet's animated <code>panTo</code>, 400&nbsp;ms tween) so the plane stays centred without jitter on either FSUIPC's 100&nbsp;ms cadence or STKP's 10&nbsp;s polling. Zoom is preserved; only the centre changes. Manually dragging the map turns Follow off automatically, so panning around to look at something never fights the auto-centre. State persists across sessions.<br/><br/>
+            <strong>📍 Follow A/C button</strong> &mdash; while a live source (FSUIPC or STKP) is active, a <strong>📍 Follow A/C</strong> button appears next to the source button. Click it to lock the map onto the aircraft &mdash; every position update smooth-pans the view (Leaflet's animated <code>panTo</code>, 400&nbsp;ms tween) so the plane stays centred without jitter on either FSUIPC's 100&nbsp;ms cadence or STKP's 10&nbsp;s polling. Zoom is preserved; only the centre changes. Manually dragging the map turns Follow off automatically, so panning around to look at something never fights the auto-centre. As of v3.14.0 this also covers the two other map-navigation gestures: <em>right-mouse drag</em> (the universal map-pan affordance) and the <em>Shift+drag zoom rectangle</em>. State persists across sessions.<br/><br/>
 
             <strong>📍 Shift-click to pick an aircraft icon</strong> (v2.77.0+) &mdash; Shift-clicking the Follow A/C button opens a small picker with four silhouettes: <em>Airliner</em>, <em>Prop</em>, <em>Helicopter</em>, and <em>Business Jet</em>. Click any tile to switch the live-aircraft marker icon instantly &mdash; the change applies the moment you click and persists across sessions. All four icons are hand-rolled inline SVG so they stay crisp at every zoom and rotate cleanly to the live heading; the Helicopter uses a rotor-disc circle so it reads correctly at any heading.<br/><br/>
 
@@ -33099,14 +33150,14 @@ function rgSendToFlightPlanner() {
             <strong>Folder scan</strong> (Chrome/Edge only): click <strong>📂 Scan folder</strong>, point at your MSFS Community or X-Plane Custom Scenery folder, and the app detects airport codes from add-on subfolder names. A checkbox preview lets you confirm before importing.<br/><br/>
             <strong>Scenery config import</strong> (⋯ menu): import an X-Plane <code>scenery_packs.ini</code> or MSFS/P3D <code>scenery.cfg</code> directly — same checkbox preview as the folder scan. You can also <strong>drag and drop</strong> any of these files (or a <code>.json</code> backup) straight onto the modal.<br/><br/>
             <strong>FS Addon Compare import</strong> (⋯ menu): select a <code>.har</code> file captured from the FS Addon Compare website. Open FS Addon Compare → My Library in Chrome/Edge, open DevTools (F12) → Network tab, reload the page, then export and save as HAR.<br/><br/>
-            <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Export JSON / Import JSON. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
+            <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
             <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
             <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
             <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button in the Scenery Library footer to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort. Click a developer row to expand or collapse their airport list; click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer.<br/><br/>
-            The library is stored in your browser&rsquo;s <code>localStorage</code>. Closing the panel after making changes prompts you to <strong>💾 Download &amp; Close</strong> to save a backup. Use <strong>Export JSON</strong> (⋯ menu) to back up or transfer to another machine at any time.
+            The library is stored in your browser&rsquo;s <code>localStorage</code>. Closing the panel after making changes prompts you to <strong>💾 Download &amp; Close</strong> to save a backup. Use <strong>💾 Save Scenery Library</strong> (⋯ menu) to back up or transfer to another machine at any time; <strong>📂 Load Scenery Library</strong> reads a backup file back in (merging into your existing entries). When you open the modal with unsaved changes, airports you touched this session (added, rated, or had their store / developer edited) float to the top of the list under the current sort — so the rows you just shift-clicked or right-click-rated on the map are right where you need them to fill in store / developer metadata.
           </div>
         </div>
       </div>
@@ -33306,10 +33357,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.14.0</span>
+          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Follow A/C now also cancels on right-mouse drag and on the Shift+drag zoom rectangle.</strong> Previously only Leaflet's left-drag pan cancelled Follow mode, which felt inconsistent with the other two map-navigation gestures available everywhere in the region map. Right-drag fires the cancel the moment the drag exceeds the 3-pixel threshold (a pure right-click — used to open the Quick-Rate popover or cancel a region draw — does not trip it). The Shift+drag zoom rectangle cancels on <code>boxzoomstart</code>, the moment the user begins the box. Both mirror the existing left-drag behaviour: panning or zooming to look around never fights the auto-centre.</li>
+          <li><strong>Scenery Library — Save / Load renamed and grouped at the top of the ⋯ menu.</strong> "Export JSON" is now <strong>💾 Save Scenery Library</strong>, "Import JSON" is now <strong>📂 Load Scenery Library</strong>, and the two are adjacent at the top of the menu so the back-up workflow reads naturally. The remaining import-from-foreign-format options (📥 FS Addon Compare, Import scenery config) sit below them, with Clear all unchanged at the bottom. The 💾 icon matches the Save button in the bottom unsaved-changes banner.</li>
+          <li><strong>Scenery Library — airports you touched this session float to the top of the list.</strong> When you open the Scenery Library modal with unsaved changes (the ⬤ Scenery button is glowing yellow), every airport you added, rated, or had its store / developer edited this session appears at the top of the list under the current sort. Common workflow: right-click a handful of map dots to set their star ratings, then open the modal to fill in Store / Developer info — those rows are now waiting at the top instead of being scattered alphabetically. A new <code>_slDirtyIcaos</code> set is populated at every mutation site and cleared on Save, Load, or Clear all so the float-to-top behaviour only applies to genuinely-unsaved edits.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.13.1</span>
-          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-date">June 4, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -43135,10 +43200,10 @@ function rgSendToFlightPlanner() {
           <div class="sl-overflow-wrap">
             <button class="sl-action-btn" onclick="_slToggleOverflow()" title="More options">⋯</button>
             <div class="sl-overflow-menu" id="slOverflowMenu">
+              <button class="sl-overflow-item" onclick="_slExportJson();document.getElementById('slOverflowMenu').classList.remove('open')" title="Download a JSON backup of your Scenery Library">💾 Save Scenery Library</button>
+              <button class="sl-overflow-item" onclick="_slImportJson();document.getElementById('slOverflowMenu').classList.remove('open')" title="Load a JSON backup back into your Scenery Library (merges into existing entries)">📂 Load Scenery Library</button>
               <button class="sl-overflow-item" onclick="_slFsacImport();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import from FS Addon Compare .har file">📥 FS Addon Compare</button>
-              <button class="sl-overflow-item" onclick="_slImportJson();document.getElementById('slOverflowMenu').classList.remove('open')">Import JSON</button>
               <button class="sl-overflow-item" onclick="_slImportSceneryFile();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import X-Plane scenery_packs.ini or MSFS scenery.cfg">Import scenery config</button>
-              <button class="sl-overflow-item" onclick="_slExportJson();document.getElementById('slOverflowMenu').classList.remove('open')">Export JSON</button>
               <button class="sl-overflow-item sl-overflow-danger" onclick="_slClearAll();document.getElementById('slOverflowMenu').classList.remove('open')">Clear all</button>
             </div>
           </div>
