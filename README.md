@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.14.0**
+**Current version: v3.14.1**
 
 ---
 
@@ -217,7 +217,7 @@ Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC n
 No cloud round-trip, no API tokens, no handshakes that can silently fail. Position data travels straight from your sim to your browser over loopback. Browsers exempt `localhost` from mixed-content blocking (W3C "potentially trustworthy" rule), so the local WebSocket works even though the app itself is served over HTTPS.
 
 ### 📍 Follow A/C — keep the map centred on your aircraft
-While a live source is active, a **📍 Follow A/C** button appears next to the FSUIPC toggle. Click it to lock the map onto the aircraft — every position update smooth-pans the view (0.8 s tween) so the plane stays centred without jitter. Zoom is preserved; only the centre moves. Manually dragging the map turns Follow off automatically, so panning to look at something never fights the auto-centre. As of v3.14.0 the cancel also covers the two other map-navigation gestures: **right-mouse drag** (the universal map-pan affordance) and the **Shift+drag zoom rectangle**. Your follow preference persists across sessions.
+While a live source is active, a **📍 Follow A/C** button appears next to the FSUIPC toggle. Click it to lock the map onto the aircraft — every position update smooth-pans the view (0.8 s tween) so the plane stays centred without jitter. Zoom is preserved; only the centre moves. Manually dragging the map turns Follow off automatically, so panning to look at something never fights the auto-centre. As of v3.14.0 the cancel also covers the two other map-navigation gestures: **right-mouse drag** (the universal map-pan affordance) and the **Shift+drag zoom rectangle**. Your follow preference persists across sessions. As of v3.14.1 the same toggle is also available as a **📍 pushpin button on the bottom data panel** (immediately to the left of the ⚙ options menu) — handy for flipping Follow on or off without opening the 🔌 Live pulldown. The pushpin lights cyan when Follow is on; both buttons stay in sync.
 
 **Pick an aircraft icon** — either Shift-click the 📍 Follow A/C button or use the **✈ Aircraft Icon…** row inside the **🔌 Live** pulldown. The picker offers four hand-rolled silhouettes: **Airliner**, **Prop**, **Helicopter**, and **Business Jet**. Click any tile to apply instantly; the change persists across sessions. The Helicopter silhouette uses a rotor-disc circle so it reads correctly at every heading.
 

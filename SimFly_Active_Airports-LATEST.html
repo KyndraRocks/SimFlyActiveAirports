@@ -5684,6 +5684,27 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .afk-dp-gear:hover { color:var(--accent); border-color:var(--accent); transform:rotate(35deg); }
   body.light-mode .afk-dp-gear { color:#5a6878; border-color:rgba(0,0,0,0.2); }
   #afkDataPanel.collapsed .afk-dp-gear { display:none; }
+  /* v3.14.1 — Follow A/C pushpin on the data panel. Sits immediately to the
+     left of the ⚙ gear button (HTML insertion order + flex layout). Modelled
+     on .afk-dp-gear (same size, same idle colours) so the trio reads as one
+     control group; .active state lights it cyan when Follow is on (mirrors
+     the Live-menu Follow button's active treatment). Hidden when the data
+     panel is collapsed (matching the gear) and when no live source is
+     active (matching the Live-menu button). */
+  .afk-dp-follow {
+    flex-shrink:0;
+    background:none; border:1px solid rgba(255,255,255,0.18);
+    color:#8090a8; cursor:pointer;
+    width:24px; height:24px; border-radius:4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.95rem; padding:0; line-height:1;
+    transition:color 0.12s, border-color 0.12s, background 0.12s;
+    margin-right:0.3rem;
+  }
+  .afk-dp-follow:hover { color:var(--accent); border-color:var(--accent); }
+  .afk-dp-follow.active { color:var(--accent); border-color:var(--accent); background:rgba(0,200,255,0.18); }
+  body.light-mode .afk-dp-follow { color:#5a6878; border-color:rgba(0,0,0,0.2); }
+  #afkDataPanel.collapsed .afk-dp-follow { display:none; }
   /* Show/hide menu popover */
   .afk-dp-menu {
     position:absolute;
@@ -6404,7 +6425,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.14.0';
+const APP_VERSION = '3.14.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10749,6 +10770,18 @@ function _liveAcUpdateFollowBtn() {
     dbtn.title = _liveAcFollow
       ? 'Map is following the demo aircraft — click to stop'
       : 'Center and pan the map with the demo aircraft';
+  }
+  // v3.14.1 — Third home for the Follow toggle: the 📍 pushpin on the data
+  // panel, sitting just to the left of the ⚙ options menu. Shown only when
+  // a live source is active (same gate as the Live-menu button); .active
+  // state lights it cyan so the on/off state is unmistakable at a glance.
+  const dpBtn = document.getElementById('afkDpFollowBtn');
+  if (dpBtn) {
+    dpBtn.style.display = _liveAcSource ? '' : 'none';
+    dpBtn.classList.toggle('active', _liveAcFollow);
+    dpBtn.title = _liveAcFollow
+      ? 'Following the aircraft — click to stop'
+      : 'Click to follow the live aircraft as it moves';
   }
 }
 
@@ -32945,7 +32978,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Why FSUIPC?</strong> No cloud round-trip, no API tokens, no handshakes that can silently fail, no SimFly infrastructure. Position data travels straight from your sim to your browser over loopback. Browsers exempt <code>localhost</code> from mixed-content blocking (W3C &ldquo;potentially trustworthy&rdquo; rule), so the local WebSocket works even though AA itself is served over HTTPS.<br/><br/>
 
-            <strong>📍 Follow A/C button</strong> &mdash; while a live source (FSUIPC or STKP) is active, a <strong>📍 Follow A/C</strong> button appears next to the source button. Click it to lock the map onto the aircraft &mdash; every position update smooth-pans the view (Leaflet's animated <code>panTo</code>, 400&nbsp;ms tween) so the plane stays centred without jitter on either FSUIPC's 100&nbsp;ms cadence or STKP's 10&nbsp;s polling. Zoom is preserved; only the centre changes. Manually dragging the map turns Follow off automatically, so panning around to look at something never fights the auto-centre. As of v3.14.0 this also covers the two other map-navigation gestures: <em>right-mouse drag</em> (the universal map-pan affordance) and the <em>Shift+drag zoom rectangle</em>. State persists across sessions.<br/><br/>
+            <strong>📍 Follow A/C button</strong> &mdash; while a live source (FSUIPC or STKP) is active, a <strong>📍 Follow A/C</strong> button appears next to the source button. Click it to lock the map onto the aircraft &mdash; every position update smooth-pans the view (Leaflet's animated <code>panTo</code>, 400&nbsp;ms tween) so the plane stays centred without jitter on either FSUIPC's 100&nbsp;ms cadence or STKP's 10&nbsp;s polling. Zoom is preserved; only the centre changes. Manually dragging the map turns Follow off automatically, so panning around to look at something never fights the auto-centre. As of v3.14.0 this also covers the two other map-navigation gestures: <em>right-mouse drag</em> (the universal map-pan affordance) and the <em>Shift+drag zoom rectangle</em>. State persists across sessions. As of v3.14.1 the same toggle is also available as a 📍 pushpin button on the data panel (immediately to the left of the ⚙ options menu) — handy when the Live menu is collapsed and you want to flip Follow on or off without opening it.<br/><br/>
 
             <strong>📍 Shift-click to pick an aircraft icon</strong> (v2.77.0+) &mdash; Shift-clicking the Follow A/C button opens a small picker with four silhouettes: <em>Airliner</em>, <em>Prop</em>, <em>Helicopter</em>, and <em>Business Jet</em>. Click any tile to switch the live-aircraft marker icon instantly &mdash; the change applies the moment you click and persists across sessions. All four icons are hand-rolled inline SVG so they stay crisp at every zoom and rotate cleanly to the live heading; the Helicopter uses a rotor-disc circle so it reads correctly at any heading.<br/><br/>
 
@@ -33359,8 +33392,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.14.0</span>
+          <span class="release-version">v3.14.1</span>
           <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>📍 Follow A/C pushpin added to the data panel.</strong> A new 📍 button sits on the bottom data panel immediately to the left of the ⚙ options menu, giving a third entry point for toggling Follow A/C without having to open the 🔌 Live pulldown. The button only appears while a live source is active (matching the Live-menu Follow button) and hides when the data panel is collapsed (matching the ⚙ menu). It lights cyan when Follow is on so the state is unmistakable at a glance, and the existing state machinery in <code>_liveAcUpdateFollowBtn</code> keeps all three buttons (Live menu, demo bar, data panel) in sync without any extra plumbing.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.14.0</span>
+          <span class="release-date">June 4, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -44044,6 +44089,7 @@ function rgSendToFlightPlanner() {
            from the user's saved config (LS-backed). Each field carries the
            stable id afkDpXxx that _afkUpdateDataPanel writes values into. -->
       <div class="afk-dp-sections" id="afkDataPanelSections"></div>
+      <button class="afk-dp-follow" id="afkDpFollowBtn" onclick="_liveAcToggleFollow(event)" title="Follow the live aircraft as it moves" style="display:none;">📍</button>
       <button class="afk-dp-gear" id="afkDpGearBtn" onclick="_afkDpToggleMenu(event)" title="Customise the data panel — show / hide fields, add spacers, drag to reorder">⚙</button>
       <button class="afk-dp-toggle" id="afkDpToggleBtn" onclick="_afkToggleDataPanel()" title="Collapse / expand data panel">⏷</button>
       <!-- Show/hide menu popover. Hidden until ⚙ is clicked. -->
