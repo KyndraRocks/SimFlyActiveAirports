@@ -6404,7 +6404,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.13.0';
+const APP_VERSION = '3.13.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9076,7 +9076,16 @@ let _aaRtToastTmr      = null;
 let _aaRtToastDeadline = 0;
 function _aaRtToastDismiss() {
   const el = document.getElementById('aaRtToast');
-  if (el) el.style.opacity = '0';
+  if (el) {
+    el.style.opacity = '0';
+    // v3.13.1 — the toast was created with pointer-events:auto (so it
+    // accepts the click-to-dismiss gesture). Resetting it here is what
+    // keeps an invisible faded-out toast from eating clicks meant for the
+    // data-panel ⚙/⏷ buttons that sit directly behind it in the bottom-
+    // right corner. Without this reset the buttons stay unresponsive even
+    // after the toast looks gone.
+    el.style.pointerEvents = 'none';
+  }
   if (_aaRtToastTmr) { clearTimeout(_aaRtToastTmr); _aaRtToastTmr = null; }
   _aaRtToastDeadline = 0;
 }
@@ -9103,11 +9112,22 @@ function _aaRtToast(msg, kind) {
 // the auto-dismiss timer/CSS-transition got throttled or paused. When the
 // page becomes visible again, if the 4 s lifetime has already elapsed,
 // force-dismiss so the toast doesn't sit there forever.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && _aaRtToastDeadline && Date.now() >= _aaRtToastDeadline) {
+//
+// v3.13.1 — visibilitychange fires only when the TAB's visibility flips
+// (switching tabs in the browser). It does NOT fire when the browser
+// WINDOW loses or regains OS-level focus while the AA tab stays the
+// active tab — the common case while the user alt-tabs to MSFS / FSUIPC
+// to set them up. The window 'focus' event covers that case, so a stuck
+// post-deadline toast clears the moment focus comes back to AA.
+function _aaRtToastMaybeAutoDismiss() {
+  if (_aaRtToastDeadline && Date.now() >= _aaRtToastDeadline) {
     _aaRtToastDismiss();
   }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _aaRtToastMaybeAutoDismiss();
 });
+window.addEventListener('focus', _aaRtToastMaybeAutoDismiss);
 
 async function _addPilotsToRecipGist(newPilots, pat) {
   // Inbox stamp first — survives every gist failure mode and reaches RT
@@ -33286,10 +33306,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.13.1</span>
+          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>FSUIPC connection toast no longer blocks the data-panel ⚙ and ⏷ buttons.</strong> Two related bugs fixed together. <em>(1)</em> The toast at the bottom-right of the map paints directly over the data panel's settings (⚙) and collapse (⏷) buttons. After the toast was dismissed (or faded out) it left behind an invisible click-eater because <code>pointer-events</code> was never reset from <code>auto</code> back to <code>none</code>; the buttons stayed unresponsive even when the toast looked gone. The dismiss path now resets <code>pointer-events</code> alongside opacity. <em>(2)</em> The v3.12.0 auto-dismiss safety net used <code>visibilitychange</code>, which fires only when the browser TAB visibility changes — switching tabs in the browser. It does NOT fire when the browser WINDOW loses or regains OS focus while the AA tab stays the active tab. That's the common case while you're alt-tabbing to MSFS or FSUIPC during sim setup, so the auto-resume reconnect toast could sit there forever waiting for a tab-visibility event that never came. Added a parallel <code>window.focus</code> listener that runs the same past-deadline check, so a stuck toast clears the moment AA regains OS focus.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.13.0</span>
-          <span class="release-date">June 4, 2026 &middot; Current</span>
+          <span class="release-date">June 4, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
