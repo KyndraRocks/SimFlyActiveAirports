@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.14.1**
+**Current version: v3.15.4**
 
 ---
 
@@ -17,10 +17,10 @@ Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFl
 ## Features
 
 ### Loading Splash
-On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of each component as it loads — the airport database, region names, runways, airport categories, the aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. On a fast connection the names flick by too quickly to read; that's expected. The splash fades away on its own once everything is ready, and a built-in safety timeout dismisses it even if a data source is slow or unreachable, so it can never trap you on the loading screen.
+On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of each component as it loads — the airport database, region names, runways, airport categories, the aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. On a fast connection the names flick by too quickly to read; that's expected. The splash fades away on its own once everything is ready, and a built-in safety timeout dismisses it even if a data source is slow or unreachable, so it can never trap you on the loading screen. The app version number is shown beneath the title text on the splash (v3.15.2+).
 
 ### Startup Choice — Owner View or Explore Map
-After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'd like to do. **Show airports by Owner** takes you to the classic distance matrix — pick this when you already know which pilots own the airports you want for departure and arrival. **Explore map** opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking live flights, and setting up in-flight alerts. A small *Skip* link (or pressing **Esc**) dismisses the choice and drops you on the matrix. The choice is **bypassed automatically** when Recip Tracker or Relationship Manager Lite launches AA with a specific intent: a `dep` / `arr` / `depOwner` / `arrOwner` URL parameter sends you straight to the matrix with the route prefilled, and a `pilots=` parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters — so cross-app shortcuts still go direct.
+After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'd like to do. **Show airports by Owner** takes you to the classic distance matrix — pick this when you already know which pilots own the airports you want for departure and arrival. **Explore map** opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking live flights, and setting up in-flight alerts. A small *Skip* link (or pressing **Esc**) dismisses the choice and drops you on the matrix. The choice is **bypassed automatically** when Recip Tracker or Relationship Manager Lite launches AA with a specific intent: a `dep` / `arr` / `depOwner` / `arrOwner` URL parameter sends you straight to the matrix with the route prefilled, and a `pilots=` parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters — so cross-app shortcuts still go direct. The app version number is shown beneath the heading on the choice screen (v3.15.3+).
 
 ### Point-to-Point Distance
 Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click. Typing a valid owned ICAO auto-selects that pilot's owner entry in the matrix dropdowns.
@@ -126,9 +126,17 @@ The map includes a **📐 Measurement** ruler — click **📐 Measurement** in 
 **Matrix honors every map filter** — every visibility filter that controls the dot layer (country, region / state, continent, pinned, exclusion sets, scenery toggle, scenery developer, payout threshold, star rating, global category) also gates which airports appear in the region matrix. The matrix and the dot layer go through a single chokepoint, so an airport hidden on the map can never show up in the matrix. Changing any filter while regions are drawn re-filters the matrix live alongside the dots.
 
 ### New Airports
-Airports added to SimFly within the last **30 days** are highlighted on the map with a pulsing magenta ring and a **✦ New Airport** banner in their tooltip. The ring is a slow 6-second radar-sweep animation — noticeable but not distracting.
+Airports recently added to SimFly are highlighted on the map with a pulsing ring and a **✦ New Airport** banner in their tooltip. The default window is **14 days** with a **magenta** ring, but all display settings are configurable.
 
-The ring disappears automatically once the airport is more than 30 days old — no manual upkeep needed. To hide the indicators, open the **🛠 Tools** menu and click **✦ Display New Airports** (the item only appears when new airports are present).
+**Left-click ✦ Display New Airports** in the **🛠 Tools** menu to show or hide the indicators (the item only appears when new airports are present). **Right-click** the same button to open the display options panel:
+
+- **Color** — 8 preset swatches (magenta, cyan, orange, green, red, yellow, purple, white) plus a custom color picker.
+- **Pulse Duration** — a 1–30 s slider labeled Fast ↔ Slow; the default is 6 s.
+- **New Within** — how many days an airport counts as new (1–365, drag up/down to scrub; default 14).
+- **Preview** — a live dot-and-ring animation updates in real time as you adjust settings. Click the preview box to cycle between black, white, and 18% gray backgrounds to check contrast at a glance.
+- **Reset Defaults** restores all settings to the original 14-day, 6 s, magenta configuration.
+
+All settings persist in browser storage. The ring disappears automatically once an airport ages past the configured window — no manual upkeep needed.
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.
