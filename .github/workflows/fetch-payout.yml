@@ -96,7 +96,17 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "chore: payout data $(date -u '+%Y-%m-%d %H:%M UTC')"
-            git push
+            # Retry-with-rebase: a manual push (e.g. RT/AA delivery) may land
+            # between checkout and push. payout-data.json is regenerated fresh
+            # each run (with first_seen preserved from the on-disk snapshot),
+            # so rebasing our one commit on top is always safe.
+            for i in 1 2 3; do
+              if git push; then exit 0; fi
+              echo "Push rejected (attempt $i) — pulling with rebase and retrying."
+              git pull --rebase origin main
+            done
+            echo "Push still failing after 3 attempts." >&2
+            exit 1
           fi
 
       - name: Update owner and category Gists
