@@ -7453,7 +7453,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.21';
+const APP_VERSION = '3.19.22';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31123,7 +31123,20 @@ function _rgSyncNewAirportsButtons() {
   if (mobileBtn) mobileBtn.classList.toggle('active', _rgNewAirportsVisible);
 }
 
+// v3.19.22 — timestamp of the most recent settings-modal open. Used to suppress
+// the click event that follows a long-press on the mobile New Airports button.
+// On iOS Safari + Android Chrome, a long-press fires `contextmenu` (which opens
+// the settings modal) and is then followed by a synthesised `click` when the
+// user lifts their finger — which would also fire _rgToggleNewAirports and
+// invert visibility, on top of opening the settings. The check below bails out
+// of the toggle if the modal opened within the last 600 ms.
+let _rgNewAirportsSettingsTs = 0;
+
 function _rgToggleNewAirports() {
+  if (Date.now() - _rgNewAirportsSettingsTs < 600) {
+    _rgNewAirportsSettingsTs = 0;
+    return;
+  }
   _rgNewAirportsVisible = !_rgNewAirportsVisible;
   if (_rgPulseLayer) {
     if (_rgNewAirportsVisible) _rgPulseLayer.addTo(_rgMap);
@@ -31177,6 +31190,9 @@ function _rgRebuildNewAirports() {
 }
 function _rgNewAirportSettingsModal(e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
+  // v3.19.22 — stamp so the synthesised click that follows a mobile long-press
+  // can be suppressed in _rgToggleNewAirports (see comment there).
+  _rgNewAirportsSettingsTs = Date.now();
   _rgCloseAnyPulldown();
   const existing = document.getElementById('rgNewApModal');
   if (existing) { existing.remove(); return; }
@@ -35008,8 +35024,23 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.21</span>
+          <span class="release-version">v3.19.22</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Long-press on the mobile New Airports button now opens the color / pulse-rate / days settings.</strong> The desktop dropdown row has always supported right-click to open <em>New Airport Display Settings</em> (color, pulse rate, days threshold). When v3.19.17 promoted New Airports to a direct mobile toggle, the right-click handler wasn&rsquo;t carried over &mdash; long-press is the standard mobile equivalent of right-click. v3.19.22 adds <code>oncontextmenu="_rgNewAirportSettingsModal(event)"</code> to the mobile button; both iOS Safari and Android Chrome fire <code>contextmenu</code> after a ~500&ndash;700 ms hold, so the settings modal opens on long-press just like right-click does on desktop.</li>
+          <li><strong>Click-after-long-press is suppressed.</strong> After a long-press fires <code>contextmenu</code> and the modal opens, the user lifts their finger and the browser synthesises a <code>click</code> event &mdash; which would otherwise also fire <code>_rgToggleNewAirports</code> and invert visibility on top of opening settings. A small timestamp-based guard (<code>_rgNewAirportsSettingsTs</code>) is stamped inside <code>_rgNewAirportSettingsModal</code> and checked at the top of <code>_rgToggleNewAirports</code>: if the modal opened within the last 600 ms, the toggle bails out. Net effect: long-press = settings modal opens, visibility unchanged; tap = toggle on/off.</li>
+          <li><strong>Button title updated</strong> to surface the new affordance: &ldquo;Tap to toggle pulse indicators &middot; Long-press for color / pulse-rate / days settings.&rdquo; The title shows in browser hover-tip on devices that expose it.</li>
+          <li><strong>Pure JS / HTML edit; no CSS change; affects mobile only.</strong> Desktop right-click behaviour on the dropdown row is unchanged.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.21</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -45986,8 +46017,16 @@ function rgSendToFlightPlanner() {
              a dropdown for one item is silly, so this button promotes it to
              a direct toggle in the right band's display-toggle cluster
              (Payout / Rating / New / Scenery). The whole .rg-hdr-left band
-             (which held the Tools button) is hidden on mobile. -->
-        <button class="rg-btn rg-mobile-only" id="rgMobileNewAirportsBtn" onclick="_rgToggleNewAirports()" title="Toggle pulse indicators on recently-added airports" tabindex="-1">✦ <span class="rg-btn-label">New</span></button>
+             (which held the Tools button) is hidden on mobile.
+             v3.19.22 — oncontextmenu fires on long-press on iOS Safari and
+             Android Chrome, giving us the mobile equivalent of the desktop
+             right-click → settings flow. The click-after-long-press is
+             suppressed by a timestamp guard inside _rgToggleNewAirports. -->
+        <button class="rg-btn rg-mobile-only" id="rgMobileNewAirportsBtn"
+                onclick="_rgToggleNewAirports()"
+                oncontextmenu="_rgNewAirportSettingsModal(event)"
+                title="Tap to toggle pulse indicators · Long-press for color / pulse-rate / days settings"
+                tabindex="-1">✦ <span class="rg-btn-label">New</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
           <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤<span class="rg-sl-mode-text">Scenery</span></span>
