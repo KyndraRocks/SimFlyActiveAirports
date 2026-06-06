@@ -7120,12 +7120,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        elements when recomputing the map area on each frame. */
     #regionModal { contain: layout paint; }
 
-    /* The pulsing "new airport" ring is decorative; on mobile we
-       trade it off for smoother pan. The colored dot itself still
-       indicates new airports — the pulse was only an
-       attention-getter. (The dot's color, the ★ glyph, and the
-       breadcrumb chip are all preserved.) */
-    .aa-new-ring { animation: none !important; }
+    /* The pulsing "new airport" ring is decorative; v3.19.14
+       suppressed it on mobile (`animation: none !important`) to
+       reclaim per-frame compositor work during pan. v3.19.24
+       reverts that — users reported the cycling disappearing on
+       mobile especially after opening the New Airports settings
+       modal, and `animation-play-state: running !important` is
+       added as a belt to defeat any browser heuristic that pauses
+       animations while a heavy overlay is active. The two other
+       v3.19.14 perf fixes (compositor promotion + paint
+       containment) remain in place and were the bigger wins. */
+    .aa-new-ring {
+      animation-play-state: running !important;
+      will-change: transform;
+    }
 
     /* ── v3.19.15 ─────────────────────────────────────────────────
        Release notes / help modal scroll performance. The release
@@ -7487,7 +7495,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.23';
+const APP_VERSION = '3.19.24';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -35072,8 +35080,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.23</span>
+          <span class="release-version">v3.19.24</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Airports pulse animation restored on mobile.</strong> v3.19.14 suppressed the <code>.aa-new-ring</code> CSS animation on mobile via <code>animation: none !important</code> as part of a map-pan smoothness pass &mdash; the rationale was that the per-frame compositor work could chunk up scroll on slower phones. After v3.19.22 restored long-press access to the New Airports settings modal, users reported that the pulse cycling stopped entirely on the map once that modal had been opened. v3.19.24 reverts the disable: the animation runs on mobile again, and <code>animation-play-state: running !important</code> is added as a belt against any browser heuristic (some iOS Safari versions, some Android low-power modes) that might pause animations while a heavy overlay covers the page. <code>will-change: transform</code> on the ring elements puts each one on its own compositor layer so the pan-smoothness cost the original v3.19.14 fix was trying to avoid is mitigated a different way.</li>
+          <li><strong>The two bigger v3.19.14 perf fixes remain.</strong> <code>#rgMapContainer</code> still gets <code>will-change: transform</code> + <code>transform: translateZ(0)</code> for GPU compositor promotion, and <code>#regionModal</code> still has <code>contain: layout paint</code> for paint isolation. Those were the bigger wins for pan smoothness; only the pulse-suppression part is reverted.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.23</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
