@@ -6910,6 +6910,38 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        attention-getter. (The dot's color, the ★ glyph, and the
        breadcrumb chip are all preserved.) */
     .aa-new-ring { animation: none !important; }
+
+    /* ── v3.19.15 ─────────────────────────────────────────────────
+       Release notes / help modal scroll performance. The release
+       notes modal accumulates an entry per delivered version —
+       150+ blocks with rich text, <code> spans, lists. On a phone
+       that's a huge DOM to keep in the compositor budget while
+       scrolling, and users reported the release notes modal in
+       particular as painful to scroll (the help modal felt OK
+       after v3.19.14's containment work). content-visibility:auto
+       defers paint + layout for elements that aren't on screen —
+       browsers skip work entirely until each block scrolls into
+       view. The contain-intrinsic-size hint gives the browser a
+       reasonable placeholder size so the scrollbar position
+       doesn't jump as items render or de-render. */
+
+    /* Paint containment on the modal body itself so scrolling
+       doesn't trigger work outside the modal. */
+    .modal-body { contain: layout paint; }
+
+    /* Off-screen release entries: skip paint + layout. */
+    #releaseModal .release {
+      content-visibility: auto;
+      contain-intrinsic-size: 0 400px;
+    }
+
+    /* Same treatment for help feature sections. The help modal
+       feels OK already but the same hint costs nothing and helps
+       on older / slower phones. */
+    #helpModal .help-feature {
+      content-visibility: auto;
+      contain-intrinsic-size: 0 200px;
+    }
   }
 
   @media (max-width: 480px) {
@@ -7239,7 +7271,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.14';
+const APP_VERSION = '3.19.15';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34776,8 +34808,25 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.14</span>
+          <span class="release-version">v3.19.15</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Release notes modal &mdash; smooth scroll on mobile via <code>content-visibility</code>.</strong> User feedback after v3.19.14: the help modal feels smooth now, but the release notes modal is &ldquo;painful&rdquo; to scroll. Diagnosis: every delivered version since v2.x has a release entry, ~150 rich-text blocks with <code>&lt;code&gt;</code> spans, lists, <code>&lt;em&gt;</code>/<code>&lt;strong&gt;</code> markup &mdash; all rendered into the DOM when the modal opens. That&rsquo;s a huge amount of compositor work for a phone to keep track of while scrolling.</li>
+          <li><strong>The fix:</strong> apply <code>content-visibility: auto</code> + <code>contain-intrinsic-size: 0 400px</code> to each <code>.release</code> block on mobile. <code>content-visibility: auto</code> is a modern CSS property that tells the browser &ldquo;skip painting and layout for this element when it&rsquo;s off screen; render it just in time as it scrolls into view.&rdquo; The intrinsic-size hint gives the browser a placeholder height so the scrollbar stays in the right position and entries don&rsquo;t cause layout jumps when they render or de-render.</li>
+          <li><strong>Browser support:</strong> iOS Safari 18+ (Sept 2024), Android Chrome since 2020, all modern desktop browsers. On older Safari / older Chrome the property is gracefully ignored &mdash; the modal renders as before, no regression. Users on iOS&nbsp;18+ get a dramatic scroll-perf improvement; users on iOS&nbsp;17 and earlier see the same behaviour they had before.</li>
+          <li><strong>Same treatment for <code>#helpModal .help-feature</code> blocks.</strong> The help modal feels OK already after v3.19.14&rsquo;s paint-containment work, but the same hint costs nothing and helps on older / slower phones.</li>
+          <li><strong>Also added <code>contain: layout paint</code> on <code>.modal-body</code></strong> on mobile so scrolling inside the modal doesn&rsquo;t trigger layout / paint work outside it. Pairs naturally with the <code>content-visibility</code> change.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) renders both modals exactly as before. No <code>content-visibility</code>, no <code>contain</code> &mdash; the desktop CSSOM is byte-identical to v3.19.14.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.14</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
