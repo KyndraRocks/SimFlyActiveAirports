@@ -6770,6 +6770,74 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       margin: 0.1rem 0 !important;
       padding: 0.4rem 1.1rem !important;
     }
+
+    /* ── v3.19.12 ─────────────────────────────────────────────────
+       Finger-friendly tap targets across the map header + main
+       screen action buttons, and a fix for the help / release
+       notes modals stuttering with horizontal scroll. */
+
+    /* (ee) Map header category circles + neighbours. v3.19.3 sized
+       circles at 1.55 rem (~25 px) so all 11 items (Map + All +
+       None + 1-7 + Invert) fit one row at 390 px — well below
+       Apple's 44 px HIG and Material's 48 px. Bump to 2.1 rem
+       (~33.6 px) which is much closer to a finger-friendly target;
+       if Invert needs to wrap to a second line that's cleaner than
+       missing taps. */
+    .rg-hdr-center .dist-cat-btn {
+      width: 2.1rem !important;
+      height: 2.1rem !important;
+      font-size: 1rem !important;
+    }
+    .rg-hdr-center .dist-cat-filter-label { font-size: 0.95rem !important; }
+    .rg-hdr-center .rg-cat-acc-btn,
+    .rg-hdr-center .dist-cat-invert-btn {
+      font-size: 0.9rem !important;
+      padding: 0.3rem 0.6rem !important;
+    }
+
+    /* (ff) Map header right band — was shrunk hard in v3.19.4 to
+       fit one row, ended up at 0.75-0.85 rem font with ~24-28 px
+       tap height. Enlarge so each icon button sits at ~36-40 px. */
+    .rg-hdr-right { gap: 0.3rem !important; padding: 0.45rem 0.4rem !important; }
+    .rg-hdr-right .rg-owner-btn {
+      font-size: 0.95rem !important;
+      padding: 0.45rem 0.7rem !important;
+    }
+    .rg-hdr-right .rg-btn {
+      font-size: 1.05rem !important;
+      padding: 0.45rem 0.6rem !important;
+    }
+
+    /* (gg) Main screen Map / Help / Reset action buttons —
+       inline-styled at 0.78 rem font with 0.25 rem 0.7 rem
+       padding (~20 px tall). Enlarge to 1 rem font + 0.5 rem
+       0.85 rem padding so they read as proper tappable actions.
+       Selector scoped to .dist-sticky-hdr so we don't hit other
+       .btn-action instances elsewhere on the page. The inline
+       styles set background / border-color / color — those stay;
+       we only override font + padding. */
+    .dist-sticky-hdr .btn-action {
+      font-size: 1rem !important;
+      padding: 0.5rem 0.85rem !important;
+    }
+    .dist-sticky-hdr .btn-help { font-size: 1rem !important; }
+
+    /* (hh) Help / release notes modal — stutter + horizontal scroll
+       on phones. Inner content with long unbreakable tokens (URLs,
+       code spans, contiguous ICAOs) was pushing past the modal
+       body's width and creating horizontal overflow. Clip
+       horizontal overflow at the body and force long tokens to
+       wrap inside any descendant. `overflow-wrap: anywhere` is the
+       modern, less-restrictive sibling of `word-break: break-all`;
+       `word-break: break-word` is the legacy fallback that older
+       Safari understood. Together they cover all current browsers. */
+    .modal-body {
+      overflow-x: hidden !important;
+    }
+    .modal-body, .modal-body * {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
   }
 
   @media (max-width: 480px) {
@@ -7099,7 +7167,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.11';
+const APP_VERSION = '3.19.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34629,8 +34697,23 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.11</span>
+          <span class="release-version">v3.19.12</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Finger-friendly tap targets on the map header.</strong> The category-filter circles were 1.55&nbsp;rem (~25&nbsp;px) since v3.19.3 to fit all 11 items on one row at 390&nbsp;px &mdash; well below Apple&rsquo;s 44-px HIG minimum and Material&rsquo;s 48-px guidance. Mobile testing confirmed users couldn&rsquo;t reliably tap the right circle. Bumped to 2.1&nbsp;rem (~33.6&nbsp;px) for a much closer approximation of a real finger-target; if <em>Invert</em> wraps to a second row that&rsquo;s cleaner than missing taps. The right-band buttons (Owner / Payout / Rating / Scenery / Close) were similarly shrunk in v3.19.4 to fit one row; they now sit at ~36-40 px high with larger fonts.</li>
+          <li><strong>Main screen &mdash; <em>Map</em> / <em>Help</em> / <em>Reset</em> buttons enlarged.</strong> Were inline-styled at 0.78&nbsp;rem font with 0.25&nbsp;rem 0.7&nbsp;rem padding (~20&nbsp;px tall). On a phone that&rsquo;s well below a reliable tap target. Mobile now scopes them to <code>1&nbsp;rem</code> font with <code>0.5&nbsp;rem 0.85&nbsp;rem</code> padding (~36-38&nbsp;px tall) so each button reads as a proper tappable action. The selector is scoped to <code>.dist-sticky-hdr .btn-action</code> so other action buttons on other screens aren&rsquo;t affected.</li>
+          <li><strong>Help and release-notes modals &mdash; no more horizontal stutter.</strong> Long unbreakable tokens in modal content (URLs, code spans like <code>simfly_aa_afk_alarms</code>, contiguous ICAOs in feature descriptions) were pushing past the modal body&rsquo;s width and creating a horizontal scroll &mdash; what manifested as the &ldquo;stutter&rdquo; while reading. Mobile now applies <code>overflow-x: hidden</code> to <code>.modal-body</code> and <code>overflow-wrap: anywhere; word-break: break-word</code> to its descendants. The text content reflows cleanly within the viewport with no horizontal scroll. (Vertical scroll is preserved for long content.)</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) is byte-identical to v3.19.11. All overrides are scoped to mobile.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.11</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
