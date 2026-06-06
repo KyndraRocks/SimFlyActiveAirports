@@ -6849,6 +6849,73 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        (between Rating and the Scenery separator). */
     .rg-mobile-only { display: inline-flex !important; }
 
+    /* ── v3.19.18 ─────────────────────────────────────────────────
+       Three minor adjustments after mobile testing:
+       - Inactive category circles weren't dim enough to clearly
+         read as "off" against the active circles.
+       - The ✦ New Airports button used the default .rg-btn cyan
+         accent border for both states, so the OFF state looked
+         like ON.
+       - Shorten "Airport Owners" to "Owners" on mobile to free up
+         enough space in the right band that the ✕ close button
+         can fit on the same row instead of wrapping. */
+
+    /* (nn) Inactive category circles — dim harder and desaturate
+       so the off state reads clearly against the active state.
+       Default .dist-cat-btn sets opacity:0.35 with the rainbow
+       colors still showing; bump down to 0.25 with a grayscale
+       filter so off-circles look genuinely muted. The .active
+       class restores full opacity and saturation. */
+    .rg-hdr-center .dist-cat-btn {
+      opacity: 0.25 !important;
+      filter: grayscale(0.55);
+    }
+    .rg-hdr-center .dist-cat-btn.active {
+      opacity: 1 !important;
+      filter: none;
+    }
+
+    /* (oo) ✦ New Airports button — clearer on/off contrast. The
+       default .rg-btn style uses a cyan-tinted border (var(--border)
+       resolves to a muted blue) and the .active class swaps that for
+       a brighter cyan border + cyan-tinted background. On a phone
+       both states looked similar. Force a clearly neutral off state
+       (gray border, very dim text, mostly-transparent background)
+       and a vivid on state (saturated background + bright border +
+       glow). */
+    .rg-hdr-right #rgMobileNewAirportsBtn {
+      border-color: rgba(255, 255, 255, 0.18) !important;
+      background: rgba(255, 255, 255, 0.04) !important;
+      color: rgba(255, 255, 255, 0.45) !important;
+      opacity: 0.78;
+    }
+    .rg-hdr-right #rgMobileNewAirportsBtn.active {
+      border-color: var(--accent) !important;
+      background: rgba(0, 200, 255, 0.22) !important;
+      color: var(--accent) !important;
+      opacity: 1;
+      box-shadow: 0 0 8px rgba(0, 200, 255, 0.45);
+    }
+    body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn {
+      border-color: rgba(0, 0, 0, 0.18) !important;
+      background: rgba(0, 0, 0, 0.04) !important;
+      color: rgba(0, 0, 0, 0.45) !important;
+    }
+    body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn.active {
+      border-color: var(--accent) !important;
+      background: rgba(0, 120, 180, 0.18) !important;
+      color: var(--accent) !important;
+      box-shadow: 0 0 8px rgba(0, 120, 180, 0.4);
+    }
+
+    /* (pp) Shorten "Airport Owners" to "Owners" on mobile. The
+       "Airport " prefix is wrapped in <span class="aa-owner-prefix">
+       in the HTML; hiding it here saves ~30-40 px of horizontal
+       space — enough that the ✕ close button can sit on the same
+       row as the rest of the right band instead of wrapping to its
+       own row. */
+    .aa-owner-prefix { display: none; }
+
     /* (ff) Map header right band — was shrunk hard in v3.19.4 to
        fit one row, ended up at 0.75-0.85 rem font with ~24-28 px
        tap height. v3.19.12 enlarged to ~36-40 px. v3.19.16 tightens
@@ -7312,7 +7379,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.17';
+const APP_VERSION = '3.19.18';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34852,10 +34919,25 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.18</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Inactive category circles &mdash; clearly off now.</strong> The shared <code>.dist-cat-btn</code> style uses <code>opacity: 0.35</code> for the off state with the rainbow border colours still showing through. On desktop that&rsquo;s a fine contrast; on phones it was easy to mistake a dim-but-still-colourful circle for an active one. Mobile now drops opacity to <code>0.25</code> and adds <code>filter: grayscale(0.55)</code> so off-circles read as visibly muted. Active circles retain full opacity and full saturation so the contrast is unambiguous.</li>
+          <li><strong>✦ New Airports toggle &mdash; obvious on/off contrast.</strong> The default <code>.rg-btn</code> style uses a cyan-tinted border (var(--border)) and the <code>.active</code> class swaps that for a brighter cyan border + cyan-tinted background. On a phone both states looked similar and the bright border made the OFF state look like ON. Mobile now forces a clearly neutral off state (gray border, dim text, mostly-transparent background) and a vivid on state (saturated background + bright border + glow). Light mode gets an equivalent neutral-vs-saturated treatment.</li>
+          <li><strong>Close ✕ button now fits on the same row as the rest of the right band.</strong> The <em>Airport Owners</em> button label has been split: &ldquo;Airport&nbsp;&rdquo; is now wrapped in a <code>&lt;span class="aa-owner-prefix"&gt;</code>, and that span is hidden on mobile. The button reads &ldquo;Owners ▾&rdquo; on phones, &ldquo;Airport Owners ▾&rdquo; on desktop. The ~30-40 px saved is exactly enough to bring the ✕ close button onto the same row as Owners + 🎨 + 💰 + ⭐ + ✦ + sep + ● + ⚙, eliminating the standalone bottom row. Right band collapses from 2 rows to 1.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop sees no change &mdash; the Owner button still reads &ldquo;Airport Owners&rdquo;, the category circles use the original 0.35 / 1.0 opacity contrast, and the New Airports button (which only shows in the Tools dropdown on desktop) uses its existing active-class styling.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.19.17</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -45746,7 +45828,7 @@ function rgSendToFlightPlanner() {
         <div class="rg-owner-wrap">
           <button id="rgMapOwnerBtn" class="rg-owner-btn" onclick="_rgToggleMapOwnerDropdown()"
                   onmouseenter="_rgShowOwnerLegend(this)" onmouseleave="_rgHideOwnerLegend()"
-                  title="Filter airports by owner" tabindex="-1">Airport Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
+                  title="Filter airports by owner" tabindex="-1"><span class="aa-owner-prefix">Airport </span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
           <button id="rgOwnerColorBtn" class="rg-owner-color-btn disabled" onclick="_rgToggleOwnerColorMode()"
                   onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegend()"
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
