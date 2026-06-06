@@ -6875,6 +6875,41 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        absent. */
     .help-feature--pc { display: none !important; }
     .help-mobile-note { display: block; }
+
+    /* ── v3.19.14 ─────────────────────────────────────────────────
+       Map pan smoothness. Phones reported chunky scrolling. The
+       three likely contributors on mobile devices: (1) the map
+       container wasn't promoted to its own compositor layer so
+       each pan forced layer allocation; (2) the modal had no
+       paint containment so sibling page elements were considered
+       during every repaint; (3) the .aa-new-ring decorative pulse
+       animation runs continuously on every "new airport" marker,
+       which on a dense map can mean dozens of per-frame repaints
+       across the dot layer during pan. All three are addressed
+       with pure CSS hints — no JS changes, no Leaflet config
+       changes, zero risk to desktop. */
+
+    /* Promote the map container to a compositor layer up front so
+       the first touch-pan isn't penalized by layer allocation. */
+    #rgMapContainer {
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    /* Isolate the region modal's painting from the rest of the
+       page. `contain: layout` means changes inside this element
+       can't trigger reflow of siblings; `contain: paint` means
+       paints inside don't leak out. Big win for pan smoothness
+       because the browser doesn't have to consider sibling
+       elements when recomputing the map area on each frame. */
+    #regionModal { contain: layout paint; }
+
+    /* The pulsing "new airport" ring is decorative; on mobile we
+       trade it off for smoother pan. The colored dot itself still
+       indicates new airports — the pulse was only an
+       attention-getter. (The dot's color, the ★ glyph, and the
+       breadcrumb chip are all preserved.) */
+    .aa-new-ring { animation: none !important; }
   }
 
   @media (max-width: 480px) {
@@ -7204,7 +7239,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.13';
+const APP_VERSION = '3.19.14';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34741,8 +34776,24 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.13</span>
+          <span class="release-version">v3.19.14</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map pan smoothness on mobile.</strong> Phone users reported chunky / not-smooth map scrolling. Three CSS-only optimisations applied at the mobile breakpoint, all of which target the rendering pipeline without touching Leaflet config or any JavaScript handler &mdash; so desktop behaviour is byte-identical.</li>
+          <li><strong>Compositor promotion.</strong> <code>#rgMapContainer</code> gets <code>will-change: transform</code> + <code>transform: translateZ(0)</code> on mobile. The first hint asks the browser to promote the element to its own compositor layer up front, so the first touch-pan isn&rsquo;t penalised by GPU layer allocation. The second forces it onto a hardware-accelerated layer immediately rather than as a lazy promotion.</li>
+          <li><strong>Paint containment on the region modal.</strong> <code>#regionModal { contain: layout paint }</code> tells the browser that paints inside the modal can&rsquo;t leak out and layout changes inside can&rsquo;t reflow siblings &mdash; so when the map repaints during pan, the rest of the page doesn&rsquo;t get considered. Big win on devices with constrained painting budgets.</li>
+          <li><strong>Decorative pulse animation suppressed on mobile.</strong> The <code>.aa-new-ring</code> CSS animation runs continuously on every &ldquo;new airport&rdquo; marker; on a dense map that can mean dozens of overlapping per-frame compositor-triggered repaints across the dot layer during pan. <code>.aa-new-ring { animation: none !important }</code> on mobile removes that work. New airports still read as new &mdash; the dot&rsquo;s colour, the ★ glyph, and the breadcrumb chip all remain &mdash; just without the pulsing attention-getter ring.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) sees no change: no <code>will-change</code>, no <code>contain</code>, and the pulse animation continues on the &ldquo;new airport&rdquo; markers as before.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.13</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
