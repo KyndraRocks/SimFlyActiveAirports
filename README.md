@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.17.0**
+**Current version: v3.18.1**
 
 ---
 
@@ -74,7 +74,7 @@ The text search box also matches the full airport name in addition to ICAO and a
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
 - **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
 
-**Backup & restore** — use **💾 Save Scenery Library** in the overflow menu (⋯) to download your library (ratings, store, and developer included) as a JSON file. **📂 Load Scenery Library** in the same menu reads a backup file back in, merging into your existing entries. The two are adjacent at the top of the menu so the save / load workflow reads naturally; the remaining import-from-foreign-format options (📥 FS Addon Compare, Import scenery config) sit below them. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button pulses with a yellow glow as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the glow persists on the button and the banner reappears the next time you open the modal, until you actually save. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
+**Backup & restore** — use **💾 Save Scenery Library** in the overflow menu (⋯) to download your library (ratings, store, and developer included) as a JSON file. **📂 Load Scenery Library** in the same menu reads a backup file back in, merging into your existing entries. The two are adjacent at the top of the menu so the save / load workflow reads naturally; the remaining import-from-foreign-format options (📥 FS Addon Compare, Import scenery config) sit below them. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button shows a yellow numeric badge with the count of pending changes as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the badge persists on the button and the banner reappears the next time you open the modal, until you actually save. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
 
 **Recently-touched airports float to the top** (v3.14.0) — when the library has unsaved changes, every airport you added, rated, or had its store / developer edited this session appears at the top of the list under whatever sort is active. The common workflow is right-clicking a handful of map dots to set their star ratings, then opening the Scenery Library to fill in Store / Developer info — the rows you just touched are right at the top instead of scattered alphabetically. The float-to-top behaviour resets on Save, Load, or Clear all, so it only applies to genuine unsaved edits.
 
