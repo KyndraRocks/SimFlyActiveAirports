@@ -65,23 +65,47 @@ jobs:
               }
             }
 
-            // Preserve first_seen for existing airports; stamp today only for ICAOs
-            // that are genuinely new (absent from the previous snapshot entirely).
-            // Airports that existed before without a first_seen are old — leave them unset.
+            // airport-registry.json is an append-only map of { ICAO: "YYYY-MM-DD" } that
+            // persists first_seen across gaps in payout data (e.g. owner sets sharing to 0%).
+            // Once an ICAO is recorded here it is never removed, so a returning airport always
+            // gets its original first_seen rather than being falsely treated as brand new.
+            let registry = {};
+            try { registry = JSON.parse(fs.readFileSync('airport-registry.json', 'utf8')); } catch(e) {}
+
             let existing = {};
             try { existing = JSON.parse(fs.readFileSync('payout-data.json', 'utf8')); } catch(e) {}
+
+            // One-time migration: seed the registry from any first_seen values already present
+            // in the on-disk snapshot (airports tracked before the registry existed).
+            let registryDirty = false;
+            for (const [icao, info] of Object.entries(existing)) {
+              if (info.first_seen && !registry[icao]) {
+                registry[icao] = info.first_seen;
+                registryDirty = true;
+              }
+            }
+
             const today = new Date().toISOString().slice(0, 10);
             for (const icao of Object.keys(db)) {
-              if (existing[icao] && existing[icao].first_seen) {
-                db[icao].first_seen = existing[icao].first_seen;
+              if (registry[icao]) {
+                // Known airport (currently active or returning after a gap) — use historical date.
+                db[icao].first_seen = registry[icao];
               } else if (!existing[icao]) {
+                // Not in registry AND absent from last snapshot → genuinely brand new.
                 db[icao].first_seen = today;
+                registry[icao] = today;
+                registryDirty = true;
               }
-              // existing airport with no first_seen = old; omit first_seen so it never shows the ring
+              // In existing but not in registry = pre-feature airport; no first_seen, no ring.
             }
 
             fs.writeFileSync('payout-data.json', JSON.stringify(db));
             console.log(`Wrote ${Object.keys(db).length} airports to payout-data.json`);
+
+            if (registryDirty) {
+              fs.writeFileSync('airport-registry.json', JSON.stringify(registry));
+              console.log(`Registry updated — ${Object.keys(registry).length} airports tracked`);
+            }
           }
 
           main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
@@ -89,8 +113,8 @@ jobs:
 
       - name: Commit if changed
         run: |
-          git add payout-data.json
-          if git diff --cached --quiet payout-data.json; then
+          git add payout-data.json airport-registry.json
+          if git diff --cached --quiet; then
             echo "No changes — skipping commit."
           else
             git config user.name "github-actions[bot]"
@@ -98,7 +122,7 @@ jobs:
             git commit -m "chore: payout data $(date -u '+%Y-%m-%d %H:%M UTC')"
             # Retry-with-rebase: a manual push (e.g. RT/AA delivery) may land
             # between checkout and push. payout-data.json is regenerated fresh
-            # each run (with first_seen preserved from the on-disk snapshot),
+            # each run (with first_seen preserved from the registry),
             # so rebasing our one commit on top is always safe.
             for i in 1 2 3; do
               if git push; then exit 0; fi
