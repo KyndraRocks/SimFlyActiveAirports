@@ -6945,6 +6945,40 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        own row. */
     .aa-owner-prefix { display: none; }
 
+    /* ── v3.19.23 ─────────────────────────────────────────────────
+       Payout + Rating panel touch-action: belt and suspenders for
+       the "screen taps get swallowed" bug. On the Payout panel,
+       the gradient bar / slider have `oncontextmenu="…_rgPayout
+       PaletteOpen(event)"` so a desktop right-click opens the
+       palette editor. On a touch device, the browser fires
+       `contextmenu` after a ~500-700ms hold — and a user dragging
+       the slider slowly triggers it accidentally. The editor
+       opens (often off-screen on a phone), attaches a document
+       mousedown dismiss listener, and the next few taps feel
+       swallowed as the listener intercepts them.
+       Fix has three layers:
+        - `touch-action: manipulation` on the panels + slider
+          tells the browser to use only standard tap/pan/zoom
+          gestures, suppressing the long-press contextmenu on
+          most engines.
+        - `-webkit-touch-callout: none` belt for older iOS.
+        - The palette editor is fully hidden on mobile (it's a
+          desktop power-user feature with no mobile use case).
+        - The JS open function bails out on touch devices too,
+          so even if a contextmenu somehow fires the editor never
+          opens and no document listener gets attached. */
+    #rgPayoutLegend,
+    #rgPayoutBarWrap,
+    #rgPayoutSlider,
+    #rgPayoutZeroDot,
+    #rgPayoutThumb,
+    #rgStarFilterLegend,
+    #rgStarFilterWidget {
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+    }
+    #rgPayoutPaletteEditor { display: none !important; }
+
     /* ── v3.19.19 ─────────────────────────────────────────────────
        Light-mode mobile accessibility. Several labels rendered
        too thin/wispy against the cream background on phones, and
@@ -7453,7 +7487,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.22';
+const APP_VERSION = '3.19.23';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -30775,6 +30809,20 @@ function _rgPayoutSyncBarGrad() {
 // fired the contextmenu. Positions inside the same map container so it
 // stacks above the legend without escaping the viewport.
 function _rgPayoutPaletteOpen(event) {
+  // v3.19.23 — disabled on touch devices. The palette editor is a
+  // desktop power-user feature for customising the gradient colour
+  // stops; the only way to open it is by right-clicking (or long-
+  // pressing) the Payout legend's gradient bar. On mobile, users
+  // dragging the slider slowly accidentally triggered the contextmenu
+  // event, which opened the editor (sometimes off-screen) and
+  // attached a document-level mousedown dismiss listener — making
+  // subsequent screen taps feel "swallowed" as the listener
+  // intercepted them. Bail out cleanly on touch.
+  if (typeof _aaIsTouchDevice === 'function' && _aaIsTouchDevice()) {
+    if (event && event.preventDefault) event.preventDefault();
+    if (event && event.stopPropagation) event.stopPropagation();
+    return;
+  }
   const ed  = document.getElementById('rgPayoutPaletteEditor');
   const leg = document.getElementById('rgPayoutLegend');
   if (!ed) return;
@@ -35024,8 +35072,29 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.22</span>
+          <span class="release-version">v3.19.23</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Mobile screen taps no longer get &ldquo;swallowed&rdquo; after using the Payout or Rating filter panels.</strong> Root cause: the Payout panel&rsquo;s gradient bar / slider have <code>oncontextmenu="_rgPayoutPaletteOpen(event)"</code> &mdash; an inline handler so desktop right-click opens the palette colour editor. On touch devices, the browser fires <code>contextmenu</code> after a ~500-700&nbsp;ms hold, so a user dragging the Payout slider slowly was accidentally triggering it. The palette editor would open (often off-screen on a phone), attach a document-level <code>mousedown</code> capture-phase dismiss listener, and then the next few screen taps felt &ldquo;swallowed&rdquo; as the listener intercepted them.</li>
+          <li><strong>Three-layer fix:</strong>
+            <ul>
+              <li><code>touch-action: manipulation</code> on the Payout legend, gradient bar, slider, thumb, zero-dot, and the Rating panel + widget. This tells the browser to use only standard tap/pan/zoom gestures, suppressing the long-press contextmenu on most engines.</li>
+              <li><code>-webkit-touch-callout: none</code> as a belt for older iOS Safari.</li>
+              <li>The palette editor is fully hidden on mobile via <code>#rgPayoutPaletteEditor { display: none !important }</code> &mdash; it&rsquo;s a desktop power-user feature for customising the gradient colour stops, with no mobile use case.</li>
+              <li>JS: <code>_rgPayoutPaletteOpen()</code> now early-exits on touch devices via <code>_aaIsTouchDevice()</code>, so even if a contextmenu somehow fires the editor never opens and no document listener gets attached. Defence in depth.</li>
+            </ul>
+          </li>
+          <li><strong>Desktop behaviour unchanged.</strong> Right-clicking the Payout gradient bar on a laptop still opens the palette editor exactly as before. The mobile fix only changes touch behaviour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.22</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
