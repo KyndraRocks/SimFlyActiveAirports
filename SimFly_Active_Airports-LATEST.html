@@ -6447,6 +6447,42 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     .rg-bc { font-size: 0.72rem; padding: 0.1rem 0.5rem; }
     .rg-bc.rg-bc-clear { width: 1.55rem; height: 1.55rem; font-size: 0.78rem; }
     .rg-map-breadcrumbs { gap: 0.2rem !important; }
+
+    /* ── v3.19.4 fixes ────────────────────────────────────────────
+       After v3.19.3 the screenshots showed the whole map page
+       horizontally scrolling (right-pan revealed cut-off chip text
+       on both left and right edges) and the SimBrief route pill
+       was still being chopped behind Android Chrome's bottom nav
+       bar because `env(safe-area-inset-bottom)` returns 0 there. */
+
+    /* (l) Stop horizontal page scroll. Some element is producing
+       a layout width > 100 vw on mobile (likely the world-map
+       background canvas sized to `100vw` while the actual visible
+       viewport is slightly narrower). Blunt fix: clip the body
+       and the region modal so the whole page can never scroll
+       sideways. This is purely a containment rule — no layout
+       impact when nothing overflows. */
+    html, body { overflow-x: hidden !important; max-width: 100vw; }
+    #regionModal, .rg-modal { overflow-x: hidden; max-width: 100vw; }
+
+    /* (m) SimBrief route pill — hard 80 px bottom on mobile.
+       v3.19.1 used `bottom: max(14px, env(safe-area-inset-bottom, 14px))`
+       hoping the safe-area inset would lift the pill above iOS's
+       bottom URL bar. iOS does respect it; Android Chrome returns 0
+       even when its 90 px nav bar is visible, so the pill landed
+       hidden behind it. Hard-coding 80 px clears the nav bar on
+       Android and is still well clear on iOS. The env() max is
+       kept for iPhones with extra-tall safe-area insets. */
+    .sb-route-pill {
+      bottom: max(80px, env(safe-area-inset-bottom, 80px)) !important;
+    }
+
+    /* (n) Map header right band — tighten one more notch so the
+       Owner button + 6 icon buttons + Close ✕ all fit one row at
+       390 px without the ✕ wrapping or extending past viewport. */
+    .rg-hdr-right { gap: 0.18rem !important; padding: 0.3rem 0.3rem !important; }
+    .rg-hdr-right .rg-owner-btn { font-size: 0.75rem; padding: 0.25rem 0.4rem; }
+    .rg-hdr-right .rg-btn       { font-size: 0.85rem; padding: 0.25rem 0.35rem; }
   }
 
   @media (max-width: 480px) {
@@ -6776,7 +6812,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.3';
+const APP_VERSION = '3.19.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -26925,6 +26961,16 @@ async function _rgInitMap() {
   _rgMap.on('mousemove',   _rgMapMouseMove);
   _rgMap.on('mouseup',     _rgMapMouseUp);
   _rgMap.on('contextmenu', _rgMapContextMenu);
+  // v3.19.4 — close the touch-pinned tooltip when the user taps the
+  // empty map. Leaflet fires this `click` event on a map tap that did
+  // NOT hit any interactive marker, so a marker tap won't accidentally
+  // close its own freshly-opened tooltip.
+  _rgMap.on('click', function() {
+    if (window._aaPinnedTipMarker) {
+      try { window._aaPinnedTipMarker.closeTooltip(); } catch (_) {}
+      window._aaPinnedTipMarker = null;
+    }
+  });
   _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); if (!_rgDblClickActive) { _rgZoomedToIcao = null; _rgPreZoomState = null; } });
   _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
   // Manual drag always wins over follow-aircraft mode — if the user grabs
@@ -27260,6 +27306,37 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
     clearTimeout(_rgTipTimer);
     this.closeTooltip();
   });
+  // v3.19.4 — touch tap-to-pin tooltip. The mouseover/mouseout dance above
+  // is hostile to touch: on a tap, the browser synthesizes mouseover →
+  // touchend → mouseout in rapid sequence, which clears _rgTipTimer
+  // BEFORE the 250 ms delayed open fires, so tooltips never paint on a
+  // phone. On touch devices we additionally bind a click handler that
+  // opens the tooltip immediately and pins it until the user taps
+  // another dot or empty map (handled in _rgInitMap).
+  if (_aaIsTouchDevice()) {
+    marker.on('click', function() {
+      if (_rgPhase !== 'explore' && _rgPhase !== 'results') return;
+      clearTimeout(_rgTipTimer);
+      const prev = window._aaPinnedTipMarker;
+      if (prev && prev !== this) { try { prev.closeTooltip(); } catch (_) {} }
+      const tip = this.getTooltip();
+      if (!tip || !this._map) return;
+      tip._source = this;
+      tip.setLatLng(this.getLatLng());
+      tip.openOn(this._map);
+      window._aaPinnedTipMarker = this;
+    });
+  }
+}
+
+// v3.19.4 — single cached touch-device probe. Reads `(hover: none)` first
+// (most accurate signal a pointer has no hover semantics) and falls back
+// to `ontouchstart`. Cached after first call.
+function _aaIsTouchDevice() {
+  if (_aaIsTouchDevice._v !== undefined) return _aaIsTouchDevice._v;
+  _aaIsTouchDevice._v = (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+                       ('ontouchstart' in window);
+  return _aaIsTouchDevice._v;
 }
 
 function _rgRenderDots() {
@@ -34215,8 +34292,24 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.3</span>
+          <span class="release-version">v3.19.4</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>No more horizontal page scroll on the map view.</strong> Mobile screenshots showed the entire page sideways-scrolling on the interactive map screen: panning right revealed cut-off chip text on the left edge (&ldquo;<em>wners Displayed</em>&rdquo;), panning left revealed cut-off labels on the right (&ldquo;<em>Inve</em>&rdquo;rt). Something in the layout was producing a width greater than the visible viewport &mdash; the most likely culprit is the <code>.world-map-bg</code> background canvas sized to <code>100vw</code> on a viewport that the browser reports as slightly narrower. Belt-and-braces fix: <code>html, body { overflow-x: hidden !important; max-width: 100vw }</code> plus the same on <code>#regionModal</code> and <code>.rg-modal</code>. Containment rule only &mdash; no layout impact when nothing overflows, so desktop is unaffected.</li>
+          <li><strong>SimBrief route pill no longer hides behind Android&rsquo;s nav bar.</strong> v3.19.1 used <code>bottom: max(14px, env(safe-area-inset-bottom, 14px))</code> on the floating pill, expecting the safe-area inset to lift it above the browser&rsquo;s bottom URL bar. iOS Safari respects that. Android Chrome returns <code>0</code> for the inset even with its ~90&nbsp;px nav bar visible, so the pill ended up <em>behind</em> it. Mobile now uses a hard <code>80px</code> floor (<code>bottom: max(80px, env(safe-area-inset-bottom, 80px))</code>) which clears the Android nav bar and is still well clear on iOS.</li>
+          <li><strong>Airport tooltips now actually appear on touch.</strong> The map&rsquo;s tooltip logic in <code>_rgBindDotTip</code> uses a 250&nbsp;ms <code>mouseover</code> delay to avoid flashing as the cursor sweeps across the dot field. On touch that&rsquo;s a death-trap: tapping a dot fires <code>mouseover</code> &rarr; <code>touchend</code> &rarr; <code>mouseout</code> in rapid sequence, <code>mouseout</code> clears the delay timer before the 250&nbsp;ms elapses, and the tooltip never opens. v3.19.4 adds a touch-only <code>click</code> handler that opens the tooltip immediately on tap and <em>pins</em> it &mdash; a tracked global <code>_aaPinnedTipMarker</code> holds the currently-open tip so it stays visible until the user either taps another airport (the new tip replaces the old) or taps empty map (a new map-level click handler closes it). Touch detection uses <code>matchMedia('(hover: none)')</code> with an <code>ontouchstart</code> fallback &mdash; cached after first call.</li>
+          <li><strong>Map header right band &mdash; one more notch tighter.</strong> Owner button font down to 0.75 rem, icon buttons to 0.85 rem, horizontal padding shaved a few pixels and the inter-button gap dropped from 0.25 rem to 0.18 rem. The 7-item row (Airport Owners &middot; 🎨 &middot; Payout &middot; Rating &middot; Scenery dot &middot; Scenery gear &middot; Close ✕) now actually fits one line on a 390&nbsp;px viewport.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code></strong> for all CSS. The JS additions auto-detect touch and only fire on touch devices &mdash; desktop hover behavior is byte-identical to v3.19.3.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.3</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
