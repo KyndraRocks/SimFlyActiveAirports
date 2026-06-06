@@ -6683,6 +6683,51 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       border-left: none !important;
       border-top: 1px solid var(--border);
     }
+
+    /* ── v3.19.8 ──────────────────────────────────────────────────
+       Two visible regressions / leftovers from v3.19.7 testing:
+       the Dep / Arr category strips were sharing one viewport row
+       (each only got half the width and circles 5-7 ran off the
+       right edge), and the Satellite / Street Map toggle's 88%
+       background opacity wasn't enough to be readable over the
+       varied colors of the satellite imagery. */
+
+    /* (bb) Force the Dep / Arr cat-filter wrapper to a vertical
+       stack on mobile. v3.19.7 shrunk the pills to 1.55 rem so a
+       single row easily fits in 390 px, but the parent dual-row
+       was still `flex-direction: row` with `flex-wrap: wrap` — and
+       because the children had `overflow-x: auto` they reported as
+       "fitting" and never wrapped. Two rows tried to share the
+       viewport horizontally and each got ~half, cutting off
+       circles 5-7. Forcing column gives each row the full width. */
+    .dist-cat-dual-row {
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 0.45rem !important;
+    }
+    .dist-cat-pills-row { justify-content: center !important; }
+
+    /* (cc) Satellite / Street Map toggle — was `rgba(10,18,36,0.88)`
+       background which read as transparent over the colored chaos
+       of satellite imagery (airport dots, terrain, country borders
+       all show through). Bump opacity, strengthen the border, add
+       a drop shadow so it stays clearly readable against any tile
+       background. Also enlarge the font/padding so the tap target
+       matches the other right-side buttons on the map. */
+    .dist-map-layer-btn {
+      background: rgba(10, 18, 36, 0.97) !important;
+      border: 1px solid rgba(0, 200, 255, 0.55) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6),
+                  0 0 0 1px rgba(0, 0, 0, 0.35);
+      font-size: 0.88rem !important;
+      padding: 0.45rem 0.7rem !important;
+    }
+    body.light-mode .dist-map-layer-btn {
+      background: rgba(245, 248, 252, 0.98) !important;
+      border-color: rgba(0, 120, 180, 0.6) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25),
+                  0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
   }
 
   @media (max-width: 480px) {
@@ -7012,7 +7057,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.7';
+const APP_VERSION = '3.19.8';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34490,10 +34535,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.8</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dep / Arr category filter rows now sit on their own lines.</strong> v3.19.7 shrunk the pills to 1.55&nbsp;rem so a single row easily fits on a 390&nbsp;px viewport, but the parent <code>.dist-cat-dual-row</code> was still <code>flex-direction: row</code> with <code>flex-wrap: wrap</code> — and because each pill row had <code>overflow-x: auto</code> the parent reported the children as "fitting" and never wrapped them. The two rows tried to share the viewport horizontally and each got ~half, cutting off circles 5-7 on both Dep and Arr. Forcing the wrapper to <code>flex-direction: column</code> on mobile gives each row the full width and the seven category circles + label + <em>Inv</em> button all sit comfortably on one line.</li>
+          <li><strong>Satellite / Street Map toggle no longer disappears against satellite imagery.</strong> The button's background was <code>rgba(10, 18, 36, 0.88)</code> — fine over the clean uniform-toned street map, but against satellite tiles (where airport dots, terrain colours, and country borders all bleed through) it read as transparent and was hard to find. Mobile now uses 97% background opacity, swaps the white-tinted border for a cyan-tinted one (<code>rgba(0, 200, 255, 0.55)</code>), and adds a dual-layer drop shadow + 1-px dark halo so the button stands proud over any tile background. The font / padding also gets bumped up so the tap target matches the other map-corner controls. Light mode gets an equivalent treatment.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) is byte-identical to v3.19.7.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.19.7</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
