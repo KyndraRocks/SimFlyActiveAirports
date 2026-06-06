@@ -3939,6 +3939,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Vertical split drag handle between map and results area */
   .rg-vsplit { flex-shrink:0; height:7px; cursor:row-resize; background:linear-gradient(to bottom, transparent 2px, var(--border) 2px, var(--border) 3px, transparent 3px); position:relative; z-index:5; }
   .rg-vsplit:hover, .rg-vsplit.rg-drag-active { background:linear-gradient(to bottom, transparent 2px, var(--accent) 2px, var(--accent) 3px, transparent 3px); }
+  /* v3.16.0 — Hide the divider entirely when the matrix is not currently
+     displayed (full-screen map). The divider only makes sense when there
+     is a matrix below it to resize against, and leaving it visible at the
+     very bottom of the viewport invited the "drag past the bottom edge,
+     then can't grab it again" failure mode. */
+  .rg-modal:not(:has(.rg-matrix-wrap.visible)) #rgVSplit { display:none; }
   /* Owner filter dropdown */
   .rg-owner-wrap { position:relative; }
   /* v3.6.18 — Keep the 🎨 palette button on the same line as the Airport
@@ -6430,7 +6436,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.15.4';
+const APP_VERSION = '3.16.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15513,18 +15519,12 @@ const _afkPhase = (() => {
   let lastEmittedPhase = null;
   let lastTransition = null;        // { from, to, t }
   let lastChangeAt = 0;
-  // Detection state
-  let cruiseCandidateSince = 0;
-  let descentCandidateSince = 0;
-
   function reset() {
     samples.length = 0;
     peakClimbVS = 0;
     lastEmittedPhase = null;
     lastTransition = null;
     lastChangeAt = 0;
-    cruiseCandidateSince = 0;
-    descentCandidateSince = 0;
   }
 
   function pushSample(altFt) {
@@ -15559,88 +15559,120 @@ const _afkPhase = (() => {
     return ((newest.alt - prev.alt) / dtSec) * 60; // ft/min
   }
 
+  // v3.16.0 — Asymmetric windowed VS used for phase bucketing.
+  //
+  // The instantaneous VS used by the data panel display is too noisy for
+  // phase decisions at high altitude: FSUIPC's altitude offset 0x0574
+  // reports integer metres, so each 1 m delta between adjacent 1 Hz samples
+  // = 197 fpm instant VS, and natural autopilot wobble produces frequent
+  // 2 m bumps = 394 fpm spikes. A short rolling window smooths the
+  // quantization noise; a longer rolling window also smooths real but
+  // brief altitude perturbations (ALT-hold corrections, light turbulence).
+  //
+  // We compute both:
+  //   - fastVSfpm():   5 s window — responsive level-off detection used
+  //                     for CLIMB / DESCENT → CRUISE transitions.
+  //   - trendVSfpm(): 15 s window — sustained trend test used for
+  //                     CRUISE → CLIMB / DESCENT transitions and for direct
+  //                     CLIMB ↔ DESCENT crossovers. Falls back to the fast
+  //                     window when fewer than 14 s of samples exist (page
+  //                     reload, MSFS crash recovery, post-pause warm-up).
+  function fastVSfpm() {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    const cutoff = newest.t - 5000;
+    let oldest = samples[0];
+    for (let i = 0; i < samples.length; i++) {
+      if (samples[i].t >= cutoff) { oldest = samples[i]; break; }
+    }
+    const dtSec = (newest.t - oldest.t) / 1000;
+    if (dtSec < 1) return 0;          // not enough history to average over
+    return ((newest.alt - oldest.alt) / dtSec) * 60;
+  }
+  function trendVSfpm() {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    const cutoff = newest.t - 15000;
+    let oldest = samples[0];
+    for (let i = 0; i < samples.length; i++) {
+      if (samples[i].t >= cutoff) { oldest = samples[i]; break; }
+    }
+    const dtSec = (newest.t - oldest.t) / 1000;
+    // Warm-up fallback: if we don't have at least 14 s of altitude
+    // history, the 15 s trend reading isn't meaningful yet — fall back
+    // to the fast 5 s window so transitions can still be evaluated
+    // immediately after page load / crash recovery / unpause.
+    if (dtSec < 14) return fastVSfpm();
+    return ((newest.alt - oldest.alt) / dtSec) * 60;
+  }
+
   function _computePhase(altFt, gsKts) {
-    const vs = currentVSfpm();
-    // Update peak climb VS (positive only, sustained)
-    if (vs > peakClimbVS) peakClimbVS = vs;
-    const cruiseDeadband = Math.max(200, peakClimbVS * 0.10);   // |VS| < this → "level"
-    const descentTrigger = -Math.max(300, peakClimbVS * 0.10);  // VS < this → "descending"
-    // v2.87.0 — Ground detection no longer references MSL altitude. The
-    // pre-v2.87 check required `alt < 1000`, which silently misclassified
-    // taxi at high-elevation airports (e.g. MMAS at 6,112 ft, La Paz at
-    // 13,300 ft) as airborne. After ~60 s of taxi the phase detector then
-    // drifted to 'cruise' and the Cruise Reached alert tripped on the
-    // ground. New rule:
-    //   - gs < 5                       → ground (near-stationary)
-    //   - gs < 55  AND |VS| < 200 fpm  → ground (covers normal + fast taxi)
-    // 55 kt accommodates fields that allow rapid taxi. Slow flight at
-    // <55 kt level will also be tagged ground; this is rare in normal ops
-    // and the cruise/descent alerts are independently gated on
-    // _afkTakeoffAt > 0 (sustained gs > 40 for 10 s = wheels-up).
+    // v3.16.0 — Asymmetric two-window bucket model.
+    //
+    // Direction of transition picks which window to consult:
+    //   CRUISE → CLIMB/DESCENT  : trend window (15 s) — sustained trend
+    //                              required, so brief wobbles during cruise
+    //                              don't false-trigger phase flips.
+    //   CLIMB/DESCENT → CRUISE  : fast window (5 s) — responsive level-off
+    //                              detection so Cruise Reached fires
+    //                              promptly when the aircraft levels.
+    //   Direct CLIMB ↔ DESCENT  : trend window (rare; same noise rejection
+    //                              concern as leaving cruise).
+    // Threshold is a flat ±200 fpm in every case.
+    const fastVS  = fastVSfpm();
+    const trendVS = trendVSfpm();
+    if (fastVS > peakClimbVS) peakClimbVS = fastVS;
+
+    const LEVEL_THRESH = 200;
+
+    // v2.87.0 — Ground detection still uses GS + VS (no MSL altitude check),
+    // so taxi at high-elevation airports stays correctly classified.
     const onGround = (gsKts != null && gsKts < 5) ||
-                     (gsKts != null && gsKts < 55 && Math.abs(vs) < 200);
-    const now = performance.now();
+                     (gsKts != null && gsKts < 55 && Math.abs(fastVS) < LEVEL_THRESH);
+    const now  = performance.now();
     const prev = lastEmittedPhase;
     let next = prev;
+
     if (onGround) {
       next = 'ground';
-      cruiseCandidateSince = 0; descentCandidateSince = 0;
     } else if (!prev || prev === 'ground') {
-      // Just left the ground
-      next = vs > 100 ? 'climb' : 'climb'; // assume climb on first airborne sample
-      cruiseCandidateSince = 0; descentCandidateSince = 0;
-    } else if (prev === 'climb') {
-      if (Math.abs(vs) < cruiseDeadband) {
-        if (!cruiseCandidateSince) cruiseCandidateSince = now;
-        // v2.87.1 — peakClimbVS evidence gate. Even if "level VS sustained
-        // 60 s" is satisfied, the cruise transition requires we've actually
-        // seen the aircraft climbing at some point in this session. Without
-        // it, a long sustained-level ground operation (taxi at any field
-        // elevation, holding short on a runway, etc.) could in principle
-        // promote the phase to 'cruise' and let Cruise Reached fire on the
-        // ground. The 200 fpm threshold is well below any real climb rate
-        // (a Cessna 152 holds ~700 fpm; a heavy jet at MTOW holds ~500 fpm)
-        // and well above ground-VS noise / gear compression.
-        // v3.3.0 — Cruise candidate window cut 60 s → 35 s to fire the
-        // Cruise Reached alert sooner after level-off. The VS used here is
-        // already a 30 s smoothed average (currentVSfpm), so the smoothing
-        // window itself provides the bulk of the transient rejection; the
-        // 35 s candidate on top still demands sustained level flight, and
-        // the peakClimbVS > 200 evidence gate is untouched so ground ops
-        // can never promote to cruise.
-        if (now - cruiseCandidateSince >= 35000 && peakClimbVS > 200) {
-          next = 'cruise';
-          cruiseCandidateSince = 0;
-        }
-      } else {
-        cruiseCandidateSince = 0;
-      }
-      // Surprise descent during "climb" is unusual; require sustained
-      // (v3.3.0 — 60 s → 45 s).
-      if (vs < descentTrigger) {
-        if (!descentCandidateSince) descentCandidateSince = now;
-        if (now - descentCandidateSince >= 45000) { next = 'descent'; descentCandidateSince = 0; }
-      } else {
-        descentCandidateSince = 0;
-      }
+      // First airborne sample — assume climb (matches prior behaviour).
+      next = 'climb';
     } else if (prev === 'cruise') {
-      if (vs < descentTrigger) {
-        if (!descentCandidateSince) descentCandidateSince = now;
-        // v3.3.0 — Descent candidate window cut 30 s → 20 s. Same 30 s
-        // smoothed-VS basis means this still needs a genuine sustained
-        // descent, not a momentary altitude wobble.
-        if (now - descentCandidateSince >= 20000) { next = 'descent'; descentCandidateSince = 0; }
-      } else {
-        descentCandidateSince = 0;
+      // CRUISE → climb/descent uses TREND window. Brief wobbles that
+      // briefly hit ±400 fpm but net to ~0 over 15 s do not flip phase.
+      if (trendVS > LEVEL_THRESH)        next = 'climb';
+      else if (trendVS < -LEVEL_THRESH)  next = 'descent';
+      // else stay cruise
+    } else if (prev === 'climb') {
+      // CLIMB → CRUISE uses FAST window — 5 s of level flight is enough.
+      if (Math.abs(fastVS) <= LEVEL_THRESH) {
+        next = 'cruise';
+      } else if (trendVS < -LEVEL_THRESH) {
+        // Direct CLIMB → DESCENT (rare): trend window confirms.
+        next = 'descent';
       }
     } else if (prev === 'descent') {
-      // Stay in descent until approach/landing detected
-      if (altFt != null && altFt < 2500 && gsKts != null && gsKts < 200) {
-        next = 'approach';
+      // DESCENT → CRUISE uses FAST window.
+      if (Math.abs(fastVS) <= LEVEL_THRESH) {
+        next = 'cruise';
+      } else if (trendVS > LEVEL_THRESH) {
+        // Direct DESCENT → CLIMB (rare; e.g. go-around from descent).
+        next = 'climb';
       }
     } else if (prev === 'approach') {
-      // Stays approach until on-ground (handled above)
+      // Approach normally exits only via on-ground (handled above), but
+      // a go-around establishes a positive trend — fall back into climb.
+      if (trendVS > LEVEL_THRESH) next = 'climb';
     }
+
+    // Approach overlay — when descent gets low + slow, promote to approach.
+    if ((prev === 'descent' || next === 'descent')
+        && altFt != null && altFt < 2500
+        && gsKts != null && gsKts < 200) {
+      next = 'approach';
+    }
+
     if (next !== prev) {
       lastTransition = { from: prev, to: next, t: now };
       lastChangeAt = now;
@@ -16048,10 +16080,19 @@ function _afkFreshState(alarm) {
       // arming.
       return { targetMs: _afkComputeTimerTarget(alarm.params || {}), fired: false };
     case 'cruise':
+      // v3.16.0 — If the alarm is (re-)armed while already in cruise phase, set
+      // waitForNewCruise so it waits for a non-cruise phase before firing.
+      // Prevents instant re-fire on re-enable or new-alarm-add while still cruising.
+      return { fired: false, prevAlt: null,
+               waitForNewCruise: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'cruise') };
     case 'alt-min':
       return { fired: false, prevAlt: null };
     case 'descent':
-      return { fired: false };
+      // v3.16.0 — If the alarm is (re-)armed while already in descent phase,
+      // set waitForNewDescent so it waits for a non-descent phase before
+      // firing. Mirrors the cruise re-arm guard.
+      return { fired: false,
+               waitForNewDescent: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'descent') };
     case 'geofence':
       // wasInside = null seeds on first valid sample after arming, so a
       // freshly-armed fence never trips ENTER on the very next tick.
@@ -16902,6 +16943,24 @@ function _afkEvalCruise(alarm, ac) {
   // before this alarm can fire. Pairs with the GS-based phase ground check;
   // if either guard catches the aircraft still on the ground, no false trip.
   if (!_afkTakeoffAt) return false;
+  // v3.16.0 — If armed while the aircraft is already in cruise (re-enable,
+  // mode-switch, or fresh alarm added mid-flight), waitForNewCruise is set.
+  // Wait silently until the phase leaves cruise, then clear the flag — the
+  // alarm fires on the NEXT cruise entry rather than the current one.
+  if (alarm.state.waitForNewCruise) {
+    if (_afkPhase.get() !== 'cruise') {
+      alarm.state.waitForNewCruise = false; // left cruise — now watching for next entry
+    } else {
+      return false;
+    }
+  }
+  // v3.16.0 — Optional "Only above X ft" filter. If set, skip cruise
+  // transitions at or below this altitude (prevents false alerts at
+  // ATC-assigned climb-and-maintain altitudes below true cruise).
+  const minAlt = alarm.params && parseFloat(alarm.params.minAltFt);
+  if (isFinite(minAlt) && minAlt > 0 && ac && ac.alt != null && isFinite(ac.alt) && ac.alt < minAlt) {
+    return false;
+  }
   // If the user gave us a target cruise altitude, prefer that as the
   // trigger — fires when the aircraft climbs THROUGH the target (similar
   // to alt-min's climbing direction). This matches what the user typed in
@@ -16912,21 +16971,11 @@ function _afkEvalCruise(alarm, ac) {
     if (!ac || ac.alt == null || !isFinite(ac.alt)) return false;
     const prev = alarm.state.prevAlt;
     if (prev == null || !isFinite(prev)) {
-      // v2.93.0 — "Armed above target" immediate fire. If the user adds
-      // a Cruise@FL280 alarm while the aircraft is already at FL350,
-      // the crossing path (prev < thresh && ac.alt >= thresh) is never
-      // satisfied because prev seeds at FL350. Result: alarm sits armed
-      // forever, silently. Detect this on the seed tick: if the first
-      // sample is at-or-above the threshold AND the phase detector says
-      // we're in cruise (i.e. not still climbing through it organically),
-      // fire immediately.
-      if (ac.alt >= thresh && _afkPhase.get() === 'cruise') {
-        alarm.state.prevAlt = ac.alt;
-        alarm.state.fired = true;
-        return true;
-      }
+      // Seed prevAlt on first valid sample. waitForNewCruise guarantees we
+      // left cruise before reaching here, so the aircraft is below or
+      // approaching the threshold — just seed and wait for the crossing.
       alarm.state.prevAlt = ac.alt;
-      return false; // seed only on first valid sample
+      return false;
     }
     // Was below target, now at-or-above → trip. Symmetric to alt-min climbing.
     if (prev < thresh && ac.alt >= thresh) {
@@ -16945,6 +16994,17 @@ function _afkEvalDescent(alarm) {
   if (alarm.state.fired) return false;
   // v2.87.0 — same wheels-up gate as cruise (see _afkEvalCruise).
   if (!_afkTakeoffAt) return false;
+  // v3.16.0 — If armed while the aircraft is already descending (re-enable,
+  // mode-switch, or fresh alarm added mid-descent), waitForNewDescent is set.
+  // Wait silently until the phase leaves descent, then clear the flag — the
+  // alarm fires on the NEXT descent entry rather than the current one.
+  if (alarm.state.waitForNewDescent) {
+    if (_afkPhase.get() !== 'descent') {
+      alarm.state.waitForNewDescent = false;
+    } else {
+      return false;
+    }
+  }
   if (_afkPhase.get() === 'descent') { alarm.state.fired = true; return true; }
   return false;
 }
@@ -18567,9 +18627,11 @@ function _afkAlarmShortDescription(a, includeTitle) {
     return title + 'Every waypoint in the flight plan';
   }
   if (a.type === 'cruise') {
-    const ft = a.params && parseFloat(a.params.cruiseAltFt);
-    if (isFinite(ft) && ft > 0) return title + 'Aircraft reaches ' + _afkFmtAltDisplay(ft);
-    return title + 'Aircraft levels off into cruise';
+    const ft    = a.params && parseFloat(a.params.cruiseAltFt);
+    const minFt = a.params && parseFloat(a.params.minAltFt);
+    const minSuffix = (isFinite(minFt) && minFt > 0) ? ' (above ' + _afkFmtAltDisplay(minFt) + ')' : '';
+    if (isFinite(ft) && ft > 0) return title + 'Aircraft reaches ' + _afkFmtAltDisplay(ft) + minSuffix;
+    return title + 'Aircraft levels off into cruise' + minSuffix;
   }
   if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
   if (a.type === 'alt-min') {
@@ -18912,6 +18974,9 @@ function _afkAlarmCardSummary(a) {
       lines.push('Target altitude: ' + _afkFmtAltDisplay(a.params.cruiseAltFt));
     } else {
       lines.push('Phase-based detection (no specific altitude set)');
+    }
+    if (a.params && isFinite(parseFloat(a.params.minAltFt)) && a.params.minAltFt > 0) {
+      lines.push('Only above: ' + _afkFmtAltDisplay(a.params.minAltFt));
     }
   } else if (a.type === 'descent') {
     lines.push('Fires when aircraft begins sustained descent');
@@ -19637,7 +19702,21 @@ function _afkRenderEditor(a) {
       : '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
           'Adaptive mode watches the phase detector for the climb → cruise transition (sustained level flight after a real climb). One-shot per flight — re-arms automatically on the next ground transition.' +
         '</div>';
-    body = modeRow + altRow;
+    const minAltText = a.params && a.params.minAltText != null ? a.params.minAltText : '';
+    const minAltFt   = a.params && isFinite(parseFloat(a.params.minAltFt)) ? parseFloat(a.params.minAltFt) : 0;
+    const minAltRow  =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Only above</span>' +
+        '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + minAltText.replace(/"/g, '&quot;') + '" placeholder="FL180 or 18000" ' +
+          'oninput="_afkSetCruiseMinAlt(' + a.id + ', this.value)" ' +
+          'onwheel="_afkAltWheel(event,' + a.id + ',\'cruiseMin\')" ' +
+          'onmousedown="_afkAltDragStart(event,' + a.id + ',\'cruiseMin\')" ' +
+          'ondragstart="event.preventDefault();event.stopPropagation();return false" ' +
+          'title="Optional. If set, the alarm skips cruise transitions at or below this altitude — prevents false alerts at ATC-assigned climb-and-maintain altitudes below your true cruise. Accepts feet (e.g. 18000) or flight levels (e.g. FL180). Leave blank to fire at any altitude. Mouse-wheel or drag to scrub.">' +
+        '<span class="afk-altmin-hint" id="afkCruiseMinAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' +
+          (minAltFt > 0 ? _afkFmtAltDisplay(minAltFt) : '(any altitude)') +
+        '</span>' +
+      '</div>';
+    body = modeRow + altRow + minAltRow;
   }
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
@@ -19966,8 +20045,9 @@ function _afkAltWheel(event, id, kind) {
     ? ('FL' + (next / 100))
     : String(next);
   inp.value = nextTxt;
-  if (kind === 'cruise')      _afkSetCruiseAlt(id, nextTxt);
-  else if (kind === 'altMin') _afkSetAltMin(id, nextTxt);
+  if (kind === 'cruise')         _afkSetCruiseAlt(id, nextTxt);
+  else if (kind === 'cruiseMin') _afkSetCruiseMinAlt(id, nextTxt);
+  else if (kind === 'altMin')    _afkSetAltMin(id, nextTxt);
 }
 // v2.98.1 — Click-and-drag scrub for alert inputs. Mirrors the AP
 // panel's drag-to-scrub gesture: hold mouse on the input and drag up
@@ -20060,7 +20140,7 @@ function _afkAltDragStart(event, id, kind) {
     parse: _afkParseAlt,
     snap:  _afkSnapAlt100,
     min:   0,
-    commit: v => kind === 'cruise' ? _afkSetCruiseAlt(id, v) : _afkSetAltMin(id, v),
+    commit: v => kind === 'cruise' ? _afkSetCruiseAlt(id, v) : kind === 'cruiseMin' ? _afkSetCruiseMinAlt(id, v) : _afkSetAltMin(id, v),
   });
 }
 function _afkCondValDragStart(event, alarmId, idx) {
@@ -20208,6 +20288,8 @@ function _afkSetCruiseMode(id, mode) {
   a.state = a.state || {};
   a.state.prevAlt = null;
   a.state.fired = false;
+  // v3.16.0 — prevent instant re-fire if mode is changed while already in cruise.
+  a.state.waitForNewCruise = !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'cruise');
   _afkAlarms.update(id, { params: a.params, state: a.state });
   _afkRenderAlarmList(); // re-render to show/hide the altitude row
 }
@@ -20245,6 +20327,29 @@ function _afkSetCruiseAlt(id, v) {
       ? _afkFmtAltDisplay(a.params.cruiseAltFt)
       : '(optional — uses phase detector if blank)';
   }
+}
+
+// v3.16.0 — "Only above X ft" optional filter for Cruise Reached. When set,
+// cruise transitions below this altitude are skipped (prevents false alerts at
+// ATC-assigned climb-and-maintain altitudes below true cruise altitude).
+function _afkSetCruiseMinAlt(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  let parsed = _afkParseAlt(v);
+  if (isFinite(parsed) && parsed < 0) {
+    parsed = 0; v = '0';
+    const hintEl = document.getElementById('afkCruiseMinAltHint_' + id);
+    const inp = hintEl && hintEl.parentElement ? hintEl.parentElement.querySelector('input.afk-input') : null;
+    if (inp) inp.value = '0';
+  }
+  a.params.minAltText = v || '';
+  a.params.minAltFt   = isFinite(parsed) ? parsed : 0;
+  a.state = a.state || {};
+  a.state.fired = false;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const hint = document.getElementById('afkCruiseMinAltHint_' + id);
+  if (hint) hint.textContent = (a.params.minAltFt > 0) ? _afkFmtAltDisplay(a.params.minAltFt) : '(any altitude)';
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) { const sub = card.querySelector('.afk-card-desc-sub'); if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false); }
 }
 
 function _afkSetTimerMode(id, mode) {
@@ -20551,7 +20656,10 @@ function _afkAddAlarm(type) {
   const base = { type, sound: 'digital-clock', params: {}, state: {} };
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
-  if (type === 'cruise' || type === 'descent') base.state = { fired: false };
+  if (type === 'cruise') base.state = { fired: false, prevAlt: null,
+    waitForNewCruise: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'cruise') };
+  if (type === 'descent') base.state = { fired: false,
+    waitForNewDescent: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'descent') };
   if (type === 'conditional') {
     // v2.92.1 — Empty conditions list by default. The pre-v2.92.1 default
     // seeded "Altitude > 10000" as an example row, but if the user
@@ -26521,7 +26629,13 @@ function _rgSplitDown(e) {
 function _rgSplitMove(e) {
   if (!_rgSplitDrag) return;
   const mapEl = document.getElementById('rgMapContainer');
-  const newH  = Math.max(80, _rgSplitDrag.startH + (e.clientY - _rgSplitDrag.startY));
+  // v3.16.0 — cap the cursor 40 px above the viewport bottom so the divider
+  // can never escape past the bottom edge of the browser window. Once the
+  // cursor passes the cap, the divider holds at the cap line (still
+  // grabbable). Active only while dragging, so it doesn't interfere with
+  // the hidden-divider state when the matrix isn't displayed.
+  const clampedY = Math.min(window.innerHeight - 40, e.clientY);
+  const newH = Math.max(80, _rgSplitDrag.startH + (clampedY - _rgSplitDrag.startY));
   mapEl.style.flex = `0 0 ${newH}px`;
   if (_rgMap) _rgMap.invalidateSize();
 }
@@ -33469,8 +33583,8 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30.</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (tracks peak climb VS, treats &ldquo;level&rdquo; as <code>|VS| &lt; max(200&nbsp;fpm, 10% of peak climb VS)</code> sustained for 35&nbsp;s (shortened from 60&nbsp;s in v3.3.0 so the alert fires sooner) &mdash; works for both a Cessna 152 and a Boeing 777). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>Note:</strong> because Adaptive mode depends on having observed a real climb, arming a Cruise Reached alarm <em>while already in cruise</em> (e.g. set up after page-reload mid-flight, or after the alarm has already fired once) won&rsquo;t re-fire on its own.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise (<code>VS &lt; -max(300&nbsp;fpm, 10% of peak climb VS)</code> for 20 seconds, shortened from 30 s in v3.3.0). Same adaptive approach as Cruise, and (as of v2.87.0) the same wheels-up gate.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.16.0+: phase detector promotes to descent when the 15-second trend VS reads <code>&lt; -200&nbsp;fpm</code> (a wider trend window than the 5-second cruise-entry window — protects against false TOD calls from autopilot wobble; previously a variable threshold sustained for 20&nbsp;s). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
@@ -33606,10 +33720,26 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.16.0</span>
+          <span class="release-date">June 5, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Cruise Reached — re-arm no longer fires instantly.</strong> Previously, re-enabling a Cruise Reached alarm (or adding a new one) while the aircraft was still in cruise phase would cause it to fire immediately on the next telemetry tick. The alarm now detects when it is armed mid-cruise and waits silently for the aircraft to leave cruise and re-enter before firing — so it always fires on a genuine new cruise-entry rather than the current one. Applies to both Adaptive and At specific altitude modes.</li>
+          <li><strong>Cruise Reached — new "Only above" minimum altitude filter.</strong> An optional altitude field now appears on every Cruise Reached alarm card. When set, the alarm skips any cruise transition detected at or below that altitude, allowing it to ignore ATC-assigned climb-and-maintain altitudes (e.g. "climb and maintain FL240") and only fire when true cruise is reached at the expected higher altitude. Accepts feet (e.g. 18000) or flight levels (e.g. FL180). Supports mouse-wheel and click-and-drag scrubbing like other altitude inputs. Leave blank to fire at any altitude.</li>
+          <li><strong>Descent Started — re-arm no longer fires instantly.</strong> Same pattern as the Cruise Reached fix above. Re-enabling a Descent Started alarm (or adding a new one) while the aircraft was already in descent phase used to fire it on the next telemetry tick. The alarm now detects that it was armed mid-descent and waits silently for the aircraft to leave descent before re-arming, so it always fires on a genuine new TOD rather than the current one.</li>
+          <li><strong>Phase detection — asymmetric windowed VS, ±200 fpm threshold throughout.</strong> The phase detector has been rewritten around two rolling-window VS readings: a <strong>fast</strong> 5-second window and a <strong>trend</strong> 15-second window. The direction of transition picks which window is consulted: leaving CRUISE for climb or descent requires <code>|trendVS| &gt; 200 fpm</code> over the trend window (sustained altitude trend — brief autopilot wobble that net-averages near zero cannot flip phase); entering CRUISE from climb or descent uses the fast window (<code>|fastVS| ≤ 200</code>) so the Cruise Reached alarm fires within ~5 s of level-off. Direct climb ↔ descent crossovers (rare) also use the trend window. Replaces the previous per-transition scheme (35 s for climb → cruise, 20 s for cruise → descent, 45 s for the rare climb → descent backwards-jump, plus a variable adaptive deadband). Trend window warm-up: until 14 s of altitude history have accumulated (page reload, MSFS crash recovery, post-pause), <code>trendVSfpm</code> falls back to the fast 5 s reading so transitions can still be evaluated promptly. The pre-existing v2.87.1 peak-climb-VS evidence gate was removed in this same pass — it had become redundant with the current GS-based ground rule and was actively trapping users who reloaded mid-flight (page reload zeroed peakClimbVS, and an aircraft already at cruise altitude could never grow it back, so phase stayed stuck on CLIMB forever). Side benefit: descent → cruise, descent → climb, and approach → climb (go-around) transitions all work now.</li>
+          <li><strong>Map/matrix drag divider — hidden when the matrix is not displayed, cursor-capped when it is.</strong> The horizontal drag handle between the map and the route matrix is now hidden entirely whenever the route matrix is not currently displayed (full-screen map). The handle reappears automatically when a route is selected and the matrix becomes visible. While dragging, the cursor is capped at 40&nbsp;px above the viewport bottom so the divider can never escape past the bottom edge of the browser window — moving the cursor further down simply holds the divider at the cap line, where it stays grabbable.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.15.4</span>
-          <span class="release-date">June 5, 2026 &middot; Current</span>
+          <span class="release-date">June 5, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
