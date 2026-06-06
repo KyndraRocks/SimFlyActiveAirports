@@ -6436,7 +6436,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.16.0';
+const APP_VERSION = '3.17.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15266,6 +15266,43 @@ function _afkHistoryClearAll() {
   _afkRenderHistoryList();
   _aaRtToast('📜 Alert history cleared.', 'ok');
 }
+function _afkExportHistory() {
+  const entries = _afkHistory.list(); // newest-first
+  if (entries.length === 0) {
+    _aaRtToast('📜 No history entries to save.', 'warn');
+    return;
+  }
+  // Strip the transient `plotted` flag — map pins are not restored on import
+  // and the field would just add noise to the file.
+  const clean = entries.map(e => {
+    const c = Object.assign({}, e);
+    delete c.plotted;
+    return c;
+  });
+  const payload = {
+    app:        'SimFly Active Airports',
+    section:    'alert-history',
+    version:    1,
+    exportedAt: new Date().toISOString(),
+    count:      clean.length,
+    entries:    clean,
+  };
+  try {
+    const blob  = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url   = URL.createObjectURL(blob);
+    const a     = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    a.href     = url;
+    a.download = 'simfly-alert-history-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    _aaRtToast('💾 Saved ' + clean.length + ' history entry/entries to disk.', 'ok');
+  } catch (err) {
+    _aaRtToast('⚠ Save failed: ' + (err && err.message ? err.message : String(err)), 'warn');
+  }
+}
 
 function _afkHistoryFmtLocal(ms) {
   const d = new Date(ms);
@@ -15646,7 +15683,13 @@ const _afkPhase = (() => {
       // else stay cruise
     } else if (prev === 'climb') {
       // CLIMB → CRUISE uses FAST window — 5 s of level flight is enough.
-      if (Math.abs(fastVS) <= LEVEL_THRESH) {
+      // v3.16.1 — Guard: require 6 s in climb before accepting a cruise
+      // transition. Immediately post-liftoff the 5 s fast window still
+      // contains flat ground-altitude samples (fastVS ≈ 0 fpm), which
+      // would otherwise trigger a false CLIMB→CRUISE in the first tick
+      // airborne and fire the Cruise Reached alarm on takeoff.
+      const climbDwellMs = now - lastChangeAt;
+      if (Math.abs(fastVS) <= LEVEL_THRESH && climbDwellMs >= 6000) {
         next = 'cruise';
       } else if (trendVS < -LEVEL_THRESH) {
         // Direct CLIMB → DESCENT (rare): trend window confirms.
@@ -16237,6 +16280,14 @@ const _afkAlarms = (() => {
           // Reset transient state on reload
           a.status = a.status === 'tripped' ? 'armed' : a.status;
           a.state = a.state || {};
+          // v3.16.1 — Clear stale altitude crossing state. prevAlt for alt-min
+          // and cruise alarms can be persisted mid-flight (any _save() call
+          // serialises all alarm states). If the saved prevAlt is on the
+          // "already crossed" side of the threshold when the aircraft next
+          // loads (e.g. at a different airport elevation), the first telemetry
+          // tick falsely detects a crossing and fires the alarm. Nulling here
+          // forces the first tick to re-seed prevAlt from the actual position.
+          if ((a.type === 'alt-min' || a.type === 'cruise') && a.state) a.state.prevAlt = null;
           // v2.96.2 — telemetry-loss floor raised from 10 s to 30 s.
           // Silently upgrade any stored value below the new floor so a
           // pre-v2.96.2 alarm with thresholdSec=10 doesn't quietly stop
@@ -33626,7 +33677,7 @@ function rgSendToFlightPlanner() {
 
             <strong>🔊&rarr;All &mdash; bulk set sound or duration</strong> (duration added v3.3.0) &mdash; a button at the bottom of the Alerts modal opens a two-section picker. The top section applies one chosen sound to every alarm at once; the bottom section sets the <em>Sound for</em> auto-dismiss duration (Indefinite, or 5 / 10 / 30 / 60 seconds) on every alarm at once. A toast confirms how many alarms changed.<br/><br/>
 
-            <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>Clear History</strong> in the footer wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
+            <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>⤓ Save Log</strong> (v3.17.0+) in the footer saves all entries to a JSON file on disk regardless of the current filter — useful for post-flight review or sharing with someone for troubleshooting. <strong>Clear History</strong> wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
             <strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
 
@@ -33722,8 +33773,33 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.16.0</span>
+          <span class="release-version">v3.17.0</span>
           <span class="release-date">June 5, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert History — new "Save Log" button.</strong> A <strong>⤓ Save Log</strong> button now appears in the Alert History modal footer (between the info line and the existing Clear History button). Clicking it downloads the full history log as a JSON file (<code>simfly-alert-history-YYYY-MM-DDTHH-MM-SS.json</code>) regardless of which type or dismissal-reason filters are currently active. Each entry in the file includes the trip timestamp, alarm type, label, configured parameters, dismissal info, and the full aircraft telemetry snapshot captured when the alarm fired. Useful for post-flight review and for sharing log data when troubleshooting alert behaviour. The transient <em>plotted</em> flag (whether a map pin is currently active for that entry) is omitted from the export since map pins are not restored on re-import.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.16.1</span>
+          <span class="release-date">June 5, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Bug fix &mdash; Altitude alarm no longer fires on sim load when on the ground.</strong> The altitude-crossing alarm persists its <code>prevAlt</code> value to localStorage whenever any alarm triggers a save mid-flight. If the browser was closed between flights, that stale high-altitude <code>prevAlt</code> could survive to the next session; when the aircraft loaded at a lower airport elevation the first telemetry tick would see a crossing and fire the alarm instantly. On page load, <code>prevAlt</code> is now always cleared for Altitude and Cruise Reached alarms so the first tick re-seeds it from the actual position.</li>
+          <li><strong>Bug fix &mdash; Cruise Reached alarm no longer fires immediately on takeoff.</strong> The v3.16.0 asymmetric phase detector uses a 5-second fast window for the climb&rarr;cruise transition. Immediately after liftoff that window still contains flat ground-altitude samples (vertical speed &asymp; 0&nbsp;fpm), causing a false climb&rarr;cruise transition in the first tick airborne and triggering the Cruise Reached alarm on the runway. The phase detector now requires the aircraft to have been in climb phase for at least 6 seconds before the fast window can authorise a cruise transition &mdash; ensuring the window is fully populated with post-liftoff altitude data before the check is applied.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.16.0</span>
+          <span class="release-date">June 5, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -44021,6 +44097,7 @@ function rgSendToFlightPlanner() {
       <div class="afk-hist-list-wrap" id="afkHistoryList"></div>
       <div class="afk-hist-footer">
         <span class="afk-footer-info">Log holds the most-recent 100 events on this device; oldest are removed first.</span>
+        <button class="afk-btn-secondary" onclick="_afkExportHistory()" title="Save the full Alert History log to a JSON file on disk. All entries are exported regardless of the active filters above.">⤓ Save Log</button>
         <button class="afk-btn-delete-all" onclick="_afkHistoryClearAll()" title="Permanently delete every entry in the Alert History log. Pinned map markers are also cleared. This cannot be undone.">Clear History</button>
       </div>
     </div>
