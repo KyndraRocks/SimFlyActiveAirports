@@ -131,6 +131,24 @@
   body.light-mode .dist-th-icao[data-cat="7"],
   body.light-mode .rg-dt-icao[data-cat="7"]   { color: #8a1875 !important; }
 
+  /* v3.19.19 — Same accessible-on-cream palette applied to the
+     category FILTER circles. The buttons set `--rg-cat-color` inline
+     to the dark-mode neon palette (#FF4040, #FF8800, …) which is
+     designed for dark backgrounds and washes out against the
+     cream light-mode bg. Overriding the custom property via a
+     more-specific selector (light-mode descendant + data-cat
+     attribute) makes the border + active-state colours pick up
+     the darker, contrast-meeting variants on the main screen AND
+     the map header. Inline styles set the property at element
+     specificity, so we need !important to win. */
+  body.light-mode .dist-cat-btn[data-cat="1"] { --rg-cat-color: #b8002a !important; }
+  body.light-mode .dist-cat-btn[data-cat="2"] { --rg-cat-color: #a64500 !important; }
+  body.light-mode .dist-cat-btn[data-cat="3"] { --rg-cat-color: #7d6500 !important; }
+  body.light-mode .dist-cat-btn[data-cat="4"] { --rg-cat-color: #1a7a2e !important; }
+  body.light-mode .dist-cat-btn[data-cat="5"] { --rg-cat-color: #005f87 !important; }
+  body.light-mode .dist-cat-btn[data-cat="6"] { --rg-cat-color: #2433a3 !important; }
+  body.light-mode .dist-cat-btn[data-cat="7"] { --rg-cat-color: #8a1875 !important; }
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -6916,6 +6934,51 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        own row. */
     .aa-owner-prefix { display: none; }
 
+    /* ── v3.19.19 ─────────────────────────────────────────────────
+       Light-mode mobile accessibility. Several labels rendered
+       too thin/wispy against the cream background on phones, and
+       inactive category circles were too aggressively desaturated
+       to read on a light background. (The dark-mode neon palette
+       swap for circle borders is handled outside this media query
+       so it applies on desktop too — see line ~134 area.) */
+
+    /* (qq) Light-mode font weight bumps. The existing global
+       light-mode rule at line ~103 bumps `.tab, .btn, select,
+       .metric-label, .theme-toggle` to 600 but not several
+       on-screen labels that look fine on a 24-inch monitor but
+       hazy on a 6-inch phone with light-mode glare. Bump the
+       most-affected text: the page subtitle, version, the
+       aircraft selector header, and the Departure/Arrival owner
+       labels. */
+    body.light-mode .subtitle,
+    body.light-mode .version,
+    body.light-mode .ac-selector-title,
+    body.light-mode .ac-selector-selected,
+    body.light-mode .dist-label--owner,
+    body.light-mode .dist-label--dep-arr {
+      font-weight: 600 !important;
+    }
+
+    /* (rr) Inactive category circles in light mode — the dark-mode
+       defaults (opacity 0.25 + grayscale 0.55) make off circles
+       nearly invisible against the cream bg. Tone down both so the
+       off state stays readable while still clearly muted: opacity
+       0.4 + grayscale 0.35 strikes a better balance on light bg. */
+    body.light-mode .rg-hdr-center .dist-cat-btn {
+      opacity: 0.4 !important;
+      filter: grayscale(0.35);
+    }
+    body.light-mode .rg-hdr-center .dist-cat-btn.active {
+      opacity: 1 !important;
+      filter: none;
+      /* Slightly more solid background fill in light mode so the
+         active circle has more presence on the cream bg. The
+         border colour comes from the per-cat --rg-cat-color
+         override outside this media query. */
+      background: rgba(255, 255, 255, 0.75) !important;
+    }
+  }
+
     /* (ff) Map header right band — was shrunk hard in v3.19.4 to
        fit one row, ended up at 0.75-0.85 rem font with ~24-28 px
        tap height. v3.19.12 enlarged to ~36-40 px. v3.19.16 tightens
@@ -7379,7 +7442,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.18';
+const APP_VERSION = '3.19.19';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34919,10 +34982,25 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.19</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Light-mode accessibility &mdash; category circle neon palette swap (applies on desktop too).</strong> The category filter circles set <code>--rg-cat-color</code> inline from the dark-mode neon palette (<code>#FF4040</code>, <code>#FF8800</code>, <code>#FFEE00</code>, <code>#44FF44</code>, <code>#00DDFF</code>, <code>#4466FF</code>, <code>#FF44FF</code>) which is designed to glow against a dark background and washes out into pale outlines against the cream light-mode bg. A new global light-mode rule overrides <code>--rg-cat-color</code> per <code>data-cat</code> with the same accessible darker variants we already use for matrix-header ICAOs (<code>#b8002a</code>, <code>#a64500</code>, <code>#7d6500</code>, <code>#1a7a2e</code>, <code>#005f87</code>, <code>#2433a3</code>, <code>#8a1875</code>). Applies on both desktop and mobile light mode so the circles read with proper contrast either way.</li>
+          <li><strong>Mobile light-mode font weights &mdash; the wispiness fix.</strong> The existing global light-mode rule bumps a handful of element classes from Rajdhani 500 to 600 for PC legibility, but several on-screen labels weren&rsquo;t in that list and looked hazy on a small phone with light-mode glare. Mobile light-mode now also bumps: <code>.subtitle</code> (the &ldquo;<em>Route Distances Between Active Player-Owned Airports</em>&rdquo; line under the title), <code>.version</code>, the aircraft selector title and selected-label, and the <em>Departure / Arrival Airport Owner</em> labels. All go to 600.</li>
+          <li><strong>Inactive category circles in mobile light mode &mdash; readable now.</strong> The dark-mode-tuned off state (opacity 0.25 + grayscale 0.55) was nearly invisible against the cream light-mode bg. Mobile light mode now uses opacity 0.4 + grayscale 0.35 &mdash; off-circles stay clearly muted but are still readable. The active state adds a slightly opaque white background fill (<code>rgba(255,255,255,0.75)</code>) so the colored border has more presence on the cream backdrop.</li>
+          <li><strong>Same gate for the mobile-specific rules: <code>@media (max-width: 768px)</code>.</strong> The light-mode <code>--rg-cat-color</code> palette swap is intentionally OUTSIDE the media query &mdash; it&rsquo;s a desktop-and-mobile accessibility fix, not just a mobile fix. Dark mode is byte-identical to v3.19.18 on all screen sizes.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.19.18</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
