@@ -6580,6 +6580,109 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        fail. Display New Airports (the third item) stays — it's a
        simple toggle that works fine on tap. */
     #rgRulerBtn, #rgSelectMenuBtn { display: none !important; }
+
+    /* ── v3.19.7 ──────────────────────────────────────────────────
+       Polish the main screen so it stops reading as a desktop app
+       in portrait. Targets: oversized labels, overlapping floating
+       elements (theme toggle, clock), two-row category strips,
+       side-by-side info cards, narrow matrix columns. */
+
+    /* (t) Theme toggle (Dark Mode) — was floating top-right at
+       `top: 1rem; right: 1rem` and landing directly over panel
+       content. Move to bottom-right at much smaller scale so it's
+       reachable but unobtrusive. */
+    .theme-toggle {
+      top: auto !important;
+      bottom: 0.45rem !important;
+      right: 0.45rem !important;
+      font-size: 0.55rem !important;
+      padding: 4px 9px !important;
+      opacity: 0.65;
+    }
+
+    /* (u) Clock — hide on mobile. Was moved to bottom-left in v3.19.3
+       but overlaps the airport-list cards. Mobile devices have their
+       own OS clock; the LCL/UTC overlay is a desktop convenience
+       that doesn't belong on a phone. */
+    #simfly-clock { display: none !important; }
+
+    /* (v) Section labels were sized for a 1080p+ monitor: ICAO
+       labels at 1.463 rem, Owner labels at 1.658 rem. On a phone
+       they dominate the screen and make every section feel like
+       its own H1. Bring them down to ~1.05 rem so the controls
+       below them are the visual focus. */
+    .dist-label--dep-arr { font-size: 1.05rem !important; }
+    .dist-label--owner   { font-size: 1.05rem !important; letter-spacing: 0.02em; }
+
+    /* (w) Aircraft selector header — bigger tap target + body font
+       so the panel feels like a tappable section, not a small chip. */
+    .ac-selector-header {
+      padding: 0.55rem 0.85rem !important;
+      min-height: 44px;
+      gap: 0.5rem;
+    }
+    .ac-selector-title    { font-size: 0.92rem; }
+    .ac-selector-selected { font-size: 0.92rem; }
+
+    /* (x) Dep / Arr category filter strips — one row each on mobile.
+       Default circle is 2.1 rem, with 7 circles + label + Inv that
+       wraps to 2 rows per side (so 4 rows total for Dep+Arr).
+       Shrink the circle to 1.55 rem, tighten the gap to 0.22 rem,
+       shrink the label and Inv, and switch `flex-wrap` from wrap to
+       nowrap with horizontal overflow (so even on a very narrow
+       viewport the user can swipe rather than seeing two visual
+       rows where one is logically expected). */
+    .dist-cat-pills-row {
+      flex-wrap: nowrap !important;
+      gap: 0.22rem !important;
+      justify-content: flex-start !important;
+      overflow-x: auto;
+      padding-bottom: 0.1rem;
+      scrollbar-width: none;
+    }
+    .dist-cat-pills-row::-webkit-scrollbar { display: none; }
+    .dist-cat-pills-row .dist-cat-btn {
+      width: 1.55rem !important;
+      height: 1.55rem !important;
+      font-size: 0.8rem !important;
+      flex-shrink: 0;
+    }
+    .dist-cat-pills-row .dist-cat-filter-label {
+      font-size: 0.85rem !important;
+      margin-right: 0.15rem;
+      flex-shrink: 0;
+    }
+    .dist-cat-pills-row .dist-cat-invert-btn {
+      font-size: 0.72rem !important;
+      padding: 0.18rem 0.45rem !important;
+      flex-shrink: 0;
+    }
+
+    /* (y) "Hide filtered airports" toggle — was a small pill floating
+       in its own row. Treat it as a primary tappable action: full
+       width, larger padding, body-font readable. */
+    .dist-cat-hide-btn {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.55rem 1rem !important;
+      font-size: 0.95rem !important;
+    }
+
+    /* (z) Distance matrix — shrink fonts so more columns fit before
+       horizontal scroll kicks in. Cells are tabular numerics that
+       degrade gracefully at smaller sizes. */
+    .dist-matrix-wrap  { font-size: 0.82rem; margin-top: 0.7rem; }
+    .dist-th-icao      { font-size: 0.95rem !important; }
+
+    /* (aa) Dist info panel — Departure / Arrival cards were laid out
+       side-by-side via flex-row. On a phone each card is too narrow
+       to read; stack them vertically with the divider becoming a
+       top border. */
+    .dist-map-info-row { flex-direction: column !important; }
+    .dist-map-info-card + .dist-map-info-card {
+      border-left: none !important;
+      border-top: 1px solid var(--border);
+    }
   }
 
   @media (max-width: 480px) {
@@ -6909,7 +7012,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.6';
+const APP_VERSION = '3.19.7';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34387,10 +34490,29 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.7</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Main screen polish &mdash; less &ldquo;PC app in portrait&rdquo;, more native.</strong> Mobile testing of v3.19.6 surfaced a cluster of small issues that together made the main distance-planner screen feel like a desktop layout pushed into a phone window. v3.19.7 addresses them in one pass.</li>
+          <li><strong>Floating chrome moved out of the way.</strong> The Dark Mode toggle was pinned at <code>top: 1rem; right: 1rem</code> and landed directly on top of panel content on a phone. Mobile now drops it to the bottom-right corner at 0.55&nbsp;rem font with 65% opacity so it&rsquo;s reachable but unobtrusive. The LCL/UTC clock overlay (moved to bottom-left in v3.19.3) was overlapping the Departure / Arrival airport-info cards &mdash; phones have their own OS clock, so the LCL/UTC display is now hidden on mobile entirely.</li>
+          <li><strong>Section labels rescaled.</strong> The &ldquo;<em>Departure Airport Owner</em>&rdquo; / &ldquo;<em>Arrival Airport Owner</em>&rdquo; labels were 1.658&nbsp;rem (sized for 1080p+) and dominated the screen. The &ldquo;<em>Departure</em>&rdquo; / &ldquo;<em>Arrival</em>&rdquo; ICAO-field labels were 1.463&nbsp;rem. Both come down to ~1.05&nbsp;rem on mobile so the controls below them &mdash; the dropdowns and ICAO inputs &mdash; become the visual focus, not the headings.</li>
+          <li><strong>Dep / Arr category-filter strips now one row each.</strong> The 2.1&nbsp;rem circles wrapped 7+Inv into a second row per side, so the filter section was four visual rows for what is logically two. Mobile drops circles to 1.55&nbsp;rem with tighter gaps and switches the row from <code>flex-wrap: wrap</code> to <code>flex-wrap: nowrap; overflow-x: auto</code> with the scrollbar hidden &mdash; if a particularly narrow phone still can&rsquo;t fit all 9 items, the user swipes the row rather than seeing it split into uneven lines.</li>
+          <li><strong>&ldquo;Hide filtered airports&rdquo; promoted to a full-width primary action.</strong> Was a small pill button floating in its own row; now spans full width at 0.95&nbsp;rem font with comfortable 0.55&nbsp;rem padding so it reads as the section&rsquo;s primary commit action rather than a tertiary toggle.</li>
+          <li><strong>Distance matrix tighter.</strong> Cell font down to 0.82&nbsp;rem so more columns fit on screen before horizontal scroll kicks in; ICAO headers preserved at 0.95&nbsp;rem so they stay legible. The matrix is still scrollable when more columns exist than the viewport can show.</li>
+          <li><strong>Departure / Arrival info cards stack vertically.</strong> The two airport-info cards (showing dep / arr name, country, runway, etc.) sat side-by-side via <code>flex-direction: row</code>; on a phone each card was barely 180&nbsp;px wide and unreadable. They now stack with the dividing border becoming a top border on the second card.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px) is byte-identical to v3.19.6.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.19.6</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
