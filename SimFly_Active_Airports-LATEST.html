@@ -6507,6 +6507,79 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        minor cost — users can still file on SimBrief from the main
        screen's *File on SimBrief* button without needing this menu. */
     #rgLiveWrap { display: none !important; }
+
+    /* ── v3.19.6 ──────────────────────────────────────────────────
+       Three touch-UX fixes flagged in mobile testing of v3.19.5:
+       Android's text-selection context menu was intercepting taps
+       on the Tools dropdown items; the ✕ buttons on filter chips
+       and the SimBrief pill were too small to hit cleanly with a
+       finger; and the Measurement + Select Regions tools (both
+       mouse-drag-based) were appearing in the Tools menu where
+       they're guaranteed to fail. */
+
+    /* (q) Disable OS text-selection / touch-callout on interactive
+       chrome. Android Chrome interprets a tap-and-brief-hold on a
+       button as a text-selection gesture and pops the system
+       "Copy | Translate | Select all" context menu, which obscures
+       the dropdown and consumes the tap. Setting `user-select:none`
+       on the relevant surfaces stops the OS from treating the
+       button text as selectable. `touch-callout:none` stops iOS's
+       link-preview popup. `tap-highlight-color:transparent` removes
+       the gray flash so taps feel native. `touch-action:manipulation`
+       eliminates the 300 ms double-tap-to-zoom delay so taps register
+       immediately. Form inputs and selectable text are deliberately
+       NOT in this selector — they still need user-select:text. */
+    .rg-btn, .rg-pulldown, .rg-pulldown-row, .rg-pulldown-trigger,
+    .rg-cat-acc-btn, .dist-cat-btn, .dist-cat-invert-btn,
+    .rg-owner-btn, .rg-owner-color-btn, .rg-bc, .rg-bc-x,
+    .sb-route-pill, .sb-route-pill-x, .sb-route-pill-file-btn,
+    .sb-route-pill-route, .modal-close, .rn-filter-btn,
+    .btn-action, .aa-choice-card, .aa-choice-skip {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    /* (r) Enlarge ✕ close buttons to finger-friendly tap targets.
+       Filter-chip ✕ was 0.81 rem font / 0.1 rem padding (~14 px
+       hit area). SimBrief pill ✕ was 0.95 rem / no padding (~16 px).
+       Modal close ✕ was 28×28. All below Apple's 44×44 HIG minimum
+       and below Material's 48×48 — bumped to ~32-38 px which keeps
+       visual proportion while being reliably tappable. */
+    .rg-bc-x {
+      font-size: 1.05rem !important;
+      padding: 0.3rem 0.45rem !important;
+      margin-left: 0.15rem !important;
+      min-width: 30px;
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.75;
+    }
+    .sb-route-pill-x {
+      font-size: 1.3rem !important;
+      padding: 0.4rem 0.7rem !important;
+      min-width: 40px;
+      min-height: 36px;
+      color: rgba(255, 255, 255, 0.55) !important;
+    }
+    .modal-close {
+      width: 38px !important;
+      height: 38px !important;
+      font-size: 1.4rem !important;
+    }
+
+    /* (s) Hide Tools-menu items that require mouse drag. Both the
+       Measurement tool and Select Regions tool implement their
+       draw-by-drag behavior via mousedown/mousemove/mouseup with
+       explicit `e.originalEvent.button` checks — Leaflet's mouse
+       paths, not its touch paths. On a phone they're guaranteed to
+       fail. Display New Airports (the third item) stays — it's a
+       simple toggle that works fine on tap. */
+    #rgRulerBtn, #rgSelectMenuBtn { display: none !important; }
   }
 
   @media (max-width: 480px) {
@@ -6836,7 +6909,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.5';
+const APP_VERSION = '3.19.6';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34314,10 +34387,25 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.6</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Android&rsquo;s text-selection menu no longer hijacks the Tools dropdown.</strong> When a phone user tapped &ldquo;Display New Airports&rdquo; or &ldquo;Measurement&rdquo;, Android Chrome interpreted the brief contact as a text-selection gesture and popped its system <em>Copy | Translate | Select all</em> context menu over the dropdown &mdash; the dropdown item never received the tap. Fixed by adding <code>user-select: none</code>, <code>-webkit-touch-callout: none</code>, <code>-webkit-tap-highlight-color: transparent</code>, and <code>touch-action: manipulation</code> to every interactive chrome surface (buttons, pulldowns, chips, the SimBrief pill, modal close ✕, choice-screen cards, the choice-skip link). Form inputs are deliberately excluded so text editing still works. The <code>touch-action</code> bonus: removes Android Chrome&rsquo;s 300&nbsp;ms double-tap-to-zoom delay, so taps register immediately.</li>
+          <li><strong>✕ close buttons enlarged to finger-friendly tap targets.</strong> The chip ✕ (<code>.rg-bc-x</code>) was 0.81&nbsp;rem font with 0.1&nbsp;rem padding &mdash; about a 14&nbsp;px hit area, well below Apple&rsquo;s 44&nbsp;px and Material&rsquo;s 48&nbsp;px minimums and basically impossible to hit cleanly with a thumb. The SimBrief pill ✕ was 0.95&nbsp;rem with no padding (~16&nbsp;px). The modal close ✕ was 28&times;28. Mobile now sizes them to 30&times;28, 40&times;36, and 38&times;38 respectively &mdash; small enough to keep visual proportion, large enough to reliably tap.</li>
+          <li><strong>Measurement &amp; Select Regions removed from the Tools menu on mobile.</strong> Both tools implement their draw-by-drag behaviour through <code>mousedown</code> &rarr; <code>mousemove</code> &rarr; <code>mouseup</code> with explicit <code>e.originalEvent.button</code> checks &mdash; pure mouse paths, not Leaflet&rsquo;s touch paths. On a phone they were guaranteed to fail. Hidden via <code>#rgRulerBtn, #rgSelectMenuBtn { display: none }</code> in the mobile media query so the Tools menu shows only <em>Display New Airports</em> (a simple toggle that works fine on tap) on phones. Both tools still render normally on desktop.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) is byte-identical to v3.19.5.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.19.5</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
