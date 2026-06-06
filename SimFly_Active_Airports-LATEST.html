@@ -7453,7 +7453,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.20';
+const APP_VERSION = '3.19.21';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -28043,6 +28043,10 @@ function _rgRenderDots() {
     _rgPulseLayer = L.layerGroup();
     if (_rgNewAirportsVisible) _rgPulseLayer.addTo(_rgMap);
   }
+  // v3.19.21 — sync the toolbar buttons to whatever _rgNewAirportsVisible is
+  // currently set to (defaults to true). Without this, the map starts with
+  // pulse rings visible but the New Airports toggle button looks off.
+  _rgSyncNewAirportsButtons();
   _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
@@ -31104,19 +31108,28 @@ function _rgPayoutPaletteCommit() {
 // switch and continues hiding airports below it regardless of color mode.
 // The explicit 💰 Payout button passes the default (false) so clicking it
 // to turn the mode off still resets the filter, matching the prior UX.
+// v3.19.21 — extracted from _rgToggleNewAirports so the buttons can be synced
+// at map-init time too, not only on user toggle. `_rgNewAirportsVisible`
+// defaults to `true` (line ~26834), and _rgRenderDots adds the pulse layer
+// accordingly, but the desktop dropdown row and the mobile direct toggle
+// were never given the `.active` class at startup — so the map showed pulse
+// rings while the button looked "off". This helper makes both buttons reflect
+// the current state, and is called both from the toggle below and from
+// _rgRenderDots after the pulse layer is initialised.
+function _rgSyncNewAirportsButtons() {
+  const btn = document.getElementById('rgNewAirportsBtn');
+  if (btn) btn.classList.toggle('active', _rgNewAirportsVisible);
+  const mobileBtn = document.getElementById('rgMobileNewAirportsBtn');
+  if (mobileBtn) mobileBtn.classList.toggle('active', _rgNewAirportsVisible);
+}
+
 function _rgToggleNewAirports() {
   _rgNewAirportsVisible = !_rgNewAirportsVisible;
   if (_rgPulseLayer) {
     if (_rgNewAirportsVisible) _rgPulseLayer.addTo(_rgMap);
     else _rgPulseLayer.remove();
   }
-  const btn = document.getElementById('rgNewAirportsBtn');
-  if (btn) btn.classList.toggle('active', _rgNewAirportsVisible);
-  // v3.19.17 — also mirror state on the mobile-only direct toggle button
-  // (which replaces the Tools dropdown on mobile since New Airports was the
-  // dropdown's only remaining item).
-  const mobileBtn = document.getElementById('rgMobileNewAirportsBtn');
-  if (mobileBtn) mobileBtn.classList.toggle('active', _rgNewAirportsVisible);
+  _rgSyncNewAirportsButtons();
 }
 
 // ── New-airport display settings ─────────────────────────────────────────
@@ -34995,8 +35008,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.20</span>
+          <span class="release-version">v3.19.21</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Airports toggle now reflects the actual map state at startup.</strong> The map defaults to showing pulse rings on recently-added airports (<code>_rgNewAirportsVisible = true</code> at module load), but the toolbar toggle button was never given its <code>.active</code> class until the user clicked it. Result: on first opening the map, the pulse rings were clearly visible while the button looked off &mdash; a confusing state mismatch. v3.19.21 extracts the button-syncing logic from <code>_rgToggleNewAirports()</code> into a new <code>_rgSyncNewAirportsButtons()</code> helper and calls it from <code>_rgRenderDots()</code> right after the pulse layer is initialised. Both the desktop dropdown row and the mobile direct toggle now reflect the current value of <code>_rgNewAirportsVisible</code> at startup, on every dot re-render, and after every user toggle.</li>
+          <li><strong>Pure JS fix; no CSS change; affects all viewports.</strong> The bug existed on desktop too &mdash; the dropdown menu row that says &ldquo;Display New Airports&rdquo; was equally not lit up at startup &mdash; just less obvious because the dropdown isn&rsquo;t open by default.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.20</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
