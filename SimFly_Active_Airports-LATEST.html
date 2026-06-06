@@ -6702,11 +6702,26 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        because the children had `overflow-x: auto` they reported as
        "fitting" and never wrapped. Two rows tried to share the
        viewport horizontally and each got ~half, cutting off
-       circles 5-7. Forcing column gives each row the full width. */
+       circles 5-7. Forcing column gives each row the full width.
+       v3.19.10 — the desktop rule at line ~1657
+       `.dist-cat-dual-row .dist-cat-pills-row { flex: 1 1 0 }`
+       was meant for the row layout (each side gets equal horizontal
+       share). After v3.19.8 flipped the parent to column, that flex
+       suddenly applied to the VERTICAL axis: `flex-basis: 0` +
+       `flex-grow: 1` inside a parent with no explicit height
+       collapses both children to height 0, and the 1.55-rem circles
+       overflow as a thin colored smear. Override with
+       `flex: 0 0 auto` so each row takes its natural content height,
+       and clear the desktop `max-width: 34rem` so the row can span
+       the full mobile viewport. */
     .dist-cat-dual-row {
       flex-direction: column !important;
       align-items: stretch !important;
       gap: 0.45rem !important;
+    }
+    .dist-cat-dual-row .dist-cat-pills-row {
+      flex: 0 0 auto !important;
+      max-width: none !important;
     }
     .dist-cat-pills-row { justify-content: center !important; }
 
@@ -7060,7 +7075,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.9';
+const APP_VERSION = '3.19.10';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34590,8 +34605,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.9</span>
+          <span class="release-version">v3.19.10</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Dep / Arr category circles regression &mdash; rows no longer collapse to height 0.</strong> Mobile testing of v3.19.8/9 showed the category filter circles rendering as a thin multicoloured smear above the <em>Hide filtered</em> button row instead of as 7 proper circles per side. Root cause: a desktop rule (<code>.dist-cat-dual-row .dist-cat-pills-row { flex: 1 1 0; max-width: 34rem }</code> in the base stylesheet) was written for the row-direction layout (each pills-row gets equal horizontal share). When v3.19.8 flipped the parent <code>.dist-cat-dual-row</code> to <code>flex-direction: column</code> to give each row its own line, that <code>flex: 1 1 0</code> suddenly applied to the <em>vertical</em> axis &mdash; <code>flex-basis: 0</code> + <code>flex-grow: 1</code> inside a parent with no explicit height collapsed both children to height 0, and the 1.55-rem circles overflowed as a thin colored band. v3.19.10 adds <code>.dist-cat-dual-row .dist-cat-pills-row { flex: 0 0 auto !important; max-width: none !important }</code> on mobile so each row takes its natural content height and can span the full mobile viewport. Desktop layout (&ge;&nbsp;769&nbsp;px) is unaffected &mdash; the override is nested inside the existing <code>@media (max-width: 768px)</code> block.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.9</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
