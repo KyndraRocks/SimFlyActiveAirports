@@ -6049,7 +6049,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }, 320);
   }
   // Safety net: never trap the user if a fetch hangs or the machine is offline.
-  setTimeout(done, 15000);
+  // v3.19.9 — dropped from 15 s to 10 s now that every boot fetch has its
+  // own 8 s timeout (see _fetchWithTimeout). Worst case for legitimate
+  // loading is ~8 s + a few hundred ms of processing, so 10 s is generous.
+  setTimeout(done, 10000);
   function afterDone(){
     // Reveal the startup choice screen *underneath* the still-opaque splash, so
     // the choice has time to fade in (≈350ms) before the splash starts fading
@@ -7057,7 +7060,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.8';
+const APP_VERSION = '3.19.9';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -7227,13 +7230,46 @@ const CATEGORY_CACHE_KEY = 'simfly_category_csv';
 // response, caches every successful payload to localStorage, and falls back to
 // the cache when all network attempts fail. Returns '' only when both the Gist
 // and the cache are unavailable (sets _categoryDbFailed for the banner).
+// v3.19.9 — defensive: wrap fetch() with a per-call timeout so a single hung
+// resource (captive-portal wifi that never NACKs the TCP connection, a
+// dropped cellular handoff, a flaky CDN edge) cannot lock the boot
+// Promise.all forever. Reported by an iPad Safari user who saw the splash
+// freeze indefinitely; the 15 s splash safety net would have dismissed
+// the splash but only after a long wait, and the underlying loader was
+// still hung. AbortController is supported on iOS Safari 12.2+, Android
+// Chrome 66+, and every modern desktop browser — we feature-detect and
+// fall back to a plain setTimeout reject if it's missing.
+//   On the fast path (normal connection) there is zero behavioural change:
+//   the timeout only fires if the network actually hangs without
+//   resolving or rejecting within the budget. The 8-second default leaves
+//   plenty of room for slow legitimate responses.
+function _fetchWithTimeout(url, ms, opts) {
+  ms = ms || 8000;
+  return new Promise(function(resolve, reject) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function() {
+      if (ctrl) { try { ctrl.abort(); } catch (_) {} }
+      reject(new Error('Fetch timed out after ' + ms + ' ms: ' + url));
+    }, ms);
+    var fetchOpts = opts || {};
+    if (ctrl) fetchOpts.signal = ctrl.signal;
+    fetch(url, fetchOpts).then(
+      function(r) { clearTimeout(timer); resolve(r); },
+      function(e) { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
 async function fetchCategoryCsvWithRetry() {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       // ?t= cache-buster: see comment in loadAirportDB() for OVERRIDE_URL —
       // GitHub raw URLs are CDN-cached, so freshly-pushed category edits
       // from KML Generator wouldn't surface here until the cache expires.
-      const r = await fetch(CATEGORY_URL + '?t=' + Date.now());
+      // v3.19.9 — wrap with timeout so a hung fetch doesn't hold the
+      // retry loop on a stalled connection for the network's full TCP
+      // budget (~120 s) × 3 attempts.
+      const r = await _fetchWithTimeout(CATEGORY_URL + '?t=' + Date.now());
       if (r.ok) {
         const txt = await r.text();
         if (txt && /^\s*ICAO\b/i.test(txt)) {
@@ -7259,27 +7295,44 @@ async function fetchCategoryCsvWithRetry() {
 // v3.4.0 — boot-splash progress: bump the bar + show a component name as each
 // of the seven startup fetches settles. Order of completion is network-driven,
 // so we count settlements rather than assume an order.
+// v3.19.9 — also track which fetches failed/timed out so the splash label
+// suffixes "(timed out)" for the user, and so the count is available for
+// diagnostics if a user reports a partial-data symptom.
 let _bootFetchN = 0;
-function _bootTick(name) {
+let _bootFetchFailures = [];
+function _bootTick(name, failed) {
   _bootFetchN++;
-  if (window._aaSplash) window._aaSplash.set(10 + _bootFetchN * 8, name); // 7 fetches → up to ~66%
+  if (failed) {
+    _bootFetchFailures.push(name);
+    console.warn('Boot fetch failed or timed out:', name);
+  }
+  if (window._aaSplash) {
+    var lbl = failed ? (name + ' (timed out)') : name;
+    window._aaSplash.set(10 + _bootFetchN * 8, lbl); // 7 fetches → up to ~66%
+  }
 }
 
 function loadAirportDB() {
   if (dbLoadPromise) return dbLoadPromise;
   if (window._aaSplash) window._aaSplash.set(8, 'Contacting data sources');
+  // v3.19.9 — every fetch is wrapped in _fetchWithTimeout (8 s default) and
+  // every fetch has a `.catch(() => fallback)` so a single hung resource
+  // can't reject Promise.all and can't block it indefinitely. Previously
+  // the first three (airport DB, regions, runways) threw on !r.ok with no
+  // catch, so a hung TCP connection would block the loader forever —
+  // matching the iPad Safari freeze-on-splash report.
   dbLoadPromise = Promise.all([
-    fetch(OURAIRPORTS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch airport database'); return r.text(); }).then(v => { _bootTick('Airport database'); return v; }),
-    fetch(REGIONS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch regions database'); return r.text(); }).then(v => { _bootTick('Region names'); return v; }),
-    fetch(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('Failed to fetch runway database'); return r.text(); }).then(v => { _bootTick('Runway database'); return v; }),
-    fetchCategoryCsvWithRetry().then(v => { _bootTick('Airport categories'); return v; }),
-    fetch(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => '').then(v => { _bootTick('Aircraft database'); return v; }),
+    _fetchWithTimeout(OURAIRPORTS_URL).then(r => { if (!r.ok) throw new Error('!ok'); return r.text(); }).catch(() => '').then(v => { _bootTick('Airport database', !v); return v; }),
+    _fetchWithTimeout(REGIONS_URL).then(r => { if (!r.ok) throw new Error('!ok'); return r.text(); }).catch(() => '').then(v => { _bootTick('Region names', !v); return v; }),
+    _fetchWithTimeout(RUNWAYS_URL).then(r => { if (!r.ok) throw new Error('!ok'); return r.text(); }).catch(() => '').then(v => { _bootTick('Runway database', !v); return v; }),
+    fetchCategoryCsvWithRetry().then(v => { _bootTick('Airport categories', !v); return v; }),
+    _fetchWithTimeout(AIRCRAFT_GIST_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '').catch(() => '').then(v => { _bootTick('Aircraft database', !v); return v; }),
     // ?t= cache-buster: GitHub raw URLs are CDN-cached for several minutes,
     // so without it a fresh corrections push from KML Generator won't surface
     // here until the cache expires, even on a hard refresh.
-    fetch(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}').then(v => { _bootTick('Field overrides'); return v; }),
-    fetch(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null).then(v => { _bootTick('Pilot payouts'); return v; }),
-    fetch(PAYOUT_DATA_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
+    _fetchWithTimeout(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}').then(v => { _bootTick('Field overrides', !v || v === '{}'); return v; }),
+    _fetchWithTimeout(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null).then(v => { _bootTick('Pilot payouts', !v); return v; }),
+    _fetchWithTimeout(PAYOUT_DATA_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
   ])
     .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson, payoutDataJson]) => {
 
@@ -34537,8 +34590,30 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.8</span>
+          <span class="release-version">v3.19.9</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Boot loader hardened against hung fetches &mdash; no more splash freeze.</strong> A user reported the app freezing on the splash screen progress bar on an iPad in Safari and never loading. Root cause analysis pointed at the boot loader&rsquo;s <code>Promise.all</code> of 8 startup fetches (airport database, region names, runways, airport categories, aircraft database, field overrides, pilot payouts, payout data): a single fetch that hangs without resolving <em>or</em> rejecting &mdash; which happens on captive-portal wifi, dropped cellular handoffs, and a few flaky CDN-edge conditions &mdash; blocks the whole <code>Promise.all</code> forever, freezing the loader. The 15&nbsp;s splash safety-net timeout would eventually hide the splash but the underlying loader was still hung in the background.</li>
+          <li><strong>What changed:</strong>
+            <ul>
+              <li>New <code>_fetchWithTimeout(url, ms, opts)</code> helper that wraps <code>fetch()</code> with an <code>AbortController</code>-based timeout (default 8&nbsp;s). Feature-detects <code>AbortController</code>; falls back gracefully on browsers that don&rsquo;t expose it. On the fast path (normal connection) there is zero behavioural change &mdash; the timeout only fires if the network actually hangs.</li>
+              <li>All 8 boot fetches in <code>loadAirportDB()</code> rewritten to use <code>_fetchWithTimeout</code> and each one now has a <code>.catch()</code> so a hung or failed fetch yields the fallback value (empty string, <code>{}</code>, or <code>null</code>) instead of rejecting the whole <code>Promise.all</code>. Previously the first three (airport DB / regions / runways) threw on <code>!r.ok</code> with no catch &mdash; that&rsquo;s the freeze path the iPad user hit.</li>
+              <li>The category-CSV retry loop&rsquo;s <code>fetch()</code> call also goes through <code>_fetchWithTimeout</code> so a 120-second TCP stall &times; 3 attempts can&rsquo;t hold the loader hostage.</li>
+              <li>Splash safety-net timer dropped from 15&nbsp;s to 10&nbsp;s. With per-fetch timeouts in place, worst-case legitimate loading is ~8&nbsp;s + a few hundred ms of processing.</li>
+              <li>The splash progress label now suffixes &ldquo;<em>(timed out)</em>&rdquo; when a fetch fails or times out, so the user can see <em>which</em> piece is missing instead of having to guess. Each failure also emits a <code>console.warn</code> so any future bug reports can include diagnostic info.</li>
+            </ul>
+          </li>
+          <li><strong>Zero desktop impact.</strong> The new timeout logic is invisible on a healthy connection &mdash; fetches resolve well within the 8&nbsp;s budget and the timer is cleared on resolve. The splash safety-net change (15&nbsp;s &rarr; 10&nbsp;s) only matters if something is genuinely wrong with the network, in which case the user previously waited 15 s for the splash to dismiss and now waits 10. All other code paths are untouched.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.8</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
