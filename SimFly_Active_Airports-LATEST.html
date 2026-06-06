@@ -7495,7 +7495,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.24';
+const APP_VERSION = '3.19.25';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31724,6 +31724,32 @@ function _rgStarFiltCheck(icao) {
   return !!entry && (+(entry.rating) || 0) >= _rgStarFilter;
 }
 
+// v3.19.25 — dedicated "turn off + clear filter" helper used by the breadcrumb
+// chip's ✕. Calling _rgToggleStarFilter from the chip was buggy: when the
+// user had closed the panel via its own ✕ (panel hidden, mode still on),
+// _rgToggleStarFilter's first branch would treat that as a re-open request
+// and pop the panel back instead of clearing the filter. This helper takes
+// the "turn off" path unconditionally and always lands at mode-off,
+// filter-zero, panel-hidden, button-inactive. The ⭐ button still uses
+// _rgToggleStarFilter for the documented "click button = reopen panel
+// without flipping mode" UX.
+function _rgClearStarFilter() {
+  if (!_rgStarFilterMode && _rgStarFilter === 0) return;
+  _rgStarFilterMode = false;
+  const btn = document.getElementById('rgStarFilterBtn');
+  if (btn) btn.classList.remove('active');
+  const leg = document.getElementById('rgStarFilterLegend');
+  if (leg) leg.style.display = 'none';
+  if (_rgStarFilter > 0) {
+    _rgStarFilter = 0;
+    _rgStarFltSetStars(0);
+    _rgUpdateStarFilterLabel();
+  }
+  _rgRepositionFilterPanels();
+  _rgApplyMapFilter();
+  _rgUpdateBreadcrumbs();
+}
+
 function _rgToggleStarFilter() {
   // v3.12.0 — mirror the payout panel: if the filter is already engaged but
   // the legend panel was closed via its ✕, treat a ⭐ Rating click as re-open
@@ -32407,7 +32433,12 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkChip(
       `Rating >= ${starStr} stars`,
       null,
-      () => { if (_rgStarFilterMode) _rgToggleStarFilter(); }
+      // v3.19.25 — was `() => { if (_rgStarFilterMode) _rgToggleStarFilter(); }`
+      // which hit _rgToggleStarFilter's "panel hidden but mode on → reopen panel"
+      // early-return path when the user had closed the legend via its own ✕.
+      // Use the dedicated _rgClearStarFilter helper instead so the chip ✕
+      // always clears the filter, never reopens the panel.
+      () => _rgClearStarFilter()
     ));
   }
 
@@ -35080,8 +35111,22 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.24</span>
+          <span class="release-version">v3.19.25</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Rating breadcrumb ✕ now correctly clears the filter instead of re-opening the panel.</strong> Reported flow: open ⭐ Rating panel, click a star to set the threshold (breadcrumb chip appears), close the panel via its ✕ (panel hidden, mode still on), then click the ✕ on the breadcrumb chip &mdash; expected the filter to clear, but the panel popped back open instead. Root cause: the chip&rsquo;s ✕ handler at line ~32410 called <code>_rgToggleStarFilter()</code>, whose first branch is the v3.12.0 &ldquo;if mode is on but panel is hidden, treat a click as <em>re-open the panel</em>&rdquo; UX (so the ⭐ button can bring the panel back without flipping mode). That early-return path intercepted the chip&rsquo;s clear-the-filter intent.</li>
+          <li><strong>The fix:</strong> new dedicated <code>_rgClearStarFilter()</code> helper that takes the &ldquo;turn off&rdquo; path unconditionally &mdash; sets mode false, clears the threshold, hides the panel, drops the button&rsquo;s active class, repositions filter panels, applies the map filter, refreshes the breadcrumb strip. The chip&rsquo;s ✕ handler now calls this helper directly, bypassing the toggle&rsquo;s re-open special case. The ⭐ button still calls <code>_rgToggleStarFilter()</code> so its documented behaviour (&ldquo;click button = reopen panel without flipping mode if the panel was hidden via its ✕&rdquo;) is preserved.</li>
+          <li><strong>Affects all viewports.</strong> This was a logic bug not a touch-input bug &mdash; it could be reproduced with a mouse on desktop just as easily as with a finger on mobile, the user just happened to be testing on mobile.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.24</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
