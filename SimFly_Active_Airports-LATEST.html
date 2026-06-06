@@ -6467,7 +6467,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.18.1';
+const APP_VERSION = '3.18.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15644,11 +15644,15 @@ const _afkPhase = (() => {
   // We compute both:
   //   - fastVSfpm():   5 s window — responsive level-off detection used
   //                     for CLIMB / DESCENT → CRUISE transitions.
-  //   - trendVSfpm(): 15 s window — sustained trend test used for
+  //   - trendVSfpm(): 30 s window — sustained trend test used for
   //                     CRUISE → CLIMB / DESCENT transitions and for direct
   //                     CLIMB ↔ DESCENT crossovers. Falls back to the fast
-  //                     window when fewer than 14 s of samples exist (page
+  //                     window when fewer than 29 s of samples exist (page
   //                     reload, MSFS crash recovery, post-pause warm-up).
+  //                     v3.18.2 — Widened from 15 s to 30 s alongside the
+  //                     bump in cruise-exit threshold from ±200 to ±400 fpm
+  //                     to suppress false TOD calls during extended
+  //                     turbulence.
   function fastVSfpm() {
     if (samples.length < 2) return 0;
     const newest = samples[samples.length - 1];
@@ -15664,41 +15668,51 @@ const _afkPhase = (() => {
   function trendVSfpm() {
     if (samples.length < 2) return 0;
     const newest = samples[samples.length - 1];
-    const cutoff = newest.t - 15000;
+    const cutoff = newest.t - 30000;
     let oldest = samples[0];
     for (let i = 0; i < samples.length; i++) {
       if (samples[i].t >= cutoff) { oldest = samples[i]; break; }
     }
     const dtSec = (newest.t - oldest.t) / 1000;
-    // Warm-up fallback: if we don't have at least 14 s of altitude
-    // history, the 15 s trend reading isn't meaningful yet — fall back
+    // Warm-up fallback: if we don't have at least 29 s of altitude
+    // history, the 30 s trend reading isn't meaningful yet — fall back
     // to the fast 5 s window so transitions can still be evaluated
     // immediately after page load / crash recovery / unpause.
-    if (dtSec < 14) return fastVSfpm();
+    if (dtSec < 29) return fastVSfpm();
     return ((newest.alt - oldest.alt) / dtSec) * 60;
   }
 
   function _computePhase(altFt, gsKts) {
     // v3.16.0 — Asymmetric two-window bucket model.
+    // v3.18.2 — Asymmetric thresholds added alongside the asymmetric
+    //           windows to further suppress turbulence-driven false TOD
+    //           calls during extended cruise.
     //
-    // Direction of transition picks which window to consult:
-    //   CRUISE → CLIMB/DESCENT  : trend window (15 s) — sustained trend
-    //                              required, so brief wobbles during cruise
-    //                              don't false-trigger phase flips.
-    //   CLIMB/DESCENT → CRUISE  : fast window (5 s) — responsive level-off
-    //                              detection so Cruise Reached fires
-    //                              promptly when the aircraft levels.
-    //   Direct CLIMB ↔ DESCENT  : trend window (rare; same noise rejection
-    //                              concern as leaving cruise).
-    // Threshold is a flat ±200 fpm in every case.
+    // Direction of transition picks which window AND which threshold to
+    // consult:
+    //   CRUISE → CLIMB/DESCENT  : trend window (30 s) at ±EXIT_THRESH
+    //                              (±400 fpm). Sustained AND stronger trend
+    //                              required, so even minutes of turbulence
+    //                              that briefly nets to -200 fpm over a
+    //                              short window cannot flip phase.
+    //   CLIMB/DESCENT → CRUISE  : fast window (5 s) at ±LEVEL_THRESH
+    //                              (±200 fpm). Responsive level-off so
+    //                              Cruise Reached fires promptly.
+    //   Direct CLIMB ↔ DESCENT  : trend window + EXIT_THRESH (rare; same
+    //                              noise-rejection concern as leaving
+    //                              cruise).
     const fastVS  = fastVSfpm();
     const trendVS = trendVSfpm();
     if (fastVS > peakClimbVS) peakClimbVS = fastVS;
 
-    const LEVEL_THRESH = 200;
+    const LEVEL_THRESH = 200;   // cruise-ENTRY band (fast window)
+    const EXIT_THRESH  = 400;   // cruise-EXIT band (trend window)
 
     // v2.87.0 — Ground detection still uses GS + VS (no MSL altitude check),
-    // so taxi at high-elevation airports stays correctly classified.
+    // so taxi at high-elevation airports stays correctly classified. Ground
+    // rule continues to use the tighter ±LEVEL_THRESH because at taxi speed
+    // there's no real flight-level wobble to filter — anything above
+    // LEVEL_THRESH genuinely means airborne climbing.
     const onGround = (gsKts != null && gsKts < 5) ||
                      (gsKts != null && gsKts < 55 && Math.abs(fastVS) < LEVEL_THRESH);
     const now  = performance.now();
@@ -15711,13 +15725,16 @@ const _afkPhase = (() => {
       // First airborne sample — assume climb (matches prior behaviour).
       next = 'climb';
     } else if (prev === 'cruise') {
-      // CRUISE → climb/descent uses TREND window. Brief wobbles that
-      // briefly hit ±400 fpm but net to ~0 over 15 s do not flip phase.
-      if (trendVS > LEVEL_THRESH)        next = 'climb';
-      else if (trendVS < -LEVEL_THRESH)  next = 'descent';
+      // CRUISE → climb/descent uses TREND window + EXIT_THRESH (±400 fpm).
+      // Turbulence rarely produces a sustained 30 s net altitude change of
+      // 200 ft (which is what -400 fpm × 30 s works out to) because the
+      // autopilot recovers within that window.
+      if (trendVS > EXIT_THRESH)        next = 'climb';
+      else if (trendVS < -EXIT_THRESH)  next = 'descent';
       // else stay cruise
     } else if (prev === 'climb') {
-      // CLIMB → CRUISE uses FAST window — 5 s of level flight is enough.
+      // CLIMB → CRUISE uses FAST window at LEVEL_THRESH — 5 s of level
+      // flight is enough.
       // v3.16.1 — Guard: require 6 s in climb before accepting a cruise
       // transition. Immediately post-liftoff the 5 s fast window still
       // contains flat ground-altitude samples (fastVS ≈ 0 fpm), which
@@ -15726,22 +15743,22 @@ const _afkPhase = (() => {
       const climbDwellMs = now - lastChangeAt;
       if (Math.abs(fastVS) <= LEVEL_THRESH && climbDwellMs >= 6000) {
         next = 'cruise';
-      } else if (trendVS < -LEVEL_THRESH) {
-        // Direct CLIMB → DESCENT (rare): trend window confirms.
+      } else if (trendVS < -EXIT_THRESH) {
+        // Direct CLIMB → DESCENT (rare): trend window + exit threshold.
         next = 'descent';
       }
     } else if (prev === 'descent') {
-      // DESCENT → CRUISE uses FAST window.
+      // DESCENT → CRUISE uses FAST window at LEVEL_THRESH.
       if (Math.abs(fastVS) <= LEVEL_THRESH) {
         next = 'cruise';
-      } else if (trendVS > LEVEL_THRESH) {
+      } else if (trendVS > EXIT_THRESH) {
         // Direct DESCENT → CLIMB (rare; e.g. go-around from descent).
         next = 'climb';
       }
     } else if (prev === 'approach') {
       // Approach normally exits only via on-ground (handled above), but
       // a go-around establishes a positive trend — fall back into climb.
-      if (trendVS > LEVEL_THRESH) next = 'climb';
+      if (trendVS > EXIT_THRESH) next = 'climb';
     }
 
     // Approach overlay — when descent gets low + slow, promote to approach.
@@ -33751,7 +33768,7 @@ function rgSendToFlightPlanner() {
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.16.0+: phase detector promotes to descent when the 15-second trend VS reads <code>&lt; -200&nbsp;fpm</code> (a wider trend window than the 5-second cruise-entry window — protects against false TOD calls from autopilot wobble; previously a variable threshold sustained for 20&nbsp;s). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
@@ -33889,8 +33906,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.18.1</span>
+          <span class="release-version">v3.18.2</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Descent Started — false alarms during turbulence suppressed.</strong> Extended in-cruise turbulence could previously trigger a false Descent Started alarm: a 15-second sustained altitude trend at &lt;&nbsp;-200&nbsp;fpm was enough to flip phase to DESCENT, and turbulence with autopilot ALT-hold engaged sometimes produced exactly that. The cruise-exit logic has been hardened on two axes: the trend window grows from 15&nbsp;s to 30&nbsp;s, and the cruise-exit threshold rises from &plusmn;200&nbsp;fpm to &plusmn;400&nbsp;fpm. Both changes apply symmetrically (CRUISE&nbsp;&rarr;&nbsp;CLIMB and direct CLIMB&nbsp;&harr;&nbsp;DESCENT crossovers use the same 30&nbsp;s window and &plusmn;400&nbsp;fpm threshold). The cruise-entry path is untouched &mdash; CLIMB&nbsp;&rarr;&nbsp;CRUISE still uses the 5&nbsp;s fast window at &plusmn;200&nbsp;fpm, so Cruise Reached fires within ~5&nbsp;s of level-off exactly as before. Net effect on TOD detection: Descent Started fires roughly 15&nbsp;s later at TOD than the v3.16.0&ndash;v3.18.1 behaviour (~30&nbsp;s after sustained descent begins instead of ~15&nbsp;s) &mdash; an extra ~375&nbsp;ft of altitude loss at a 1500&nbsp;fpm descent rate, still well before any operational change in the cockpit. Practical effect: turbulence essentially cannot fake a 30&nbsp;s sustained 400&nbsp;fpm trend with the autopilot engaged, because the autopilot correction window is much faster than 30&nbsp;s.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.18.1</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
