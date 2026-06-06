@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.18.2**
+**Current version: v3.19.0**
 
 ---
 
@@ -15,6 +15,9 @@ Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFl
 ---
 
 ## Features
+
+### Mobile Browser Support
+As of v3.19.0, the app renders cleanly on phone-sized screens (iPhone 17, Galaxy S25-class, and smaller). Modals, the airport-info tooltip, and the page padding all adapt to viewports of 768 px and narrower, so you no longer have to pan horizontally just to read the page. This is the foundation pass — the full desktop experience is unchanged on laptops and monitors, and subsequent updates will further refine touch interactions (long-press tooltips on the map, tap-to-open owner legend) and tighten the Region Mode toolbar for thumbs.
 
 ### Loading Splash
 On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of each component as it loads — the airport database, region names, runways, airport categories, the aircraft database, field overrides, pilot payouts, then route-distance computation and the owner airport list. On a fast connection the names flick by too quickly to read; that's expected. The splash fades away on its own once everything is ready, and a built-in safety timeout dismisses it even if a data source is slow or unreachable, so it can never trap you on the loading screen. The app version number is shown beneath the title text on the splash (v3.15.2+).
