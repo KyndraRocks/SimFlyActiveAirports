@@ -3190,6 +3190,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-phase-cancel:hover { background:rgba(255,61,90,0.22); border-color:#ff8090; color:#fff; }
   .rg-phase-overlay.visible { display:flex; }
   .rg-phase-overlay .rg-phase-badge { font-family:'Orbitron',monospace; font-size:0.78rem; font-weight:700; letter-spacing:0.06em; padding:0.18rem 0.62rem; border-radius:14px; flex-shrink:0; margin:0; vertical-align:baseline; }
+  /* v3.19.17 — utility class for elements that should ONLY render on mobile.
+     Currently used by the right band's direct ✦ New Airports toggle, which
+     replaces the Tools dropdown on mobile (since Measurement and Select
+     Regions are mouse-only and already hidden, New Airports was the only
+     dropdown item left — a dropdown for one item is silly). Hidden here
+     by default; revealed inside the @media (max-width: 768px) block. */
+  .rg-mobile-only { display: none !important; }
+
   /* Narrow-viewport polish — progressive collapse so the header stays on a */
   /* single row without elements colliding. The Measurement label is the */
   /* first to collide with the central Map cat filter, so it drops earliest. */
@@ -6798,30 +6806,48 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        screen action buttons, and a fix for the help / release
        notes modals stuttering with horizontal scroll. */
 
-    /* (ee) Map header category circles + neighbours. v3.19.3 sized
-       circles at 1.55 rem (~25 px), v3.19.12 bumped to 2.1 rem
-       (~33.6 px) for finger reliability. v3.19.16 trims slightly
-       to 1.95 rem (~31 px) — small reduction in finger target
-       (still within usable range) in exchange for the cleaner
-       layout the user proposed by screenshot: row 1 fits Map +
-       All + None + circles 1-6; only circle 7 + Invert wraps to
-       row 2 instead of 5/6/7 + Invert. Plus tighter gaps and
-       smaller acc-button padding to reclaim horizontal space. */
-    .rg-hdr-center {
-      gap: 0.18rem !important;
-      padding: 0.3rem 0.3rem !important;
-    }
-    .rg-hdr-center .dist-cat-btn {
-      width: 1.95rem !important;
-      height: 1.95rem !important;
-      font-size: 0.92rem !important;
-    }
-    .rg-hdr-center .dist-cat-filter-label { font-size: 0.88rem !important; }
+    /* (ee) Map header category circles. v3.19.17: simplify radically.
+       Per user request, drop the Map label, All/None acc buttons,
+       and the Invert button — none of which were essential and all
+       of which consumed horizontal space that's better spent on
+       larger finger-friendly circles. With those four items gone,
+       7 circles get the full row to themselves. Bump to 2.6 rem
+       (~41.6 px) — a 33% increase over v3.19.16's 1.95 rem, now
+       within striking distance of Apple's 44 px HIG ideal. Wider
+       gap (0.4 rem) so adjacent circles can't be confused by a
+       fingertip near the boundary. */
+    .rg-hdr-center .dist-cat-filter-label,
     .rg-hdr-center .rg-cat-acc-btn,
     .rg-hdr-center .dist-cat-invert-btn {
-      font-size: 0.82rem !important;
-      padding: 0.22rem 0.5rem !important;
+      display: none !important;
     }
+    .rg-hdr-center {
+      gap: 0.4rem !important;
+      padding: 0.5rem 0.4rem !important;
+      justify-content: center !important;
+    }
+    .rg-hdr-center .dist-cat-btn {
+      width: 2.6rem !important;
+      height: 2.6rem !important;
+      font-size: 1.15rem !important;
+    }
+
+    /* (ll) Hide the entire left band on mobile. It used to hold the
+       🛠 Tools dropdown, 🔌 Live dropdown, and 🔔 Alerts button —
+       all three are hidden on mobile (Live + Alerts since v3.19.5,
+       Tools effectively since the inside-the-dropdown Measurement
+       and Select Regions are mouse-only and hidden, leaving only
+       Display New Airports inside, which is now a direct toggle in
+       the right band). The phase-text span inside this band is
+       FSUIPC-driven, which mobile doesn't have. The whole row was
+       sitting empty at the top of the screen wasting ~50 px of
+       vertical space. */
+    .rg-hdr-left { display: none !important; }
+
+    /* (mm) Reveal the mobile-only direct ✦ New Airports toggle button
+       that we added to the right band's display-toggle cluster
+       (between Rating and the Scenery separator). */
+    .rg-mobile-only { display: inline-flex !important; }
 
     /* (ff) Map header right band — was shrunk hard in v3.19.4 to
        fit one row, ended up at 0.75-0.85 rem font with ~24-28 px
@@ -7286,7 +7312,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.16';
+const APP_VERSION = '3.19.17';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -30945,6 +30971,11 @@ function _rgToggleNewAirports() {
   }
   const btn = document.getElementById('rgNewAirportsBtn');
   if (btn) btn.classList.toggle('active', _rgNewAirportsVisible);
+  // v3.19.17 — also mirror state on the mobile-only direct toggle button
+  // (which replaces the Tools dropdown on mobile since New Airports was the
+  // dropdown's only remaining item).
+  const mobileBtn = document.getElementById('rgMobileNewAirportsBtn');
+  if (mobileBtn) mobileBtn.classList.toggle('active', _rgNewAirportsVisible);
 }
 
 // ── New-airport display settings ─────────────────────────────────────────
@@ -34823,8 +34854,24 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.16</span>
+          <span class="release-version">v3.19.17</span>
           <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Map header on mobile &mdash; lone Tools row dropped, New Airports promoted to a direct right-band toggle.</strong> The 🛠 Tools dropdown was sitting alone on its own row at the very top of the map view, occupying ~50&nbsp;px of vertical space for a single button. Inside it, Measurement and Select Regions are mouse-drag-only and hidden on mobile (v3.19.6), leaving <em>Display New Airports</em> as the only remaining menu item. A dropdown for one item is silly. v3.19.17 hides the entire left band on mobile and replaces the Tools dropdown with a direct ✦ toggle in the right band, alongside Payout / Rating / Scenery in the display-toggle cluster.</li>
+          <li><strong>Implementation:</strong> new <code>&lt;button class="rg-btn rg-mobile-only" id="rgMobileNewAirportsBtn"&gt;</code> added to the right-band HTML between Rating and the Scenery separator. <code>.rg-mobile-only</code> is <code>display: none</code> by default; <code>display: inline-flex</code> inside <code>@media (max-width: 768px)</code>. The existing <code>_rgToggleNewAirports()</code> function is extended to mirror the active class onto the mobile button too, so the toggle state is visually consistent across both. <code>.rg-hdr-left { display: none !important }</code> hides the whole left band (which holds the Tools / Live / Alerts buttons + phase text — all FSUIPC-driven and irrelevant on mobile).</li>
+          <li><strong>Category circles radically simplified.</strong> Per user request, the <em>Map</em> label, the <em>All</em> / <em>None</em> accelerator buttons, and the <em>Invert</em> button are all hidden on mobile. None were essential; all were consuming horizontal space that's better spent on larger, finger-friendlier circles. With those four items gone, the 7 category circles have the row to themselves.</li>
+          <li><strong>Circles enlarged ~33%.</strong> Up from v3.19.16's 1.95&nbsp;rem (~31&nbsp;px) to 2.6&nbsp;rem (~41.6&nbsp;px) &mdash; now within striking distance of Apple&rsquo;s 44&nbsp;px HIG ideal. Gap between circles widened from 0.18&nbsp;rem to 0.4&nbsp;rem so adjacent circles can&rsquo;t be confused by a fingertip near the boundary. The font size inside each circle scales up to 1.15&nbsp;rem to match.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop (&ge;&nbsp;769&nbsp;px viewport) sees no change: the Tools dropdown still works as before with all three menu items visible, the category row still shows Map + All + None + circles + Invert, and the new mobile-only ✦ button stays hidden.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.16</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -45722,6 +45769,15 @@ function rgSendToFlightPlanner() {
         <span class="rg-hdr-flex-spacer"></span>
         <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" title="Color airports by pilot payout percentage" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
         <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
+        <!-- v3.19.17 — mobile-only direct toggle for "Display New Airports".
+             On desktop this feature is inside the 🛠 Tools dropdown alongside
+             Measurement and Select Regions. On mobile those two are hidden
+             (mouse-drag only) leaving New Airports as the only Tools item —
+             a dropdown for one item is silly, so this button promotes it to
+             a direct toggle in the right band's display-toggle cluster
+             (Payout / Rating / New / Scenery). The whole .rg-hdr-left band
+             (which held the Tools button) is hidden on mobile. -->
+        <button class="rg-btn rg-mobile-only" id="rgMobileNewAirportsBtn" onclick="_rgToggleNewAirports()" title="Toggle pulse indicators on recently-added airports" tabindex="-1">✦ <span class="rg-btn-label">New</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
           <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤<span class="rg-sl-mode-text">Scenery</span></span>
