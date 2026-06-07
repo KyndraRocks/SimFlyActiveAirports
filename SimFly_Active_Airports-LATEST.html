@@ -6809,12 +6809,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     /* Enlarge category circles on the main screen for phone — more thumb-
        friendly and better use of the wider available space. Scoped to
        .dist-cat-filter-row so the smaller map-header circles are unaffected. */
+    /* Category circles: 2.2 rem keeps all 7 + label on one row at 375 px.
+       (7 × 35.2 px) + (6 × 8 px gaps) + ~40 px label ≈ 333 px < 359 px content width. */
     .dist-cat-filter-row .dist-cat-btn {
-      width: 2.55rem !important;
-      height: 2.55rem !important;
-      font-size: 1.1rem !important;
+      width: 2.2rem !important;
+      height: 2.2rem !important;
+      font-size: 1.05rem !important;
     }
-    .dist-cat-filter-row .dist-cat-pills-row { gap: 0.65rem !important; }
+    .dist-cat-filter-row .dist-cat-pills-row { gap: 0.5rem !important; }
 
     /* (cc) Satellite / Street Map toggle — was `rgba(10,18,36,0.88)`
        background which read as transparent over the colored chaos
@@ -7356,30 +7358,39 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }
     #distTooltipGlobal strong { font-size: 0.95rem; }
 
-    /* Distance range slider — stacked layout on phone.
+    /* Distance range slider — stacked two-row layout on phone.
        Row 1: min value (left) + max value (right).
-       Row 2: track full-width.
-       This gives the track maximum room and eliminates the right-side
-       overflow that occurred when the value labels and the absolutely-
-       positioned aircraft-range code label competed for the right edge.
-       The aircraft code label (.dist-range-code) is hidden on phone —
-       the filter button already names the aircraft, so it's redundant. */
+       Row 2: slider track full-width.
+       IMPORTANT: the HTML order is [min-val][range-wrap][max-val]. Without
+       explicit `order` properties, flex-wrap produces three rows (min /
+       track / max) rather than two. The `order` values resequence the
+       items so flex sees [1:min-val][2:max-val] on row 1, then
+       [3:range-wrap] wrapping to row 2 full-width. */
     .dist-slider-row {
       flex-wrap: wrap !important;
-      gap: 0.15rem 0 !important;
       justify-content: space-between !important;
+      gap: 0.3rem 0 !important;
     }
-    .dist-filter-value.min-val,
-    .dist-filter-value.max-val {
+    .dist-filter-value.min-val {
+      order: 1 !important;
       width: auto !important;
       min-width: 0 !important;
       font-size: 0.95rem !important;
       flex-shrink: 1 !important;
+      text-align: left !important;
     }
-    .dist-filter-value.min-val { text-align: left !important; }
-    .dist-filter-value.max-val { text-align: right !important; }
+    .dist-filter-value.max-val {
+      order: 2 !important;
+      width: auto !important;
+      min-width: 0 !important;
+      font-size: 0.95rem !important;
+      flex-shrink: 1 !important;
+      text-align: right !important;
+    }
     .dist-range-wrap {
+      order: 3 !important;
       flex: 1 1 100% !important;
+      width: 100% !important;
       min-width: 0 !important;
     }
     .dist-range-code { display: none !important; }
@@ -7553,31 +7564,40 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       font-size: 1.4rem !important;
     }
 
-    /* (9) Distance range slider — taller track + larger thumbs so
-       the handles are reliably finger-sized (~44 px HIG ideal).
-       Desktop thumb is 18 × 18 px; touch raised to 28 × 28 px.
-       Track height matches thumb so the thumb never sticks out. */
+    /* (9) Distance range slider — touch-optimised handles.
+       Track and thumbs raised to 36 px. The two handles are colour-coded
+       (cyan = min / departure, orange = max / arrival) so users can
+       distinguish them when the handles are close together — the same
+       dep/arr colour convention used throughout the app. A drop shadow
+       lifts each thumb off the track visually. */
     .dist-range-wrap {
-      height: 28px !important;
+      height: 36px !important;
     }
     .dist-range-wrap input[type="range"] {
-      height: 28px !important;
+      height: 36px !important;
     }
     .dist-range-track {
-      height: 28px !important;
-      border-radius: 14px !important;
+      height: 36px !important;
+      border-radius: 18px !important;
     }
     .dist-range-wrap input[type="range"]::-webkit-slider-thumb {
-      width: 28px !important;
-      height: 28px !important;
+      width: 36px !important;
+      height: 36px !important;
       margin-top: 0 !important;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 2px rgba(255,255,255,0.18) !important;
     }
     .dist-range-wrap input[type="range"]::-moz-range-thumb {
-      width: 28px !important;
-      height: 28px !important;
+      width: 36px !important;
+      height: 36px !important;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important;
     }
-    /* Shift the range value marker below the taller track */
-    .dist-range-marker { top: 32px !important; }
+    /* Colour-code the two thumbs for disambiguation */
+    #distFilterMin::-webkit-slider-thumb { background: #00c8ff !important; }
+    #distFilterMin::-moz-range-thumb     { background: #00c8ff !important; }
+    #distFilterMax::-webkit-slider-thumb { background: #ff6a00 !important; }
+    #distFilterMax::-moz-range-thumb     { background: #ff6a00 !important; }
+    /* Shift the value marker below the taller track */
+    .dist-range-marker { top: 40px !important; }
   }
   /* ───── end MOBILE RESPONSIVE FOUNDATION ───── */
 </style>
@@ -7893,7 +7913,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.40';
+const APP_VERSION = '3.19.43';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -35556,8 +35576,43 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.40</span>
+          <span class="release-version">v3.19.43</span>
           <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance slider stacking finally works on phones.</strong> The previous attempt added <code>flex-wrap</code> and <code>justify-content: space-between</code> but omitted the critical <code>order</code> properties. Because the HTML order is <code>[min-val][range-wrap][max-val]</code>, flex-wrap produced three separate rows (min / track / max) instead of the intended two. Explicit <code>order: 1 / 2 / 3</code> on min-val, max-val, and range-wrap now cause flex to place both value labels on row 1 (space-between, left&ndash;right) and the track full-width on row 2. The max value can no longer clip off the right edge.</li>
+          <li><strong>Distance slider handles enlarged and colour-coded for touch.</strong> Touch thumbs grow from 28&nbsp;px to 36&nbsp;px with a drop shadow that lifts them off the track. The minimum thumb is <span style="color:#00c8ff">cyan</span> and the maximum thumb is <span style="color:#ff6a00">orange</span>, matching the app&rsquo;s departure/arrival colour convention, so the two handles are distinguishable when close together.</li>
+          <li><strong>Category circles no longer overflow onto a second row.</strong> The 2.55&nbsp;rem size introduced in v3.19.39 was too wide for a 375&nbsp;px phone: 7 circles + label totalled ~380&nbsp;px against a ~359&nbsp;px content area. Reduced to 2.2&nbsp;rem (gap 0.5&nbsp;rem), which totals ~333&nbsp;px and fits with room to spare.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.42</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Airports button title uses desktop language.</strong> The mobile-only <strong>✦ New</strong> button had <code>title="Tap&hellip;Long-press&hellip;"</code> — mobile language that is inconsistent with the rule that <code>title</code> attributes use desktop wording (they only render on hover, never on touch). Updated to <code>"Toggle pulse indicators &middot; Right-click for color / pulse-rate / days settings"</code>. The title was unreachable in practice (the button is hidden on desktop; titles don&rsquo;t render on mobile) but is now consistent with the rest of the codebase.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.41</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout button tooltip uses correct language per device.</strong> The <code>title</code> attribute on the 💰 Payout button was changed to say &ldquo;Tap&hellip;Long-press&rdquo; in v3.19.40, but <code>title</code> tooltips only render on desktop hover &mdash; touch devices never show them. Reverted to desktop-appropriate wording: &ldquo;Click to color airports by pilot payout &middot; Right-click to customize the palette&rdquo;.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.40</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -46782,7 +46837,7 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Tap to color airports by pilot payout · Long-press to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
+        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Click to color airports by pilot payout · Right-click to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
         <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <!-- v3.19.17 — mobile-only direct toggle for "Display New Airports".
              On desktop this feature is inside the 🛠 Tools dropdown alongside
@@ -46799,7 +46854,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn rg-mobile-only" id="rgMobileNewAirportsBtn"
                 onclick="_rgToggleNewAirports()"
                 oncontextmenu="_rgNewAirportSettingsModal(event)"
-                title="Tap to toggle pulse indicators · Long-press for color / pulse-rate / days settings"
+                title="Toggle pulse indicators · Right-click for color / pulse-rate / days settings"
                 tabindex="-1">✦ <span class="rg-btn-label">New</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
