@@ -6806,6 +6806,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       max-width: none !important;
     }
     .dist-cat-pills-row { justify-content: center !important; }
+    /* Enlarge category circles on the main screen for phone — more thumb-
+       friendly and better use of the wider available space. Scoped to
+       .dist-cat-filter-row so the smaller map-header circles are unaffected. */
+    .dist-cat-filter-row .dist-cat-btn {
+      width: 2.55rem !important;
+      height: 2.55rem !important;
+      font-size: 1.1rem !important;
+    }
+    .dist-cat-filter-row .dist-cat-pills-row { gap: 0.65rem !important; }
 
     /* (cc) Satellite / Street Map toggle — was `rgba(10,18,36,0.88)`
        background which read as transparent over the colored chaos
@@ -7347,19 +7356,33 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }
     #distTooltipGlobal strong { font-size: 0.95rem; }
 
-    /* Distance range slider — base: 110 + 12 + 140 + 12 + 110 = 384 px
-       minimum, but a 375 px phone has only ~359 px content width (8 px
-       padding each side). Clips the max-value label by ~25 px. Fix:
-       let value labels shrink to their text content, reduce min-track. */
-    .dist-slider-row { gap: 0.4rem !important; }
+    /* Distance range slider — stacked layout on phone.
+       Row 1: min value (left) + max value (right).
+       Row 2: track full-width.
+       This gives the track maximum room and eliminates the right-side
+       overflow that occurred when the value labels and the absolutely-
+       positioned aircraft-range code label competed for the right edge.
+       The aircraft code label (.dist-range-code) is hidden on phone —
+       the filter button already names the aircraft, so it's redundant. */
+    .dist-slider-row {
+      flex-wrap: wrap !important;
+      gap: 0.15rem 0 !important;
+      justify-content: space-between !important;
+    }
     .dist-filter-value.min-val,
     .dist-filter-value.max-val {
       width: auto !important;
       min-width: 0 !important;
-      font-size: 1rem !important;
+      font-size: 0.95rem !important;
       flex-shrink: 1 !important;
     }
-    .dist-range-wrap { min-width: 80px !important; }
+    .dist-filter-value.min-val { text-align: left !important; }
+    .dist-filter-value.max-val { text-align: right !important; }
+    .dist-range-wrap {
+      flex: 1 1 100% !important;
+      min-width: 0 !important;
+    }
+    .dist-range-code { display: none !important; }
   }
 
   /* ─────────────────────────────────────────────────────────────────
@@ -7870,7 +7893,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.37';
+const APP_VERSION = '3.19.40';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27565,8 +27588,8 @@ function openRegionModal(forceOwnerFilter) {
   const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
   const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
   if (mainDep && mainArr) { _rgDotSelDep = mainDep; _rgDotSelArr = mainArr; }
-  // If called with an explicit owner set (e.g. from Recip Tracker pilots= URL param), use it;
-  // otherwise sync to whatever dep/arr owners are selected on the main screen.
+  // If called with an explicit owner set (e.g. from Recip Tracker pilots= URL param), apply it.
+  // Otherwise leave _rgMapOwnerFilter unchanged so the map reopens with the last-used filter.
   if (forceOwnerFilter) {
     _rgMapOwnerFilter = forceOwnerFilter;
     // When the map is opened from a pilots= URL handoff (RT / RM Lite "Send to AA"),
@@ -27577,11 +27600,6 @@ function openRegionModal(forceOwnerFilter) {
     _rgPayoutMode        = false;
     _rgOwnerColorsActive = true;
     _rgRebuildOwnerColorAssignment();
-  } else {
-    const depOwner = (document.getElementById('distDepOwner')?.value || '').trim();
-    const arrOwner = (document.getElementById('distArrOwner')?.value || '').trim();
-    const selectedOwners = [...new Set([depOwner, arrOwner].filter(Boolean))];
-    _rgMapOwnerFilter = selectedOwners.length ? new Set(selectedOwners) : null;
   }
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
@@ -31109,6 +31127,12 @@ const _RG_PAYOUT_DEFAULT_PALETTE = [
   { pct: 60, color: '#00e500' },
 ];
 let _rgPayoutPalette = null;
+// Timestamp of the most recent slider input — used to suppress accidental
+// palette opens triggered by a slow drag rather than an intentional long-press.
+let _rgPayoutSliderLastInput = 0;
+// Timestamp of the most recent palette-editor open — used in _rgTogglePayoutMode
+// to suppress the synthesised click that follows a long-press on the Payout button.
+let _rgPayoutPaletteOpenTs = 0;
 
 function _rgPayoutPaletteLoad() {
   if (_rgPayoutPalette) return _rgPayoutPalette;
@@ -31195,20 +31219,23 @@ function _rgPayoutSyncBarGrad() {
 // fired the contextmenu. Positions inside the same map container so it
 // stacks above the legend without escaping the viewport.
 function _rgPayoutPaletteOpen(event) {
-  // v3.19.23 — disabled on touch devices. The palette editor is a
-  // desktop power-user feature for customising the gradient colour
-  // stops; the only way to open it is by right-clicking (or long-
-  // pressing) the Payout legend's gradient bar. On mobile, users
-  // dragging the slider slowly accidentally triggered the contextmenu
-  // event, which opened the editor (sometimes off-screen) and
-  // attached a document-level mousedown dismiss listener — making
-  // subsequent screen taps feel "swallowed" as the listener
-  // intercepted them. Bail out cleanly on touch.
-  if (typeof _aaIsTouchDevice === 'function' && _aaIsTouchDevice()) {
+  // On touch, guard against accidental opens caused by a slow slider drag
+  // (the browser fires contextmenu after a ~500 ms hold, which can happen
+  // mid-drag). If the slider fired an input event in the last 600 ms the
+  // user was dragging, not intentionally long-pressing — bail out.
+  // An intentional long-press on the Payout button or on the gradient bar
+  // (where no input event fires) passes straight through.
+  const isTouch = typeof _aaIsTouchDevice === 'function' && _aaIsTouchDevice();
+  if (isTouch && Date.now() - _rgPayoutSliderLastInput < 600) {
     if (event && event.preventDefault) event.preventDefault();
     if (event && event.stopPropagation) event.stopPropagation();
     return;
   }
+  if (event && event.preventDefault) event.preventDefault();
+  if (event && event.stopPropagation) event.stopPropagation();
+  // Stamp so _rgTogglePayoutMode can suppress the synthesised click that
+  // follows a long-press on the Payout button.
+  _rgPayoutPaletteOpenTs = Date.now();
   const ed  = document.getElementById('rgPayoutPaletteEditor');
   const leg = document.getElementById('rgPayoutLegend');
   if (!ed) return;
@@ -31234,23 +31261,31 @@ function _rgPayoutPaletteOpen(event) {
       ed.style.top = Math.max(8, legBottom - ed.offsetHeight) + 'px';
     }
   }
-  // Click-outside dismiss — one-shot listener added on next tick so the
-  // opening contextmenu doesn't immediately fire it.
+  // Outside-tap dismiss — added on next tick so the opening gesture doesn't
+  // immediately trigger it. On touch devices use touchstart rather than
+  // mousedown: the browser synthesises a mousedown ~300 ms after touchend,
+  // which would close the editor before the user could interact with it.
+  const dismissEvent = isTouch ? 'touchstart' : 'mousedown';
   setTimeout(() => {
     const dismiss = (e) => {
       if (!ed.contains(e.target)) {
-        document.removeEventListener('mousedown', dismiss, true);
+        document.removeEventListener(dismissEvent, dismiss, true);
         _rgPayoutPaletteClose();
       }
     };
-    document.addEventListener('mousedown', dismiss, true);
+    document.addEventListener(dismissEvent, dismiss, true);
     ed._dismissHandler = dismiss;
+    ed._dismissEvent   = dismissEvent;
   }, 0);
 }
 function _rgPayoutPaletteClose() {
   const ed = document.getElementById('rgPayoutPaletteEditor');
   if (!ed) return;
-  if (ed._dismissHandler) { document.removeEventListener('mousedown', ed._dismissHandler, true); ed._dismissHandler = null; }
+  if (ed._dismissHandler) {
+    document.removeEventListener(ed._dismissEvent || 'mousedown', ed._dismissHandler, true);
+    ed._dismissHandler = null;
+    ed._dismissEvent   = null;
+  }
   ed.style.display = 'none';
 }
 // v2.98.3 — Live drag of a tick on the payout palette preview bar.
@@ -31776,6 +31811,13 @@ function _rgNewApSaveAndClose() {
 }
 
 function _rgTogglePayoutMode(preserveFilter) {
+  // Suppress the synthesised click that follows a long-press on the Payout
+  // button (long-press opens the palette editor via contextmenu, then the
+  // browser fires a click on finger-lift — which would toggle payout mode).
+  if (Date.now() - _rgPayoutPaletteOpenTs < 600) {
+    _rgPayoutPaletteOpenTs = 0;
+    return;
+  }
   // v3.12.0 — if mode is already on but the legend panel was closed via its ✕
   // button, treat a Payout-button click as "re-open the panel" rather than
   // turning the mode off. The mode is now only disabled by clicking 💰 Payout
@@ -32054,6 +32096,7 @@ function _rgUpdateOwnerColorBtn() {
 }
 
 function _rgPayoutSliderInput(val) {
+  _rgPayoutSliderLastInput = Date.now(); // track drag so long-press guard can distinguish intentional holds
   _rgPayoutFilter = +val;
   const x  = Math.round((_rgPayoutFilter / 60) * 120);
   const th = document.getElementById('rgPayoutThumb');
@@ -35511,10 +35554,44 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.40</span>
+          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout palette editor opens on mobile via long-press.</strong> Previously the palette editor (gradient color-stop customiser) was inaccessible on touch devices because right-click is unavailable and the &ldquo;bail on touch&rdquo; guard blocked it entirely. Long-pressing the <strong>💰 Payout</strong> button in the map header or the gradient bar in the Pilot Payout legend now opens the editor on iOS and Android. Two supporting fixes were needed: (1) the dismiss listener now uses <code>touchstart</code> instead of <code>mousedown</code> on touch, preventing the synthesised mouse event from closing the editor the moment you lift your finger; (2) a drag-detection guard suppresses accidental opens when the slider was recently dragged (versus an intentional still hold).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.39</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance slider stacks cleanly on phones.</strong> Previously the min and max value labels, slider track, and absolutely-positioned aircraft-range code label all competed for the same horizontal row, clipping the right-side values against the screen edge. On phone the layout now stacks into two rows: the min value sits at the left and max value at the right of the first row, then the track spans full-width below. The aircraft-range code label is hidden on phone &mdash; the filter button already names the aircraft, so it was redundant information causing the overflow.</li>
+          <li><strong>Category circles larger and better spaced on phones.</strong> The Dep and Arr numbered circles (1&ndash;7) on the main screen now render at 2.55&nbsp;rem (up from 2.1&nbsp;rem) with wider gaps between them, making them easier to tap. The change is scoped to the main-screen filter row &mdash; the smaller circles in the map header are unaffected.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.38</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Opening the map no longer resets the owner filter.</strong> Previously, opening the map while departure and arrival owners were selected on the main screen would automatically narrow the map to show only those two owners — discarding any filter you had set during a previous map session. The map now opens with whatever owner filter was last active, leaving you in control. The Recip Tracker / RM Lite &ldquo;Send to AA&rdquo; handoff (which explicitly passes a pilot set via URL) is unaffected.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.19.37</span>
-          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -46705,7 +46782,7 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" title="Color airports by pilot payout percentage" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
+        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Tap to color airports by pilot payout · Long-press to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
         <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <!-- v3.19.17 — mobile-only direct toggle for "Display New Airports".
              On desktop this feature is inside the 🛠 Tools dropdown alongside
