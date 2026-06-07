@@ -7950,7 +7950,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.46';
+const APP_VERSION = '3.19.47';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31886,9 +31886,12 @@ function _rgTogglePayoutMode(preserveFilter) {
   // button, treat a Payout-button click as "re-open the panel" rather than
   // turning the mode off. The mode is now only disabled by clicking 💰 Payout
   // while the panel is visible, or by clicking the breadcrumb chip.
+  // v3.19.47 — restore .active on re-open (panel-hidden path removes it).
   const legendEl = document.getElementById('rgPayoutLegend');
   if (_rgPayoutMode && legendEl && legendEl.style.display === 'none') {
     legendEl.style.display = '';
+    const _rpBtn = document.getElementById('rgPayoutBtn');
+    if (_rpBtn) _rpBtn.classList.add('active');
     _rgPayoutSyncBarGrad();
     _rgRepositionFilterPanels();
     return;
@@ -32245,9 +32248,12 @@ function _rgToggleStarFilter() {
   // v3.12.0 — mirror the payout panel: if the filter is already engaged but
   // the legend panel was closed via its ✕, treat a ⭐ Rating click as re-open
   // rather than turn-off. The breadcrumb chip is the documented one-click off.
+  // v3.19.47 — restore .active on re-open (panel-hidden path removes it).
   const legEl = document.getElementById('rgStarFilterLegend');
   if (_rgStarFilterMode && legEl && legEl.style.display === 'none') {
     legEl.style.display = '';
+    const _sfBtn = document.getElementById('rgStarFilterBtn');
+    if (_sfBtn) _sfBtn.classList.add('active');
     _rgRepositionFilterPanels();
     return;
   }
@@ -32269,10 +32275,16 @@ function _rgToggleStarFilter() {
 // v3.12.0 — Close a filter panel WITHOUT disabling the underlying filter/mode.
 // Wired to the ✕ in the Payout and Scenery-Rating legends. The mode/filter
 // stays applied to the map and matrix; the breadcrumb chip is the off switch.
+// v3.19.47 — also dim the corresponding menu button so the highlight state
+// mirrors panel visibility (chip visible ↔ button active). The button regains
+// .active when the panel is re-opened via the button's own click handler.
 function _rgHideFilterPanel(which) {
-  const id = which === 'star' ? 'rgStarFilterLegend' : 'rgPayoutLegend';
+  const id    = which === 'star' ? 'rgStarFilterLegend' : 'rgPayoutLegend';
+  const btnId = which === 'star' ? 'rgStarFilterBtn'    : 'rgPayoutBtn';
   const el = document.getElementById(id);
   if (el) el.style.display = 'none';
+  const btn = document.getElementById(btnId);
+  if (btn) btn.classList.remove('active');
   _rgRepositionFilterPanels();
 }
 
@@ -35618,10 +35630,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.47</span>
+          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Button highlight matches chip visibility</strong> — The 💰 Payout and ⭐ Rating menu buttons now light up exactly when their respective filter panel (chip) is visible on screen. Closing a panel with its ✕ button dims the menu button; re-clicking the button to reopen the panel restores the highlight. Applies to both desktop and mobile.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.19.46</span>
-          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
