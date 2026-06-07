@@ -6830,6 +6830,42 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       filter: none !important;
     }
 
+    /* Distance slider — stacked two-row layout on ALL mobile viewports.
+       Previously only in @media (max-width: 480px), but some phones have
+       CSS widths above 480px (high-DPI screens where the device pixel ratio
+       places them in the 481–768px range). Moving the layout rules here
+       ensures every phone and tablet at ≤768px gets the two-row layout.
+       Row 1: min value (left) + max value (right).
+       Row 2: slider track full-width.
+       order properties are critical — HTML order is [min-val][range-wrap]
+       [max-val]; without them flex-wrap produces three rows, not two. */
+    .dist-slider-row {
+      flex-wrap: wrap !important;
+      justify-content: space-between !important;
+      gap: 0.3rem 0 !important;
+    }
+    .dist-filter-value.min-val {
+      order: 1 !important;
+      width: auto !important;
+      min-width: 0 !important;
+      flex-shrink: 1 !important;
+      text-align: left !important;
+    }
+    .dist-filter-value.max-val {
+      order: 2 !important;
+      width: auto !important;
+      min-width: 0 !important;
+      flex-shrink: 1 !important;
+      text-align: right !important;
+    }
+    .dist-range-wrap {
+      order: 3 !important;
+      flex: 1 1 100% !important;
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+    .dist-range-code { display: none !important; }
+
     /* (cc) Satellite / Street Map toggle — was `rgba(10,18,36,0.88)`
        background which read as transparent over the colored chaos
        of satellite imagery (airport dots, terrain, country borders
@@ -7378,42 +7414,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }
     #distTooltipGlobal strong { font-size: 0.95rem; }
 
-    /* Distance range slider — stacked two-row layout on phone.
-       Row 1: min value (left) + max value (right).
-       Row 2: slider track full-width.
-       IMPORTANT: the HTML order is [min-val][range-wrap][max-val]. Without
-       explicit `order` properties, flex-wrap produces three rows (min /
-       track / max) rather than two. The `order` values resequence the
-       items so flex sees [1:min-val][2:max-val] on row 1, then
-       [3:range-wrap] wrapping to row 2 full-width. */
-    .dist-slider-row {
-      flex-wrap: wrap !important;
-      justify-content: space-between !important;
-      gap: 0.3rem 0 !important;
-    }
-    .dist-filter-value.min-val {
-      order: 1 !important;
-      width: auto !important;
-      min-width: 0 !important;
-      font-size: 0.95rem !important;
-      flex-shrink: 1 !important;
-      text-align: left !important;
-    }
-    .dist-filter-value.max-val {
-      order: 2 !important;
-      width: auto !important;
-      min-width: 0 !important;
-      font-size: 0.95rem !important;
-      flex-shrink: 1 !important;
-      text-align: right !important;
-    }
-    .dist-range-wrap {
-      order: 3 !important;
-      flex: 1 1 100% !important;
-      width: 100% !important;
-      min-width: 0 !important;
-    }
-    .dist-range-code { display: none !important; }
+    /* Distance slider — phone-specific font shrink for the value labels.
+       Layout/stacking rules (flex-wrap, order, dist-range-code hide) live in
+       the 768px block so larger-DPI phones above 480px CSS width get them too.
+       This block just trims the font on very narrow viewports. */
+    .dist-filter-value.min-val { font-size: 0.95rem !important; }
+    .dist-filter-value.max-val { font-size: 0.95rem !important; }
   }
 
   /* ─────────────────────────────────────────────────────────────────
@@ -7933,7 +7939,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.44';
+const APP_VERSION = '3.19.45';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -35594,10 +35600,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.45</span>
+          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Distance slider stacking now works on all phones.</strong> The stacking CSS was in <code>@media (max-width: 480px)</code> but some phones report a CSS pixel width above 480&nbsp;px depending on their display density &mdash; meaning the 480&nbsp;px block never matched on those devices. The layout rules (two-row stacking, <code>order</code> properties, &ldquo;C750 Range&rdquo; label hide) are now in the <code>@media (max-width: 768px)</code> block, which the 768&nbsp;px category-circle dimming confirmed is matching correctly. The 480&nbsp;px block is now a font-size-only override for the narrowest phones.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.19.44</span>
-          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
