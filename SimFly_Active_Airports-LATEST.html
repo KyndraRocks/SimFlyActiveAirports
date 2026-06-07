@@ -7059,8 +7059,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         - The JS open function bails out on touch devices too,
           so even if a contextmenu somehow fires the editor never
           opens and no document listener gets attached. */
-    #rgPayoutLegend,
-    #rgPayoutBarWrap,
+    /* Suppress accidental long-press contextmenu on the payout slider
+       (slow drags at ~500ms can trigger contextmenu unintentionally).
+       The legend container and bar wrap are omitted so an intentional
+       long-press there can still open the palette editor. */
     #rgPayoutSlider,
     #rgPayoutZeroDot,
     #rgPayoutThumb,
@@ -7069,7 +7071,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       touch-action: manipulation;
       -webkit-touch-callout: none;
     }
-    #rgPayoutPaletteEditor { display: none !important; }
+    #rgPayoutLegend,
+    #rgPayoutBarWrap { -webkit-touch-callout: none; }
+    /* Palette editor — mobile-friendly dimensions. Width clamps to the
+       viewport; height caps at 60 vh with scroll for long stop lists. */
+    #rgPayoutPaletteEditor {
+      max-height: 60vh !important;
+      overflow-y: auto !important;
+      min-width: min(280px, calc(100vw - 16px)) !important;
+    }
 
     /* ── v3.19.28 (supersedes v3.19.27's font shrink) ────────────
        Scenery Library list rows — full restructure on mobile.
@@ -7499,7 +7509,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     #rgRulerBtn,
     #rgSelectMenuBtn       { display: none !important; }
     #afkDataPanel          { display: none !important; }
-    #rgPayoutPaletteEditor { display: none !important; }
+    /* #rgPayoutPaletteEditor is no longer hidden on touch — long-press
+       on the Payout button or legend now opens the palette editor on mobile. */
 
     /* (4) Help modal — PC-only feature sections hidden, mobile
        explanatory note revealed. Same logic as the sim-tied hides
@@ -7939,7 +7950,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.45';
+const APP_VERSION = '3.19.46';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31176,6 +31187,10 @@ let _rgPayoutPalette = null;
 // Timestamp of the most recent slider input — used to suppress accidental
 // palette opens triggered by a slow drag rather than an intentional long-press.
 let _rgPayoutSliderLastInput = 0;
+// Long-press timer for the Payout button and payout legend on touch devices.
+// Using an explicit touchstart timer rather than relying on contextmenu events,
+// which are unreliable for <button> elements on some Android Chrome versions.
+let _rgPayoutBtnLongPressT = null;
 // Timestamp of the most recent palette-editor open — used in _rgTogglePayoutMode
 // to suppress the synthesised click that follows a long-press on the Payout button.
 let _rgPayoutPaletteOpenTs = 0;
@@ -31265,6 +31280,9 @@ function _rgPayoutSyncBarGrad() {
 // fired the contextmenu. Positions inside the same map container so it
 // stacks above the legend without escaping the viewport.
 function _rgPayoutPaletteOpen(event) {
+  // Clear any pending touchstart long-press timer so contextmenu and the
+  // timer don't both fire (causing a double-open) on the same press.
+  if (_rgPayoutBtnLongPressT) { clearTimeout(_rgPayoutBtnLongPressT); _rgPayoutBtnLongPressT = null; }
   // On touch, guard against accidental opens caused by a slow slider drag
   // (the browser fires contextmenu after a ~500 ms hold, which can happen
   // mid-drag). If the slider fired an input event in the last 600 ms the
@@ -35600,10 +35618,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.19.46</span>
+          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout palette editor now accessible on mobile.</strong> The editor was intentionally hidden on touch devices in v3.19.23 (considered desktop-only). It&rsquo;s now re-enabled: <strong>long-press the 💰 Payout button</strong> for 600&nbsp;ms to open it, or long-press anywhere within the payout legend panel. Three layers of blocking were removed: the <code>display: none !important</code> CSS in both the <code>768px</code> and <code>(hover: none)</code> blocks, and the <code>touch-action: manipulation</code> that was suppressing contextmenu events on the legend container. The <code>60vh</code> height cap with scrolling ensures it fits on a phone screen. The existing slider-drag guard (600&nbsp;ms since last slider input) still prevents the editor from opening accidentally mid-drag.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.19.45</span>
-          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -46885,7 +46914,7 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Click to color airports by pilot payout · Right-click to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
+        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" ontouchstart="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=setTimeout(function(){_rgPayoutBtnLongPressT=null;_rgPayoutPaletteOpen(null);},600);" ontouchend="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" ontouchmove="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" title="Click to color airports by pilot payout · Right-click to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
         <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <!-- v3.19.17 — mobile-only direct toggle for "Display New Airports".
              On desktop this feature is inside the 🛠 Tools dropdown alongside
@@ -46941,7 +46970,7 @@ function rgSendToFlightPlanner() {
         <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 stops with colors and % positions. Drag a swatch onto the gradient bar to set its position, OR drag a tick bar directly along the gradient. Rows auto-sort low → high after every edit. The 0% no-data color is fixed grey. Your settings will be saved automatically.</div>
       </div>
 
-      <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation();clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=setTimeout(function(){_rgPayoutBtnLongPressT=null;_rgPayoutPaletteOpen(null);},600);" ontouchend="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" ontouchmove="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span>
           <button onclick="_rgHideFilterPanel('payout')" title="Close this panel — the payout filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
