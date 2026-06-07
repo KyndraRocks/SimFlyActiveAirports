@@ -6985,41 +6985,137 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }
     #rgPayoutPaletteEditor { display: none !important; }
 
-    /* ── v3.19.27 ─────────────────────────────────────────────────
-       Scenery Library list rows — shrink the per-row interactive
-       stars on mobile. The desktop rule sizes them at 2.24 rem
-       with 5 px h-padding (~46 px per star × 5 = 230 px total)
-       and `.sl-stars { flex-shrink: 0 }`. Combined with the
-       3.15-rem-min rating-number and the delete ✕, that's ~340 px
-       of fixed-width row content before counting the ICAO + name
-       link. The link's `flex: 1` collapses below its `min-width:
-       4.7rem` ICAO span, and the stars overlap the ICAO text.
-       Shrinking the stars to 1.4 rem (~22 px) with 2 px padding
-       brings the star cluster to ~120 px, leaves ~190 px of room
-       for ICAO + name, and the row fits one line at 390 px. The
-       rating-number's min-width also drops so trailing space
-       isn't wasted. */
+    /* ── v3.19.28 (supersedes v3.19.27's font shrink) ────────────
+       Scenery Library list rows — full restructure on mobile.
+       The original one-line layout (ICAO + name + stars + delete
+       all on one row) doesn't fit a 390 px viewport even with
+       smaller stars — the ICAO + name link gets squeezed enough
+       that the name is barely readable. Restructure with CSS Grid
+       into two rows:
+        - Row 1: ICAO + name link  |  delete ✕
+        - Row 2: Stars             |  rating number
+       Plus, the meta sub-row (Store / Dev) also restructures into
+       a 2-column label-input grid that gives each input its own
+       full-width line. */
+    .sl-row .sl-row-hdr {
+      display: grid !important;
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "link    delete"
+        "stars   ratenum";
+      gap: 0.25rem 0.5rem !important;
+      align-items: center;
+    }
+    .sl-row .sl-icao-link { grid-area: link; min-width: 0; }
+    /* Unowned airports — the inner ICAO + name spans are not
+       wrapped in <a>; place them by named area instead. The grid
+       row will then have ICAO + name in column 1, delete in column 2. */
+    .sl-row .sl-row-hdr > .sl-icao,
+    .sl-row .sl-row-hdr > .sl-name { grid-area: link; }
+    .sl-row .sl-del-btn { grid-area: delete; }
+    .sl-row .sl-stars { grid-area: stars; }
+    .sl-row .sl-rating-num { grid-area: ratenum; justify-self: end; }
+
+    /* Stars sized for row 2 (now they have the full row width,
+       can be a bit bigger again — 1.55 rem feels right, finger-
+       friendlier than v3.19.27's 1.4 rem). */
     .sl-row .sl-stars-interactive .sl-star {
-      font-size: 1.4rem !important;
-      padding: 0 2px !important;
+      font-size: 1.55rem !important;
+      padding: 0 3px !important;
     }
     .sl-row .sl-rating-num {
-      font-size: 0.95rem !important;
-      min-width: 2.4rem !important;
-      margin-left: 0.25rem !important;
+      font-size: 1rem !important;
+      min-width: auto !important;
+      margin-left: 0.4rem !important;
     }
-    /* Smaller delete ✕ on the row to match. */
     .sl-row .sl-del-btn {
-      font-size: 0.9rem !important;
-      padding: 0.05rem 0.35rem !important;
+      font-size: 1rem !important;
+      padding: 0.1rem 0.45rem !important;
     }
-    /* Tighten the row gap so the remaining elements have a bit
-       more breathing room. */
-    .sl-row .sl-row-hdr { gap: 0.35rem !important; }
-    /* ICAO + name font slightly smaller so the link doesn't
-       crowd. */
-    .sl-row .sl-icao { font-size: 1.05rem !important; min-width: 4.2rem !important; }
-    .sl-row .sl-name { font-size: 1rem !important; }
+    .sl-row .sl-icao { font-size: 1.1rem !important; min-width: auto !important; }
+    .sl-row .sl-name { font-size: 1.05rem !important; }
+
+    /* Meta sub-row (Store / Dev free-text fields). Desktop layout
+       puts both label-input pairs on one wrapping row, which on
+       mobile crammed them awkwardly. Switch to a 2-column grid
+       so each input gets a full-width line with its label on the
+       left, AND so the two field widths match. */
+    .sl-row .sl-row-meta {
+      display: grid !important;
+      grid-template-columns: auto 1fr;
+      gap: 0.25rem 0.5rem !important;
+      padding-left: 0 !important;
+      align-items: center;
+    }
+    .sl-row .sl-meta-lbl { padding: 0 !important; font-size: 0.92rem !important; }
+    .sl-row .sl-meta-input {
+      min-width: 0 !important;
+      max-width: none !important;
+      width: 100% !important;
+      font-size: 1rem !important;
+    }
+
+    /* ── Manage Store & Developer Values modal ──────────────────
+       The `.mv-grid` is `grid-template-columns: 1fr 1fr` for
+       side-by-side Stores / Developers tables. On a 390 px screen
+       each gets ~190 px, which crushes the "AIRPORTS" column
+       header so badly it wraps to one letter per line. Stack the
+       two sections vertically on mobile. */
+    #manageValuesModal .mv-grid {
+      grid-template-columns: 1fr !important;
+    }
+    #manageValuesModal .mv-section + .mv-section {
+      border-left: none !important;
+      border-top: 1px solid var(--border) !important;
+    }
+    #manageValuesModal .mv-table thead th {
+      padding: 0.35rem 0.6rem !important;
+      font-size: 0.74rem !important;
+    }
+    #manageValuesModal .mv-table tbody td {
+      padding: 0.35rem 0.6rem !important;
+      font-size: 0.9rem !important;
+    }
+    #manageValuesModal .mv-intro {
+      padding: 0.6rem 0.85rem !important;
+      font-size: 0.92rem !important;
+      line-height: 1.4 !important;
+    }
+    #manageValuesModal .mv-section-hdr {
+      padding: 0.5rem 0.85rem 0.4rem !important;
+      font-size: 0.82rem !important;
+    }
+
+    /* ── Scenery Developers modal ──────────────────────────────
+       Desktop has all font-sizes bumped +40% (1.29-1.37rem) so
+       the developer summary reads at a comfortable laptop size.
+       On a phone that's way too big — the columns don't fit. */
+    #developersModal .dev-intro {
+      padding: 0.65rem 0.85rem 0.5rem !important;
+      font-size: 0.92rem !important;
+      line-height: 1.4 !important;
+    }
+    #developersModal .dev-table thead th {
+      padding: 0.45rem 0.55rem !important;
+      font-size: 0.82rem !important;
+    }
+    #developersModal .dev-table tbody td {
+      padding: 0.4rem 0.55rem !important;
+      font-size: 0.95rem !important;
+    }
+    #developersModal .dev-c-rating .sl-star {
+      font-size: 1rem !important;
+    }
+    #developersModal .dev-avg-num { font-size: 0.92rem !important; }
+    #developersModal .dev-filter-btn {
+      font-size: 1rem !important;
+      padding: 0.05rem 0.3rem !important;
+    }
+    #developersModal .dev-drill .dev-drill-cell {
+      padding: 0.45rem 0.85rem 0.65rem !important;
+      font-size: 0.9rem !important;
+      line-height: 1.45 !important;
+    }
 
     /* ── v3.19.19 ─────────────────────────────────────────────────
        Light-mode mobile accessibility. Several labels rendered
@@ -7537,7 +7633,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.27';
+const APP_VERSION = '3.19.28';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -35151,10 +35247,25 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.28</span>
+          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library row &mdash; mobile layout restructured.</strong> v3.19.27 just shrunk the stars; v3.19.28 properly restructures the row into two grid lines. <em>Row 1</em>: ICAO + airport name link on the left, delete ✕ on the right. <em>Row 2</em>: stars on the left, rating number (e.g. <code>3.0/5</code>) on the right. Stars come back to a finger-friendlier 1.55 rem now that they have the full row width to spread. The meta sub-row (<em>Store</em> / <em>Dev</em> free-text fields) also restructures into a 2-column label/input grid so each input gets a full-width line, and the two field widths match.</li>
+          <li><strong>Manage Store &amp; Developer Values modal &mdash; usable on mobile.</strong> The two tables (Stores / Developers) used to sit side-by-side via <code>grid-template-columns: 1fr 1fr</code>, which on a 390 px screen crushed the <em>AIRPORTS</em> column header to one letter per line and made the modal effectively unreadable. Stacked vertically on mobile, with table fonts + padding shrunk so the actual data fits each row.</li>
+          <li><strong>Scenery Developers modal &mdash; phone-readable fonts.</strong> The Developers modal&rsquo;s fonts were bumped +40% on desktop (1.29-1.37 rem) for laptop legibility. On a phone that&rsquo;s too big &mdash; the columns don&rsquo;t fit and headers run off the right. Reduced intro text to 0.92 rem, table header to 0.82 rem, table body to 0.95 rem, drill-down chips to 0.9 rem; stars in the rating column come down from 1.47 rem to 1 rem. Per-row filter 🔍 button also resized.</li>
+          <li><strong>Same gate: <code>@media (max-width: 768px)</code>.</strong> Desktop sizing for all three surfaces is unchanged.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.19.27</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
