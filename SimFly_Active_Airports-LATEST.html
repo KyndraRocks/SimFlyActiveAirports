@@ -6689,43 +6689,70 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        nowrap with horizontal overflow (so even on a very narrow
        viewport the user can swipe rather than seeing two visual
        rows where one is logically expected). */
+    /* Dep/Arr label floats above its circle row by being full-width
+       in a wrapping flex container; circles centre on the next line.
+       Inv buttons removed — space is too tight for reliable touch. */
     .dist-cat-pills-row {
-      flex-wrap: nowrap !important;
-      gap: 0.22rem !important;
-      justify-content: flex-start !important;
-      overflow-x: auto;
-      padding-bottom: 0.1rem;
-      scrollbar-width: none;
+      flex-wrap: wrap !important;
+      gap: 0.3rem !important;
+      justify-content: center !important;
+      overflow-x: visible !important;
+      padding-bottom: 0;
     }
-    .dist-cat-pills-row::-webkit-scrollbar { display: none; }
     .dist-cat-pills-row .dist-cat-btn {
-      width: 1.55rem !important;
-      height: 1.55rem !important;
-      font-size: 0.8rem !important;
+      width: 2.2rem !important;
+      height: 2.2rem !important;
+      font-size: 0.95rem !important;
       flex-shrink: 0;
     }
     .dist-cat-pills-row .dist-cat-filter-label {
-      font-size: 0.85rem !important;
-      margin-right: 0.15rem;
+      flex-basis: 100% !important;
+      width: 100% !important;
+      font-size: 0.9rem !important;
+      text-align: center !important;
+      margin: 0 !important;
       flex-shrink: 0;
     }
     .dist-cat-pills-row .dist-cat-invert-btn {
-      font-size: 0.72rem !important;
-      padding: 0.18rem 0.45rem !important;
-      flex-shrink: 0;
+      display: none !important;
     }
 
-    /* (y) "Hide filtered airports" toggle — was a small pill floating
-       in its own row. Treat it as a primary tappable action: full
-       width, larger padding, body-font readable. */
-    .dist-cat-hide-btn {
+    /* More vertical breathing room between Dep section, Arr section,
+       and the action buttons below. */
+    .dist-cat-dual-row {
+      gap: 1rem !important;
+    }
+    #distCatFilterRow {
+      gap: 1rem !important;
+    }
+
+    /* (y) Filter sub-row: stack vertically, full width, ~44 px tap height. */
+    .dist-cat-sub-row {
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .dist-cat-hide-btn,
+    .dist-ac-filter-btn {
       width: 100%;
       box-sizing: border-box;
-      padding: 0.55rem 1rem !important;
-      font-size: 0.95rem !important;
+      padding: 0.8rem 1rem !important;
+      font-size: 1rem !important;
+      min-width: unset !important;
     }
 
-    /* (z) Distance matrix — shrink fonts so more columns fit before
+    /* (z) Map overlay chips — centre horizontally on a narrow phone
+       viewport. The inline style has right:8px which reads fine on
+       desktop but looks awkward on a phone. CSS !important overrides
+       the inline right; JS only ever sets top/bottom so no conflict. */
+    #rgPayoutLegend,
+    #rgStarFilterLegend,
+    #rgPayoutPaletteEditor {
+      right: auto !important;
+      left: 50% !important;
+      transform: translateX(-50%) !important;
+    }
+
+    /* (aa) Distance matrix — shrink fonts so more columns fit before
        horizontal scroll kicks in. Cells are tabular numerics that
        degrade gracefully at smaller sizes. */
     .dist-matrix-wrap  { font-size: 0.82rem; margin-top: 0.7rem; }
@@ -7802,7 +7829,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.29';
+const APP_VERSION = '3.19.36';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31155,7 +31182,13 @@ function _rgPayoutPaletteOpen(event) {
     const left = Math.max(8, r.left - mapRect.left - desiredW - 10);
     const top  = Math.max(8, r.top  - mapRect.top);
     ed.style.left = left + 'px';
-    ed.style.top  = top + 'px';
+    ed.style.top  = top  + 'px';
+    // Flip upward if the editor would clip the bottom of the map container.
+    const mapH = mapEl ? mapEl.getBoundingClientRect().height : window.innerHeight;
+    if (top + ed.offsetHeight > mapH - 8) {
+      const legBottom = r.bottom - mapRect.top;
+      ed.style.top = Math.max(8, legBottom - ed.offsetHeight) + 'px';
+    }
   }
   // Click-outside dismiss — one-shot listener added on next tick so the
   // opening contextmenu doesn't immediately fire it.
@@ -32092,14 +32125,31 @@ function _rgHideFilterPanel(which) {
   _rgRepositionFilterPanels();
 }
 
-// Recalculates the vertical offset of rgStarFilterLegend so it sits below
-// rgPayoutLegend when both panels are visible, with 10 px spacing.
+// Recalculates the position of both filter panels.
+// Desktop: top-down stack anchored at top:50px right:8px (original behaviour).
+// Touch devices: bottom-up stack anchored above the Leaflet attribution bar
+// so the panels never occlude the breadcrumb filter row at the top.
 function _rgRepositionFilterPanels() {
   const payoutLeg = document.getElementById('rgPayoutLegend');
   const starLeg   = document.getElementById('rgStarFilterLegend');
   if (!starLeg) return;
   const payoutVisible = payoutLeg && payoutLeg.style.display !== 'none';
-  starLeg.style.top = payoutVisible ? (50 + payoutLeg.offsetHeight + 10) + 'px' : '50px';
+  if (_aaIsTouchDevice()) {
+    const base = 50; // px above bottom — clears the Leaflet attribution bar
+    const gap  = 8;
+    if (payoutLeg) {
+      payoutLeg.style.top    = 'auto';
+      payoutLeg.style.bottom = base + 'px';
+    }
+    starLeg.style.top    = 'auto';
+    starLeg.style.bottom = payoutVisible
+      ? (base + (payoutLeg ? payoutLeg.offsetHeight : 0) + gap) + 'px'
+      : base + 'px';
+  } else {
+    if (payoutLeg) { payoutLeg.style.top = '50px'; payoutLeg.style.bottom = ''; }
+    starLeg.style.top    = payoutVisible ? (50 + (payoutLeg ? payoutLeg.offsetHeight : 0) + 10) + 'px' : '50px';
+    starLeg.style.bottom = '';
+  }
 }
 
 function _rgStarFltSetStars(val) {
@@ -35417,10 +35467,88 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.36</span>
+          <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport Owners button shows space between &ldquo;Airport&rdquo; and &ldquo;Owners&rdquo; on desktop.</strong> The button uses <code>display:inline-flex</code>, which causes trailing whitespace at the end of an inline flex item to be stripped during line-box collapsing. The trailing space in the <code>.aa-owner-prefix</code> span was being dropped, rendering the label as &ldquo;AirportOwners&rdquo;. Changed the space to <code>&amp;nbsp;</code>, which is not collapsible. Mobile behavior is unchanged &mdash; the whole span is hidden on narrow screens, taking the non-breaking space with it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.35</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout Palette editor flips upward when near the map bottom.</strong> Previously the editor always expanded downward from the legend&rsquo;s top edge; on a short browser window with many colour stops it could clip below the map. <code>_rgPayoutPaletteOpen()</code> now measures the editor&rsquo;s rendered height after display and, if the bottom would exceed the map container boundary, repositions to open upward from the legend&rsquo;s bottom edge instead.</li>
+          <li><strong>Pilot Payout chip width matched to Scenery Rating chip.</strong> Added <code>min-width:271px</code> to the Pilot Payout legend to match the Scenery Rating legend, so both chips are the same width when centred on a phone screen.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.34</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Pilot Payout and Scenery Rating chips centred horizontally on phone.</strong> Both chips were right-aligned (<code>right:8px</code> inline) which looks fine on a wide desktop map but sits awkwardly on a narrow phone screen. <code>@media (hover: none)</code> now overrides to <code>left:50%; transform:translateX(-50%)</code> so both chips (and the palette editor, if it were ever visible) are centred over the map. The JS bottom-stacking from v3.19.33 is unaffected &mdash; it only sets <code>top</code>/<code>bottom</code>.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.33</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout and Scenery Rating chips move to the bottom of the map on touch devices.</strong> Both panels were anchored at <code>top:50px</code>, placing them over the breadcrumb filter row at the top of the screen. On touch devices <code>_rgRepositionFilterPanels()</code> now sets <code>top:auto</code> and positions each panel from the bottom (50&nbsp;px above the Leaflet attribution bar). When both chips are visible simultaneously, the second stacks upward above the first with an 8&nbsp;px gap. Desktop behaviour is unchanged.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.32</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Category filter circles fully touch-friendly on phones.</strong> &ldquo;Dep&rdquo; and &ldquo;Arr&rdquo; labels now appear above their respective circle rows (each label is full-width in its flex container, so it wraps onto its own line). Both &ldquo;Inv&rdquo; buttons removed to free horizontal space. All 7 circles now fit on a single row with no overflow. Gap between the Dep section, Arr section, and the two action buttons increased so accidental presses on adjacent targets are avoided.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.31</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Category filter circles and action buttons sized for finger taps.</strong> The 1&ndash;7 category circles were 1.55&nbsp;rem (~25&nbsp;px) with minimal gaps &mdash; too small and crowded for reliable touch use. Bumped to 2.5&nbsp;rem (~40&nbsp;px) with wider gaps and scaled the &ldquo;Dep&rdquo;/&ldquo;Arr&rdquo; labels and Inv button to match. The &ldquo;Filter airports unsuitable for &hellip;&rdquo; and &ldquo;Hide filtered airports&rdquo; buttons also got taller padding to reach ~44&nbsp;px tap height.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.30</span>
+          <span class="release-date">June 7, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter sub-row buttons no longer overflow on a phone.</strong> The &ldquo;Filter airports unsuitable for &hellip;&rdquo; and &ldquo;Hide filtered airports&rdquo; buttons were sitting side-by-side in a flex row, clipping both labels on a 390&nbsp;px screen. On touch devices they now stack vertically, each taking the full width, matching the treatment already given to other action buttons in the touch UX refactor.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.19.29</span>
-          <span class="release-date">June 6, 2026 &middot; Current</span>
+          <span class="release-date">June 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -46499,7 +46627,7 @@ function rgSendToFlightPlanner() {
         <div class="rg-owner-wrap">
           <button id="rgMapOwnerBtn" class="rg-owner-btn" onclick="_rgToggleMapOwnerDropdown()"
                   onmouseenter="_rgShowOwnerLegend(this)" onmouseleave="_rgHideOwnerLegend()"
-                  title="Filter airports by owner" tabindex="-1"><span class="aa-owner-prefix">Airport </span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
+                  title="Filter airports by owner" tabindex="-1"><span class="aa-owner-prefix">Airport&nbsp;</span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
           <button id="rgOwnerColorBtn" class="rg-owner-color-btn disabled" onclick="_rgToggleOwnerColorMode()"
                   onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegend()"
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
@@ -46576,7 +46704,7 @@ function rgSendToFlightPlanner() {
         <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 stops with colors and % positions. Drag a swatch onto the gradient bar to set its position, OR drag a tick bar directly along the gradient. Rows auto-sort low → high after every edit. The 0% no-data color is fixed grey. Your settings will be saved automatically.</div>
       </div>
 
-      <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
           <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span>
           <button onclick="_rgHideFilterPanel('payout')" title="Close this panel — the payout filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
