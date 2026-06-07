@@ -6733,11 +6733,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     }
     .dist-cat-hide-btn,
     .dist-ac-filter-btn {
-      width: 100%;
+      width: 100% !important;
       box-sizing: border-box;
       padding: 0.8rem 1rem !important;
       font-size: 1rem !important;
       min-width: unset !important;
+      white-space: normal !important;
     }
 
     /* (z) Map overlay chips — centre horizontally on a narrow phone
@@ -7345,6 +7346,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       line-height: 1.45;
     }
     #distTooltipGlobal strong { font-size: 0.95rem; }
+
+    /* Distance range slider — base: 110 + 12 + 140 + 12 + 110 = 384 px
+       minimum, but a 375 px phone has only ~359 px content width (8 px
+       padding each side). Clips the max-value label by ~25 px. Fix:
+       let value labels shrink to their text content, reduce min-track. */
+    .dist-slider-row { gap: 0.4rem !important; }
+    .dist-filter-value.min-val,
+    .dist-filter-value.max-val {
+      width: auto !important;
+      min-width: 0 !important;
+      font-size: 1rem !important;
+      flex-shrink: 1 !important;
+    }
+    .dist-range-wrap { min-width: 80px !important; }
   }
 
   /* ─────────────────────────────────────────────────────────────────
@@ -7514,6 +7529,32 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       height: 38px !important;
       font-size: 1.4rem !important;
     }
+
+    /* (9) Distance range slider — taller track + larger thumbs so
+       the handles are reliably finger-sized (~44 px HIG ideal).
+       Desktop thumb is 18 × 18 px; touch raised to 28 × 28 px.
+       Track height matches thumb so the thumb never sticks out. */
+    .dist-range-wrap {
+      height: 28px !important;
+    }
+    .dist-range-wrap input[type="range"] {
+      height: 28px !important;
+    }
+    .dist-range-track {
+      height: 28px !important;
+      border-radius: 14px !important;
+    }
+    .dist-range-wrap input[type="range"]::-webkit-slider-thumb {
+      width: 28px !important;
+      height: 28px !important;
+      margin-top: 0 !important;
+    }
+    .dist-range-wrap input[type="range"]::-moz-range-thumb {
+      width: 28px !important;
+      height: 28px !important;
+    }
+    /* Shift the range value marker below the taller track */
+    .dist-range-marker { top: 32px !important; }
   }
   /* ───── end MOBILE RESPONSIVE FOUNDATION ───── */
 </style>
@@ -7829,7 +7870,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.36';
+const APP_VERSION = '3.19.37';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9756,15 +9797,18 @@ function _distShowAcFilterBtn() {
   // Auto-activate when aircraft selected; deactivate when deselected
   if (ac) btn.classList.add('active');
   if (!ac) btn.classList.remove('active');
-  // Set text; lock width to the generic label so it never reflows
+  // Set text; lock width to the generic label so it never reflows on desktop.
+  // Skip on touch — CSS width:100%!important handles sizing there, and the
+  // measurement fires while the parent dist-filter-row is still display:none,
+  // which would lock to 0px and collapse the button.
   const genericText = 'Filter airports unsuitable for aircraft';
-  if (!btn._lockedWidth) {
-    // Measure width with the longest expected text before locking
+  if (!btn._lockedWidth && !_aaIsTouchDevice()) {
     btn.textContent = genericText;
     btn.style.width = '';
-    btn._lockedWidth = btn.offsetWidth + 'px';
+    const w = btn.offsetWidth;
+    if (w > 0) btn._lockedWidth = w + 'px';
   }
-  btn.style.width = btn._lockedWidth;
+  if (btn._lockedWidth) btn.style.width = btn._lockedWidth;
   btn.textContent = ac ? 'Filter airports unsuitable for ' + ac.code : genericText;
 }
 
@@ -35469,8 +35513,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.19.36</span>
+          <span class="release-version">v3.19.37</span>
           <span class="release-date">June 7, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter airports button renders correctly on phone.</strong> The JS width-lock in <code>_distShowAcFilterBtn</code> measured <code>offsetWidth</code> while the parent <code>.dist-filter-row</code> was still <code>display:none</code>, locking the button to 0&nbsp;px. The button border then rendered as a tiny circle and the text floated outside it. Fixed by skipping the width-lock on touch devices entirely (CSS <code>width:100%&nbsp;!important</code> handles sizing there). Also added <code>!important</code> to the existing <code>width:100%</code> rule so it wins over any inline style, and <code>white-space:normal</code> so long labels can wrap instead of overflowing.</li>
+          <li><strong>Distance range slider no longer clips on a phone.</strong> The fixed 110&nbsp;px value labels plus the 140&nbsp;px track minimum totalled 384&nbsp;px &mdash; 25&nbsp;px wider than a 375&nbsp;px phone&rsquo;s 359&nbsp;px content area, clipping the max-value label. Value labels now size to their text content and can shrink; track minimum reduced to 80&nbsp;px. The labels and track are still centred with the rest of the Distance section.</li>
+          <li><strong>Range slider thumbs enlarged for touch.</strong> The 18&nbsp;&times;&nbsp;18&nbsp;px desktop thumbs are hard to grab with a finger. On touch devices (<code>@media (hover:none)</code>) the track height and thumbs are raised to 28&nbsp;&times;&nbsp;28&nbsp;px, closer to the 44&nbsp;px HIG ideal. The value-marker arrow below the track is repositioned to clear the taller track.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.19.36</span>
+          <span class="release-date">June 7, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
