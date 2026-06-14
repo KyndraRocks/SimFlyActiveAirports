@@ -4803,7 +4803,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      modal layers. Bumping above #afkConfigModal so the natural stacking
      also covers any future scenario where both are technically open. */
   #afkHistoryModal { z-index:9510; }
-  #afkConfigModal .modal { max-width:clamp(720px,52vw,1080px); min-height:62vh; }
+  #afkConfigModal .modal { max-width:clamp(820px,58vw,1200px); min-height:62vh; }
   /* v3.6.20 — The body keeps the modal a substantial size via the modal's own
      min-height (above), NOT via its own min-height. Previously min-height:62vh
      here pinned the body tall, so on shorter viewports the wrapping footer
@@ -4928,14 +4928,16 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .afk-card { position:relative; }
   /* Group container (v2.83.0+) — wraps consecutive same-group members. */
   .afk-group {
-    border:1px solid rgba(0,200,255,0.45);
-    background:rgba(0,200,255,0.05);
+    border:1px solid rgba(0,200,255,0.70);
+    border-left:3px solid rgba(0,200,255,0.80);
+    background:rgba(0,200,255,0.09);
     border-radius:8px;
     padding:0.35rem 0.45rem 0.45rem;
     margin:0.35rem 0;
+    box-shadow:0 1px 6px rgba(0,200,255,0.10);
   }
-  body.light-mode .afk-group { background:rgba(0,150,200,0.06); border-color:rgba(0,150,200,0.55); }
-  .afk-group.tripped { border-color:#ff3d5a; background:rgba(255,61,90,0.08); }
+  body.light-mode .afk-group { background:rgba(0,150,200,0.10); border-color:rgba(0,150,200,0.65); border-left-color:rgba(0,150,200,0.75); box-shadow:0 1px 6px rgba(0,150,200,0.12); }
+  .afk-group.tripped { border-color:#ff3d5a; border-left-color:#ff3d5a; background:rgba(255,61,90,0.08); box-shadow:0 1px 6px rgba(255,61,90,0.18); }
   .afk-group-header {
     display:flex; align-items:center; gap:0.5rem;
     padding-bottom:0.4rem;
@@ -4971,7 +4973,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     color:var(--text);
     padding:0.18rem 0.4rem;
     border-radius:4px;
-    min-width:6em; min-height:1.3em;
+    min-width:0; min-height:1.3em;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     outline:none;
   }
   .afk-group-name:empty::before {
@@ -5014,18 +5017,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .afk-card-name:not(:empty) + .afk-card-name-sep::before { content:'·'; padding:0 0.2rem; }
   .afk-card-type-label { color:var(--text); }
   .afk-group-count {
+    flex-shrink:0;
     font-family:'Rajdhani',sans-serif; font-size:0.8rem; font-weight:600;
     color:var(--muted); letter-spacing:0.05em;
     background:rgba(255,255,255,0.06); padding:0.12rem 0.5rem; border-radius:10px;
   }
   body.light-mode .afk-group-count { background:rgba(0,0,0,0.06); }
   .afk-group-ungroup {
+    flex-shrink:0;
     background:rgba(255,140,40,0.10);
     border:1px solid rgba(255,140,40,0.45);
     color:#ffaa55;
     font-family:'Rajdhani',sans-serif; font-size:0.85rem; font-weight:600;
     padding:0.22rem 0.55rem; border-radius:4px;
-    cursor:pointer;
+    cursor:pointer; white-space:nowrap;
   }
   .afk-group-ungroup:hover { background:rgba(255,140,40,0.22); color:#ffd0a0; }
   /* v2.97.13 — light-mode override; the dark-mode pale orange text is
@@ -5042,6 +5047,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* v2.91.0 — Group mode pill (CASCADE / AND). Visually distinct from
      the Ungroup button so the current mode is at-a-glance readable. */
   .afk-group-mode {
+    flex-shrink:0;
     background:rgba(0,200,255,0.10);
     border:1px solid rgba(0,200,255,0.45);
     color:var(--accent);
@@ -5049,7 +5055,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     letter-spacing:0.06em; text-transform:uppercase;
     padding:0.22rem 0.6rem; border-radius:999px;
     cursor:pointer; line-height:1.1;
-    margin-right:0.25rem;
+    margin-right:0.25rem; white-space:nowrap;
   }
   /* v2.91.0 legacy alias kept for any in-flight saved groups. */
   .afk-group-mode[data-mode="and"],
@@ -5100,6 +5106,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .afk-card-tripped-pip { background:rgba(0,150,80,0.18); border-color:rgba(0,150,80,0.55); color:#008040; }
   .afk-group-body { display:flex; flex-direction:column; gap:0.35rem; }
   .afk-group.collapsed .afk-group-body { display:none; }
+  /* Drop-onto-group — group header lights up green when a card is dragged
+     over it, signalling that dropping will add that alert to this group. */
+  .afk-group-header { position:relative; }
+  .afk-group-header.drop-onto-group {
+    background:rgba(0,230,118,0.12);
+    outline:2px solid #00e676;
+    outline-offset:-2px;
+    border-radius:6px;
+  }
+  .afk-group-header.drop-onto-group::after {
+    content:'+ Add to group';
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    background:rgba(0,230,118,0.92); color:#0a1822;
+    padding:0.15rem 0.55rem; border-radius:4px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:0.82rem;
+    pointer-events:none; white-space:nowrap; z-index:5;
+  }
   .afk-card.grouped {
     border-left:3px solid rgba(0,200,255,0.55);
   }
@@ -7959,7 +7982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.19.51';
+const APP_VERSION = '3.20.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20039,6 +20062,12 @@ function _afkImportAlarms(input) {
       _maSetConfig(fileMa);
       maApplied = true;
     }
+    // Collapse all imported cards so a large set doesn't flood the modal.
+    // Clear any stale ids from the previous set first (those alarms no
+    // longer exist), then add every newly-imported id.
+    _afkCollapsedCards.clear();
+    importedIds.forEach(id => _afkCollapsedCards.add(id));
+    _afkSaveCollapsed();
     _afkRenderAlarmList();
     _afkRenderGeofenceVisuals();
     _afkRenderWaypointVisuals();
@@ -20453,7 +20482,10 @@ function _afkRenderGroupHtml(gid, members) {
   const allEnabled   = enabledCount === members.length;
   const mixedClass   = (enabledCount > 0 && enabledCount < members.length) ? ' mixed' : '';
   return '<div class="afk-group' + collapsedCls + trippedCls + '" data-group-id="' + gid + '">' +
-    '<div class="afk-group-header">' +
+    '<div class="afk-group-header"' +
+      ' ondragover="_afkGroupHdrDragOver(event,\'' + gid + '\')"' +
+      ' ondragleave="_afkGroupHdrLeave(event)"' +
+      ' ondrop="_afkGroupHdrDrop(event,\'' + gid + '\')">' +
       '<button class="afk-group-collapse" onclick="event.stopPropagation();_afkGroupToggleCollapse(\'' + gid + '\')" title="Expand / collapse the whole group">' + (g.collapsed ? '▶' : '▼') + '</button>' +
       '<span class="afk-group-icon" title="Group of ' + members.length + ' alarms — they fire together; dismissing any one dismisses + disables all">⛓</span>' +
       '<span class="afk-group-name" contenteditable="true" spellcheck="false" ' +
@@ -20882,9 +20914,38 @@ function _afkCardDragEnd(ev) {
   document.querySelectorAll('.afk-card.dragging').forEach(el => el.classList.remove('dragging'));
   document.querySelectorAll('.afk-card.drop-before, .afk-card.drop-after, .afk-card.drop-onto')
     .forEach(el => { el.classList.remove('drop-before'); el.classList.remove('drop-after'); el.classList.remove('drop-onto'); });
+  document.querySelectorAll('.afk-group-header.drop-onto-group').forEach(el => el.classList.remove('drop-onto-group'));
   const list = document.getElementById('afkAlarmList');
   if (list) list.classList.remove('dragging-alarm');
   document.querySelectorAll('.afk-list-drop-zone.drop-active').forEach(el => el.classList.remove('drop-active'));
+}
+
+// Drag-an-alert-card onto a group header to add it to that group.
+// Accepts card-reorder drags only (not add-from-menu drags, since those
+// go through their own type selection UI).
+function _afkGroupHdrDragOver(ev, gid) {
+  if (_afkDragFromId == null) return;
+  const src = _afkAlarms.get(_afkDragFromId);
+  if (!src || src.groupId === gid) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+  ev.currentTarget.classList.add('drop-onto-group');
+}
+function _afkGroupHdrLeave(ev) {
+  ev.currentTarget.classList.remove('drop-onto-group');
+}
+function _afkGroupHdrDrop(ev, gid) {
+  ev.currentTarget.classList.remove('drop-onto-group');
+  if (_afkDragFromId == null) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const fromId = _afkDragFromId;
+  _afkDragFromId = null;
+  _afkGroups.addMember(gid, fromId);
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
 }
 
 // ---------------------- MULTI-SELECT + GROUP HANDLERS (v2.83.0+) ----------
@@ -35532,7 +35593,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
-            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
+            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. <strong>Add an alert to an existing group</strong> by dragging its card onto the group&rsquo;s header row (the row with the group name and mode pill) &mdash; the header highlights green with &ldquo;+ Add to group&rdquo; as you hover. This works even when the group is collapsed. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
             <strong>Group mode &mdash; three options</strong> (v2.91.0 added CASCADE/AND; v2.92.0 expanded to three explicit modes) &mdash; a pill on the group header (default <em>CASCADE</em>) cycles through the three modes on click:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is auto-dismissed and disabled. One acknowledgement covers the whole bundle. Best for "any one of these is a problem, alert me about it" scenarios.</li>
@@ -35542,7 +35603,7 @@ function rgSendToFlightPlanner() {
             <strong>Dismissal &mdash; mode-aware</strong> (v2.95.0+): CASCADE mode dismisses disable every member (the documented "one fires, rest go silent" contract). CONCURRENT / SEQUENTIAL mode dismisses re-arm every member (members can keep tripping individually for the rest of the flight; the group's <code>_fired</code> flag prevents the composite alert from re-firing until ground transition). A mode-aware toast surfaces the impact: CASCADE shows <em>"dismissed N siblings (X also-tripped + Y still-armed)"</em>; non-cascade shows <em>"Group fired. N members re-armed &mdash; group will not re-fire this mission."</em> Save / Load JSON files preserve the mode; the legacy <code>and</code> value from v2.91.0 reads back as <code>concurrent</code>.<br/><br/>
 
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
-            <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible.<br/><br/>
+            <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible. <strong>Cards imported from file default to collapsed</strong> so a large saved set doesn&rsquo;t flood the modal; expand any card individually to review or adjust its settings.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
             <strong>Enable All / Disable All</strong> (modal footer, next to Delete All) flip every configured alert in one click. <em>Disable All</em> disarms everything, removes geofence circles and waypoint highlights from the map, and stops any active sound &mdash; configuration is preserved so a follow-up <em>Enable All</em> (v2.88.0+) re-arms the whole queue and reschedules any timer countdowns. <strong>Delete All</strong> permanently removes every alert from the queue. The per-card ✕ button does the same for a single alert. The footer is grouped left-to-right: tool buttons (Test Sound, Alert History, Group selected) | Save / Load to file | the three bulk state-flip buttons (Enable All, Disable All, Delete All) as of v2.89.0.<br/><br/>
             <strong>Load from File behaviour</strong> (v2.87.1+) &mdash; importing an alarm file always produces a ready-to-fire configuration: every imported alarm is set to <em>enabled</em> regardless of whatever <em>enabled</em> state was saved in the file, and per-type transient state (cruise / descent / alt-min <em>fired</em> sentinels, geofence <em>wasInside</em>, waypoint <em>trippedFixes</em>) is freshly seeded so the next live tick treats each alarm as just-armed. <strong>Airborne import warning</strong>: if the aircraft is actively flying (live source connected and groundspeed &gt; 30&nbsp;kt, or |VS| &gt; 100&nbsp;fpm, or wheels-up confirmed) AA shows a confirmation dialog before applying the import &mdash; some alarm types can fire on the first tick post-load if the current flight state already satisfies their conditions (e.g., a Cruise alarm with a target altitude below your current FL). You can Cancel or Load Anyway.<br/><br/>
@@ -35648,8 +35709,25 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.19.51</span>
+          <span class="release-version">v3.20.0</span>
           <span class="release-date">June 14, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert groups — more visually distinct.</strong> Group containers now have a stronger cyan border (left side accented at 3 px, full perimeter at 70% opacity) and a more visible background tint so a group is immediately recognisable against standalone alert cards. The tripped state keeps its red accent; light-mode colours updated to match.</li>
+          <li><strong>Drag an alert onto a group header to add it.</strong> Any standalone alert card can now be dragged directly onto the group header row (the row with the group name, member count, and mode pill) to add it to that group. The header highlights green with a &ldquo;+ Add to group&rdquo; label on hover. Previously the only drop target was an individual member card inside the group body, which was invisible when the group was collapsed. Right-click &rarr; <em>Add to existing group&hellip;</em> still works as before.</li>
+          <li><strong>Load from File — alerts default to collapsed.</strong> Importing an alert file now collapses every imported card automatically. Previously all cards rendered expanded, flooding the modal when loading a large saved set. Cards can be expanded individually after load by clicking the chevron; the collapsed state is persisted across reloads as normal.</li>
+          <li><strong>Group header — mode pill and Ungroup button no longer wrap.</strong> Added <code>white-space: nowrap</code> and <code>flex-shrink: 0</code> to both buttons so &ldquo;CASCADE&rdquo; (and &ldquo;CONCURRENT&rdquo; / &ldquo;SEQUENTIAL&rdquo;) never break across two lines when the header is tight. The group name is now an overflow-ellipsis field that surrenders space instead, keeping all buttons single-row.</li>
+          <li><strong>Alerts modal wider.</strong> The Alerts modal max-width increased from <code>clamp(720px, 52vw, 1080px)</code> to <code>clamp(820px, 58vw, 1200px)</code> so the group header row has more breathing room on larger screens.</li>
+          <li><strong>SimBrief geofence auto-update — verified.</strong> Confirmed that dep/arr-anchored geofences (anchor = Departure airport or Arrival airport) re-resolve and redraw the instant a SimBrief flight plan is loaded or replaced. When the loaded plan changes (different origin/destination ICAO), the <code>_afkTick</code> fingerprint check resets <code>wasInside</code> and re-renders geofence circles so no stale state carries over to the new plan. No code change was required; this is documentation of confirmed existing behaviour.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.19.51</span>
+          <span class="release-date">June 14, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
