@@ -58,9 +58,29 @@ jobs:
             for (const page of pages) {
               for (const ap of page.list || []) {
                 db[ap.icao] = {
+                  // Existing keys — DO NOT rename; downstream apps and Gist sync read these.
                   p: ap.percToUser,
                   o: (ap.owner && ap.owner.username) ? ap.owner.username : null,
-                  c: ap.category != null ? ap.category : null
+                  c: ap.category != null ? ap.category : null,
+                  // Level / progression
+                  lvl:   ap.level != null ? ap.level : null,
+                  // level_progress is a long float (e.g. 11.0619…) and changes continuously;
+                  // round to 1 dp to keep the file small and cut hourly commit churn.
+                  lprog: ap.level_progress != null ? Math.round(ap.level_progress * 10) / 10 : null,
+                  xp:    ap.xp != null ? ap.xp : null,
+                  exp:   ap.earnedXp != null ? ap.earnedXp : null,
+                  txp:   ap.totalEarnedXp != null ? ap.totalEarnedXp : null,
+                  // Rotation / capacity — mrot - rot = rotations remaining this week
+                  rot:   ap.rotation != null ? ap.rotation : null,
+                  mrot:  ap.maxRotation != null ? ap.maxRotation : null,
+                  // Traffic
+                  pax:   ap.pax != null ? ap.pax : null,
+                  epax:  ap.earnedPax != null ? ap.earnedPax : null,
+                  // Metadata
+                  act:   ap.activation_date != null ? ap.activation_date : null,
+                  mkt:   ap.availableForMarketplace != null ? ap.availableForMarketplace : null,
+                  on:    ap.active != null ? ap.active : null,
+                  n:     (ap.owner && ap.owner.nonce != null) ? ap.owner.nonce : null
                 };
               }
             }
