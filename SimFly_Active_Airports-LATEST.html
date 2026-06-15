@@ -6155,6 +6155,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     <div class="aa-choice-ver" id="aaChoiceVersion"></div>
     <div class="aa-choice-title" id="aaChoiceTitle">What would you like to do?</div>
     <div class="aa-choice-sub">Pick a starting point &mdash; you can switch any time from inside the app.</div>
+    <div class="aa-choice-simbrief-row" id="aaChoiceSimbriefRow">
+      <button type="button" class="aa-choice-card aa-choice-card--simbrief" id="aaChoiceSimbrief">
+        <div class="aa-choice-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 48 C16 16 48 16 54 48" stroke-dasharray="5 3.5"/>
+            <line x1="32" y1="13" x2="32" y2="27"/>
+            <path d="M20 20 L32 17 L44 20"/>
+            <path d="M26 25 L32 23 L38 25"/>
+            <circle cx="10" cy="48" r="3.5" fill="currentColor" stroke="none"/>
+            <circle cx="54" cy="48" r="3.5" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+        <div class="aa-choice-name">Load SimBrief Flight Plan</div>
+        <div class="aa-choice-desc">Import your latest SimBrief OFP, then configure alerts for key moments &mdash; waypoints, cruise altitude, descent, and more.</div>
+        <div class="aa-choice-cta">Import &amp; set up alerts <span aria-hidden="true">&rsaquo;</span></div>
+      </button>
+    </div>
     <div class="aa-choice-grid">
       <button type="button" class="aa-choice-card" id="aaChoiceOwner" autofocus>
         <div class="aa-choice-icon" aria-hidden="true">
@@ -6184,7 +6201,6 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         <div class="aa-choice-cta">Open the map <span aria-hidden="true">&rsaquo;</span></div>
       </button>
     </div>
-    <button type="button" class="aa-choice-skip" id="aaChoiceSkip">Skip &mdash; just take me to the app</button>
     <div class="aa-choice-bmc">
       <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="KyndraRocks" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
     </div>
@@ -6235,7 +6251,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     color:#7da2c8;font-family:'Rajdhani',sans-serif;font-size:.95rem;letter-spacing:.04em;
     padding:.4rem .8rem;border-radius:6px;transition:color .18s ease, background .18s ease;}
   .aa-choice-skip:hover, .aa-choice-skip:focus-visible{color:#eaf4ff;background:rgba(0,200,255,.08);outline:none;}
-  .aa-choice-bmc{position:absolute;bottom:1.5rem;left:50%;transform:translateX(-50%) scale(0.69);transform-origin:center bottom;white-space:nowrap;}
+  .aa-choice-bmc{margin-top:1.6rem;display:flex;justify-content:center;transform:scale(0.69);transform-origin:center top;white-space:nowrap;}
+  .aa-choice-simbrief-row{display:flex;justify-content:center;margin-bottom:clamp(.8rem,2vw,1.4rem);}
+  .aa-choice-simbrief-row .aa-choice-card{width:calc(50% - clamp(.4rem,1vw,.7rem));text-align:left;}
   @media (prefers-reduced-motion: reduce){
     #aaChoice, .aa-choice-card, .aa-choice-cta span{transition:none;}
     .aa-choice-card:hover, .aa-choice-card:focus-visible{transform:none;}
@@ -6324,7 +6342,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     .aa-desc-desktop         { display: none; }
     .aa-desc-mobile          { display: block; }
     .aa-choice-skip          { margin-top: 0.8rem; font-size: 0.88rem; }
-    .aa-choice-bmc           { bottom: 1rem; }
+    .aa-choice-bmc           { margin-top: 0.9rem; }
+    .aa-choice-simbrief-row  { display: none; }
 
     /* (b) Map header — column stack with subtle row banding (v3.19.2
        polish). v3.19.1 used flex-wrap which packed three rows but read
@@ -7982,7 +8001,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.20.0';
+const APP_VERSION = '3.21.12';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9986,7 +10005,6 @@ function _aaChoiceHide(){
 (function _aaChoiceWire(){
   const ownerBtn = document.getElementById('aaChoiceOwner');
   const mapBtn   = document.getElementById('aaChoiceMap');
-  const skipBtn  = document.getElementById('aaChoiceSkip');
   if (ownerBtn) ownerBtn.addEventListener('click', () => {
     _aaChoiceHide();
     const dep = document.getElementById('distDep');
@@ -9996,7 +10014,24 @@ function _aaChoiceHide(){
     _aaChoiceHide();
     setTimeout(() => { try { openRegionModal(); } catch(e) { console.warn('openRegionModal failed:', e); } }, 360);
   });
-  if (skipBtn) skipBtn.addEventListener('click', () => _aaChoiceHide());
+  const simbriefChoiceBtn = document.getElementById('aaChoiceSimbrief');
+  if (simbriefChoiceBtn) simbriefChoiceBtn.addEventListener('click', () => {
+    let pid = (typeof _fpGetPid === 'function') ? _fpGetPid() : '';
+    if (!pid) {
+      pid = (prompt('Enter your SimBrief Pilot ID.\n\nFind it at simbrief.com → Account → Pilot ID.\n\nSaved locally — you only need to enter it once.') || '').trim().slice(0, 64);
+      if (!pid) return;
+      if (typeof _fpSetPid === 'function') _fpSetPid(pid);
+    }
+    _aaChoiceHide();
+    setTimeout(() => {
+      try { openRegionModal(); } catch(e) { console.warn('openRegionModal failed:', e); }
+      setTimeout(() => { if (typeof _afkOpenConfig === 'function') _afkOpenConfig(); }, 60);
+      (function _waitForRgMap() {
+        if (_rgMap) { if (typeof _sbOfpPlot === 'function') _sbOfpPlot(); return; }
+        setTimeout(_waitForRgMap, 50);
+      })();
+    }, 360);
+  });
   document.addEventListener('keydown', (e) => {
     const ov = document.getElementById('aaChoice');
     if (!ov || ov.hidden) return;
@@ -21756,6 +21791,8 @@ function _afkToggleWaypointPick(id, ident, on) {
   if (!on && i >= 0) picks.splice(i, 1);
   a.params.fixIdents = picks;
   _afkAlarms.update(id, { params: a.params });
+  const _card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (_card) { const _sub = _card.querySelector('.afk-card-desc-sub'); if (_sub) _sub.innerHTML = _afkAlarmShortDescription(a, false); }
   _afkRenderWaypointVisuals();
 }
 // Parse altitude input — accepts "10000", "10,000", "FL350", "FL 350", etc.
@@ -24113,6 +24150,17 @@ function _distSwapIcaos() {
   _refreshSimbriefTooltip();
   _updateLookupBtns();
   _distRenderInfoPanel();
+  // Re-anchor dep/arr geofences to the new direction and redraw their circles.
+  try {
+    if (typeof _afkAlarms !== 'undefined') {
+      _afkAlarms.list().forEach(a => {
+        if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) {
+          if (a.state) a.state.wasInside = null;
+        }
+      });
+    }
+    if (typeof _afkRenderGeofenceVisuals === 'function') _afkRenderGeofenceVisuals();
+  } catch (_) {}
 }
 
 // ── Distance Filter ────────────────────────────────────────────────────────
@@ -29352,6 +29400,17 @@ function _rgSwapDotSel() {
   _rgFinishRouteClick(selRoute, selDep, selArr, selNm);
   _rgUpdateClearDotBtn();
   _rgHighlightDots();
+  // Re-anchor dep/arr geofences to the new direction and redraw their circles.
+  try {
+    if (typeof _afkAlarms !== 'undefined') {
+      _afkAlarms.list().forEach(a => {
+        if (a.type === 'geofence' && a.params && (a.params.anchor === 'dep' || a.params.anchor === 'arr')) {
+          if (a.state) a.state.wasInside = null;
+        }
+      });
+    }
+    if (typeof _afkRenderGeofenceVisuals === 'function') _afkRenderGeofenceVisuals();
+  } catch (_) {}
 }
 
 function _rgClearDotSel() {
@@ -35216,9 +35275,12 @@ function rgSendToFlightPlanner() {
       <div class="help-feature">
         <div class="help-feature-icon">🧭</div>
         <div class="help-feature-body">
-          <div class="help-feature-title">Startup Choice &mdash; Owner View or Explore Map</div>
+          <div class="help-feature-title">Startup Choice &mdash; Owner View, Explore Map, or SimBrief</div>
           <div class="help-feature-desc">
-            After the loading splash fades (v3.7.0+) a friendly choice screen asks what you&rsquo;d like to do. <strong>Show airports by Owner</strong> takes you to the classic distance matrix &mdash; pick this when you already know which pilots own the airports you want for departure and arrival. <strong>Explore map</strong> opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking flights, and setting up in-flight alerts. A small <em>Skip</em> link (or pressing <kbd>Esc</kbd>) dismisses the choice and drops you on the matrix. The choice is <strong>bypassed automatically</strong> when Recip Tracker or RM Lite hands you off with a specific intent &mdash; a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> URL parameter sends you straight to the matrix with the route prefilled, and a <code>pilots=</code> URL parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters.
+            After the loading splash fades (v3.7.0+) a choice screen asks what you&rsquo;d like to do. Three options are available on desktop; two on mobile (the SimBrief option requires a PC).<br/><br/>
+            <strong>Load SimBrief Flight Plan</strong> (desktop only, v3.21.0+) &mdash; appears centered above the other two cards. Click it to import your latest SimBrief OFP and open the map with the Alerts panel ready to configure. If your SimBrief Pilot ID isn&rsquo;t saved yet you&rsquo;ll be prompted for it once; it&rsquo;s stored locally for future sessions. The flight plan is fetched and plotted on the map automatically, then the Alerts panel opens so you can set up waypoint, cruise, descent, or timer alarms before you even take off. Cancelling the Pilot ID prompt returns you to the choice screen.<br/><br/>
+            <strong>Show airports by Owner</strong> takes you to the classic distance matrix &mdash; pick this when you already know which pilots own the airports you want for departure and arrival. <strong>Explore map</strong> opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking flights, and setting up in-flight alerts.<br/><br/>
+            A small <em>Skip</em> link (or pressing <kbd>Esc</kbd>) dismisses the choice and drops you on the matrix. The choice is <strong>bypassed automatically</strong> when Recip Tracker or RM Lite hands you off with a specific intent &mdash; a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> URL parameter sends you straight to the matrix with the route prefilled, and a <code>pilots=</code> URL parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters.
           </div>
         </div>
       </div>
@@ -35707,10 +35769,167 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.12</span>
+          <span class="release-date">June 15, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode now actually matches Explore Map speed.</strong> The previous implementation polled <code>window._rgMap</code>, which is never set because <code>_rgMap</code> is a <code>let</code> variable — the poll loop ran forever and the SimBrief plan never loaded on the no-cache path. Replaced all custom fetch/poll machinery with a direct call to <code>_sbOfpPlot()</code> once the map is ready, identical to the Live menu button that was already proven fast.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.11</span>
+          <span class="release-date">June 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode now matches Explore Map speed in all cases.</strong> The progress bar is removed entirely. With a cached plan the route appears the instant the map opens. Without a cached plan the map opens fully usable immediately, the SimBrief fetch runs silently in the background, and a toast confirms when the route lands — the same non-blocking experience as Explore Map.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.10</span>
+          <span class="release-date">June 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode is now instant when a cached plan exists.</strong> If a SimBrief flight plan was previously loaded, the route now appears the moment the map opens — identical in speed to the Explore Map path — with a background refresh running silently. A toast appears only if SimBrief returned a newer plan. The loader is shown only on first-ever use when no cached plan exists.</li>
+          <li><strong>SimBrief fetch parallelised with map init.</strong> The API call now starts the instant the startup button is clicked, in parallel with the map opening. The misleading two-phase "Loading map &amp; airport data…" progress bar is replaced with a single accurate "Fetching SimBrief flight plan…" label — the map and airport data were already loaded before the choice screen appeared.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.9</span>
+          <span class="release-date">June 15, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode loads significantly faster.</strong> The SimBrief API fetch now starts the moment the button is clicked — in parallel with the map opening — instead of waiting for the map to fully initialise first. The progress bar now shows a single accurate label ("Fetching SimBrief flight plan…") rather than the misleading "Loading map &amp; airport data…" phase, which was never the actual bottleneck at that point in the startup sequence. On a typical connection the route now appears 3–6 seconds sooner.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.8</span>
+          <span class="release-date">June 15, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Waypoint alarm card header now updates immediately when waypoints are checked.</strong> Checking or unchecking a specific waypoint in the alarm editor now instantly reflects the selection in the card header (e.g. "MLP" instead of "(no waypoints picked)"). Previously the header only updated after closing and reopening the alarm list.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.7</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Geofences redraw when departure and arrival are swapped.</strong> Dep/arr-anchored geofence circles now re-resolve and redraw immediately whenever the route direction is reversed &mdash; whether via the route pill on the map or the ⇄ button in the distance planner. The <code>wasInside</code> flag is also reset so the alarm re-arms cleanly against the new airport position. Previously the circles remained in their original locations until the next telemetry tick.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.6</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Buy Me a Coffee button no longer overlaps the choice cards.</strong> The button was absolutely positioned relative to the screen edge, which caused it to collide with the taller three-card layout. It now flows naturally below the card grid, matching where the removed Skip link used to sit.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.5</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Startup choice screen &mdash; Skip link removed.</strong> The &ldquo;Skip &mdash; just take me to the app&rdquo; link has been removed from the choice screen on both desktop and mobile. The three mode cards are now the only entry points. Pressing <kbd>Esc</kbd> still dismisses the screen.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.4</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode — progress bar while map and flight plan load.</strong> A slim progress strip now appears between the map header and the map tiles while the two async stages complete. Stage 1 (&ldquo;Loading map &amp; airport data&hellip;&rdquo;) animates 0&rarr;44&thinsp;% while waiting for Leaflet to initialise; stage 2 (&ldquo;Fetching SimBrief flight plan&hellip;&rdquo;) picks up at 50&thinsp;% once the map is ready and animates toward 84&thinsp;%. On completion it snaps to 100&thinsp;% (&ldquo;Route ready&rdquo;), holds briefly, then fades out. Colours, font, and bar style match the boot splash screen.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.21.3</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode — route auto-populated for one-click filing.</strong> After the SimBrief OFP loads, the departure and arrival ICAOs from the flight plan are written into the Distance Planner fields. This lights up the <em>File on SimBrief &rarr;</em> button with the correct route pre-filled, so hovering shows the full filing preview and clicking files immediately — no manual ICAO entry needed.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.2</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode — Alerts panel opens immediately on map open.</strong> v3.21.1 still gated the Alerts panel behind the Leaflet map initialising (which waits for the airport database to load from the Gist — several seconds on a cold start). The Alerts modal is a pure DOM overlay that needs no map; it now opens 60&nbsp;ms after <em>openRegionModal</em> is called, regardless of map state. The SimBrief OFP fetch continues to poll for the map in the background and plots the route once ready.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.21.1</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimBrief startup mode — Alerts panel now opens immediately.</strong> In v3.21.0 the Alerts panel was deferred until the SimBrief API fetch completed, causing a 15&ndash;20 second wait before the modal appeared. The fetch and the panel open now happen concurrently: the Alerts modal opens as soon as the map is ready while the flight plan plots in the background.</li>
+        </ul>
+      </div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.21.0</span>
+          <span class="release-date">June 14, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New startup mode — Load SimBrief Flight Plan (desktop only).</strong> A third card now appears centered above the two existing startup cards, forming a triangle layout. Clicking it imports your latest SimBrief OFP and opens the map with the Alerts panel already open, so you can configure waypoint, cruise, descent, or timer alarms immediately after loading the route. If your SimBrief Pilot ID isn&rsquo;t saved yet you&rsquo;re prompted for it once (same ID used by the in-map SimBrief button &mdash; no re-entry needed if already set). Cancelling the prompt returns you to the choice screen. The button is hidden on mobile since FSUIPC-based alerts require a desktop simulator connection.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.20.0</span>
-          <span class="release-date">June 14, 2026 &middot; Current</span>
+          <span class="release-date">June 14, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -47109,6 +47328,7 @@ function rgSendToFlightPlanner() {
         <button class="rg-btn rg-btn-close" onclick="closeRegionModal()" title="Close the map and return to the main screen">✕ <span class="rg-btn-label">Close</span></button>
       </div>
     </div>
+
     <div id="rgMapContainer">
       <div id="rgPhaseOverlay" class="rg-phase-overlay"></div>
       <div class="sl-map-banner" id="slMapBanner">
