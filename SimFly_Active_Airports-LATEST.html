@@ -687,6 +687,9 @@
   /* New-pilot confirm modal — opened by the floating SimBrief route pill on
      the map, so must clear #regionModal (z-index 9000). */
   #npcModal { z-index: 9500; }
+  /* Random Flight filters — opened from the map's Tools menu, so must clear
+     the region map (z-index 9000) like the other map-opened modals above. */
+  #rgRandModal { z-index: 9500; }
   .live-ac-icon-grid {
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
@@ -2231,6 +2234,48 @@
   .ac-ft-hint.ready { color: var(--green); }
   body.light-mode .ac-ft-section { border-color: rgba(0,0,0,0.1); }
   body.light-mode .ac-ft-input { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.18); }
+  /* Random flight filter modal */
+  .rgrand-intro { font-family:'Rajdhani',sans-serif; font-size:0.92rem; color:var(--muted); line-height:1.35; margin:0 0 16px; }
+  .rgrand-section { margin:0 0 16px; }
+  .rgrand-section-title { font-family:'Orbitron',monospace; font-size:0.64rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); opacity:0.9; margin:0 0 9px; display:flex; align-items:center; gap:9px; white-space:nowrap; }
+  .rgrand-section-title::after { content:''; flex:1; height:1px; background:linear-gradient(90deg, rgba(0,200,255,0.3), transparent); }
+  .rgrand-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  /* Left-align digits so the native up/down spinner stays right and never crowds them. */
+  .rgrand-input { width:78px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.16); border-radius:5px; color:var(--text); font-family:'Courier New',monospace; font-size:0.92rem; padding:5px 8px; text-align:left; }
+  .rgrand-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,200,255,0.16); }
+  .rgrand-dash { color:var(--muted); }
+  .rgrand-unit { font-family:'Courier New',monospace; font-size:0.8rem; color:var(--muted); }
+  .rgrand-note { font-family:'Rajdhani',sans-serif; font-size:0.82rem; color:var(--muted); margin:8px 0 0; }
+  /* Category pills */
+  .rgrand-cats { display:flex; gap:8px; flex-wrap:wrap; }
+  .rgrand-cat { width:35px; height:35px; border-radius:50%; border:2px solid var(--cc,#888); background:transparent; color:var(--cc,#888); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.02rem; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.12s; filter:grayscale(0.6) brightness(0.78); opacity:0.65; }
+  .rgrand-cat:hover { filter:none; opacity:1; }
+  .rgrand-cat.active { background:var(--cc,#888); color:#05000c; filter:none; opacity:1; box-shadow:0 0 9px -1px var(--cc); }
+  /* Continent chips (text toggles) */
+  .rgrand-chips { display:flex; gap:7px; flex-wrap:wrap; }
+  .rgrand-chip { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.18); border-radius:14px; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:0.88rem; font-weight:600; padding:5px 13px; cursor:pointer; transition:all 0.12s; }
+  .rgrand-chip:hover { border-color:var(--accent); }
+  .rgrand-chip.active { background:var(--accent); border-color:var(--accent); color:#05000c; box-shadow:0 0 8px -2px var(--accent); }
+  /* Dep / Arr endpoint tab strip */
+  .rgrand-tabs { display:inline-flex; border:1px solid rgba(0,200,255,0.3); border-radius:7px; overflow:hidden; margin-bottom:16px; }
+  .rgrand-tab { background:transparent; border:none; color:var(--muted); font-family:'Orbitron',monospace; font-size:0.66rem; letter-spacing:0.1em; text-transform:uppercase; padding:8px 18px; cursor:pointer; transition:all 0.12s; }
+  .rgrand-tab + .rgrand-tab { border-left:1px solid rgba(0,200,255,0.3); }
+  .rgrand-tab:hover { color:var(--text); }
+  .rgrand-tab.active { background:var(--accent); color:#05000c; }
+  /* Country / owner multi-select */
+  .rgrand-ctools { display:flex; align-items:center; gap:7px; margin-bottom:8px; flex-wrap:wrap; }
+  .rgrand-search { flex:1; min-width:130px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.16); border-radius:5px; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:0.92rem; padding:6px 10px; }
+  .rgrand-search:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,200,255,0.16); }
+  .rgrand-mini { background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.35); border-radius:5px; color:var(--accent); font-family:'Rajdhani',sans-serif; font-size:0.82rem; font-weight:600; padding:5px 11px; cursor:pointer; }
+  .rgrand-mini:hover { background:rgba(0,200,255,0.2); }
+  .rgrand-count { font-family:'Courier New',monospace; font-size:0.76rem; color:var(--muted); margin-left:auto; }
+  .rgrand-clist { max-height:178px; overflow-y:auto; border:1px solid rgba(255,255,255,0.12); border-radius:6px; background:rgba(0,0,0,0.2); padding:4px; }
+  .rgrand-citem { display:flex; align-items:center; gap:9px; padding:5px 8px; border-radius:4px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.93rem; color:var(--text); }
+  .rgrand-citem:hover { background:rgba(255,255,255,0.06); }
+  .rgrand-citem input { accent-color:var(--accent); cursor:pointer; flex-shrink:0; }
+  .rgrand-citem .cc { color:var(--muted); font-family:'Courier New',monospace; font-size:0.76rem; margin-left:auto; white-space:nowrap; }
+  body.light-mode .rgrand-input, body.light-mode .rgrand-search { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.18); }
+  body.light-mode .rgrand-clist { background:rgba(0,0,0,0.04); }
   /* Visually hidden but available to screen readers */
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0;
@@ -4049,6 +4094,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-dt-new  { display:block; background:var(--aa-new-color); color:#fff; font-family:'Orbitron',monospace; font-size:0.7rem; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; padding:0.22rem 0.6rem; border-radius:4px; margin-bottom:0.4rem; text-align:center; }
   .rg-dt-icao { font-family:'Courier New',Courier,monospace; font-size:1.58rem; font-weight:700; color:#fff; }
   .rg-dt-cat  { font-family:'Rajdhani',sans-serif; font-size:1.28rem; color:rgba(180,220,255,0.75); margin-left:0.45rem; }
+  .rg-dt-lvl  { font-family:'Rajdhani',sans-serif; font-size:1.28rem; color:rgba(180,220,255,0.55); margin-left:0.45rem; }
+  .rg-dt-forsale { display:block; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.2rem; color:#ffd166; margin-top:0.1rem; letter-spacing:0.02em; }
+  .tip-forsale { color:#ffd166; font-weight:700; }
   .rg-dt-name { display:block; font-family:'Rajdhani',sans-serif; font-size:1.35rem; color:rgba(200,230,255,0.85); margin-top:0.08rem; }
   .rg-dt-owner { display:block; font-family:'Rajdhani',sans-serif; font-size:1.35rem; color:var(--accent); }
   .rg-dt-rwy    { display:block; font-family:'Rajdhani',sans-serif; font-size:1.26rem; color:rgba(170,210,255,0.7); margin-top:0.12rem; }
@@ -6279,7 +6327,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
           </svg>
         </div>
         <div class="aa-choice-name">Show airports by Owner</div>
-        <div class="aa-choice-desc">I already know the owners of the airports I want for my departure and arrival.</div>
+        <div class="aa-choice-desc">I already know the SimFly owners of the airports I want for my departure and arrival.</div>
         <div class="aa-choice-cta">Open owner view <span aria-hidden="true">&rsaquo;</span></div>
       </button>
       <button type="button" class="aa-choice-card" id="aaChoiceMap">
@@ -6292,8 +6340,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
           </svg>
         </div>
         <div class="aa-choice-name">Explore map</div>
-        <div class="aa-choice-desc aa-desc-desktop">Explore airports based on location, payout, region, etc. Track flights and set up in-flight alerts for key events.</div>
-        <div class="aa-choice-desc aa-desc-mobile">Explore airports based on location, payout, region, and more.</div>
+        <div class="aa-choice-desc aa-desc-desktop">Explore SimFly airports based on location, payout, region, etc. Track flights and set up in-flight alerts for key events.</div>
+        <div class="aa-choice-desc aa-desc-mobile">Explore SimFly airports based on location, payout, region, and more.</div>
         <div class="aa-choice-cta">Open the map <span aria-hidden="true">&rsaquo;</span></div>
       </button>
     </div>
@@ -7107,6 +7155,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        (between Rating and the Scenery separator). */
     .rg-mobile-only { display: inline-flex !important; }
 
+    /* For Sale is a desktop feature — keep it out of the mobile version. The
+       toggle already lives in the (hidden) Display menu; also hide the 💰
+       for-sale tooltip indicator so the feature never surfaces on phones. */
+    .tip-forsale, .rg-dt-forsale { display: none !important; }
+
     /* ── v3.19.18 ─────────────────────────────────────────────────
        Three minor adjustments after mobile testing:
        - Inactive category circles weren't dim enough to clearly
@@ -7684,6 +7737,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        remaining item. */
     .rg-mobile-only { display: inline-flex !important; }
 
+    /* For Sale stays out of the touch/mobile version — its toggle is in the
+       hidden Display menu, so hide the 💰 for-sale tooltip indicator too. */
+    .tip-forsale, .rg-dt-forsale { display: none !important; }
+
     /* (7) Display-toggle button on/off contrast — neutral off,
        vivid on. The default .rg-btn cyan-tinted border made both
        states look similar to touch users. Same treatment as
@@ -8121,7 +8178,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.25.3';
+const APP_VERSION = '3.29.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11707,7 +11764,12 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
   }
   if (categoryDB) {
     const cat = categoryDB.get(icao.toUpperCase());
-    if (cat) html += `<span class="tip-line">Category: ${esc(cat)}</span>`;
+    const lvl = (typeof _rgRawLevelOf === 'function') ? _rgRawLevelOf(icao) : 0;
+    if (cat) html += `<span class="tip-line">Category: ${esc(cat)}${lvl ? ` &nbsp;·&nbsp; Level: ${lvl}` : ''}</span>`;
+    else if (lvl) html += `<span class="tip-line">Level: ${lvl}</span>`;
+  }
+  if (typeof _rgForSale === 'function' && _rgForSale(icao)) {
+    html += `<span class="tip-line tip-forsale">💰 Listed for sale</span>`;
   }
   html += `<span class="tip-line">Elevation: ${elevFt} ft &nbsp;/&nbsp; ${elevM} m MSL</span>`;
 
@@ -27721,8 +27783,13 @@ function _rgMeasCircleStyle() {
 }
 let _rgPayoutMode         = false;  // true = color dots by pilot payout % (red→orange→green gradient)
 let _rgNewAirportsVisible = true;   // false = pulse rings hidden via toolbar toggle
-// Level "corona" badges — off by default, persisted; toggled from the Tools menu.
-let _rgLevelBadgesVisible = (() => { try { return localStorage.getItem('simfly_aa_level_badges') === '1'; } catch (_) { return false; } })();
+// Level "corona" badges — ON by default (v3.28.1), then the user's toggle choice
+// is persisted and honoured; toggled from the Tools menu.
+// Default ON the first time (no stored choice); once the user toggles it, that
+// choice is persisted by _rgToggleLevelBadges and honoured on every later load.
+let _rgLevelBadgesVisible = (() => { try { const v = localStorage.getItem('simfly_aa_level_badges'); return v === null ? true : v === '1'; } catch (_) { return true; } })();
+// For-sale map filter (v3.28.0) — when on, only airports flagged for sale show.
+let _rgForSaleFilter = (() => { try { return localStorage.getItem('simfly_aa_forsale_filter') === '1'; } catch (_) { return false; } })();
 let _rgPayoutDataJsonCache = null;  // cached for settings-driven rebuild without re-fetch
 const _RG_NEW_AP_DEFAULTS      = Object.freeze({ color: '#d400aa', pulseDays: 14, pulseSecs: 6 });
 const _RG_NEW_AP_PREVIEW_BGS   = ['#000000', '#ffffff', '#767676'];  // Black · White · 18% gray
@@ -28110,7 +28177,15 @@ function _rgCloseAnyPulldown() {
   document.querySelectorAll('.rg-pulldown-trigger.is-open')
     .forEach(el => el.classList.remove('is-open'));
 }
-function _rgToggleToolsMenu(ev) { _rgTogglePulldown('rgToolsMenu', 'rgToolsBtn', ev); }
+function _rgToggleToolsMenu(ev) { if (typeof _rgRandUpdateLabel === 'function') _rgRandUpdateLabel(); _rgTogglePulldown('rgToolsMenu', 'rgToolsBtn', ev); }
+// 👁 Display menu (v3.29.0) — level badges, new airports, for-sale. Sync the
+// three toggle buttons' visibility + active state before opening.
+function _rgToggleDisplayMenu(ev) {
+  if (typeof _rgSyncLevelBadgeButtons === 'function') _rgSyncLevelBadgeButtons();
+  if (typeof _rgSyncNewAirportsButtons === 'function') _rgSyncNewAirportsButtons();
+  if (typeof _rgSyncForSaleButton === 'function') _rgSyncForSaleButton();
+  _rgTogglePulldown('rgDisplayMenu', 'rgDisplayBtn', ev);
+}
 function _rgToggleLiveMenu(ev)  {
   // v2.89.0 — refresh the disabled state of the Clear items just before
   // opening so the user always sees an accurate UI without any per-tick
@@ -28864,6 +28939,8 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
     html =
       `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
       (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
+      ((typeof _rgRawLevelOf === 'function' && _rgRawLevelOf(icao)) ? `<span class="rg-dt-lvl">Lvl ${_rgRawLevelOf(icao)}</span>` : '') +
+      ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">💰 For sale</span>` : '') +
       (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
       (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
       payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml +
@@ -29001,6 +29078,16 @@ function _rgRawLevelOf(icao) {
   const info = _rgPayoutDataJsonCache[icao.toUpperCase()];
   const lvl = info && info.lvl ? (info.lvl | 0) : 0;
   return lvl >= 1 ? lvl : 1;
+}
+
+// Is the airport listed for sale? Reads the `for_sale` flag from payout-data.json
+// (the hourly GitHub Action pipeline). Tolerates a `forSale` camelCase variant.
+// Returns false when the field is absent, so this is fully backwards-compatible
+// until the data carries the flag.
+function _rgForSale(icao) {
+  if (!_rgPayoutDataJsonCache || !icao) return false;
+  const info = _rgPayoutDataJsonCache[icao.toUpperCase()];
+  return !!(info && (info.for_sale || info.forSale));
 }
 
 function _rgRenderDots() {
@@ -29793,8 +29880,510 @@ function _rgClearDotSel() {
   document.getElementById('rgSelRoute').classList.remove('visible');
   _rgClearRouteHL();
   _rgHighlightDots();
+  // Clearing the selection drops any user-pinned random departure too.
+  _rgRandPinnedDep = null; _rgRandLastAutoDep = null;
   // v3.6.21 — refresh the breadcrumb row so the route pill disappears.
   if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Random flight — Tools-menu feature (v3.26.0)
+// Left-click generates a random route; if a departure is already selected it
+// generates a random DESTINATION from that departure instead. Right-click (or
+// long-press on touch) opens the filter options. Destinations are always
+// another pilot's SimFly-owned airport.
+// ═══════════════════════════════════════════════════════════════════════════
+const _RG_RAND_LS = 'simfly_aa_random_opts';
+let _rgRandPinnedDep   = null;   // departure the USER selected → "Choose Random Destination"
+let _rgRandLastAutoDep = null;   // departure the generator last set (not a user pick)
+let _rgRandTouchTimer  = 0;
+let _rgRandSuppressClick = false;
+let _rgRandTab  = 'arr';                  // which endpoint the modal's Dep/Arr toggle edits
+let _rgRandWork = { dep: {}, arr: {} };   // in-modal working copy of per-endpoint filters
+let _rgRandPoolMeta = null;               // cached option lists (present cats/continents, country/owner items)
+let _rgRandRerolled = false;              // a route was generated this session → show the header re-roll button
+
+// Per-endpoint filter set helpers (category / continent / country / owner).
+function _rgRandEmptyEp() { return { cats: [], continents: [], countries: [], owners: [] }; }
+function _rgRandCleanEp(o) {
+  o = o || {};
+  return {
+    cats:       Array.isArray(o.cats) ? o.cats.map(Number).filter(n => n >= 1 && n <= 7) : [],
+    continents: Array.isArray(o.continents) ? o.continents.filter(x => typeof x === 'string' && x) : [],
+    countries:  Array.isArray(o.countries) ? o.countries.filter(x => typeof x === 'string' && x) : [],
+    owners:     Array.isArray(o.owners) ? o.owners.filter(x => typeof x === 'string' && x) : [],
+  };
+}
+
+function _rgRandLoadOpts() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(_RG_RAND_LS) || '{}') || {}; } catch (_) { o = {}; }
+  const num = v => (v != null && isFinite(+v) && +v >= 0) ? +v : null;
+
+  // Per-endpoint filter sets (v3.27.0). Migrate the v3.26.0 flat destination
+  // filters (cats/continents/countries/owners at top level, plus the older
+  // single `country` string) into the ARR endpoint; DEP starts empty.
+  let dep, arr;
+  if (o.dep || o.arr) {
+    dep = _rgRandCleanEp(o.dep);
+    arr = _rgRandCleanEp(o.arr);
+  } else {
+    let legacyCountries = Array.isArray(o.countries) ? o.countries.slice() : [];
+    if (!legacyCountries.length && typeof o.country === 'string' && o.country) legacyCountries = [o.country];
+    dep = _rgRandEmptyEp();
+    arr = _rgRandCleanEp({ cats: o.cats, continents: o.continents, countries: legacyCountries, owners: o.owners });
+  }
+  return {
+    configured: !!o.configured,
+    minNm:  num(o.minNm),  maxNm:  num(o.maxNm),
+    minMin: num(o.minMin), maxMin: num(o.maxMin),
+    visibleOnly: !!o.visibleOnly,
+    dep: dep,
+    arr: arr,
+  };
+}
+
+// SimFly airport category (1–7) for an ICAO, or 0 if unknown.
+function _rgRandCatNum(icao) {
+  return +(typeof categoryDB !== 'undefined' && categoryDB ? categoryDB.get((icao || '').toUpperCase()) : 0) || 0;
+}
+const _RG_RAND_CAT_TITLES = {
+  1: 'Cat 1 — Small unpaved airstrips and local grass fields',
+  2: 'Cat 2 — Minor rural airfields and flight school bases',
+  3: 'Cat 3 — Small regional and small domestic airports',
+  4: 'Cat 4 — Mid-sized domestic and regional commercial hubs',
+  5: 'Cat 5 — Large domestic and standard international facilities',
+  6: 'Cat 6 — Major international hubs with high traffic volume',
+  7: 'Cat 7 — Mega-hubs and world-famous mega-airports',
+};
+function _rgRandSaveOpts(o) {
+  try { localStorage.setItem(_RG_RAND_LS, JSON.stringify(o)); } catch (_) {}
+}
+
+// The user's currently-pinned departure, or null = generate a fully random route.
+function _rgRandUserDep() {
+  if (_rgRandPinnedDep) return _rgRandPinnedDep;
+  // Fallback: a dep dot the user picked through an un-hooked path — only honour
+  // it if it isn't the departure we just auto-generated.
+  if (_rgDotSelDep && _rgDotSelDep !== _rgRandLastAutoDep) return _rgDotSelDep;
+  return null;
+}
+
+function _rgRandUpdateLabel() {
+  const lbl = document.getElementById('rgRandomLbl');
+  if (lbl) lbl.textContent = _rgRandUserDep() ? 'Choose Random Destination' : 'Create Random Route';
+}
+
+// Flat list of all owned airports: { icao, owner, rec }.
+function _rgRandCandidates() {
+  const owners = (typeof _getOwnerData === 'function') ? _getOwnerData() : [];
+  const out = [];
+  for (const o of owners) {
+    for (const ap of (o.airports || [])) {
+      const r = ap.rec;
+      if (r && isFinite(r.latitude) && isFinite(r.longitude)) out.push({ icao: ap.icao, owner: o.name, rec: r });
+    }
+  }
+  return out;
+}
+
+function _rgRandShuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+// Does airport c pass a per-endpoint filter set f { cats, continents, countries, owners }?
+function _rgRandEndpointOK(c, f) {
+  if (!f) return true;
+  if (f.cats       && f.cats.length       && f.cats.indexOf(_rgRandCatNum(c.icao)) === -1)   return false;
+  if (f.continents && f.continents.length && f.continents.indexOf(_rgRecContinent(c.rec)) === -1) return false;
+  if (f.countries  && f.countries.length  && f.countries.indexOf(_rgRecCountry(c.rec)) === -1) return false;
+  if (f.owners     && f.owners.length     && f.owners.indexOf(c.owner) === -1)              return false;
+  return true;
+}
+
+// Is candidate c a valid ARRIVAL from departure dep? Different airport, different
+// pilot, passes the ARRIVAL endpoint filters, and within the route distance/time.
+function _rgRandRouteOK(dep, c, opts, useTime) {
+  if (c.icao === dep.icao) return false;
+  if (dep.owner && c.owner && c.owner === dep.owner) return false;   // must be another pilot
+  if (!_rgRandEndpointOK(c, opts.arr)) return false;
+  const nm = _haversineNm(dep.rec.latitude, dep.rec.longitude, c.rec.latitude, c.rec.longitude);
+  if (opts.minNm != null && nm < opts.minNm) return false;
+  if (opts.maxNm != null && nm > opts.maxNm) return false;
+  if (useTime && (opts.minMin != null || opts.maxMin != null)) {
+    const est = _acEstFlightMinutes(nm);
+    if (est != null) {
+      if (opts.minMin != null && est < opts.minMin) return false;
+      if (opts.maxMin != null && est > opts.maxMin) return false;
+    }
+  }
+  return true;
+}
+
+// Menu left-click / tap.
+function _rgRandMenuClick() {
+  if (_rgRandSuppressClick) { _rgRandSuppressClick = false; return; }  // long-press already handled
+  _rgCloseAnyPulldown();
+  const opts = _rgRandLoadOpts();
+  if (!opts.configured) { _rgRandOpenModal(); return; }   // first run → configure filters
+  _rgRandomGenerate();
+}
+
+// Desktop right-click → filter options.
+function _rgRandContext(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  _rgCloseAnyPulldown();
+  _rgRandOpenModal();
+}
+
+// Touch long-press → filter options (touch has no right-click).
+function _rgRandTouchStart() {
+  _rgRandTouchTimer = setTimeout(() => {
+    _rgRandTouchTimer = 0;
+    _rgRandSuppressClick = true;   // swallow the click that follows touchend
+    _rgCloseAnyPulldown();
+    _rgRandOpenModal();
+  }, 500);
+}
+function _rgRandTouchEnd() {
+  if (_rgRandTouchTimer) { clearTimeout(_rgRandTouchTimer); _rgRandTouchTimer = 0; }
+}
+
+// Header re-roll button — appears after the first roll this session so the user
+// can re-roll with the saved parameters without opening the Tools menu.
+function _rgRandReroll(e) {
+  if (_rgRandSuppressClick) { _rgRandSuppressClick = false; return; }  // long-press opened filters
+  if (e) e.stopPropagation();
+  _rgRandomGenerate();
+}
+function _rgRandRerollContext(e) { if (e) { e.preventDefault(); e.stopPropagation(); } _rgRandOpenModal(); }
+function _rgRandShowReroll() {
+  _rgRandRerolled = true;
+  const btn = document.getElementById('rgRerollBtn');
+  if (btn) btn.style.display = '';
+}
+
+function _rgRandomGenerate() {
+  if (!_rgMap) { if (typeof _aaRtToast === 'function') _aaRtToast('Open the map to generate a random flight.', 'warn'); return; }
+  const opts = _rgRandLoadOpts();
+  const all  = _rgRandCandidates();
+  if (all.length < 2) { if (typeof _aaRtToast === 'function') _aaRtToast('Not enough SimFly-owned airports loaded for a random flight.', 'warn'); return; }
+
+  // Only apply the time filter when the selected aircraft is calibrated.
+  const useTime = !!(typeof _acGetFlightCal === 'function' && _acGetFlightCal(_acSelectedCode));
+
+  // "Only airports currently shown on the map" — restrict the whole pool to
+  // airports passing the active map filters (the same gate the dots use), so
+  // BOTH endpoints respect what's visible. All other filters stack on top.
+  let pool = all;
+  if (opts.visibleOnly && typeof _rgDotPassesMapFilters === 'function') {
+    pool = all.filter(c => { try { return _rgDotPassesMapFilters(c.icao, c.rec, c.owner); } catch (_) { return true; } });
+    if (pool.length < 2) { _aaRtToast('Fewer than two airports are currently shown — adjust the map filters or turn off “currently shown”.', 'warn'); return; }
+  }
+
+  const userDepIcao = _rgRandUserDep();
+  let dep = null, arr = null;
+
+  if (userDepIcao) {
+    // Choose Random Destination — keep the user's departure (even if the visible filter would exclude it).
+    // Only the ARRIVAL endpoint filters apply; the departure is the user's explicit pick.
+    dep = all.find(c => c.icao === userDepIcao);
+    if (!dep) { const r = lookupICAO(userDepIcao); if (r) dep = { icao: userDepIcao, owner: null, rec: r }; }
+    if (!dep || !dep.rec || !isFinite(dep.rec.latitude)) { _aaRtToast('Selected departure has no position data.', 'warn'); return; }
+    const dests = pool.filter(c => _rgRandRouteOK(dep, c, opts, useTime));
+    if (!dests.length) { _aaRtToast('No destinations match your filters from ' + dep.icao + ' — widen them (right-click).', 'warn'); return; }
+    arr = dests[Math.floor(Math.random() * dests.length)];
+  } else {
+    // Create Random Route — departure must pass the DEPARTURE filters, arrival the ARRIVAL filters.
+    const depPool = _rgRandShuffle(pool.filter(c => _rgRandEndpointOK(c, opts.dep)));
+    const cap = Math.min(depPool.length, 300);   // bound worst-case scan on impossible filters
+    for (let i = 0; i < cap; i++) {
+      const cand = depPool[i];
+      const dests = pool.filter(c => _rgRandRouteOK(cand, c, opts, useTime));
+      if (dests.length) { dep = cand; arr = dests[Math.floor(Math.random() * dests.length)]; break; }
+    }
+    if (!dep) { _aaRtToast('No route matches your filters — widen them (right-click the menu item).', 'warn'); return; }
+  }
+
+  // Never leave a second route on the map.
+  if (typeof _rgClearDotSel === 'function') _rgClearDotSel();
+  _rgDotSelDep = dep.icao; _rgDotSelArr = arr.icao;
+  _rgRandLastAutoDep = dep.icao;
+  // _rgClearDotSel just wiped the pin — restore it in "Choose Random Destination"
+  // mode so successive clicks keep re-rolling the destination from the same dep.
+  _rgRandPinnedDep = userDepIcao || null;
+  if (typeof _rgRouteFromDots === 'function') _rgRouteFromDots(dep.icao, arr.icao);
+
+  // Bring the generated route into view.
+  if (typeof _rgFitToPoints === 'function') {
+    _rgFitToPoints([[dep.rec.latitude, dep.rec.longitude], [arr.rec.latitude, arr.rec.longitude]]);
+  }
+
+  // Always surface the File on SimBrief pill for the new route.
+  if (typeof _sbPillDismissedRoute !== 'undefined') _sbPillDismissedRoute = '';
+  if (typeof _sbPillUpdate === 'function') _sbPillUpdate();
+
+  const nm  = Math.round(_haversineNm(dep.rec.latitude, dep.rec.longitude, arr.rec.latitude, arr.rec.longitude));
+  const est = (typeof _acFlightTimeStr === 'function') ? _acFlightTimeStr(nm) : '';
+  const bits = ['🎲 ' + dep.icao + ' → ' + arr.icao, nm.toLocaleString() + ' nm'];
+  if (est)       bits.push(est);
+  if (arr.owner) bits.push(arr.owner);
+  if (typeof _aaRtToast === 'function') _aaRtToast(bits.join(' · '), 'ok');
+
+  // Reveal the header re-roll button now that a route exists this session.
+  _rgRandShowReroll();
+}
+
+// Category pills in their SimFly category colours. Only renders categories that
+// actually have an owned airport, so the user never picks one that can't match.
+function _rgRandRenderCats(activeSet, presentSet) {
+  const wrap = document.getElementById('rgRandCats');
+  if (!wrap) return;
+  let html = '';
+  for (let c = 1; c <= 7; c++) {
+    if (presentSet && !presentSet.has(c)) continue;
+    const col = (typeof _RG_CAT_COLORS !== 'undefined' && _RG_CAT_COLORS[c]) || '#888';
+    html += '<button type="button" class="rgrand-cat' + (activeSet.has(c) ? ' active' : '') + '"' +
+            ' data-cat="' + c + '" style="--cc:' + col + '" title="' + _RG_RAND_CAT_TITLES[c] +
+            '" onclick="_rgRandToggleCat(this)">' + c + '</button>';
+  }
+  wrap.innerHTML = html || '<div class="rgrand-note" style="margin:0">No categorised airports loaded.</div>';
+}
+function _rgRandToggleCat(btn) { btn.classList.toggle('active'); _rgRandRecount(); }
+
+// ── Generic searchable multi-select checklist (used for country + owner) ──
+// items: [{ value, label, meta, search }]. selected: array of values.
+function _rgRandEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function _rgRandBuildList(listId, countId, items, selected) {
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const sel = new Set(selected || []);
+  let html = '';
+  for (const it of items) {
+    const pre = it.pre ? (_rgRandEsc(it.pre) + ' &middot; ') : '';
+    html += '<label class="rgrand-citem" data-name="' + _rgRandEsc(it.search) + '">' +
+            '<input type="checkbox" value="' + _rgRandEsc(it.value) + '"' + (sel.has(it.value) ? ' checked' : '') +
+            ' onchange="_rgRandOnPick(\'' + listId + '\',\'' + countId + '\')">' +
+            '<span>' + _rgRandEsc(it.label) + '</span>' +
+            '<span class="cc">' + pre + '<span class="rgrand-rc">–</span></span></label>';
+  }
+  list.innerHTML = html || '<div class="rgrand-note" style="padding:8px">Nothing to choose from.</div>';
+  _rgRandMSCount(listId, countId);
+}
+function _rgRandMSSelected(listId) {
+  return [...document.querySelectorAll('#' + listId + ' .rgrand-citem input:checked')].map(i => i.value);
+}
+function _rgRandMSCount(listId, countId) {
+  const el = document.getElementById(countId);
+  if (!el) return;
+  const n = _rgRandMSSelected(listId).length;
+  el.textContent = n ? (n + ' selected') : 'Any';
+}
+function _rgRandMSFilter(listId, q) {
+  q = (q || '').trim().toLowerCase();
+  document.querySelectorAll('#' + listId + ' .rgrand-citem').forEach(el => {
+    el.style.display = (!q || el.dataset.name.indexOf(q) !== -1) ? '' : 'none';
+  });
+}
+function _rgRandMSAll(listId, countId) {
+  // Check every currently-visible row (respects the active search filter).
+  document.querySelectorAll('#' + listId + ' .rgrand-citem').forEach(el => {
+    if (el.style.display !== 'none') { const i = el.querySelector('input'); if (i) i.checked = true; }
+  });
+  _rgRandMSCount(listId, countId);
+  _rgRandRecount();
+}
+function _rgRandMSNone(listId, countId) {
+  document.querySelectorAll('#' + listId + ' .rgrand-citem input').forEach(i => { i.checked = false; });
+  _rgRandMSCount(listId, countId);
+  _rgRandRecount();
+}
+// A checkbox was picked — update the "N selected" pill AND the live per-row counts.
+function _rgRandOnPick(listId, countId) { _rgRandMSCount(listId, countId); _rgRandRecount(); }
+
+// Set the per-row count badge from a value→count map.
+function _rgRandSetCounts(listId, countMap) {
+  document.querySelectorAll('#' + listId + ' .rgrand-citem').forEach(row => {
+    const inp = row.querySelector('input'); if (!inp) return;
+    const rc  = row.querySelector('.rgrand-rc'); if (!rc) return;
+    rc.textContent = countMap.get(inp.value) || 0;
+  });
+}
+
+// Recompute the per-row country + owner counts so each reflects the OTHER filters
+// currently set for this endpoint (category, continent, the other list) and, when
+// the "currently shown on the map" toggle is on, the active map filters too. Each
+// list excludes its own dimension so picking a value doesn't zero out its column.
+function _rgRandRecount() {
+  const cands = _rgRandCandidates();
+  const cats  = new Set([...document.querySelectorAll('#rgRandCats .rgrand-cat.active')].map(b => +b.dataset.cat));
+  const conts = new Set([...document.querySelectorAll('#rgRandContinents .rgrand-chip.active')].map(b => b.dataset.cont));
+  const selC  = new Set(_rgRandMSSelected('rgRandCountryList'));
+  const selO  = new Set(_rgRandMSSelected('rgRandOwnerList'));
+  const visEl = document.getElementById('rgRandVisible');
+  const visOnly = !!(visEl && visEl.checked);
+  let base = cands;
+  if (visOnly && typeof _rgDotPassesMapFilters === 'function') {
+    base = cands.filter(c => { try { return _rgDotPassesMapFilters(c.icao, c.rec, c.owner); } catch (_) { return true; } });
+  }
+  const cCounts = new Map(), oCounts = new Map();
+  for (const c of base) {
+    const cat = _rgRandCatNum(c.icao), cont = _rgRecContinent(c.rec), iso = _rgRecCountry(c.rec), owner = c.owner;
+    const passCat   = !cats.size  || cats.has(cat);
+    const passCont  = !conts.size || conts.has(cont);
+    const passCtry  = !selC.size  || selC.has(iso);
+    const passOwner = !selO.size  || selO.has(owner);
+    if (passCat && passCont && passOwner && iso)   cCounts.set(iso,   (cCounts.get(iso)   || 0) + 1);
+    if (passCat && passCont && passCtry  && owner) oCounts.set(owner, (oCounts.get(owner) || 0) + 1);
+  }
+  _rgRandSetCounts('rgRandCountryList', cCounts);
+  _rgRandSetCounts('rgRandOwnerList', oCounts);
+}
+
+// Continent chips — only continents present in the owned pool.
+function _rgRandRenderContinents(activeSet, presentCodes) {
+  const wrap = document.getElementById('rgRandContinents');
+  if (!wrap) return;
+  let html = '';
+  for (const code of presentCodes) {
+    const name = (typeof _RG_CONTINENT_NAMES !== 'undefined' && _RG_CONTINENT_NAMES[code]) || code;
+    html += '<button type="button" class="rgrand-chip' + (activeSet.has(code) ? ' active' : '') + '"' +
+            ' data-cont="' + code + '" onclick="_rgRandToggleChip(this)">' + _rgRandEsc(name) + '</button>';
+  }
+  wrap.innerHTML = html || '<div class="rgrand-note" style="margin:0">None loaded.</div>';
+}
+function _rgRandToggleChip(btn) { btn.classList.toggle('active'); _rgRandRecount(); }
+
+// ── Dep / Arr endpoint tabs ──────────────────────────────────────────────
+// Snapshot the controls currently on screen into the active endpoint's working set.
+function _rgRandSnapshotTab() {
+  _rgRandWork[_rgRandTab] = {
+    cats:       [...document.querySelectorAll('#rgRandCats .rgrand-cat.active')].map(b => +b.dataset.cat),
+    continents: [...document.querySelectorAll('#rgRandContinents .rgrand-chip.active')].map(b => b.dataset.cont),
+    countries:  _rgRandMSSelected('rgRandCountryList'),
+    owners:     _rgRandMSSelected('rgRandOwnerList'),
+  };
+}
+// Render the controls for the active endpoint from its working set + relabel sections.
+function _rgRandRenderTab() {
+  const f = _rgRandWork[_rgRandTab] || _rgRandEmptyEp();
+  const meta = _rgRandPoolMeta || {};
+  _rgRandRenderCats(new Set(f.cats || []), meta.presentCats || new Set());
+  _rgRandRenderContinents(new Set(f.continents || []), meta.presentContCodes || []);
+  _rgRandBuildList('rgRandCountryList', 'rgRandCountryCount', meta.countryItems || [], f.countries || []);
+  _rgRandBuildList('rgRandOwnerList', 'rgRandOwnerCount', meta.ownerItems || [], f.owners || []);
+  const cs = document.getElementById('rgRandCountrySearch'); if (cs) cs.value = '';
+  const os = document.getElementById('rgRandOwnerSearch');   if (os) os.value = '';
+  _rgRandMSFilter('rgRandCountryList', '');
+  _rgRandMSFilter('rgRandOwnerList', '');
+  const destMode = !!_rgRandUserDep();
+  const prefix = destMode ? 'Destination' : (_rgRandTab === 'dep' ? 'Departure' : 'Arrival');
+  const setTitle = (id, suffix) => { const el = document.getElementById(id); if (el) el.textContent = prefix + ' ' + suffix; };
+  setTitle('rgRandCatTitle', 'category');
+  setTitle('rgRandContTitle', 'continent');
+  setTitle('rgRandCountryTitle', 'country');
+  setTitle('rgRandOwnerTitle', 'owner');
+  _rgRandRecount();
+}
+function _rgRandSwitchTab(ep) {
+  if (ep === _rgRandTab) return;
+  _rgRandSnapshotTab();
+  _rgRandTab = ep;
+  document.querySelectorAll('#rgRandEndpointTabs .rgrand-tab').forEach(b => b.classList.toggle('active', b.dataset.ep === ep));
+  _rgRandRenderTab();
+}
+
+function _rgRandOpenModal() {
+  const modal = document.getElementById('rgRandModal');
+  if (!modal) return;
+  const opts = _rgRandLoadOpts();
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+  setV('rgRandMinNm', opts.minNm);  setV('rgRandMaxNm', opts.maxNm);
+  setV('rgRandMinMin', opts.minMin); setV('rgRandMaxMin', opts.maxMin);
+  const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = !!opts.visibleOnly;
+
+  // Build the shared option lists ONCE from the owned pool (same for both
+  // endpoints). Present categories / continents and the full country / owner
+  // item lists are cached in _rgRandPoolMeta for the tab renderer.
+  const cands = _rgRandCandidates();
+  const presentCats  = new Set();
+  const presentConts = new Set();
+  const countryKeys  = new Set();
+  const ownerKeys    = new Set();
+  for (const c of cands) {
+    const cn = _rgRandCatNum(c.icao); if (cn >= 1 && cn <= 7) presentCats.add(cn);
+    const ct = (typeof _rgRecContinent === 'function') ? _rgRecContinent(c.rec) : ''; if (ct) presentConts.add(ct);
+    const iso = _rgRecCountry(c.rec); if (iso) countryKeys.add(iso);
+    if (c.owner) ownerKeys.add(c.owner);
+  }
+  const contName    = code => (typeof _RG_CONTINENT_NAMES !== 'undefined' && _RG_CONTINENT_NAMES[code]) || code;
+  const countryName = iso  => (typeof _rgCountryIsoToName !== 'undefined' && _rgCountryIsoToName.get(iso)) || iso;
+  const presentContCodes = [...presentConts].sort((a, b) => contName(a).localeCompare(contName(b)));
+  const countryItems = [...countryKeys]
+    .sort((a, b) => countryName(a).localeCompare(countryName(b)))
+    .map(iso => ({ value: iso, label: countryName(iso), pre: iso, search: (countryName(iso) + ' ' + iso).toLowerCase() }));
+  const ownerItems = [...ownerKeys]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map(name => ({ value: name, label: name, pre: '', search: name.toLowerCase() }));
+  _rgRandPoolMeta = { presentCats, presentContCodes, countryItems, ownerItems };
+
+  // Working copy of each endpoint's filters + Dep/Arr tab visibility.
+  _rgRandWork = { dep: _rgRandCleanEp(opts.dep), arr: _rgRandCleanEp(opts.arr) };
+  const destMode = !!_rgRandUserDep();   // a departure is already chosen → only the destination is filterable
+  const tabs = document.getElementById('rgRandEndpointTabs');
+  if (tabs) {
+    tabs.style.display = destMode ? 'none' : '';
+    tabs.querySelectorAll('.rgrand-tab').forEach(b => b.classList.toggle('active', b.dataset.ep === 'arr'));
+  }
+  _rgRandTab = 'arr';   // start on arrival; in route mode the user can switch to departure
+  _rgRandRenderTab();
+
+  // Flight-time section only when the selected aircraft is calibrated.
+  const calibrated = !!(typeof _acGetFlightCal === 'function' && _acGetFlightCal(_acSelectedCode));
+  const ftRow  = document.getElementById('rgRandTimeRow');
+  const ftNote = document.getElementById('rgRandTimeNote');
+  if (ftRow)  ftRow.style.display = calibrated ? '' : 'none';
+  if (ftNote) ftNote.textContent  = calibrated
+    ? 'Estimated from ' + (_acSelectedCode || 'the selected aircraft') + '’s flight-time calibration.'
+    : '';
+
+  modal.classList.add('open');
+}
+function _rgRandCloseModal() {
+  const modal = document.getElementById('rgRandModal');
+  if (modal) modal.classList.remove('open');
+}
+function _rgRandReadNum(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const v = el.value.trim();
+  if (v === '') return null;
+  const n = parseFloat(v);
+  return (isFinite(n) && n >= 0) ? n : null;
+}
+function _rgRandSaveAndGenerate() {
+  _rgRandSnapshotTab();   // capture the endpoint currently on screen into its working set
+  const visEl = document.getElementById('rgRandVisible');
+  const o = {
+    configured: true,
+    minNm:  _rgRandReadNum('rgRandMinNm'),  maxNm:  _rgRandReadNum('rgRandMaxNm'),
+    minMin: _rgRandReadNum('rgRandMinMin'), maxMin: _rgRandReadNum('rgRandMaxMin'),
+    visibleOnly: !!(visEl && visEl.checked),
+    dep: _rgRandCleanEp(_rgRandWork.dep),
+    arr: _rgRandCleanEp(_rgRandWork.arr),
+  };
+  // Normalise swapped min/max.
+  if (o.minNm  != null && o.maxNm  != null && o.minNm  > o.maxNm)  { const t = o.minNm;  o.minNm  = o.maxNm;  o.maxNm  = t; }
+  if (o.minMin != null && o.maxMin != null && o.minMin > o.maxMin) { const t = o.minMin; o.minMin = o.maxMin; o.maxMin = t; }
+  _rgRandSaveOpts(o);
+  _rgRandCloseModal();
+  _rgRandomGenerate();
 }
 
 // ── Drag / resize helpers ──────────────────────────────────────────────
@@ -31316,6 +31905,9 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     const lvlSet = _globalLevelFilter.get(catNum);
     if (lvlSet && !lvlSet.has(_rgRawLevelOf(icaoUp))) return false;
   }
+  // For-sale filter (v3.28.0) — show only airports listed for sale. Pinned
+  // airports always bypass (an explicit user pin wins).
+  if (_rgForSaleFilter && !isPinned && !_rgForSale(icaoUp)) return false;
   // Compound "owner @ location" gate — OR of AND-pairs. When the compound
   // array has one tuple, this is the intersection (owner AND location).
   // When it has multiple tuples (additive `+X @ Y` queries), it's the union
@@ -32219,6 +32811,19 @@ function _rgToggleLevelBadges() {
   try { localStorage.setItem('simfly_aa_level_badges', _rgLevelBadgesVisible ? '1' : '0'); } catch (_) {}
   _rgSyncLevelBadgeButtons();
   _rgApplyMapFilter();   // repaint both dot layers with/without spikes
+}
+
+// For-sale map filter — show only airports listed for sale (v3.28.0).
+function _rgToggleForSaleFilter() {
+  _rgForSaleFilter = !_rgForSaleFilter;
+  try { localStorage.setItem('simfly_aa_forsale_filter', _rgForSaleFilter ? '1' : '0'); } catch (_) {}
+  _rgSyncForSaleButton();
+  if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();   // re-gate dots + matrix
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
+}
+function _rgSyncForSaleButton() {
+  const btn = document.getElementById('rgForSaleBtn');
+  if (btn) btn.classList.toggle('active', _rgForSaleFilter);
 }
 
 // ── New-airport display settings ─────────────────────────────────────────
@@ -33570,6 +34175,7 @@ function _rgAnyFilterActive() {
   if (_slDeveloperFilter) return true;
   if (_globalCatFilter && _globalCatFilter.size < 7) return true;
   if (_globalLevelFilter && _globalLevelFilter.size > 0) return true;
+  if (_rgForSaleFilter) return true;
   if (_rgMapOwnerFilter !== null) return true;
   if (_rgMapCountryFilter !== null) return true;
   if (_rgMapRegionFilter !== null) return true;
@@ -33623,6 +34229,8 @@ function _rgClearAllFilters() {
   if (_globalCatFilter && _globalCatFilter.size < 7 && typeof _rgAllGlobalCats === 'function') _rgAllGlobalCats();
   // Per-category level filters
   if (_globalLevelFilter && _globalLevelFilter.size > 0) _globalLevelFilter.clear();
+  // For-sale filter
+  if (_rgForSaleFilter) { _rgForSaleFilter = false; try { localStorage.setItem('simfly_aa_forsale_filter', '0'); } catch (_) {} if (typeof _rgSyncForSaleButton === 'function') _rgSyncForSaleButton(); }
   // Owner / country / region / continent / developer includes
   if (_rgMapOwnerFilter !== null) {
     if (typeof _rgHideOwnerLegend === 'function') _rgHideOwnerLegend();
@@ -33808,6 +34416,11 @@ function _rgUpdateBreadcrumbs() {
       lvlChip.addEventListener('mouseleave', _rgHideListLegend);
     }
     container.appendChild(lvlChip);
+  }
+
+  // 5c. For Sale — only when the for-sale filter is on. ✕ turns it off.
+  if (_rgForSaleFilter) {
+    container.appendChild(mkChip('💰 For Sale', null, () => { if (typeof _rgToggleForSaleFilter === 'function') _rgToggleForSaleFilter(); }));
   }
 
   // 6. Pilot Filtering — only when filter is active
@@ -35677,6 +36290,7 @@ function _rgRouteFromDots(depIcao, arrIcao) {
 
 function _rgHighlightDepRow(icao) {
   _rgDotSelDep = icao;
+  _rgRandPinnedDep = icao;   // user picked a departure → random feature keeps it
   if (_rgDotSelArr) {
     // Both sides set — try matrix cell first, fall back to direct coordinate route
     const matEl = document.getElementById('rgMatrix');
@@ -35871,6 +36485,95 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- Random flight filter options — v3.26.0 -->
+<div class="modal-overlay" id="rgRandModal" onclick="if(event.target===this)_rgRandCloseModal()">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <span class="modal-title">&#127922; &nbsp;Random Flight Filters</span>
+      <button class="modal-close" onclick="_rgRandCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="rgrand-intro">Generate a random route to another pilot&rsquo;s SimFly-owned airport. Every filter below stacks &mdash; leave a field blank, a list empty, or the toggle off for no limit. Saved in this browser.</p>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title">Scope</div>
+        <label class="fp-toggle">
+          <input type="checkbox" id="rgRandVisible" onchange="_rgRandRecount()">
+          <span class="fp-toggle-slider"></span>
+          <span class="fp-toggle-text">Only airports currently shown on the map</span>
+        </label>
+        <div class="rgrand-note">Respects the active map filters (category, level, owner, country, region, continent, developer, excludes, pins).</div>
+      </div>
+
+      <!-- Dep/Arr endpoint toggle — shown only in Create Random Route mode -->
+      <div class="rgrand-tabs" id="rgRandEndpointTabs">
+        <button type="button" class="rgrand-tab" data-ep="dep" onclick="_rgRandSwitchTab('dep')">Departure</button>
+        <button type="button" class="rgrand-tab active" data-ep="arr" onclick="_rgRandSwitchTab('arr')">Arrival</button>
+      </div>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title" id="rgRandCatTitle">Destination category</div>
+        <div class="rgrand-cats" id="rgRandCats"></div>
+        <div class="rgrand-note">None selected = any category.</div>
+      </div>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title" id="rgRandContTitle">Destination continent</div>
+        <div class="rgrand-chips" id="rgRandContinents"></div>
+        <div class="rgrand-note">None selected = any continent.</div>
+      </div>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title" id="rgRandCountryTitle">Destination country</div>
+        <div class="rgrand-ctools">
+          <input type="text" class="rgrand-search" id="rgRandCountrySearch" placeholder="Search countries&hellip;" autocomplete="off" spellcheck="false" oninput="_rgRandMSFilter('rgRandCountryList', this.value)">
+          <button type="button" class="rgrand-mini" onclick="_rgRandMSAll('rgRandCountryList','rgRandCountryCount')">All</button>
+          <button type="button" class="rgrand-mini" onclick="_rgRandMSNone('rgRandCountryList','rgRandCountryCount')">None</button>
+          <span class="rgrand-count" id="rgRandCountryCount"></span>
+        </div>
+        <div class="rgrand-clist" id="rgRandCountryList"></div>
+      </div>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title" id="rgRandOwnerTitle">Destination owner</div>
+        <div class="rgrand-ctools">
+          <input type="text" class="rgrand-search" id="rgRandOwnerSearch" placeholder="Search pilots&hellip;" autocomplete="off" spellcheck="false" oninput="_rgRandMSFilter('rgRandOwnerList', this.value)">
+          <button type="button" class="rgrand-mini" onclick="_rgRandMSAll('rgRandOwnerList','rgRandOwnerCount')">All</button>
+          <button type="button" class="rgrand-mini" onclick="_rgRandMSNone('rgRandOwnerList','rgRandOwnerCount')">None</button>
+          <span class="rgrand-count" id="rgRandOwnerCount"></span>
+        </div>
+        <div class="rgrand-clist" id="rgRandOwnerList"></div>
+      </div>
+
+      <div class="rgrand-section">
+        <div class="rgrand-section-title">Distance</div>
+        <div class="rgrand-row">
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMinNm" placeholder="min" aria-label="Minimum distance in nautical miles">
+          <span class="rgrand-dash">&ndash;</span>
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMaxNm" placeholder="max" aria-label="Maximum distance in nautical miles">
+          <span class="rgrand-unit">nm</span>
+        </div>
+      </div>
+
+      <div class="rgrand-section" id="rgRandTimeRow">
+        <div class="rgrand-section-title">Flight time</div>
+        <div class="rgrand-row">
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMinMin" placeholder="min" aria-label="Minimum flight time in minutes">
+          <span class="rgrand-dash">&ndash;</span>
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMaxMin" placeholder="max" aria-label="Maximum flight time in minutes">
+          <span class="rgrand-unit">min</span>
+        </div>
+        <div class="rgrand-note" id="rgRandTimeNote"></div>
+      </div>
+
+      <div class="fp-settings-btns">
+        <button class="npc-btn npc-btn-cancel" onclick="_rgRandCloseModal()">Cancel</button>
+        <button class="npc-btn npc-btn-save" onclick="_rgRandSaveAndGenerate()">Save &amp; Generate</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Flight Demo Mode configuration modal — v2.97.0 -->
 <div class="modal-overlay" id="demoModal" onclick="if(event.target===this)_demoCloseModal()">
   <div class="modal" style="max-width:640px;">
@@ -36022,6 +36725,19 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature help-feature--pc">
+        <div class="help-feature-icon">🎲</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Random Flight</div>
+          <div class="help-feature-desc">
+            For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
+            If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
+            After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them).<br/><br/>
+            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature help-feature--pc">
         <div class="help-feature-icon">🔌</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Live Aircraft Tracking (FSUIPC)</div>
@@ -36123,7 +36839,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Airport Info &amp; External Links</div>
           <div class="help-feature-desc">
-            <strong>Hover over any ICAO label</strong> — in the matrix, or in the airport name lines below the inputs — to see a popup with the airport's full name, IATA code, city, country, elevation, and runway details (lengths, surfaces, and lighting).<br/><br/>
+            <strong>Hover over any ICAO label</strong> — in the matrix, or in the airport name lines below the inputs — to see a popup with the airport's full name, IATA code, city, country, <strong>SimFly category and level</strong>, elevation, and runway details (lengths, surfaces, and lighting). Airports <strong>listed for sale</strong> show a 💰 marker in the tooltip.<br/><br/>
             The airport name lines are also <strong>clickable links</strong> to the SimFly airport details page. Small icon buttons beside each name open <strong>Flightsim.to</strong> and <strong>FS Addon Compare</strong> search results for that ICAO in a new tab. <em>Tip — hold Shift to open these in the background.</em>
           </div>
         </div>
@@ -36240,7 +36956,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Airports added to SimFly within a configurable window (14 days by default) are highlighted on the map with a pulsing ring and a <strong>✦ New Airport</strong> banner in their tooltip. The ring is a double radar-sweep animation that radiates outward from the dot — noticeable without being distracting.<br/><br/>
             The ring disappears automatically once the airport ages past your configured window — no manual upkeep needed. The date each airport first appeared is recorded by the hourly data pipeline.<br/><br/>
-            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and left-click <strong>✦ Display New Airports</strong> to show or hide the indicators. The item only appears when new airports are present; it is highlighted in the chosen color when active.<br/><br/>
+            <strong>Toggle visibility</strong> — open the <strong>👁 Display</strong> menu and left-click <strong>✦ Display New Airports</strong> to show or hide the indicators. The item only appears when new airports are present; it is highlighted in the chosen color when active.<br/><br/>
             <strong>Display options</strong> — right-click <strong>✦ Display New Airports</strong> to open the options panel. Choose the ring <strong>color</strong> (8 presets or a custom picker), <strong>pulse duration</strong> (1–30 s slider, labeled Fast ↔ Slow), and how many <strong>days</strong> an airport counts as new (1–365, drag up/down to scrub). A live <strong>preview</strong> inside the panel shows the pulsing ring updating in real time as you adjust settings. All settings are saved in browser storage; a <em>Reset Defaults</em> button restores the original 14-day, 6 s magenta configuration.
           </div>
         </div>
@@ -36253,7 +36969,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Every SimFly airport has a <strong>level</strong> in addition to its category. Category is the airport's fixed class (its size/importance); level is earned and climbs as the airport accumulates XP from traffic, raising its rotation capacity. Turn on level badges to see each airport's level at a glance as a ring of tick marks — a "corona" — radiating from its dot.<br/><br/>
             The marks are read like a clock: the first spike sits at <strong>12 o'clock</strong>, and each additional level adds another evenly-spaced spike around the circle. Level&nbsp;2 shows top + bottom, level&nbsp;3 shows 12/4/8 o'clock, level&nbsp;4 shows 12/3/6/9, and higher levels keep spreading the marks evenly. A thin white halo behind each mark keeps it legible on both the default and satellite basemaps. The spikes stay the same size at every zoom level.<br/><br/>
-            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and click <strong>☼ Display Levels</strong> (on mobile, use the <strong>☼ Levels</strong> button in the right-hand button band). Badges are <strong>off by default</strong> to keep the map clean, and only level&nbsp;2 and above are drawn — a single level&nbsp;1 tick on every dot was more clutter than signal. Your choice is remembered between sessions. Level data refreshes automatically through the same hourly pipeline that feeds owner colors and categories.<br/><br/>
+            <strong>Toggle visibility</strong> — open the <strong>👁 Display</strong> menu and click <strong>☼ Display Levels</strong> (on mobile, use the <strong>☼ Levels</strong> button in the right-hand button band). Badges are <strong>on by default</strong>, and only level&nbsp;2 and above are drawn — a single level&nbsp;1 tick on every dot was more clutter than signal. Toggle them off any time; your choice is remembered between sessions. Level data refreshes automatically through the same hourly pipeline that feeds owner colors and categories.<br/><br/>
             <strong>Filter by level</strong> — right-click any of the <strong>Map</strong> category circles in the map header (long-press on touch) to open that category's level filter. The menu lists only the levels that real airports of that category currently have on the map under your other filters, each with a live count, so empty levels are never offered. Tick individual levels for a custom selection, or use the <strong>≥</strong> button beside any level to keep that level and everything above it. <strong>All</strong> restores every level; <strong>None</strong> hides the whole category. Each category keeps its own level selection. A small dot marks any circle that has a level filter applied, and a <strong>Level Filtering</strong> chip appears in the filter status strip — its ✕ clears all level filters, and ⊗ Clear All sweeps them up with everything else. Level filtering applies to map dots and the region distance matrix, just like the category filter.
           </div>
         </div>
@@ -36316,9 +37032,10 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter Status Strip</div>
           <div class="help-feature-desc">
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
-            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
+            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
+            <strong>💰 For Sale</strong> — appears when the <em>💰 For Sale Only</em> toggle in the 👁 Display menu is on, restricting the map (and matrix) to airports currently listed for sale. Click <strong>&times;</strong> to turn it off.<br/><br/>
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
             <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
@@ -36478,8 +37195,124 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.25.3</span>
+          <span class="release-version">v3.29.2</span>
           <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>For-sale icon changed to 💰.</strong> The for-sale marker in tooltips, the Display-menu toggle, and the filter chip now use the widely-supported 💰 money-bag glyph instead of the 🏷 tag, which rendered as a blank box on some devices.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.29.1</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>For Sale is a desktop feature.</strong> The for-sale filter already lived in the desktop-only Display menu; now the 💰 <em>Listed for sale</em> tooltip marker is hidden on mobile too, so the For Sale feature stays out of the mobile version entirely. Airport level and category still show in mobile tooltips as before.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.29.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New 👁 Display menu.</strong> The Tools menu was getting long, so the three visual-overlay toggles &mdash; <strong>☼ Display Levels</strong>, <strong>✦ Display New Airports</strong>, and <strong>💰 For Sale Only</strong> &mdash; now live in their own <strong>👁 Display</strong> pulldown in the map header. The 🛠 Tools menu keeps Measurement, Select Regions, and Create Random Route.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.28.2</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Random Flight filter inputs no longer crowd the spinner.</strong> The distance and flight-time number fields are now left-aligned so the digits sit clear of the up/down spinner instead of being squashed against it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.28.1</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport level badges now on by default.</strong> The map now shows the level &ldquo;corona&rdquo; spikes the first time you open it, so airport levels are visible out of the box. Toggle them off any time from <strong>🛠 Tools → ☼ Display Levels</strong> &mdash; your choice is still remembered between sessions, so anyone who previously set the toggle keeps their preference.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.28.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport level now shown in every tooltip.</strong> Hover any airport &mdash; on the map, in the distance matrix, on the route inputs, or the info cards &mdash; and its SimFly <strong>level</strong> is shown right alongside its category (e.g. <em>Category: 3 · Level: 2</em>). Previously the level only appeared as the corona badge ring.</li>
+          <li><strong>Airports for sale are flagged.</strong> When an airport is listed for sale, its tooltip now shows a <strong>💰 Listed for sale</strong> line (and a 💰 For sale tag on the map dot tooltip).</li>
+          <li><strong>Filter the map to airports for sale.</strong> A new <strong>💰 For Sale Only</strong> toggle in the 👁 Display menu hides everything except airports currently for sale; it shows as a <em>For Sale</em> chip in the filter strip (✕ to clear), is swept up by ⊗ Clear All, and stacks with every other map filter (including the Random Flight &ldquo;currently shown&rdquo; option). <em>For-sale status comes from the airport data feed; airports show as for sale once the feed marks them.</em></li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.27.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Random Flight: filter the departure AND the arrival.</strong> In <em>Create Random Route</em> mode the filter panel now has a <strong>Departure / Arrival</strong> toggle, so you can set category, continent, country and owner independently for each end &mdash; e.g. depart a Cat&nbsp;1 grass strip and arrive at a Cat&nbsp;5 international. (In <em>Choose Random Destination</em> mode the departure is your pick, so only the destination is filterable.)</li>
+          <li><strong>Live filter counts.</strong> The number beside every country and owner now updates as you change the other filters &mdash; pick a category or continent and each row shows how many airports still qualify. Tick <em>Only airports currently shown on the map</em> and the counts fold in your active map filters too.</li>
+          <li><strong>Quick re-roll button.</strong> After your first random flight, a 🎲 <strong>Re-roll</strong> button appears in the map header so you can spin up another with the same filters in one click &mdash; no need to reopen the Tools menu. Right-click (or long-press) it to tweak the filters.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.26.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>🎲 Random flight generator &mdash; in the 🛠 Tools menu.</strong> Suggested by a user who flies wherever the mood takes them: one click picks a random route to another pilot&rsquo;s SimFly-owned airport, draws it on the map, and pops up the <strong>File on SimBrief</strong> button so you can fly it straight away. If you&rsquo;ve already selected a departure, it switches to <strong>Choose Random Destination</strong> and keeps your departure fixed, re-rolling only the destination on each click. With no departure selected it&rsquo;s <strong>Create Random Route</strong> and picks both ends fresh every time.</li>
+          <li><strong>Filter your random flights &mdash; every filter stacks.</strong> <strong>Right-click</strong> the menu item (long-press on touch) to open the filter panel. Mix and match any combination: limit to airports <strong>currently shown on the map</strong> (respects all your active map filters); pick destination <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select destination <strong>countries</strong> and <strong>owners</strong> (searchable checklists with counts and All / None); set a <strong>distance</strong> range (nm); and &mdash; when the selected aircraft has flight-time calibration &mdash; a <strong>flight-time</strong> range (minutes). Category, continent and country pills only ever show values that actually have an owned airport, and the flight-time filter is hidden when the current aircraft has no calibration. Your filters are saved in the browser; the first time you use the feature it opens the filter dialog so you can dial it in, then every later click just generates a new flight.</li>
+          <li><strong>Always a clean map.</strong> Any existing route is cleared before a new one is drawn, so there&rsquo;s never more than one random route on screen, and the map re-centres to frame each new route.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.25.5</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Startup choice wording.</strong> The <em>Show airports by Owner</em> card now reads &ldquo;I already know the <strong>SimFly</strong> owners of the airports I want&hellip;&rdquo; to make clear the owners are SimFly pilots.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.25.4</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Startup choice wording.</strong> The <em>Explore map</em> card on the startup screen now reads &ldquo;Explore <strong>SimFly</strong> airports based on…&rdquo; to make clear the map covers the SimFly airport network.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.25.3</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -48014,14 +48847,27 @@ function rgSendToFlightPlanner() {
         <!-- 🛠 Tools pulldown — groups Region Select + Measurement.
              SimBrief Flight Plan moved to Live menu in v2.89.0. -->
         <div class="rg-pulldown-wrap" id="rgToolsWrap">
-          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Measurement, Select Regions">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
+          <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Measurement, Select Regions, Random Flight">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgToolsMenu">
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none">☼ <span class="rg-btn-label">Display Levels</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)">🎲 <span class="rg-btn-label" id="rgRandomLbl">Create Random Route</span></button>
           </div>
         </div>
+
+        <!-- 👁 Display pulldown — visual layers / overlays (v3.29.0). -->
+        <div class="rg-pulldown-wrap" id="rgDisplayWrap">
+          <button class="rg-btn rg-pulldown-trigger" id="rgDisplayBtn" onclick="_rgToggleDisplayMenu(event)" title="Display menu — level badges, new airports, for-sale">👁 <span class="rg-btn-label">Display</span> <span class="rg-pulldown-caret">▾</span></button>
+          <div class="rg-pulldown" id="rgDisplayMenu">
+            <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none">☼ <span class="rg-btn-label">Display Levels</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map">💰 <span class="rg-btn-label">For Sale Only</span></button>
+          </div>
+        </div>
+
+        <!-- Quick re-roll — appears after the first random flight this session.
+             Left-click re-rolls with saved filters; right-click / long-press edits them. -->
+        <button class="rg-btn" id="rgRerollBtn" style="display:none" onclick="_rgRandReroll(event)" oncontextmenu="_rgRandRerollContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Re-roll a random flight with your saved filters · Right-click / long-press to change them">🎲 <span class="rg-btn-label">Re-roll</span></button>
 
         <!-- 🔌 Live pulldown — flight plan + live-aircraft sources + follow + icon picker + mobile alerts.
              v2.89.0: SimBrief moved here as the first item; Clear items grey-out when nothing to clear. -->
