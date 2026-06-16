@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.29.2**
+**Current version: v3.30.0**
 
 ---
 
@@ -157,7 +157,7 @@ Badges are **on by default** and only level 2 and above are drawn — a single l
 **Filter the map by level** (v3.23.0) — **right-click any of the Map category circles** in the map header (long-press on touch) to open that category's level filter. The menu lists only the levels that real airports of that category actually have on the map under your current filters — each with a live count — so empty levels are never offered (if no Category 5 / Level 3 airports are in view, Level 3 simply isn't a choice). Tick individual levels for a custom mix, or use the **≥** button beside any level to keep that level and everything above it in one tap. **All** restores every level; **None** hides the whole category. Each category keeps its own independent level selection. A small dot marks any circle that has a level filter applied, a **Level Filtering** chip joins the filter status strip (hover to see each category's kept levels, ✕ to clear them all), and **⊗ Clear All** sweeps it up with every other filter. Level filtering applies to both the map dots and the region distance matrix, exactly like the category filter.
 
 ### 💰 Airports For Sale
-Airports listed for sale in the [SimFly user marketplace](https://simfly.io/marketplace/users/airports) are flagged automatically. Any for-sale airport shows a **💰 Listed for sale** line in its tooltip, and **💰 For Sale Only** in the **👁 Display** menu filters the map (and the region distance matrix) down to just the airports currently for sale — it gets its own chip in the filter status strip, is swept up by ⊗ Clear All, and stacks with every other filter (including the Random Flight "currently shown" option). The list refreshes every hour through the same pipeline that feeds owner colors, categories, and levels. *(For Sale is a desktop feature and is not shown on the mobile version.)*
+Airports listed for sale in the [SimFly user marketplace](https://simfly.io/marketplace/users/airports) are flagged automatically. Any for-sale airport shows a **💰 Listed for sale** line in its tooltip — **double right-click** a for-sale airport dot to open its marketplace listing in a new tab — and **💰 For Sale Only** in the **👁 Display** menu filters the map (and the region distance matrix) down to just the airports currently for sale — it gets its own chip in the filter status strip, is swept up by ⊗ Clear All, and stacks with every other filter (including the Random Flight "currently shown" option). The list refreshes every hour through the same pipeline that feeds owner colors, categories, and levels. *(For Sale is a desktop feature and is not shown on the mobile version.)*
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.

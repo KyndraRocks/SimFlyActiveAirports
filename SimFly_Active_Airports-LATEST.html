@@ -8178,7 +8178,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.29.2';
+const APP_VERSION = '3.30.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -29167,7 +29167,7 @@ function _rgRenderDots() {
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
-      _rgShowRatePopover(m.getLatLng(), _dIcao);
+      _rgDotRightClick(_dIcao, m.getLatLng(), m);
     });
     m.addTo(_rgDotLayer);
     _rgVisibleIcaosFromDots.add(ap.icao.toUpperCase());
@@ -29220,7 +29220,7 @@ function _rgRenderDots() {
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
-      _rgShowRatePopover(m.getLatLng(), _dIcao);
+      _rgDotRightClick(_dIcao, m.getLatLng(), m);
     });
     m.addTo(_rgDotLayer);
     _rgVisibleIcaosFromDots.add(icaoUp);
@@ -29488,7 +29488,7 @@ function _rgHighlightDots() {
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
-      _rgShowRatePopover(m.getLatLng(), depIcao);
+      _rgDotRightClick(depIcao, m.getLatLng(), m);
     });
     m.addTo(_rgHiLayer);
     _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
@@ -29563,7 +29563,7 @@ function _rgHighlightDots() {
       if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
           _rgPhase === 'ruler' || _rgPhase === 'arr_drag') return;
       m.closeTooltip();
-      _rgShowRatePopover(m.getLatLng(), arrIcao);
+      _rgDotRightClick(arrIcao, m.getLatLng(), m);
     });
     m.addTo(_rgHiLayer);
     _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
@@ -29590,6 +29590,32 @@ function _rgApplySceneryState() {
 }
 
 // ── Rate popover (right-click on an airport dot) ───────────────────────
+// v3.30.0 — right-click router for airport dots. A single right-click keeps its
+// normal scenery Quick-Rate popover; a DOUBLE right-click on a FOR-SALE airport
+// opens the SimFly user marketplace filtered to that airport. Only for-sale dots
+// briefly defer the popover so a quick second right-click can pre-empt it — every
+// other airport's rate gesture stays instant. (Desktop-only, like For Sale.)
+let _rgRClickIcao = null, _rgRClickTime = 0, _rgRClickTimer = 0;
+function _rgDotRightClick(icao, latlng, m) {
+  if (typeof _rgForSale !== 'function' || !_rgForSale(icao)) {
+    _rgShowRatePopover(latlng, icao);
+    return;
+  }
+  const now = Date.now();
+  if (_rgRClickIcao === icao && (now - _rgRClickTime) < 450) {
+    if (_rgRClickTimer) { clearTimeout(_rgRClickTimer); _rgRClickTimer = 0; }
+    _rgRClickIcao = null;
+    _rgCloseRatePopover();
+    const url = 'https://simfly.io/marketplace/users/airports?icaos%5B%5D=' + encodeURIComponent(icao);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  _rgRClickIcao = icao;
+  _rgRClickTime = now;
+  if (_rgRClickTimer) clearTimeout(_rgRClickTimer);
+  _rgRClickTimer = setTimeout(() => { _rgRClickTimer = 0; _rgShowRatePopover(latlng, icao); }, 300);
+}
+
 // Floating HTML overlay anchored to the dot in map-container coordinates.
 // Closes on outside click, Escape, or map zoom (pan is left alone — Leaflet
 // re-positions panes during pan so closing on every drag would feel jumpy).
@@ -36839,7 +36865,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Airport Info &amp; External Links</div>
           <div class="help-feature-desc">
-            <strong>Hover over any ICAO label</strong> — in the matrix, or in the airport name lines below the inputs — to see a popup with the airport's full name, IATA code, city, country, <strong>SimFly category and level</strong>, elevation, and runway details (lengths, surfaces, and lighting). Airports <strong>listed for sale</strong> show a 💰 marker in the tooltip.<br/><br/>
+            <strong>Hover over any ICAO label</strong> — in the matrix, or in the airport name lines below the inputs — to see a popup with the airport's full name, IATA code, city, country, <strong>SimFly category and level</strong>, elevation, and runway details (lengths, surfaces, and lighting). Airports <strong>listed for sale</strong> show a 💰 marker in the tooltip &mdash; <strong>double right-click</strong> a for-sale airport dot on the map to open its SimFly user-marketplace listing in a new tab.<br/><br/>
             The airport name lines are also <strong>clickable links</strong> to the SimFly airport details page. Small icon buttons beside each name open <strong>Flightsim.to</strong> and <strong>FS Addon Compare</strong> search results for that ICAO in a new tab. <em>Tip — hold Shift to open these in the background.</em>
           </div>
         </div>
@@ -37193,10 +37219,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.30.0</span>
+          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Double right-click a for-sale airport to open its marketplace listing.</strong> On the map, double right-clicking a 💰 for-sale airport opens the SimFly user marketplace filtered to that airport in a new tab. A single right-click still opens the scenery Quick-Rate popover as before &mdash; only for-sale airports add the second gesture, and only their rate popover is deferred a fraction of a second to tell the two apart, so right-click-to-rate stays instant on every other airport. (Desktop only, like the rest of the For Sale feature.)</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.29.2</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
