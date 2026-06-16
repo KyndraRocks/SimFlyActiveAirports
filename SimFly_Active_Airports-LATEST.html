@@ -8001,7 +8001,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.21.12';
+const APP_VERSION = '3.22.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27450,6 +27450,8 @@ function _rgMeasCircleStyle() {
 }
 let _rgPayoutMode         = false;  // true = color dots by pilot payout % (red→orange→green gradient)
 let _rgNewAirportsVisible = true;   // false = pulse rings hidden via toolbar toggle
+// Level "corona" badges — off by default, persisted; toggled from the Tools menu.
+let _rgLevelBadgesVisible = (() => { try { return localStorage.getItem('simfly_aa_level_badges') === '1'; } catch (_) { return false; } })();
 let _rgPayoutDataJsonCache = null;  // cached for settings-driven rebuild without re-fetch
 const _RG_NEW_AP_DEFAULTS      = Object.freeze({ color: '#d400aa', pulseDays: 14, pulseSecs: 6 });
 const _RG_NEW_AP_PREVIEW_BGS   = ['#000000', '#ffffff', '#767676'];  // Black · White · 18% gray
@@ -28643,6 +28645,67 @@ function _aaIsTouchDevice() {
   return _aaIsTouchDevice._v;
 }
 
+// ── Level "corona" badge ──────────────────────────────────────────────────
+// An airport's level (payout-data.json → _rgPayoutDataJsonCache[ICAO].lvl) is
+// shown as N evenly-spaced tick marks radiating from the dot, the first always
+// at 12 o'clock: L1 = top; L2 = top+bottom; L3 = 12/4/8; L4 = 12/3/6/9; L5+ keep
+// spreading evenly (360°/N apart). Drawn straight onto the shared canvas
+// renderer so the spikes stay a fixed pixel length at every zoom — a polyline
+// would scale with the map. Each spike gets a light halo + dark core so it
+// reads on both the default and satellite basemaps.
+//
+// IMPORTANT: the class is built lazily inside the factory, NOT at top-level.
+// Leaflet is injected as an async <script>, so `L` is undefined while this file
+// first parses — referencing L.CircleMarker at top level would throw and abort
+// the whole script (blank map). The factory only runs during dot rendering,
+// long after Leaflet has loaded and the map exists.
+let _RgCoronaMarker = null;
+function _rgCoronaMarker(latlng, opts) {
+  if (!_RgCoronaMarker) {
+    _RgCoronaMarker = L.CircleMarker.extend({
+      _updatePath: function () {
+        L.CircleMarker.prototype._updatePath.call(this);   // base dot first
+        const lvl = this.options.coronaLevel | 0;
+        if (lvl < 1) return;
+        const r = this._renderer;
+        if (!r || !r._ctx || !this._point) return;
+        if (this._empty && this._empty()) return;
+        const ctx   = r._ctx, p = this._point;
+        const inner = this._radius + 1.5;                  // just outside the border
+        const outer = inner + Math.max(4, this._radius * 0.6);
+        const seg = [];
+        for (let i = 0; i < lvl; i++) {
+          const ang = -Math.PI / 2 + i * (2 * Math.PI / lvl);   // 12 o'clock, even
+          const cx = Math.cos(ang), cy = Math.sin(ang);
+          seg.push([p.x + cx * inner, p.y + cy * inner, p.x + cx * outer, p.y + cy * outer]);
+        }
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';        // halo
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (const s of seg) { ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); }
+        ctx.stroke();
+        ctx.strokeStyle = this.options.coronaColor || 'rgba(15,15,20,0.92)';  // core
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        for (const s of seg) { ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); }
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+  return new _RgCoronaMarker(latlng, opts);
+}
+function _rgLevelOf(icao) {
+  // Gated: nothing unless the user has the Level badges toggle on, and only
+  // level 2+ gets a corona — a single L1 tick on hundreds of dots is noise.
+  if (!_rgLevelBadgesVisible || !_rgPayoutDataJsonCache || !icao) return 0;
+  const info = _rgPayoutDataJsonCache[icao.toUpperCase()];
+  const lvl = info && info.lvl ? (info.lvl | 0) : 0;
+  return lvl >= 2 ? lvl : 0;
+}
+
 function _rgRenderDots() {
   if (!_rgMap) return;
   if (_rgDotLayer)   { _rgDotLayer.remove();   _rgDotLayer   = null; }
@@ -28660,6 +28723,7 @@ function _rgRenderDots() {
   // currently set to (defaults to true). Without this, the map starts with
   // pulse rings visible but the New Airports toggle button looks off.
   _rgSyncNewAirportsButtons();
+  _rgSyncLevelBadgeButtons();
   _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
@@ -28695,9 +28759,10 @@ function _rgRenderDots() {
   for (const { ap, rec, catNum, ownerName } of pending) {
     const fillColor   = _rgGetDotFill(ap.icao, _rgMapSat ? '#a8d8f0' : '#3a7090');
     const fillOpacity = (_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75);
-    const m = L.circleMarker([rec.latitude, rec.longitude], {
+    const m = _rgCoronaMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
+      coronaLevel: _rgLevelOf(ap.icao),
     });
     _rgBindDotTip(m, ap.icao, rec, ownerName);
     const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = ap.icao;
@@ -28747,9 +28812,10 @@ function _rgRenderDots() {
     if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(rec))) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
     if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icaoUp))) continue;
-    const m = L.circleMarker([rec.latitude, rec.longitude], {
+    const m = _rgCoronaMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor: '#7a7a90', fillOpacity: 0.75, interactive: true,
+      coronaLevel: _rgLevelOf(icaoUp),
     });
     _rgBindDotTip(m, icaoUp, rec, null);
     const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = icaoUp;
@@ -29011,10 +29077,11 @@ function _rgHighlightDots() {
     if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgGetDotFill(a.icao, '#00c8ff');
     const sel  = a.icao === _rgDotSelDep;
-    const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
+    const m = _rgCoronaMarker([a.rec.latitude, a.rec.longitude], {
       renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
       weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
       fillColor: fill, fillOpacity: sel ? 1 : ((_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
+      coronaLevel: _rgLevelOf(a.icao),
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const depIcao = a.icao;
@@ -29085,10 +29152,11 @@ function _rgHighlightDots() {
     if (!_rgStarFiltCheck(a.icao)) continue;
     const fill = _rgGetDotFill(a.icao, '#ff6a00');
     const sel  = a.icao === _rgDotSelArr;
-    const m = L.circleMarker([a.rec.latitude, a.rec.longitude], {
+    const m = _rgCoronaMarker([a.rec.latitude, a.rec.longitude], {
       renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
       weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
       fillColor: fill, fillOpacity: sel ? 1 : ((_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
+      coronaLevel: _rgLevelOf(a.icao),
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
     const arrIcao = a.icao;
@@ -31818,6 +31886,27 @@ function _rgToggleNewAirports() {
     else _rgPulseLayer.remove();
   }
   _rgSyncNewAirportsButtons();
+}
+
+// ── Level "corona" badges toggle ─────────────────────────────────────────
+// Mirrors the New Airports toggle: a Tools-menu row on desktop plus a mobile
+// direct toggle. The spikes are painted into the dots themselves, so flipping
+// visibility means re-rendering both dot layers via _rgApplyMapFilter().
+function _rgSyncLevelBadgeButtons() {
+  const featureAvailable = !!_rgPayoutDataJsonCache;
+  const btn = document.getElementById('rgLevelBadgesBtn');
+  if (btn) {
+    btn.style.display = featureAvailable ? '' : 'none';
+    btn.classList.toggle('active', _rgLevelBadgesVisible);
+  }
+  const mobileBtn = document.getElementById('rgMobileLevelBadgesBtn');
+  if (mobileBtn) mobileBtn.classList.toggle('active', _rgLevelBadgesVisible);
+}
+function _rgToggleLevelBadges() {
+  _rgLevelBadgesVisible = !_rgLevelBadgesVisible;
+  try { localStorage.setItem('simfly_aa_level_badges', _rgLevelBadgesVisible ? '1' : '0'); } catch (_) {}
+  _rgSyncLevelBadgeButtons();
+  _rgApplyMapFilter();   // repaint both dot layers with/without spikes
 }
 
 // ── New-airport display settings ─────────────────────────────────────────
@@ -35553,6 +35642,18 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">☼</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Airport Level Badges</div>
+          <div class="help-feature-desc">
+            Every SimFly airport has a <strong>level</strong> in addition to its category. Category is the airport's fixed class (its size/importance); level is earned and climbs as the airport accumulates XP from traffic, raising its rotation capacity. Turn on level badges to see each airport's level at a glance as a ring of tick marks — a "corona" — radiating from its dot.<br/><br/>
+            The marks are read like a clock: the first spike sits at <strong>12 o'clock</strong>, and each additional level adds another evenly-spaced spike around the circle. Level&nbsp;2 shows top + bottom, level&nbsp;3 shows 12/4/8 o'clock, level&nbsp;4 shows 12/3/6/9, and higher levels keep spreading the marks evenly. A thin white halo behind each mark keeps it legible on both the default and satellite basemaps. The spikes stay the same size at every zoom level.<br/><br/>
+            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and click <strong>☼ Display Levels</strong> (on mobile, use the <strong>☼ Levels</strong> button in the right-hand button band). Badges are <strong>off by default</strong> to keep the map clean, and only level&nbsp;2 and above are drawn — a single level&nbsp;1 tick on every dot was more clutter than signal. Your choice is remembered between sessions. Level data refreshes automatically through the same hourly pipeline that feeds owner colors and categories.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">⬤</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Library</div>
@@ -35769,10 +35870,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.22.0</span>
+          <span class="release-date">June 15, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>☼ Airport level badges &mdash; new "Display Levels" toggle.</strong> Each airport now carries a SimFly <em>level</em> (separate from its category) that climbs as the airport earns XP from traffic. With the new toggle on, every airport dot grows a ring of tick marks &mdash; a "corona" &mdash; showing its level: the first spike sits at 12 o'clock and each additional level adds another evenly-spaced spike around the dot (level&nbsp;2 = top + bottom, level&nbsp;3 = 12/4/8 o'clock, level&nbsp;4 = 12/3/6/9, and so on). A white halo keeps the marks legible on both the default and satellite basemaps. To keep the map uncluttered, badges are <strong>off by default</strong> and only level&nbsp;2 and above are drawn (a single level&nbsp;1 tick on hundreds of dots was just noise). The toggle lives in the 🛠 Tools menu (desktop) and the right-hand button band (mobile), and your choice is remembered.</li>
+          <li><strong>Level data now flows from the hourly payout feed.</strong> The shared <code>payout-data.json</code> dataset that powers owner colors, categories, and new-airport rings now also carries each airport's level, so the badges stay current automatically with no extra fetch.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.21.12</span>
-          <span class="release-date">June 15, 2026 &middot; Current</span>
+          <span class="release-date">June 15, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -47230,6 +47343,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none">☼ <span class="rg-btn-label">Display Levels</span></button>
           </div>
         </div>
 
@@ -47317,6 +47431,10 @@ function rgSendToFlightPlanner() {
                 oncontextmenu="_rgNewAirportSettingsModal(event)"
                 title="Toggle pulse indicators · Right-click for color / pulse-rate / days settings"
                 tabindex="-1">✦ <span class="rg-btn-label">New</span></button>
+        <button class="rg-btn rg-mobile-only" id="rgMobileLevelBadgesBtn"
+                onclick="_rgToggleLevelBadges()"
+                title="Toggle airport level badges (level 2 and up)"
+                tabindex="-1">☼ <span class="rg-btn-label">Levels</span></button>
         <div class="rg-hdr-sep"></div>
         <div class="rg-btn rg-sl-split" id="rgSceneryBtn">
           <span class="rg-sl-mode" id="rgSceneryModeLabel" onclick="_slCycleMode()" title="Cycle scenery display mode">⬤<span class="rg-sl-mode-text">Scenery</span></span>

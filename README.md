@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.21.12**
+**Current version: v3.22.0**
 
 ---
 
@@ -140,6 +140,14 @@ Airports recently added to SimFly are highlighted on the map with a pulsing ring
 - **Reset Defaults** restores all settings to the original 14-day, 6 s, magenta configuration.
 
 All settings persist in browser storage. The ring disappears automatically once an airport ages past the configured window — no manual upkeep needed.
+
+### Airport Level Badges
+
+Every SimFly airport earns a **level** (separate from its category) as it accumulates XP from traffic — level climbs as the airport gets busier and raises its rotation capacity. Turn on **☼ Display Levels** in the **🛠 Tools** menu to see each airport's level at a glance as a ring of tick marks — a "corona" — radiating from its dot.
+
+The marks read like a clock: the first spike sits at **12 o'clock**, and each additional level adds another evenly-spaced spike around the circle. Level 2 shows top + bottom, level 3 shows 12/4/8 o'clock, level 4 shows 12/3/6/9, and higher levels keep spreading the marks evenly. A thin white halo behind each mark keeps it legible on both the default and satellite basemaps. The spikes stay the same pixel size at every zoom level.
+
+Badges are **off by default** and only level 2 and above are drawn — a single level 1 tick on hundreds of dots adds noise rather than information. Your choice is remembered across sessions. On mobile, the same toggle appears in the right-hand button band.
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.
