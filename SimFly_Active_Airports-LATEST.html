@@ -8201,7 +8201,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.31.2';
+const APP_VERSION = '3.32.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12597,6 +12597,9 @@ function _sbOfpRender(data, opts) {
   }
   // v3.5.0 — surface the "✈ Flight Plan" breadcrumb chip now that a plan is plotted.
   if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
+  // v3.32.0 — start the gentle 1-min FSUIPC auto-probe (desktop only). Internally
+  // guarded so it no-ops if FSUIPC is already connecting/tracking or Demo is running.
+  if (typeof _fsuipcStartAutoProbe === 'function') { try { _fsuipcStartAutoProbe(); } catch (_) {} }
 }
 
 function _sbOfpClearLayers() {
@@ -12636,6 +12639,10 @@ function _sbOfpClear() {
   if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
   // v3.5.0 — drop the "✈ Flight Plan" breadcrumb chip now that the plan is gone.
   if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
+  // v3.32.0 — no plan means no reason to keep auto-probing FSUIPC. (A probe that
+  // already connected is a real session and is unaffected — the loop is stopped
+  // once connected, so this only cancels an in-progress search.)
+  if (typeof _fsuipcStopAutoProbe === 'function') { try { _fsuipcStopAutoProbe(); } catch (_) {} }
 }
 
 // v2.84.1 — toast-wrapping helpers for the 🔌 Live menu's destructive
@@ -13454,6 +13461,7 @@ function _fsuipcButtonClick() {
 function _fsuipcStart(auto) {
   if (!_rgMap) { if (!auto) _aaRtToast('Open the map first.', 'err'); return; }
   if (typeof WebSocket === 'undefined') { if (!auto) _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
+  _fsuipcStopAutoProbe(); // v3.32.0 — a real connect (manual, auto-resume, or probe-promoted) supersedes the gentle 1-min probe
   _liveAcStopOthers('fsuipc');
   _liveAcSource = 'fsuipc';
   _fsuipcUserActive = true;
@@ -13469,6 +13477,7 @@ function _fsuipcStart(auto) {
 function _fsuipcStop() {
   _fsuipcUserActive = false;
   _fsuipcAutoResume = false;
+  _fsuipcStopAutoProbe(); // v3.32.0 — an explicit Stop also cancels the flight-plan auto-probe (don't re-connect a minute later)
   _fsuipcSetWanted(false); // v3.1.0 — explicit user disconnect: do not auto-resume on the next reload
   if (_fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; }
   if (_fsuipcWs) {
@@ -13679,6 +13688,80 @@ function _fsuipcScheduleRetry() {
     _fsuipcRetryCount++;
     _fsuipcOpenWs();
   }, _FSUIPC_RECONNECT);
+}
+
+// ── FSUIPC auto-probe after a flight plan loads (v3.32.0, desktop only) ──────
+// Users routinely load a SimBrief plan and then alt-tab to the sim, forgetting
+// to click FSUIPC Live first. Once a plan is plotted we quietly probe the local
+// WebSocket once a minute; the instant FSUIPC7 + Paul Henty's server becomes
+// reachable we connect for real and the normal phase-adaptive cadence + 15 s
+// reconnect-on-drop take over. The probe is deliberately gentle — it never runs
+// while the user is already connecting/tracking (a manual click keeps the
+// existing 15 s retry loop), it pauses while Demo mode drives the map, and an
+// explicit Stop cancels it. Each minute it opens a THROWAWAY trial socket so a
+// failed tick never flickers the FSUIPC button to "Tracking…"; only a genuine
+// connection flips it.
+const _FSUIPC_PROBE_INTERVAL = 60000;   // 1 minute
+let _fsuipcProbeTmr       = 0;          // setInterval handle for the probe loop
+let _fsuipcProbeActive    = false;      // true while the flight-plan probe loop runs
+let _fsuipcProbeAnnounced = false;      // one-time heads-up toast, per loop, on first miss
+let _fsuipcProbeBusy      = false;      // a trial socket is currently settling
+
+function _fsuipcStartAutoProbe() {
+  if (_fsuipcProbeActive) return;                                            // already looping
+  if (typeof _aaIsTouchDevice === 'function' && _aaIsTouchDevice()) return;  // desktop only
+  if (typeof WebSocket === 'undefined') return;
+  // Nothing to do if FSUIPC is already connecting/tracking (manual click or a
+  // reload auto-resume), or another live source (Demo) is driving the map.
+  if (_fsuipcUserActive || _liveAcSource) return;
+  _fsuipcProbeActive    = true;
+  _fsuipcProbeAnnounced = false;
+  _fsuipcProbeTick();                                  // immediate first probe
+  _fsuipcProbeTmr = setInterval(_fsuipcProbeTick, _FSUIPC_PROBE_INTERVAL);
+}
+
+function _fsuipcStopAutoProbe() {
+  _fsuipcProbeActive = false;
+  if (_fsuipcProbeTmr) { clearInterval(_fsuipcProbeTmr); _fsuipcProbeTmr = 0; }
+}
+
+function _fsuipcProbeTick() {
+  if (!_fsuipcProbeActive) return;
+  // User took over (manual connect / auto-resume) or we're already tracking → stop.
+  if (_fsuipcUserActive || _liveAcSource === 'fsuipc') { _fsuipcStopAutoProbe(); return; }
+  // Another live source (Demo) is active → skip this tick, try again next minute.
+  if (_liveAcSource) return;
+  if (_fsuipcProbeBusy) return;                        // previous trial still settling
+  _fsuipcProbeBusy = true;
+  let ws, settled = false, to = 0;
+  const done = (ok) => {
+    if (settled) return;
+    settled = true;
+    if (to) { clearTimeout(to); to = 0; }
+    _fsuipcProbeBusy = false;
+    try { if (ws) ws.close(); } catch (_) {}
+    if (ok) {
+      _fsuipcStopAutoProbe();
+      // Re-confirm nothing else grabbed the source while the trial was open.
+      if (!_fsuipcUserActive && (!_liveAcSource || _liveAcSource === 'fsuipc')) _fsuipcStart();
+    } else {
+      _fsuipcProbeMiss();
+    }
+  };
+  try { ws = new WebSocket(_FSUIPC_WS_URL, _FSUIPC_WS_PROTO); }
+  catch (_) { done(false); return; }
+  to = setTimeout(() => done(false), 10000);           // safety: never let a hung trial stall the loop
+  ws.onopen  = () => done(true);
+  ws.onerror = () => done(false);
+  ws.onclose = () => done(false);
+}
+
+function _fsuipcProbeMiss() {
+  // One gentle, one-time heads-up so the auto behaviour is discoverable; then
+  // silent minute-by-minute retries until FSUIPC appears.
+  if (_fsuipcProbeAnnounced) return;
+  _fsuipcProbeAnnounced = true;
+  _aaRtToast('🔌 FSUIPC not detected yet — I’ll keep checking every minute and connect automatically once it’s available.', 'ok');
 }
 
 /* ===========================================================================
@@ -36912,6 +36995,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Open the interactive map and click <strong>🔌 FSUIPC Live</strong> in the header bar. AA connects to <a href="http://fsuipcwebsockets.paulhenty.com/" target="_blank" rel="noopener">Paul Henty's WebSocket Server</a> running locally as part of <a href="https://fsuipc.com/" target="_blank" rel="noopener">FSUIPC7</a> and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age. Updates push every 500&nbsp;ms (2&nbsp;Hz) — smooth across a continental-scale map. The plane grays out automatically after 30 seconds without a fresh fix.<br/><br/>
 
+            <strong>Auto-connect after a flight plan loads</strong> (v3.32.0) &mdash; once you plot a SimBrief flight plan, AA quietly checks for FSUIPC once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don&rsquo;t have to remember to click <strong>FSUIPC Live</strong> before alt-tabbing to the sim. The first time it can&rsquo;t find FSUIPC you get a single heads-up toast, then it keeps checking silently. Clicking <strong>FSUIPC Live</strong> yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks.<br/><br/>
+
             <strong>Live button status dot:</strong>
             <ul style="margin:0.3rem 0 0.6rem 1.4rem;padding:0;">
               <li><strong>Green dot</strong> &mdash; FSUIPC tracking is enabled and position data is being received (last update within 30 seconds).</li>
@@ -37361,10 +37446,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.32.0</span>
+          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Auto-connect to FSUIPC after a flight plan loads (desktop).</strong> Once you plot a SimBrief flight plan, Active Airports quietly checks for FSUIPC once a minute and connects automatically the moment FSUIPC7 + Paul Henty's WebSocket Server is reachable — so forgetting to click <em>FSUIPC Live</em> before alt-tabbing to the sim no longer leaves you untracked. The first time it doesn't find FSUIPC it shows a one-time heads-up, then keeps checking silently. Clicking <em>FSUIPC Live</em> yourself still connects immediately and keeps the faster 15-second reconnect behavior; an explicit <em>Stop</em> cancels the auto-checks. Desktop only — FSUIPC requires a PC sim.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.31.2</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
