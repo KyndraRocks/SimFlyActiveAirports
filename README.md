@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.23.0**
+**Current version: v3.25.3**
 
 ---
 
@@ -156,7 +156,7 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 
 | Chip | When shown | Click action |
 |---|---|---|
-| **⊗ Clear All** | Any filter applied (v2.98.0+) | One-click reset of every applied filter back to the two-default state (color + scenery) |
+| **⊗ Clear All** | Any filter applied, or a flight plan / aircraft track on the map (v2.98.0+, v3.25.0) | One-click reset of every applied filter **and** any plotted SimBrief flight plan or recorded aircraft track, back to the two-default state (color + scenery). The confirmation toast names exactly what was cleared. |
 | **Category Colors (N)** / **Payout Colors (N)** | Always | Toggle between color modes |
 | **Pilot Payout ≥ N%** | Threshold > 0 (any color mode) | ✕ clears the threshold |
 | **No Scenery Indicator** | Always (scenery off) | Turn on Highlight overlay |
@@ -401,6 +401,8 @@ Aircraft chips, category tabs, top accent bars, and ICAO code labels all share t
 Each chip in the grid shows the type's ICAO code, full aircraft name, and max range — kept compact so the whole category fits on screen at a glance. Hovering a chip highlights all three text lines in yellow for clear feedback. The detailed spec strip — takeoff and landing distances, both at full MTOW and adjusted for your current fuel and payload settings — appears below the grid once an aircraft is selected.
 
 Your selection is **remembered between sessions** — the aircraft, fuel%, and payload% are saved to your browser's localStorage the moment you change them, so the app reopens with your last setup intact. Launches from the Reciprocation Tracker (Plan Flight or Send N to AA) still override the saved state for that session, and themselves become the new saved default until you change it.
+
+**Flight time calibration** (v3.24.0) — a calibration panel at the bottom of the spec strip turns measured distances into estimated en-route times for the selected aircraft. Give it two reference flights — your **shortest** and your **longest** in that airframe — each as a distance in nautical miles and an elapsed time in minutes, both read straight off the SimFly UI. The app fits a straight line through those two points and estimates the time for any distance, shown as e.g. **1:30 est.** It appears in three places: the measurement/ruler tooltip, the Region Mode region-to-region hero line, and the selected route line — and updates **live as you drag** the measurement or stretch the hero line toward the arrival (v3.25.1). The estimate re-calculates the moment you switch aircraft, and disappears entirely if the newly selected aircraft has no calibration (v3.25.3). Calibration is saved per aircraft in your browser, so once you've dialled in a type it stays dialled in.
 
 ### Owner Profile Links
 When a pilot's SimFly profile URL is on record, their name becomes a clickable link in the matrix tooltips, Distance Map info cards, and the owner dropdown panels.

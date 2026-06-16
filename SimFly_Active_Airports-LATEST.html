@@ -2171,6 +2171,66 @@
     color: var(--muted);
     white-space: nowrap;
   }
+  /* Flight-time calibration — two reference flights drive en-route time estimates */
+  .ac-ft-section {
+    flex: 1 1 100%;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding-top: 9px;
+    margin-top: 9px;
+  }
+  .ac-ft-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .ac-ft-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .ac-ft-label {
+    font-family: 'Courier New', monospace;
+    font-size: 0.86rem;
+    color: var(--muted);
+    min-width: 64px;
+    flex-shrink: 0;
+  }
+  .ac-ft-input {
+    width: 72px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    /* Left-align the digits so they sit at the left edge while the native
+       up/down spinner stays pinned to the right edge — keeps the two apart
+       instead of the spinner crowding right-aligned numbers. */
+    padding: 3px 6px;
+    text-align: left;
+  }
+  .ac-ft-input:focus { outline: none; border-color: var(--accent); }
+  .ac-ft-unit {
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-right: 4px;
+  }
+  .ac-ft-hint {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.82rem;
+    line-height: 1.3;
+    color: var(--muted);
+    margin-top: 7px;
+  }
+  .ac-ft-hint.ready { color: var(--green); }
+  body.light-mode .ac-ft-section { border-color: rgba(0,0,0,0.1); }
+  body.light-mode .ac-ft-input { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.18); }
   /* Visually hidden but available to screen readers */
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0;
@@ -3940,6 +4000,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-ri-arr  { color:#ff6a00; font-weight:700; }
   .rg-ri-arrow { color:var(--muted); }
   .rg-ri-nm   { color:#ffd166; font-weight:700; }
+  .rg-ri-eta  { color:#7fe0a8; font-weight:700; }
   .rg-ri-close { background:none; border:none; color:rgba(255,255,255,0.4); cursor:pointer; font-size:0.82rem; padding:0 0 0 0.5rem; line-height:1; vertical-align:middle; transition:color 0.12s; flex-shrink:0; }
   .rg-ri-close:hover { color:#fff; }
   /* Inline category filter groups inside results bar */
@@ -7910,6 +7971,30 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
               <span class="sr-only" id="acMtowRwyDisplay" aria-live="polite" aria-atomic="true"></span>
             </div>
 
+            <!-- Flight-time calibration: two reference flights → estimated en-route time -->
+            <div class="ac-ft-section">
+              <div class="ac-ft-title">Flight time calibration</div>
+              <div class="ac-ft-row">
+                <span class="ac-ft-label">Shortest</span>
+                <input type="number" class="ac-ft-input" id="acFtShortNm" min="0" step="1" inputmode="numeric" placeholder="nm"
+                  oninput="_acFtOnInput()" title="Distance of your shortest reference flight, in nautical miles (read from the SimFly UI)">
+                <span class="ac-ft-unit">nm</span>
+                <input type="number" class="ac-ft-input" id="acFtShortMin" min="0" step="1" inputmode="numeric" placeholder="min"
+                  oninput="_acFtOnInput()" title="Elapsed time of that same flight, in minutes">
+                <span class="ac-ft-unit">min</span>
+              </div>
+              <div class="ac-ft-row">
+                <span class="ac-ft-label">Longest</span>
+                <input type="number" class="ac-ft-input" id="acFtLongNm" min="0" step="1" inputmode="numeric" placeholder="nm"
+                  oninput="_acFtOnInput()" title="Distance of your longest reference flight, in nautical miles (read from the SimFly UI)">
+                <span class="ac-ft-unit">nm</span>
+                <input type="number" class="ac-ft-input" id="acFtLongMin" min="0" step="1" inputmode="numeric" placeholder="min"
+                  oninput="_acFtOnInput()" title="Elapsed time of that same flight, in minutes">
+                <span class="ac-ft-unit">min</span>
+              </div>
+              <div class="ac-ft-hint" id="acFtHint"></div>
+            </div>
+
             <!-- Range scaling reference -->
             <p class="ac-disclaimer">* All figures are rough estimates for planning purposes only — use SimBrief for more accurate final calculations. <strong>Adj load</strong> figures are weight-corrected at sea level; per-airport density-altitude correction is applied in the matrix tooltips and dimming, not here.</p>
             <details class="ac-range-info" id="acRangeInfo">
@@ -8036,7 +8121,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.23.0';
+const APP_VERSION = '3.25.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9160,6 +9245,152 @@ function _acLoadPrefs() {
     };
   } catch(e) { return null; }
 }
+
+// ── Flight-time estimation ────────────────────────────────────────────────
+// Per-aircraft calibration: two reference flights (a short one and a long one),
+// each supplied as a distance in NM and an elapsed time in minutes — both read
+// straight off the SimFly UI. A straight line through those two points both
+// interpolates and extrapolates an estimated en-route time for any distance.
+// Stored per aircraft code in localStorage so it survives reloads. Older app
+// versions simply never read this key, so it is fully backwards-compatible.
+const _AC_FT_LS_KEY = 'simfly_aa_ac_flighttimes';
+let _acFlightTimes = {};   // { CODE: { sNm, sMin, lNm, lMin } }  (values may be partial while typing)
+
+function _acLoadFlightTimes() {
+  try {
+    const raw = localStorage.getItem(_AC_FT_LS_KEY);
+    const o = raw ? JSON.parse(raw) : null;
+    _acFlightTimes = (o && typeof o === 'object') ? o : {};
+  } catch(e) { _acFlightTimes = {}; }
+}
+function _acSaveFlightTimes() {
+  try { localStorage.setItem(_AC_FT_LS_KEY, JSON.stringify(_acFlightTimes)); } catch(e) {}
+}
+_acLoadFlightTimes();
+
+// Return a complete, valid calibration {sNm,sMin,lNm,lMin} for a code, or null.
+// Requires all four values present, positive, and the two distances distinct
+// (otherwise the line has no slope).
+function _acGetFlightCal(code) {
+  if (!code) return null;
+  const c = _acFlightTimes[code];
+  if (!c) return null;
+  const sNm = +c.sNm, sMin = +c.sMin, lNm = +c.lNm, lMin = +c.lMin;
+  if (![sNm, sMin, lNm, lMin].every(v => isFinite(v) && v > 0)) return null;
+  if (lNm === sNm) return null;
+  return { sNm, sMin, lNm, lMin };
+}
+
+// Estimated en-route time in minutes for distanceNm using the selected
+// aircraft's calibration (or an explicit code). Returns null when nothing is
+// selected, the aircraft has no complete calibration, or the distance is bad.
+function _acEstFlightMinutes(distanceNm, code) {
+  code = code || _acSelectedCode;
+  const cal = _acGetFlightCal(code);
+  if (!cal || !isFinite(distanceNm) || distanceNm < 0) return null;
+  const slope = (cal.lMin - cal.sMin) / (cal.lNm - cal.sNm);
+  const min = cal.sMin + (distanceNm - cal.sNm) * slope;
+  if (!isFinite(min)) return null;
+  return Math.max(0, min);
+}
+
+// Minutes → "H:MM" (hours not zero-padded, minutes always two digits).
+function _fmtHhMm(min) {
+  if (min == null || !isFinite(min)) return '';
+  const total = Math.round(min);
+  return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+}
+
+// Ready-to-append label fragment for distanceNm using the selected aircraft,
+// e.g. "1:45 est.". Empty string when no estimate is available (caller appends
+// nothing, so missing calibration leaves the tooltip untouched).
+function _acFlightTimeStr(distanceNm) {
+  const min = _acEstFlightMinutes(distanceNm);
+  return (min == null) ? '' : _fmtHhMm(min) + ' est.';
+}
+
+// Read the four calibration inputs; blank fields come back as null.
+function _acFtReadInputs() {
+  const g = id => {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const v = el.value.trim();
+    if (v === '') return null;
+    const n = parseFloat(v);
+    return isFinite(n) ? n : null;
+  };
+  return { sNm: g('acFtShortNm'), sMin: g('acFtShortMin'), lNm: g('acFtLongNm'), lMin: g('acFtLongMin') };
+}
+
+// Fired on every keystroke in the calibration inputs. Persists the (possibly
+// partial) values for the current aircraft and live-refreshes any on-screen
+// estimate labels.
+function _acFtOnInput() {
+  if (!_acSelectedCode) return;
+  const o = _acFtReadInputs();
+  if (o.sNm == null && o.sMin == null && o.lNm == null && o.lMin == null) {
+    delete _acFlightTimes[_acSelectedCode];
+  } else {
+    _acFlightTimes[_acSelectedCode] = o;
+  }
+  _acSaveFlightTimes();
+  _acFtUpdateHint();
+  _acRefreshFlightTimeLabels();
+}
+
+// Populate the inputs + hint for the currently selected aircraft.
+function _acFtPopulate() {
+  const c = _acSelectedCode ? _acFlightTimes[_acSelectedCode] : null;
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = (v == null || !isFinite(+v)) ? '' : v;
+  };
+  set('acFtShortNm', c && c.sNm); set('acFtShortMin', c && c.sMin);
+  set('acFtLongNm',  c && c.lNm); set('acFtLongMin',  c && c.lMin);
+  _acFtUpdateHint();
+}
+
+function _acFtUpdateHint() {
+  const el = document.getElementById('acFtHint');
+  if (!el) return;
+  const cal = _acGetFlightCal(_acSelectedCode);
+  if (!cal) {
+    el.textContent = 'Enter a short and a long flight (distance + time) to show estimated en-route time on measurements, region lines, and routes.';
+    el.classList.remove('ready');
+    return;
+  }
+  // Preview at a round distance near the middle of the calibration span.
+  const span = (cal.sNm + cal.lNm) / 2;
+  const sample = Math.max(50, Math.round(span / 50) * 50);
+  el.textContent = 'Estimates on · ' + sample.toLocaleString() + ' nm → ' + _fmtHhMm(_acEstFlightMinutes(sample, _acSelectedCode)) + ' est.';
+  el.classList.add('ready');
+}
+
+// Redraw any estimate-bearing labels currently on the map so an edit to the
+// calibration takes effect immediately. Safe to call any time — every branch
+// is guarded and the whole thing is wrapped against partially-initialised state.
+function _acRefreshFlightTimeLabels() {
+  try {
+    if (Array.isArray(_rgMeasureSaved)) {
+      for (let i = 0; i < _rgMeasureSaved.length; i++) {
+        if (_rgMeasureSaved[i]) _rgRedrawMeasureEntry(i);
+      }
+    }
+    if (typeof _rgDrawHeroLine === 'function' && _rgDepCenter && _rgArrCenter) _rgDrawHeroLine();
+    if (_rgRouteLayer) {
+      const d = _rgDotSelDep || _rgSelDep;
+      const a = _rgDotSelArr || _rgSelArr;
+      if (d && a) {
+        const dr = lookupICAO(d), ar = lookupICAO(a);
+        if (dr && ar && dr.latitude != null) {
+          const nm = Math.round(_haversineNm(dr.latitude, dr.longitude, ar.latitude, ar.longitude));
+          _rgDrawRouteHL(d, a, nm);
+        }
+      }
+    }
+  } catch(e) { /* never let a label refresh break the UI */ }
+}
+
 // Apply persisted selection after aircraftDB finishes loading. Skipped if the
 // URL carried an acCode (Recip Tracker launch wins).
 function _acRestoreFromStorage() {
@@ -9783,6 +10014,10 @@ function _acSelect(code, keepCollapsed) {
   _distApplyFilter();
   _refreshSimbriefTooltip();
   _rgUpdateRangeRing();
+  // Aircraft changed — refresh any en-route time estimates already drawn on the
+  // map (measurements, region hero line, route line) so they re-estimate for the
+  // new airframe, or disappear if it has no flight-time calibration.
+  _acRefreshFlightTimeLabels();
   // Open the panel so the user can see their selection — unless caller
   // requests it stays collapsed (e.g. when auto-selected from URL params)
   if (code && !keepCollapsed) {
@@ -9951,6 +10186,7 @@ function _acUpdateSpecStrip() {
   if (ldgEl) ldgEl.textContent = ac.land_ft  ? ac.land_ft.toLocaleString('en-US')  + ' ft' : '—';
   if (rngEl) rngEl.textContent = ac.range_nm ? ac.range_nm.toLocaleString('en-US') + ' nm' : '—';
   // Adj column and weight display — driven by slider
+  _acFtPopulate();   // flight-time calibration inputs + hint for this aircraft
   _acUpdateMtowUI();
 }
 
@@ -28199,6 +28435,10 @@ function _rgUpdateMeasure(toLL) {
 
   const distStr = _rgFmtMeasDist(nm);
   const amNote  = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
+  // Estimated en-route time for the selected aircraft — shown live as the line
+  // is dragged out, matching the finalized label in _rgRedrawMeasureEntry.
+  const ftStr  = _acFlightTimeStr(nm);
+  const ftPart = ftStr ? ` &nbsp;·&nbsp; <span style="color:#7fe0a8;font-weight:700">${ftStr}</span>` : '';
 
   // While the user is actively dragging the measurement, anchor the label at
   // the endpoint and translate it BELOW the line endpoint so the chip doesn't
@@ -28209,7 +28449,7 @@ function _rgUpdateMeasure(toLL) {
   const midLL = toLL;
   const html  = `<div style="position:absolute;transform:translate(-50%,18px);white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
-    `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}</div>`;
+    `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}${ftPart}</div>${amNote}</div>`;
 
   if (!_rgMeasureLabel) {
     _rgMeasureLabel = L.marker([midLL.lat, midLL.lng], {
@@ -28229,7 +28469,7 @@ function _rgUpdateMeasure(toLL) {
       // AM note) so we don't recreate the wrapper node itself.
       _rgMeasureLabelWrapEl.innerHTML =
         `<div class="rg-ring-lbl" style="font-size:0.94rem;padding:0.22rem 0.7rem;background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
-        `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}</div>${amNote}`;
+        `${distStr} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}${ftPart}</div>${amNote}`;
     } else {
       _rgMeasureLabel.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
       const labelEl = _rgMeasureLabel.getElement();
@@ -28936,9 +29176,10 @@ function _rgDrawHeroLine() {
   // Midpoint distance badge
   const mid  = L.latLng((dep.lat + arr.lat) / 2, (dep.lng + arr.lng) / 2);
   const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
+  const ftStr = _acFlightTimeStr(nm);   // '' when no aircraft / no calibration
   const icon = L.divIcon({
     className: '',
-    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center"><div><span class="rg-hero-lbl">${nm.toLocaleString()} nm &nbsp;·&nbsp; ${km.toLocaleString()} km</span></div>${amNote}</div>`,
+    html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center"><div><span class="rg-hero-lbl">${nm.toLocaleString()} nm &nbsp;·&nbsp; ${km.toLocaleString()} km${ftStr ? ' &nbsp;·&nbsp; ' + ftStr : ''}</span></div>${amNote}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
@@ -29049,6 +29290,7 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
           `<span class="rg-ri-arrow">→</span>` +
           `<span class="rg-ri-arr">${arrIcao}</span>` +
           `<span class="rg-ri-nm">${nm != null ? '· ' + nm + ' nm' : ''}</span>` +
+          `<span class="rg-ri-eta">${(nm != null && _acFlightTimeStr(nm)) ? '· ' + _acFlightTimeStr(nm) : ''}</span>` +
           `<button class="rg-ri-close" onclick="event.stopPropagation();if(typeof _rgClearDotSel==='function')_rgClearDotSel()" title="Clear route">✕</button>` +
           `</div>` +
           `</div>${amNote}</div>`,
@@ -29772,10 +30014,12 @@ function _rgRedrawMeasureEntry(i) {
   // ✕ close badge — anchored to the distance label so it tracks the tooltip
   // and never conflicts with the ring, line, pin or edge handle.
   const closeX = `<span class="rg-meas-close" style="border-color:${_rgMeasColorRgba(0.9)}" title="Remove this measurement">✕</span>`;
+  const ftStr = _acFlightTimeStr(nm);   // '' when no aircraft / no calibration
+  const ftPart = ftStr ? ` &nbsp;·&nbsp; <span style="color:#7fe0a8;font-weight:700">${ftStr}</span>` : '';
   const html  = `<div style="position:absolute;transform:${wrapTransform};white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="position:relative;font-size:0.94rem;padding:0.22rem 0.7rem;` +
     `background:rgba(5,0,12,0.93);border:1px solid ${_rgMeasColorRgba(0.7)};color:#fff">` +
-    `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}${closeX}</div>${amNote}</div>`;
+    `${_rgFmtMeasDist(nm)} &nbsp;·&nbsp; ${tbStr}° T &nbsp;·&nbsp; ${mbPart}${ftPart}${closeX}</div>${amNote}</div>`;
   m.label.setLatLng([midLL.lat, midLL.lng]);
   m.label.setIcon(L.divIcon({ className: '', html, iconSize: [0, 0], iconAnchor: [0, 0] }));
   // Once positioned at the midpoint, a wide label on a short line would
@@ -30114,8 +30358,11 @@ function _rgUpdateRulerTo(ll) {
   const nm   = _haversineNm(_rgDepCenter.lat, _rgDepCenter.lng, ll.lat, ll.lng);
   const rect = document.getElementById('rgMapContainer').getBoundingClientRect();
   const cpt  = _rgMap.latLngToContainerPoint(ll);
+  // Append the selected aircraft's estimated en-route time live as the hero
+  // line is stretched toward the arrival (plain text — this label is textContent).
+  const ftStr = _acFlightTimeStr(nm);
   _rgShowNmLabel({ clientX: rect.left + cpt.x, clientY: rect.top + cpt.y },
-                 Math.round(nm) + ' nm to arrival', false);
+                 Math.round(nm) + ' nm to arrival' + (ftStr ? ' · ' + ftStr : ''), false);
 }
 
 // Re-fit the map to enclose both region circles — the same logic used when
@@ -33338,11 +33585,34 @@ function _rgAnyFilterActive() {
   return false;
 }
 
+// Flight plan / aircraft track presence. The ⊗ clear-all chip also surfaces
+// for — and wipes — these two map layers, not just filters. These mirror the
+// exact presence checks used when rendering the ✈ Flight Plan / Aircraft Track
+// breadcrumb chips, so the ⊗ stays in lockstep with them.
+function _rgFlightPlanLoaded() {
+  return (typeof _sbOfpLastData !== 'undefined' && !!_sbOfpLastData) ||
+         (typeof _sbOfpLayers !== 'undefined' && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0);
+}
+function _rgAcTrackLoaded() {
+  return (typeof _liveAcTrailUltra   !== 'undefined' && _liveAcTrailUltra.length   > 0) ||
+         (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
+         (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
+}
+// Anything the ⊗ chip can remove: filters, a plotted flight plan, or a track.
+function _rgAnyClearable() {
+  return _rgAnyFilterActive() || _rgFlightPlanLoaded() || _rgAcTrackLoaded();
+}
+
 // v2.98.0 — Wipe every applied filter in one shot. Mirrors each individual
 // chip's ✕ handler but skips display toggles (color mode, scenery mode)
 // because those are not filters — they're the two default chips that
 // always render.
 function _rgClearAllFilters() {
+  // Snapshot what's present up-front so the toast can report accurately and we
+  // only clear the flight plan / track when they actually exist.
+  const hadFilters = _rgAnyFilterActive();
+  const hadPlan    = _rgFlightPlanLoaded();
+  const hadTrack   = _rgAcTrackLoaded();
   // Pilot Payout threshold
   if (_rgPayoutFilter > 0 && typeof _rgPayoutSliderInput === 'function') _rgPayoutSliderInput(0);
   // Scenery Rating threshold
@@ -33378,8 +33648,28 @@ function _rgClearAllFilters() {
   if (_rgExcludedIcaos       && _rgExcludedIcaos.size       > 0) _rgExcludedIcaos.clear();
   if (_rgExcludedDevelopers  && _rgExcludedDevelopers.size  > 0) _rgExcludedDevelopers.clear();
   if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
+  // Also wipe a plotted SimBrief flight plan and any recorded aircraft track —
+  // the ⊗ chip is the single "reset the map" entry point. Each of these calls
+  // _rgUpdateBreadcrumbs internally; the call below is the final authoritative one.
+  if (hadPlan  && typeof _sbOfpClear      === 'function') { try { _sbOfpClear();      } catch (_) {} }
+  if (hadTrack && typeof _liveAcClearTrail === 'function') { try { _liveAcClearTrail(); } catch (_) {} }
   _rgUpdateBreadcrumbs();
-  if (typeof _aaRtToast === 'function') _aaRtToast('Filters cleared', 'ok');
+  if (typeof _aaRtToast === 'function') {
+    const cleared = [];
+    if (hadFilters) cleared.push('filters');
+    if (hadPlan)    cleared.push('flight plan');
+    if (hadTrack)   cleared.push('aircraft track');
+    let msg;
+    if (cleared.length <= 1) {
+      const one = cleared[0] || 'filters';
+      msg = one.charAt(0).toUpperCase() + one.slice(1) + ' cleared';
+    } else if (cleared.length === 2) {
+      msg = 'Cleared ' + cleared[0] + ' and ' + cleared[1];
+    } else {
+      msg = 'Cleared ' + cleared[0] + ', ' + cleared[1] + ', and ' + cleared[2];
+    }
+    _aaRtToast(msg, 'ok');
+  }
 }
 
 function _rgUpdateBreadcrumbs() {
@@ -33418,10 +33708,10 @@ function _rgUpdateBreadcrumbs() {
   // returns the strip to its two-default-chip state (color mode + scenery).
   // The color mode chip and the scenery chip remain because they're not
   // filters — they're permanent display toggles.
-  if (_rgAnyFilterActive()) {
+  if (_rgAnyClearable()) {
     const clearChip = document.createElement('span');
     clearChip.className = 'rg-bc rg-bc-clear';
-    clearChip.title = 'Clear every applied filter and return to default display (color + scenery only)';
+    clearChip.title = 'Clear everything — every applied filter, plus any plotted flight plan and aircraft track — and return to default display';
     // v3.7.2 — sizing handled entirely by CSS (.rg-bc.rg-bc-clear) so the chip
     // renders as a perfect circle the same height as the sibling pills.
     // v3.7.3 — glyph wrapped in an inner span so CSS can nudge it 1px left + 2px
@@ -33693,8 +33983,7 @@ function _rgUpdateBreadcrumbs() {
       '#7ee0ff',
       bothSet ? () => _rgSwapDotSel() : null));
   }
-  const sbLoaded = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) ||
-                   (typeof _sbOfpLayers !== 'undefined' && Array.isArray(_sbOfpLayers) && _sbOfpLayers.length > 0);
+  const sbLoaded = _rgFlightPlanLoaded();
   if (sbLoaded) {
     container.appendChild(mkMiniChip('✈ Flight Plan',
       'Click to zoom the map to the SimBrief flight plan · ✕ to remove it',
@@ -33702,9 +33991,7 @@ function _rgUpdateBreadcrumbs() {
       null,
       () => _rgZoomToFlightPlan()));
   }
-  const hasTrack = (typeof _liveAcTrailUltra   !== 'undefined' && _liveAcTrailUltra.length   > 0) ||
-                   (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
-                   (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
+  const hasTrack = _rgAcTrackLoaded();
   if (hasTrack) {
     // Green label matches the green breadcrumb trail on the map.
     container.appendChild(mkMiniChip('Aircraft Track',
@@ -35825,6 +36112,7 @@ function rgSendToFlightPlanner() {
             The <strong>Fuel</strong> slider sets fuel load as a percentage of max capacity. The <strong>Payload</strong> slider sets passenger/cargo load as a percentage of max payload. Both sliders feed into the adjusted performance column and affect the suitability check. The stacked <strong>Weights</strong> bar shows OEW, payload, and fuel as proportions of MTOW.<br/><br/>
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
             Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
+            <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate is simply omitted.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
         </div>
@@ -36028,7 +36316,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter Status Strip</div>
           <div class="help-feature-desc">
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
-            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied. One click removes every applied filter at once (payout threshold, scenery rating, category filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) and returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters.<br/><br/>
+            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
@@ -36188,10 +36476,67 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.25.3</span>
+          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Switching aircraft now refreshes on-screen time estimates.</strong> Estimated en-route times already drawn on the map (measurements, the region hero line, and the route line) used to keep the previous aircraft's figures until the line was redrawn. They now re-estimate immediately when you change aircraft &mdash; and disappear entirely if the newly selected aircraft has no flight-time calibration.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.25.2</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight-time estimate label reads <em>"1:30 est."</em></strong> The estimated en-route time on the measurement, hero, and route lines now reads as e.g. <strong>1:30 est.</strong> instead of the previous <strong>≈1:30</strong> &mdash; clearer at a glance and no squiggly-equals symbol. The calibration panel's live preview hint matches.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.25.1</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Estimated flight time now updates live while you draw.</strong> The <strong>H:MM est.</strong> estimate (from the aircraft's flight-time calibration) previously appeared only on the finished line. It now also ticks along in real time as you drag &mdash; on the distance measurement label as you stretch the ruler, and on the region hero line's <em>"… nm to arrival"</em> readout as you reach toward the arrival region. As before, nothing is shown when the selected aircraft has no calibration (or none is selected).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.25.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The &#8855; Clear All chip now also resets the flight plan and aircraft track.</strong> The circled &#8855; button at the front of the map breadcrumb strip used to clear only filters. It now also removes a plotted SimBrief flight plan and any recorded aircraft track in the same click &mdash; a single "reset the map" entry point. The chip now <strong>appears whenever any of those is present</strong>, not just when a filter is applied, so it shows up even if the only thing on the map is a flight plan or a track. The confirmation toast names exactly what was cleared (e.g. <em>Cleared filters and flight plan</em>).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.24.0</span>
+          <span class="release-date">June 16, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Estimated flight time on the map &mdash; calibrate any aircraft with two flights.</strong> The aircraft selector now has a <strong>Flight time calibration</strong> panel. Give it your shortest and longest flights in that airframe &mdash; each as a distance in nautical miles and an elapsed time in minutes, both read straight off the SimFly UI &mdash; and the app draws a straight line through the two points to estimate en-route time for any distance.</li>
+          <li><strong>Estimates appear where you measure distance.</strong> Once an aircraft is calibrated, an <strong>H:MM est.</strong> time is appended to three places: the ruler/measurement tooltip, the region-to-region hero line in Region Mode, and the selected route line. If the current aircraft has no calibration (or none is selected), nothing is added &mdash; the tooltips look exactly as before.</li>
+          <li><strong>Saved per aircraft, survives reloads.</strong> Each airframe keeps its own calibration in the browser, so once you've dialled in a type it stays dialled in. A live hint under the inputs confirms when estimates are switched on and shows a sample time so you can sanity-check the numbers.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.23.0</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
