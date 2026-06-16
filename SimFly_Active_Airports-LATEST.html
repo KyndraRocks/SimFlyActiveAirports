@@ -4510,6 +4510,41 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .rg-rate-hint { color:#6a5200; font-weight:600; } /* v2.97.14 — darker for cream-bg contrast */
   .rg-rate-status { font-size:1.11rem; color:var(--muted); margin-top:0.45rem; letter-spacing:0.04em; }
   .rg-rate-popover .sl-stars-interactive .sl-star { font-size:2.55rem; padding:0 6px; }
+  /* ── Per-category level filter popover (v3.23.0) ── */
+  .rg-lvl-popover {
+    position:fixed; z-index:12000;
+    background:rgba(16,22,34,0.97); border:1px solid rgba(0,200,255,0.5); border-radius:9px;
+    padding:0.5rem 0.6rem 0.55rem; min-width:200px; max-width:270px;
+    box-shadow:0 6px 24px rgba(0,0,0,0.7), 0 0 14px rgba(0,200,255,0.18);
+    backdrop-filter:blur(6px); font-family:'Rajdhani',sans-serif; color:var(--text); user-select:none;
+  }
+  body.light-mode .rg-lvl-popover { background:rgba(245,248,252,0.98); border-color:rgba(0,120,200,0.45); }
+  .rg-lvl-hdr { display:flex; align-items:center; gap:0.4rem; font-weight:700; font-size:1.0rem; letter-spacing:0.03em; padding-right:1.3rem; margin-bottom:0.45rem; }
+  .rg-lvl-dot { width:0.85rem; height:0.85rem; border-radius:50%; flex-shrink:0; box-shadow:0 0 0 1.5px rgba(0,0,0,0.4); }
+  .rg-lvl-close { position:absolute; top:0.12rem; right:0.32rem; background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.3rem; line-height:1; padding:0 0.3rem; }
+  .rg-lvl-close:hover { color:var(--text); }
+  .rg-lvl-acts { display:flex; gap:0.35rem; margin-bottom:0.4rem; }
+  .rg-lvl-acts button { font-family:'Rajdhani',sans-serif; font-size:0.82rem; padding:0.1rem 0.55rem; background:rgba(0,200,255,0.08); border:1px solid rgba(0,200,255,0.25); border-radius:5px; color:var(--text); cursor:pointer; }
+  .rg-lvl-acts button:hover { background:rgba(0,200,255,0.18); border-color:rgba(0,200,255,0.5); }
+  .rg-lvl-list { display:flex; flex-direction:column; gap:1px; max-height:260px; overflow-y:auto; }
+  .rg-lvl-row { display:flex; align-items:center; gap:0.45rem; padding:0.18rem 0.3rem; border-radius:5px; }
+  .rg-lvl-row:hover { background:rgba(255,255,255,0.06); }
+  body.light-mode .rg-lvl-row:hover { background:rgba(0,0,0,0.05); }
+  .rg-lvl-cb { font-size:1.0rem; width:1.1rem; text-align:center; flex-shrink:0; color:var(--accent); cursor:pointer; }
+  .rg-lvl-row.off .rg-lvl-cb { color:var(--muted); }
+  .rg-lvl-name { flex:1; font-size:0.95rem; cursor:pointer; }
+  .rg-lvl-row.off .rg-lvl-name { color:var(--muted); }
+  .rg-lvl-count { font-size:0.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .rg-lvl-gte { font-size:0.92rem; line-height:1; padding:0.05rem 0.42rem; background:none; border:1px solid transparent; border-radius:4px; color:var(--muted); cursor:pointer; flex-shrink:0; }
+  .rg-lvl-gte:hover { color:var(--accent); border-color:rgba(0,200,255,0.4); background:rgba(0,200,255,0.1); }
+  .rg-lvl-foot { font-size:0.8rem; color:var(--muted); margin-top:0.45rem; letter-spacing:0.03em; }
+  .rg-lvl-empty { font-size:0.9rem; color:var(--muted); line-height:1.35; padding:0.2rem 0.1rem; }
+  /* Active-level-filter badge on the Map category circles */
+  #rgGlobalCatFilter .dist-cat-btn { position:relative; }
+  #rgGlobalCatFilter .dist-cat-btn.lvl-filtered::after {
+    content:''; position:absolute; top:-3px; right:-3px; width:7px; height:7px;
+    border-radius:50%; background:var(--accent); box-shadow:0 0 4px var(--accent); pointer-events:none;
+  }
   .rg-sl-dot-icon { display:inline-block; width:0.72em; height:0.72em; border-radius:50%; background-color:currentColor; position:relative; vertical-align:-0.04em; flex-shrink:0; box-shadow:0 0 0 1.5px rgba(0,0,0,0.45); }
   .rg-sl-dot-icon::after { content:''; position:absolute; width:40%; height:40%; background-color:#000; border-radius:50%; top:50%; left:50%; transform:translate(-50%,-50%); }
   /* v3.19.26 — `overflow: visible` (was `overflow: hidden`) so the
@@ -8001,7 +8036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.22.0';
+const APP_VERSION = '3.23.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27491,6 +27526,16 @@ let _rgDepCatFilter = new Set([1,2,3,4,5,6,7]);
 let _rgArrCatFilter = new Set([1,2,3,4,5,6,7]);
 // Global map filter — hides background dots for the whole map; region filter takes precedence within rings
 let _globalCatFilter = new Set([1,2,3,4,5,6,7]);
+// Per-category airport LEVEL filter (v3.23.0). Map keyed by category number
+// (1–7); value is a Set of the levels to SHOW for that category. A category
+// with no entry = no level filter (all its levels shown). An entry with an
+// empty Set = hide every airport of that category. Driven by right-clicking
+// (or long-pressing) the Map category circles. Gated in _rgDotPassesMapFilters
+// so background dots and the region matrix both honor it, exactly like the
+// category filter. The choices offered are derived from actual map content.
+let _globalLevelFilter = new Map();
+// The level popover tints its header with the existing _RG_CAT_COLORS map
+// (defined further down in this block) — same cat→hex palette as the dots.
 
 // Owner filters — null = all owners visible; Set of included owner names otherwise
 let _rgDepOwnerFilter = null;
@@ -28704,6 +28749,18 @@ function _rgLevelOf(icao) {
   const info = _rgPayoutDataJsonCache[icao.toUpperCase()];
   const lvl = info && info.lvl ? (info.lvl | 0) : 0;
   return lvl >= 2 ? lvl : 0;
+}
+
+// Badge-independent level lookup used by the level FILTER (not the corona
+// badge). Unlike _rgLevelOf this ignores the badge-visibility toggle and never
+// floors to 0 — every airport has a level of at least 1 (airports with no
+// payout-data entry, i.e. no traffic yet, are level 1). Returns 1 when the
+// payout dataset hasn't loaded so the filter degrades gracefully.
+function _rgRawLevelOf(icao) {
+  if (!_rgPayoutDataJsonCache || !icao) return 1;
+  const info = _rgPayoutDataJsonCache[icao.toUpperCase()];
+  const lvl = info && info.lvl ? (info.lvl | 0) : 0;
+  return lvl >= 1 ? lvl : 1;
 }
 
 function _rgRenderDots() {
@@ -30995,7 +31052,7 @@ function _rgMapCompoundAppend(tuple) {
   if (!dup) _rgMapCompoundFilter.push(tuple);
 }
 
-function _rgDotPassesMapFilters(icao, rec, ownerName) {
+function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   if (!rec) return false;
   const icaoUp = icao.toUpperCase();
   const isPinned = _rgPinnedIcaos && _rgPinnedIcaos.has(icaoUp);
@@ -31004,6 +31061,14 @@ function _rgDotPassesMapFilters(icao, rec, ownerName) {
   // un-categorized airports still render.
   const catNum = +(categoryDB && categoryDB.get(icaoUp)) || 0;
   if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
+  // Per-category level filter (v3.23.0). Each category can restrict which
+  // airport levels show. An entry's Set lists the levels to keep; an empty Set
+  // hides the whole category. `ignoreLevel` is passed by _rgAvailableLevelsForCat
+  // so the popover's choices reflect map content regardless of the level filter.
+  if (!ignoreLevel && catNum >= 1 && catNum <= 7 && _globalLevelFilter.size) {
+    const lvlSet = _globalLevelFilter.get(catNum);
+    if (lvlSet && !lvlSet.has(_rgRawLevelOf(icaoUp))) return false;
+  }
   // Compound "owner @ location" gate — OR of AND-pairs. When the compound
   // array has one tuple, this is the intersection (owner AND location).
   // When it has multiple tuples (additive `+X @ Y` queries), it's the union
@@ -32964,6 +33029,9 @@ function _rgNoneCats(side) {
 // ── Global (map-wide) category filter ───────────────────────────────────────
 
 function _rgToggleGlobalCat(btn) {
+  // Swallow the synthetic click that follows a touch long-press (which opened
+  // the level popover) so it doesn't also toggle the category off/on.
+  if (btn._rgLpFired) { btn._rgLpFired = false; return; }
   const cat = +btn.dataset.rgGcat;
   if (_globalCatFilter.has(cat)) _globalCatFilter.delete(cat);
   else _globalCatFilter.add(cat);
@@ -33000,6 +33068,234 @@ function _rgInvertGlobalCats() {
   _rgUpdateBreadcrumbs();
 }
 
+// ── Per-category level filter (v3.23.0) ─────────────────────────────────────
+// Right-click (or long-press) a Map category circle to filter that category by
+// airport level. The offered levels are derived from the airports that category
+// actually has on the map, so empty levels never appear as choices.
+
+// Returns the distinct levels present among airports of `cat` that the level
+// filter governs — i.e. background-dot-eligible airports of that category which
+// pass every OTHER map filter. Each entry: { level, count }, ascending.
+function _rgAvailableLevelsForCat(cat) {
+  const counts = new Map();
+  const ownerData = _getOwnerData();
+  if (ownerData) {
+    const seen = new Set();
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        const up = ap.icao.toUpperCase();
+        if (seen.has(up)) continue;
+        seen.add(up);
+        // Mirror _rgRenderDots' background population: in-region dots are drawn
+        // by _rgHighlightDots, which is exempt from the global cat/level filter.
+        if (_rgRegionIcaos && _rgRegionIcaos.has(up)) continue;
+        const c = +(categoryDB && categoryDB.get(up)) || 0;
+        if (c !== cat) continue;
+        const rec = lookupICAO(ap.icao);
+        if (!rec || !rec.latitude || !rec.longitude) continue;
+        if (!_rgDotPassesMapFilters(ap.icao, rec, owner.name, true)) continue;
+        const lvl = _rgRawLevelOf(up);
+        counts.set(lvl, (counts.get(lvl) || 0) + 1);
+      }
+    }
+  }
+  return [...counts.entries()]
+    .map(([level, count]) => ({ level, count }))
+    .sort((a, b) => a.level - b.level);
+}
+
+// Human-readable summary of a category's current level selection. Detects the
+// "≥ X" shape (selection == every available level at or above its minimum) and
+// renders it compactly; otherwise lists the chosen levels.
+function _rgLevelSetLabel(cat) {
+  const set = _globalLevelFilter.get(cat);
+  if (!set) return 'All levels';
+  if (!set.size) return 'No levels';
+  const avail = _rgAvailableLevelsForCat(cat).map(x => x.level).sort((a, b) => a - b);
+  const sel   = [...set].sort((a, b) => a - b);
+  const min   = sel[0];
+  const tail  = avail.filter(l => l >= min);
+  if (tail.length && tail.length === sel.length && tail.every(l => set.has(l)))
+    return '≥ L' + min;
+  return sel.map(l => 'L' + l).join(', ');
+}
+
+// Apply a freshly-computed selection for a category. If it covers every
+// available level it's a no-op filter, so the entry is dropped (keeps the
+// breadcrumb / badge honest). An empty selection is a real filter (hide all).
+function _rgCommitLevelFilter(cat, set, allLevels) {
+  const coversAll = allLevels.size > 0 && set.size >= allLevels.size &&
+                    [...allLevels].every(l => set.has(l));
+  if (coversAll) _globalLevelFilter.delete(cat);
+  else           _globalLevelFilter.set(cat, set);
+  _rgApplyMapFilter();
+  _rgSyncLevelFilterButtons();
+  _rgUpdateBreadcrumbs();
+  _rgRefreshLevelPopover(cat);
+}
+
+function _rgLevelToggle(cat, lvl) {
+  const all = new Set(_rgAvailableLevelsForCat(cat).map(x => x.level));
+  if (!all.size) return;
+  let set = _globalLevelFilter.get(cat);
+  set = set ? new Set(set) : new Set(all); // no entry yet = everything shown
+  if (set.has(lvl)) set.delete(lvl); else set.add(lvl);
+  _rgCommitLevelFilter(cat, set, all);
+}
+
+function _rgLevelGte(cat, lvl) {
+  const avail = _rgAvailableLevelsForCat(cat);
+  const all   = new Set(avail.map(x => x.level));
+  if (!all.size) return;
+  const set = new Set(avail.filter(x => x.level >= lvl).map(x => x.level));
+  _rgCommitLevelFilter(cat, set, all);
+}
+
+function _rgLevelAll(cat) {
+  _globalLevelFilter.delete(cat);
+  _rgApplyMapFilter();
+  _rgSyncLevelFilterButtons();
+  _rgUpdateBreadcrumbs();
+  _rgRefreshLevelPopover(cat);
+}
+
+function _rgLevelNone(cat) {
+  _globalLevelFilter.set(cat, new Set());
+  _rgApplyMapFilter();
+  _rgSyncLevelFilterButtons();
+  _rgUpdateBreadcrumbs();
+  _rgRefreshLevelPopover(cat);
+}
+
+// Clears every per-category level filter at once (breadcrumb ✕ + clear-all).
+function _rgClearAllLevelFilters() {
+  if (!_globalLevelFilter.size) return;
+  _globalLevelFilter.clear();
+  _rgApplyMapFilter();
+  _rgSyncLevelFilterButtons();
+  _rgUpdateBreadcrumbs();
+}
+
+// Paints the small badge on each Map category circle that has a level filter
+// applied, and lazily wires touch long-press the first time it runs.
+let _rgCatLpInit = false;
+function _rgSyncLevelFilterButtons() {
+  document.querySelectorAll('#rgGlobalCatFilter .dist-cat-btn').forEach(b => {
+    b.classList.toggle('lvl-filtered', _globalLevelFilter.has(+b.dataset.rgGcat));
+  });
+  if (!_rgCatLpInit) _rgInitCatLevelLongPress();
+}
+
+// Touch fallback: long-press a Map category circle (no right-click on touch)
+// opens the same level popover. The synthesized click that follows is swallowed
+// by the _rgLpFired guard at the top of _rgToggleGlobalCat.
+function _rgInitCatLevelLongPress() {
+  const row = document.getElementById('rgGlobalCatFilter');
+  if (!row) return;
+  _rgCatLpInit = true;
+  row.querySelectorAll('.dist-cat-btn').forEach(btn => {
+    let timer = null;
+    btn.addEventListener('touchstart', () => {
+      timer = setTimeout(() => { timer = null; btn._rgLpFired = true; _rgShowLevelPopover(null, btn); }, 500);
+    }, { passive: true });
+    const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    btn.addEventListener('touchmove', cancel, { passive: true });
+    btn.addEventListener('touchend',  cancel);
+    btn.addEventListener('touchcancel', cancel);
+  });
+}
+
+let _rgLevelPopoverCat = null;
+function _rgShowLevelPopover(ev, btn) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  _rgCloseLevelPopover();
+  if (typeof _rgCloseRatePopover === 'function') _rgCloseRatePopover();
+  if (typeof _rgCloseAnyPulldown === 'function') _rgCloseAnyPulldown();
+  const cat = +btn.dataset.rgGcat;
+  if (!(cat >= 1 && cat <= 7)) return;
+  _rgLevelPopoverCat = cat;
+  const pop = document.createElement('div');
+  pop.className = 'rg-lvl-popover';
+  pop.id = 'rgLevelPopover';
+  pop.style.left = '-9999px';
+  pop.style.top  = '-9999px';
+  document.body.appendChild(pop);
+  _rgRefreshLevelPopover(cat);
+
+  // Anchor below the button, clamped to the viewport; flip above if it'd clip.
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = r.left + r.width / 2 - w / 2;
+  let top  = r.bottom + 8;
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  pop.style.left = left + 'px';
+  pop.style.top  = top  + 'px';
+
+  setTimeout(() => {
+    document.addEventListener('mousedown',  _rgLevelPopoverOutside, true);
+    document.addEventListener('touchstart', _rgLevelPopoverOutside, true);
+    document.addEventListener('keydown',    _rgLevelPopoverEsc);
+  }, 0);
+}
+
+function _rgRefreshLevelPopover(cat) {
+  const pop = document.getElementById('rgLevelPopover');
+  if (!pop || cat == null) return;
+  const color = _RG_CAT_COLORS[cat] || 'var(--accent)';
+  let body;
+  if (!_globalCatFilter.has(cat)) {
+    // The whole category is hidden by the category filter, so a level sub-filter
+    // would have nothing to act on. Tell the user instead of showing an empty list.
+    body = `<div class="rg-lvl-empty">Category ${cat} is hidden. Left-click the circle to show it, then right-click to filter its levels.</div>`;
+  } else {
+    const avail = _rgAvailableLevelsForCat(cat);
+    if (!avail.length) {
+      body = `<div class="rg-lvl-empty">No category ${cat} airports on the map.</div>`;
+    } else {
+      const set = _globalLevelFilter.get(cat); // undefined = all shown
+      const rows = avail.map(({ level, count }) => {
+        const on = set ? set.has(level) : true;
+        return `<div class="rg-lvl-row${on ? '' : ' off'}">` +
+                 `<span class="rg-lvl-cb" onclick="_rgLevelToggle(${cat},${level})">${on ? '☑' : '☐'}</span>` +
+                 `<span class="rg-lvl-name" onclick="_rgLevelToggle(${cat},${level})">Level ${level}</span>` +
+                 `<span class="rg-lvl-count">${count.toLocaleString('en-US')}</span>` +
+                 `<button class="rg-lvl-gte" onclick="_rgLevelGte(${cat},${level})" title="Show level ${level} and above">≥</button>` +
+               `</div>`;
+      }).join('');
+      body =
+        `<div class="rg-lvl-acts">` +
+          `<button onclick="_rgLevelAll(${cat})" title="Show all levels of this category">All</button>` +
+          `<button onclick="_rgLevelNone(${cat})" title="Hide all levels of this category">None</button>` +
+        `</div>` +
+        `<div class="rg-lvl-list">${rows}</div>` +
+        `<div class="rg-lvl-foot">Showing: ${_rgLevelSetLabel(cat)}</div>`;
+    }
+  }
+  pop.innerHTML =
+    `<button class="rg-lvl-close" onclick="_rgCloseLevelPopover()" title="Close (Esc)">×</button>` +
+    `<div class="rg-lvl-hdr"><span class="rg-lvl-dot" style="background:${color}"></span>Category ${cat} · Levels</div>` +
+    body;
+}
+
+function _rgCloseLevelPopover() {
+  const pop = document.getElementById('rgLevelPopover');
+  if (pop) pop.remove();
+  _rgLevelPopoverCat = null;
+  document.removeEventListener('mousedown',  _rgLevelPopoverOutside, true);
+  document.removeEventListener('touchstart', _rgLevelPopoverOutside, true);
+  document.removeEventListener('keydown',    _rgLevelPopoverEsc);
+}
+
+function _rgLevelPopoverOutside(e) {
+  const pop = document.getElementById('rgLevelPopover');
+  if (pop && !pop.contains(e.target)) _rgCloseLevelPopover();
+}
+
+function _rgLevelPopoverEsc(e) {
+  if (e.key === 'Escape') _rgCloseLevelPopover();
+}
+
 // ── Breadcrumb filter status strip ─────────────────────────────────────────
 // Rebuilds the at-a-glance filter status chips in the region map header.
 // Call whenever any filter state changes.
@@ -33026,6 +33322,7 @@ function _rgAnyFilterActive() {
   if (_rgStarFilterMode && _rgStarFilter > 0) return true;
   if (_slDeveloperFilter) return true;
   if (_globalCatFilter && _globalCatFilter.size < 7) return true;
+  if (_globalLevelFilter && _globalLevelFilter.size > 0) return true;
   if (_rgMapOwnerFilter !== null) return true;
   if (_rgMapCountryFilter !== null) return true;
   if (_rgMapRegionFilter !== null) return true;
@@ -33054,6 +33351,8 @@ function _rgClearAllFilters() {
   if (_slDeveloperFilter && typeof _slSetDeveloperFilter === 'function') _slSetDeveloperFilter('');
   // Category filter — restore all 7
   if (_globalCatFilter && _globalCatFilter.size < 7 && typeof _rgAllGlobalCats === 'function') _rgAllGlobalCats();
+  // Per-category level filters
+  if (_globalLevelFilter && _globalLevelFilter.size > 0) _globalLevelFilter.clear();
   // Owner / country / region / continent / developer includes
   if (_rgMapOwnerFilter !== null) {
     if (typeof _rgHideOwnerLegend === 'function') _rgHideOwnerLegend();
@@ -33090,6 +33389,9 @@ function _rgUpdateBreadcrumbs() {
   // A list-legend popover may be open over a chip that's about to be removed —
   // no mouseleave fires when the chip vanishes, so dismiss it on every rebuild.
   _rgHideListLegend();
+  // Keep the level-filter badges on the Map category circles in sync (and wire
+  // touch long-press the first time the strip renders in region mode).
+  _rgSyncLevelFilterButtons();
 
   function mkChip(text, onClickBody, onClickX) {
     const chip = document.createElement('span');
@@ -33201,6 +33503,21 @@ function _rgUpdateBreadcrumbs() {
   // 5. Category Filtering — only when at least one cat is hidden
   if (_globalCatFilter.size < 7) {
     container.appendChild(mkChip('Category Filtering', null, _rgAllGlobalCats));
+  }
+
+  // 5b. Level Filtering — only when at least one category has a level filter.
+  // ✕ clears every per-category level filter at once. Hover lists each affected
+  // category and its kept levels.
+  if (_globalLevelFilter.size > 0) {
+    const lvlChip = mkChip('Level Filtering', null, _rgClearAllLevelFilters);
+    const parts = [..._globalLevelFilter.keys()]
+      .sort((a, b) => a - b)
+      .map(c => `Cat ${c}: ${_rgLevelSetLabel(c)}`);
+    if (parts.length) {
+      lvlChip.addEventListener('mouseenter', () => _rgShowListLegend(lvlChip, 'Level filters', parts));
+      lvlChip.addEventListener('mouseleave', _rgHideListLegend);
+    }
+    container.appendChild(lvlChip);
   }
 
   // 6. Pilot Filtering — only when filter is active
@@ -35648,7 +35965,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Every SimFly airport has a <strong>level</strong> in addition to its category. Category is the airport's fixed class (its size/importance); level is earned and climbs as the airport accumulates XP from traffic, raising its rotation capacity. Turn on level badges to see each airport's level at a glance as a ring of tick marks — a "corona" — radiating from its dot.<br/><br/>
             The marks are read like a clock: the first spike sits at <strong>12 o'clock</strong>, and each additional level adds another evenly-spaced spike around the circle. Level&nbsp;2 shows top + bottom, level&nbsp;3 shows 12/4/8 o'clock, level&nbsp;4 shows 12/3/6/9, and higher levels keep spreading the marks evenly. A thin white halo behind each mark keeps it legible on both the default and satellite basemaps. The spikes stay the same size at every zoom level.<br/><br/>
-            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and click <strong>☼ Display Levels</strong> (on mobile, use the <strong>☼ Levels</strong> button in the right-hand button band). Badges are <strong>off by default</strong> to keep the map clean, and only level&nbsp;2 and above are drawn — a single level&nbsp;1 tick on every dot was more clutter than signal. Your choice is remembered between sessions. Level data refreshes automatically through the same hourly pipeline that feeds owner colors and categories.
+            <strong>Toggle visibility</strong> — open the <strong>🛠 Tools</strong> menu and click <strong>☼ Display Levels</strong> (on mobile, use the <strong>☼ Levels</strong> button in the right-hand button band). Badges are <strong>off by default</strong> to keep the map clean, and only level&nbsp;2 and above are drawn — a single level&nbsp;1 tick on every dot was more clutter than signal. Your choice is remembered between sessions. Level data refreshes automatically through the same hourly pipeline that feeds owner colors and categories.<br/><br/>
+            <strong>Filter by level</strong> — right-click any of the <strong>Map</strong> category circles in the map header (long-press on touch) to open that category's level filter. The menu lists only the levels that real airports of that category currently have on the map under your other filters, each with a live count, so empty levels are never offered. Tick individual levels for a custom selection, or use the <strong>≥</strong> button beside any level to keep that level and everything above it. <strong>All</strong> restores every level; <strong>None</strong> hides the whole category. Each category keeps its own level selection. A small dot marks any circle that has a level filter applied, and a <strong>Level Filtering</strong> chip appears in the filter status strip — its ✕ clears all level filters, and ⊗ Clear All sweeps them up with everything else. Level filtering applies to map dots and the region distance matrix, just like the category filter.
           </div>
         </div>
       </div>
@@ -35872,8 +36190,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
+          <span class="release-version">v3.23.0</span>
+          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter the map by airport level &mdash; right-click any Map category circle.</strong> Each numbered category circle in the map header now opens a level filter on right-click (long-press on touch). Pick exactly which levels of that category stay on the map &mdash; tick individual levels for a custom mix, or use the <strong>≥</strong> button on any level to keep that level and everything above it in one tap. <strong>All</strong> / <strong>None</strong> clear or empty the category in one click. Each category keeps its own independent level selection.</li>
+          <li><strong>The level choices come from what's actually on the map.</strong> The menu only lists levels that real airports of that category currently have under your other filters &mdash; if there are no Category&nbsp;5 / Level&nbsp;3 airports in view, Level&nbsp;3 simply isn't offered. Each level shows a live count so you know how many airports it covers before you toggle it.</li>
+          <li><strong>Wired into the filter status strip.</strong> A small dot appears on every category circle that has a level filter applied, and a <strong>Level Filtering</strong> chip joins the breadcrumb strip whenever any level filter is active &mdash; hover it to see each category's kept levels, click its ✕ to clear them all at once. The level filter is also swept up by <strong>⊗ Clear All</strong> alongside every other filter, and it constrains the region distance matrix exactly the way the category filter does.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
           <span class="release-version">v3.22.0</span>
-          <span class="release-date">June 15, 2026 &middot; Current</span>
+          <span class="release-date">June 15, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -47377,13 +47708,13 @@ function rgSendToFlightPlanner() {
         <span class="dist-cat-filter-label" style="position:relative;top:-2px" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>
         <button class="rg-cat-acc-btn" onclick="_rgAllGlobalCats()" title="Show all categories on map" tabindex="-1">All</button>
         <button class="rg-cat-acc-btn" onclick="_rgNoneGlobalCats()" title="Hide all categories on map" tabindex="-1">None</button>
-        <button class="dist-cat-btn active" data-rg-gcat="1" style="--rg-cat-color:#FF4040" onclick="_rgToggleGlobalCat(this)" title="Category 1: Small unpaved airstrips and local grass fields" tabindex="-1">1</button>
-        <button class="dist-cat-btn active" data-rg-gcat="2" style="--rg-cat-color:#FF8800" onclick="_rgToggleGlobalCat(this)" title="Category 2: Minor rural airfields and flight school bases" tabindex="-1">2</button>
-        <button class="dist-cat-btn active" data-rg-gcat="3" style="--rg-cat-color:#FFEE00" onclick="_rgToggleGlobalCat(this)" title="Category 3: Small regional and small domestic airports" tabindex="-1">3</button>
-        <button class="dist-cat-btn active" data-rg-gcat="4" style="--rg-cat-color:#44FF44" onclick="_rgToggleGlobalCat(this)" title="Category 4: Mid-sized domestic and regional commercial hubs" tabindex="-1">4</button>
-        <button class="dist-cat-btn active" data-rg-gcat="5" style="--rg-cat-color:#00DDFF" onclick="_rgToggleGlobalCat(this)" title="Category 5: Large domestic and standard international facilities" tabindex="-1">5</button>
-        <button class="dist-cat-btn active" data-rg-gcat="6" style="--rg-cat-color:#4466FF" onclick="_rgToggleGlobalCat(this)" title="Category 6: Major international hubs with high traffic volume" tabindex="-1">6</button>
-        <button class="dist-cat-btn active" data-rg-gcat="7" style="--rg-cat-color:#FF44FF" onclick="_rgToggleGlobalCat(this)" title="Category 7: Mega-hubs and world-famous mega-airports" tabindex="-1">7</button>
+        <button class="dist-cat-btn active" data-rg-gcat="1" style="--rg-cat-color:#FF4040" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 1: Small unpaved airstrips and local grass fields — right-click to filter by level" tabindex="-1">1</button>
+        <button class="dist-cat-btn active" data-rg-gcat="2" style="--rg-cat-color:#FF8800" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 2: Minor rural airfields and flight school bases — right-click to filter by level" tabindex="-1">2</button>
+        <button class="dist-cat-btn active" data-rg-gcat="3" style="--rg-cat-color:#FFEE00" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 3: Small regional and small domestic airports — right-click to filter by level" tabindex="-1">3</button>
+        <button class="dist-cat-btn active" data-rg-gcat="4" style="--rg-cat-color:#44FF44" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 4: Mid-sized domestic and regional commercial hubs — right-click to filter by level" tabindex="-1">4</button>
+        <button class="dist-cat-btn active" data-rg-gcat="5" style="--rg-cat-color:#00DDFF" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 5: Large domestic and standard international facilities — right-click to filter by level" tabindex="-1">5</button>
+        <button class="dist-cat-btn active" data-rg-gcat="6" style="--rg-cat-color:#4466FF" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 6: Major international hubs with high traffic volume — right-click to filter by level" tabindex="-1">6</button>
+        <button class="dist-cat-btn active" data-rg-gcat="7" style="--rg-cat-color:#FF44FF" onclick="_rgToggleGlobalCat(this)" oncontextmenu="_rgShowLevelPopover(event,this);return false;" title="Category 7: Mega-hubs and world-famous mega-airports — right-click to filter by level" tabindex="-1">7</button>
         <button class="dist-cat-invert-btn" onclick="_rgInvertGlobalCats()" title="Invert global category selection" tabindex="-1">Invert</button>
       </div>
       <div class="rg-hdr-right">
