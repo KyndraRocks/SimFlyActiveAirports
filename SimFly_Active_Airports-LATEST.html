@@ -8192,7 +8192,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.31.0';
+const APP_VERSION = '3.31.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -23261,16 +23261,20 @@ function _afkGeofenceModalSave() {
 // ---------------------- PERSISTENT MAP VISUALS ----------------------------
 const _afkGeofenceLayers = {}; // id → { circle, label }
 
-// Ensure a Leaflet pane exists with z-index higher than the default
-// tooltipPane (650). Geofence labels go here so they render above any
-// permanent SimBrief waypoint label pills, which are tooltips and would
-// otherwise sit on top.
+// Ensure a Leaflet pane exists with z-index higher than the tooltipPane.
+// Both geofence labels AND waypoint-alarm rings/badges live here so they
+// render above the permanent SimBrief waypoint label pills (those are
+// tooltips in the tooltipPane) and the flight-plan waypoint dots.
+// v3.31.1 — raised 680 → 1150 because v3.31.0 lifted the tooltipPane to
+// 1100 (so airport tooltips clear the breadcrumb strip). That had pushed
+// the flight-plan waypoint label pills above the alert labels; 1150 puts
+// the alert annotations back on top of every flight-plan element.
 function _afkEnsureLabelPane() {
   if (!_rgMap) return null;
   if (!_rgMap.getPane('afkLabelPane')) {
     _rgMap.createPane('afkLabelPane');
     const p = _rgMap.getPane('afkLabelPane');
-    if (p) { p.style.zIndex = '680'; p.style.pointerEvents = 'none'; }
+    if (p) { p.style.zIndex = '1150'; p.style.pointerEvents = 'none'; }
   }
   return 'afkLabelPane';
 }
@@ -23347,6 +23351,10 @@ function _afkClearAllGeofenceVisuals() {
 const _afkWaypointLayers = {}; // ident → L.marker (ring overlay)
 function _afkRenderWaypointVisuals() {
   if (!_rgMap) return;
+  // v3.31.1 — waypoint-alarm rings share the high-z afkLabelPane (1150) with
+  // geofence labels so they draw above the flight-plan waypoint dots and label
+  // pills. Falls back to the default markerPane if the pane can't be created.
+  const _afkWpPane = _afkEnsureLabelPane() || 'markerPane';
   // Remove all existing waypoint overlays first
   Object.keys(_afkWaypointLayers).forEach(k => {
     try { _rgMap.removeLayer(_afkWaypointLayers[k]); } catch (_) {}
@@ -23389,7 +23397,7 @@ function _afkRenderWaypointVisuals() {
       iconSize: [24, 24], iconAnchor: [12, 12],
     });
     try {
-      _afkWaypointLayers[ident] = L.marker([parseFloat(f.pos_lat), parseFloat(f.pos_long)], { icon: ic, interactive: false, zIndexOffset: 1100 }).addTo(_rgMap);
+      _afkWaypointLayers[ident] = L.marker([parseFloat(f.pos_lat), parseFloat(f.pos_long)], { icon: ic, interactive: false, pane: _afkWpPane, zIndexOffset: 1100 }).addTo(_rgMap);
     } catch (_) {}
   });
 }
@@ -28711,8 +28719,8 @@ async function _rgInitMap() {
   // Dedicated high-z-index pane for the live-aircraft breadcrumb trail so
   // it draws ABOVE the SimBrief route line (routeLinePane 450), waypoint
   // markers (default markerPane 600), and route labels (routeLabelPane 650).
-  // Geofence labels (afkLabelPane 680) still float above the trail since
-  // the trail is decorative path data, not an annotation.
+  // Geofence + waypoint-alarm labels (afkLabelPane 1150) still float above the
+  // trail since the trail is decorative path data, not an annotation.
   if (!_rgMap.getPane('liveAcTrailPane')) {
     const tp = _rgMap.createPane('liveAcTrailPane');
     tp.style.zIndex = 670;
@@ -37344,10 +37352,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.31.1</span>
+          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert labels now draw above flight-plan waypoints.</strong> Geofence labels and waypoint-alarm rings now render above the SimBrief flight-plan waypoint dots and their label pills. The v3.31.0 change that lifted airport tooltips above the breadcrumb chips had also pushed the flight-plan waypoint labels on top of the alert labels; the alert annotations are now back on top of every flight-path element.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.31.0</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
