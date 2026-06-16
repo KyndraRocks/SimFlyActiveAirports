@@ -85,6 +85,35 @@ jobs:
               }
             }
 
+            // ── Marketplace: flag airports currently listed for sale ────────────────
+            // The user marketplace (https://simfly.io/marketplace/users/airports) is
+            // backed by GET /api/user/marketplace?type=airport, paginated 9 per page.
+            // Collect every listed ICAO and set for_sale:true on its payout entry so the
+            // app's "For Sale Only" filter + 🏷 tooltip light up. Absent = not for sale.
+            // Non-fatal: a marketplace hiccup must not break the payout pipeline.
+            function getJson(path) {
+              return new Promise((resolve, reject) => {
+                https.get({ hostname: 'simfly.io', path, headers: { 'User-Agent': 'SimFly-RT-Sync/1.0' } }, res => {
+                  let d = '';
+                  res.on('data', c => d += c);
+                  res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(new Error('Marketplace parse error: ' + d.slice(0, 150))); } });
+                }).on('error', reject);
+              });
+            }
+            try {
+              const mkt1     = await getJson('/api/user/marketplace?type=airport&page=1');
+              const mktPages = mkt1.totalPages || 1;
+              const forSale  = new Set();
+              const collect  = pg => { for (const it of (pg.items || [])) { const ic = (it.icao || it.sku || '').toUpperCase(); if (ic) forSale.add(ic); } };
+              collect(mkt1);
+              for (let p = 2; p <= mktPages; p++) collect(await getJson('/api/user/marketplace?type=airport&page=' + p));
+              let flagged = 0, missing = 0;
+              for (const ic of forSale) { if (db[ic]) { db[ic].for_sale = true; flagged++; } else { missing++; } }
+              console.log(`Marketplace: ${forSale.size} airports for sale (${flagged} flagged in payout data, ${missing} not in payout data)`);
+            } catch (e) {
+              console.error('Marketplace fetch failed (continuing without for-sale flags): ' + e.message);
+            }
+
             // airport-registry.json is an append-only map of { ICAO: "YYYY-MM-DD" } that
             // persists first_seen across gaps in payout data (e.g. owner sets sharing to 0%).
             // Once an ICAO is recorded here it is never removed, so a returning airport always
