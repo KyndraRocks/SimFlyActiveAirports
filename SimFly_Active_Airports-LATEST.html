@@ -5377,6 +5377,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   .afk-card-grip:active { cursor:grabbing; }
   .afk-card-grip:hover { color:var(--accent); }
+  /* v3.31.0 — group drag handle. Mirrors .afk-card-grip but lives in the
+     group header so the whole group can be reordered within the list. */
+  .afk-group-grip {
+    flex:0 0 14px;
+    color:var(--muted);
+    font-size:1.05rem; line-height:1;
+    cursor:grab;
+    user-select:none;
+    letter-spacing:-2px;
+    text-align:center;
+  }
+  .afk-group-grip:active { cursor:grabbing; }
+  .afk-group-grip:hover { color:var(--accent); }
+  .afk-group.dragging { opacity:0.35; }
   .afk-card-icon {
     flex:0 0 28px; height:28px;
     background:rgba(0,200,255,0.12);
@@ -8178,7 +8192,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.30.0';
+const APP_VERSION = '3.31.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12947,7 +12961,7 @@ function _liveAcRenderMarker(d) {
   if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
   const icon = _liveAcPlaneIcon(hdg, false);
   if (!_liveAcMarker) {
-    _liveAcMarker = L.marker([lat, lng], { icon, zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
+    _liveAcMarker = L.marker([lat, lng], { icon, pane: _rgMap.getPane('liveAcPane') ? 'liveAcPane' : 'markerPane', zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
     _liveAcMarker.on('mouseover', e => _tipAPI && _tipAPI.showLive(_liveAcTooltipHtml, e.originalEvent.clientX, e.originalEvent.clientY));
     _liveAcMarker.on('mousemove', e => _tipAPI && _tipAPI.move(e.originalEvent.clientX, e.originalEvent.clientY));
     _liveAcMarker.on('mouseout',  () => _tipAPI && _tipAPI.hide());
@@ -20854,6 +20868,13 @@ function _afkRenderGroupHtml(gid, members) {
       ' ondragover="_afkGroupHdrDragOver(event,\'' + gid + '\')"' +
       ' ondragleave="_afkGroupHdrLeave(event)"' +
       ' ondrop="_afkGroupHdrDrop(event,\'' + gid + '\')">' +
+      // v3.31.0 — drag handle for the whole group. Only this grip initiates a
+      // group-reorder drag (the group container itself is NOT draggable, so the
+      // contenteditable name and member cards keep their own behaviour).
+      '<div class="afk-group-grip" draggable="true"' +
+           ' ondragstart="_afkGroupDragStart(event,\'' + gid + '\')"' +
+           ' ondragend="_afkGroupDragEnd(event)"' +
+           ' title="Drag to move this whole group within the list. Higher = higher priority.">⋮⋮</div>' +
       '<button class="afk-group-collapse" onclick="event.stopPropagation();_afkGroupToggleCollapse(\'' + gid + '\')" title="Expand / collapse the whole group">' + (g.collapsed ? '▶' : '▼') + '</button>' +
       '<span class="afk-group-icon" title="Group of ' + members.length + ' alarms — they fire together; dismissing any one dismisses + disables all">⛓</span>' +
       '<span class="afk-group-name" contenteditable="true" spellcheck="false" ' +
@@ -20961,7 +20982,8 @@ function _afkRenderAlarmList() {
 // Drop-zone handlers for the top/bottom of the alarm list (v2.82.0+).
 // v2.88.0 — these also accept add-from-menu drags.
 function _afkListZoneOver(ev, where) {
-  if (_afkDragFromId == null && !_afkAddDragType) return;
+  // v3.31.0 — also accept a whole-group drag (_afkDragGroupId).
+  if (_afkDragFromId == null && _afkDragGroupId == null && !_afkAddDragType) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = _afkAddDragType ? 'copy' : 'move'; } catch (_) {}
   if (ev.currentTarget) ev.currentTarget.classList.add('drop-active');
@@ -20986,6 +21008,19 @@ function _afkListZoneDrop(ev, where) {
       const position = (where === 'top') ? 'before'   : 'after';
       _afkAddDroppedAlarm(type, targetId, position);
     }
+    return;
+  }
+  // v3.31.0 — whole-group drag to the very top / bottom of the list.
+  if (_afkDragGroupId != null) {
+    ev.preventDefault();
+    if (ev.currentTarget) ev.currentTarget.classList.remove('drop-active');
+    const items = _afkAlarms.list();
+    const gid = _afkDragGroupId;
+    _afkDragGroupId = null;
+    if (items.length === 0) return;
+    const targetId = (where === 'top') ? items[0].id : items[items.length - 1].id;
+    const position = (where === 'top') ? 'before'   : 'after';
+    _afkGroupMoveTo(gid, targetId, position);
     return;
   }
   if (_afkDragFromId == null) return;
@@ -21105,6 +21140,49 @@ function _afkCardDragStart(ev, id) {
   if (list) list.classList.add('dragging-alarm');
 }
 
+// v3.31.0 — Drag-to-reorder an entire GROUP. A separate global from
+// _afkDragFromId so the existing single-alarm reorder / grouping flows stay
+// untouched. Only the group-header grip starts this; on drop the whole block
+// of members is moved (preserving member order) before/after the target.
+let _afkDragGroupId = null;
+function _afkGroupDragStart(ev, gid) {
+  _afkDragGroupId = gid;
+  // Don't let the header's own drag wiring see this as anything else.
+  if (ev.stopPropagation) ev.stopPropagation();
+  // Custom MIME (not text/plain) so dropping on a contenteditable name field
+  // can't paste literal text — Firefox still needs SOME data set to initiate.
+  try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('application/x-simfly-alert-group', gid); } catch (_) {}
+  const groupEl = document.querySelector('.afk-group[data-group-id="' + gid + '"]');
+  if (groupEl) groupEl.classList.add('dragging');
+  const list = document.getElementById('afkAlarmList');
+  if (list) list.classList.add('dragging-alarm');
+}
+function _afkGroupDragEnd(ev) {
+  _afkDragGroupId = null;
+  document.querySelectorAll('.afk-group.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.afk-card.drop-before, .afk-card.drop-after, .afk-card.drop-onto')
+    .forEach(el => { el.classList.remove('drop-before'); el.classList.remove('drop-after'); el.classList.remove('drop-onto'); });
+  const list = document.getElementById('afkAlarmList');
+  if (list) list.classList.remove('dragging-alarm');
+  document.querySelectorAll('.afk-list-drop-zone.drop-active').forEach(el => el.classList.remove('drop-active'));
+}
+// Move every member of `gid` (in current member order) to be before / after
+// the target alarm, reusing _afkAlarms.reorder. No-op when the target is
+// itself a member of the dragged group. Re-renders + refreshes map visuals.
+function _afkGroupMoveTo(gid, targetId, position) {
+  const memberIds = _afkAlarms.list().filter(a => a.groupId === gid).map(a => a.id);
+  if (!memberIds.length || memberIds.indexOf(targetId) !== -1) return;
+  if (position === 'before') {
+    memberIds.forEach(mid => _afkAlarms.reorder(mid, targetId, 'before'));
+  } else {
+    let anchor = targetId;
+    memberIds.forEach(mid => { _afkAlarms.reorder(mid, anchor, 'after'); anchor = mid; });
+  }
+  _afkRenderAlarmList();
+  _afkRenderGeofenceVisuals();
+  _afkRenderWaypointVisuals();
+}
+
 // v2.88.0 — Drag-from-Add-menu: dragging an Add Alarm button onto the
 // alarms list creates a new alarm of that type at the drop position. Uses
 // a separate global so the existing reorder/grouping flows still work
@@ -21184,6 +21262,21 @@ function _afkCardDragOver(ev, id) {
     card.classList.remove('drop-onto');
     return;
   }
+  // v3.31.0 — whole-group drag: before/after only (no grouping), and skip
+  // cards that belong to the group being dragged.
+  if (_afkDragGroupId != null) {
+    const tgt = _afkAlarms.get(id);
+    if (tgt && tgt.groupId === _afkDragGroupId) return;
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    const card = ev.currentTarget;
+    const r = card.getBoundingClientRect();
+    const zone = (ev.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+    card.classList.toggle('drop-before', zone === 'before');
+    card.classList.toggle('drop-after',  zone === 'after');
+    card.classList.remove('drop-onto');
+    return;
+  }
   if (_afkDragFromId == null || id === _afkDragFromId) return;
   ev.preventDefault();
   try { ev.dataTransfer.dropEffect = 'move'; } catch (_) {}
@@ -21212,6 +21305,20 @@ function _afkCardDrop(ev, toId) {
     _afkAddDragType = null;
     card.classList.remove('drop-before', 'drop-after', 'drop-onto');
     _afkAddDroppedAlarm(type, toId, position);
+    return;
+  }
+  // v3.31.0 — whole-group drop: move the group's block before / after this card.
+  if (_afkDragGroupId != null) {
+    ev.preventDefault();
+    const card = ev.currentTarget;
+    card.classList.remove('drop-before', 'drop-after', 'drop-onto');
+    const tgt = _afkAlarms.get(toId);
+    const gid = _afkDragGroupId;
+    _afkDragGroupId = null;
+    if (tgt && tgt.groupId === gid) return; // dropped on one of its own members
+    const r = card.getBoundingClientRect();
+    const position = (ev.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+    _afkGroupMoveTo(gid, toId, position);
     return;
   }
   if (_afkDragFromId == null || toId === _afkDragFromId) return;
@@ -28611,6 +28718,22 @@ async function _rgInitMap() {
     tp.style.zIndex = 670;
     tp.style.pointerEvents = 'none';
   }
+  // v3.31.0 — dedicated pane for the live-aircraft icon so the plane draws
+  // ABOVE every flight-path element: route line (450), waypoint markers
+  // (markerPane 600), route labels (650), and its own breadcrumb trail (670).
+  // Previously the marker lived in the default markerPane (600) with only a
+  // zIndexOffset, which kept it under route labels and the trail. Interactive
+  // (hover tooltip + double-click zoom), so this pane must keep pointer events.
+  if (!_rgMap.getPane('liveAcPane')) {
+    const ap = _rgMap.createPane('liveAcPane');
+    ap.style.zIndex = 675;
+  }
+  // v3.31.0 — lift the tooltip pane above the breadcrumb filter strip
+  // (.rg-map-breadcrumbs, z-index 1000). The breadcrumb div is a child of
+  // #rgMapContainer and competes directly with the Leaflet sub-panes, so a
+  // dot tooltip near the top of the map was being painted under the chips.
+  const _rgTtPane = _rgMap.getPane('tooltipPane');
+  if (_rgTtPane) _rgTtPane.style.zIndex = 1100;
 
   // Restore the user's last-picked tile layer (v2.78.0+). Default street.
   try { _rgMapSat = (localStorage.getItem(_RG_MAP_LAYER_LS) === 'sat'); }
@@ -28940,8 +29063,10 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
       (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
       ((typeof _rgRawLevelOf === 'function' && _rgRawLevelOf(icao)) ? `<span class="rg-dt-lvl">Lvl ${_rgRawLevelOf(icao)}</span>` : '') +
-      ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">💰 For sale</span>` : '') +
+      // v3.31.0 — airport name now precedes the optional "For sale" line so
+      // the name reads first and the sale flag sits beneath it.
       (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
+      ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">💰 For sale</span>` : '') +
       (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
       payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml +
       `</div>`;
@@ -37105,7 +37230,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Auto-disable on dismiss</strong> (v2.76.0+) &mdash; whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is now an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off &mdash; you always know at a glance how many alarms are still armed.<br/><br/>
 
-            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. <strong>Add an alert to an existing group</strong> by dragging its card onto the group&rsquo;s header row (the row with the group name and mode pill) &mdash; the header highlights green with &ldquo;+ Add to group&rdquo; as you hover. This works even when the group is collapsed. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
+            <strong>⛓ Alert Groups</strong> (v2.83.0+) &mdash; bundle 2 or more related alarms so the first one to fire is treated as the answer for the whole group. Every other member of the group is prevented from firing (v2.87.1+) and visually disabled in the same tick. When the user dismisses the firing member &mdash; or it auto-dismisses via its duration timer &mdash; the cascade then propagates: every member's audio stops, the trip overlay clears for the whole group, and every member's enable toggle is left in the off position. <strong>The "one fires, rest go silent" contract is now an enforcement rather than an aspiration:</strong> any sibling whose own conditions later satisfy still cannot fire while the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible. <strong>Create a group</strong> three ways: (1) drag one alarm onto the MIDDLE of another (a green "+ Group" indicator shows the drop target &mdash; the top/bottom 30% of each card still reorders as before); (2) right-click any alarm for a context menu with <em>New group with&hellip;</em>, <em>Add to existing group&hellip;</em>, <em>Remove from group</em>, <em>Rename group</em>, <em>Ungroup</em>; (3) Shift-click multiple alarms to multi-select, then click the <em>⛓ Group N Selected</em> button in the modal footer. <strong>Add an alert to an existing group</strong> by dragging its card onto the group&rsquo;s header row (the row with the group name and mode pill) &mdash; the header highlights green with &ldquo;+ Add to group&rdquo; as you hover. This works even when the group is collapsed. Groups can be <strong>named</strong> (click the name label at the top of the group), <strong>collapsed as a unit</strong> (chevron next to the name), and members can be dragged in or out at any time. <strong>Reorder a whole group</strong> (v3.31.0) &mdash; grab the <strong>⋮⋮</strong> grip on the far left of the group header and drag it up or down to move every member together (their internal order is preserved), including onto the top / bottom drop zones. Groups <strong>auto-dissolve</strong> when membership drops below 2.<br/><br/>
             <strong>Group mode &mdash; three options</strong> (v2.91.0 added CASCADE/AND; v2.92.0 expanded to three explicit modes) &mdash; a pill on the group header (default <em>CASCADE</em>) cycles through the three modes on click:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li><strong>CASCADE</strong> &mdash; the pre-v2.91.0 behaviour. The <em>first</em> member to trip fires the user-visible alert and every other member is auto-dismissed and disabled. One acknowledgement covers the whole bundle. Best for "any one of these is a problem, alert me about it" scenarios.</li>
@@ -37221,8 +37346,22 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.30.0</span>
+          <span class="release-version">v3.31.0</span>
           <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alert groups now have a drag handle.</strong> Each group in the Alerts panel gets a <strong>⋮⋮</strong> grip on the left of its header. Grab it to drag the whole group &mdash; members move together, in order &mdash; up or down the list (or onto the top/bottom drop zones). Previously only individual alarms could be reordered; a group could not be moved as a unit.</li>
+          <li><strong>Aircraft icon now sits above the flight path.</strong> The live-aircraft marker was drawing under route labels and its own breadcrumb trail. It now renders in a dedicated layer above every flight-path element &mdash; route line, waypoint markers, route labels, and the trail &mdash; so the plane is always visible.</li>
+          <li><strong>Airport tooltips no longer hide behind the breadcrumb chips.</strong> A dot tooltip near the top of the map used to be painted under the breadcrumb filter strip. Tooltips now sit above the breadcrumb bubbles.</li>
+          <li><strong>Airport name moved above the &ldquo;For sale&rdquo; line in map tooltips.</strong> In the map dot tooltip the airport name now reads first, with the optional 💰 <em>For sale</em> flag beneath it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.30.0</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
