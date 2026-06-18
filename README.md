@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.34.0**
+**Current version: v3.32.0**
 
 ---
 
@@ -335,13 +335,6 @@ The modal validates required fields, includes a **▶ Test** button that fires a
 - **Group cascade now an enforcement, not an aspiration.** Pre-v2.87.1 the cascade lived only in the dismiss path, so a sibling alarm whose own conditions later satisfied could fire independently before the user dismissed the original. The eval-time check now blocks every sibling for the entire window the parent is tripped, so duplicate Mobile Alerts pushes for the same logical event are no longer possible.
 
 **Load from File behaviour** (v2.87.1+) — importing an alarm file always produces a ready-to-fire configuration: every imported alarm card starts **collapsed** so a large file doesn't flood the modal (click any card's expand chevron to open it), every alarm comes in **enabled** regardless of the saved value, and per-type transient state is freshly seeded so the next tick treats each alarm as just-armed. **Airborne import warning**: if the aircraft is actively flying (live source connected and groundspeed > 30 kt, or |VS| > 100 fpm, or wheels-up confirmed), a confirmation dialog appears before the import is applied — some alarm types can fire on the first tick post-load if current state already satisfies their conditions (e.g. a Cruise alarm with a target altitude below your current FL). Cancel or Load Anyway. Quiet at the gate.
-
-### SimFly Relay — MSFS in-game panel sync
-As of v3.33.0, AA can sync its alert configuration with a forthcoming MSFS in-game panel via a local relay server (SimFly-Relay.exe). When the relay is running, a small dot appears next to the Alerts button in the map header: grey means the relay is not running, yellow means the relay is connected but the MSFS panel is not yet open, green means the panel is connected and alert sync is live.
-
-Every alert you configure in AA — whether adding, adjusting, enabling, or clearing an alarm — is pushed to the MSFS panel in real time. Changes made from inside the cockpit (for example, arming or clearing an alert without removing your VR headset) flow back to AA immediately. The relay is fully optional: AA behaves exactly as before when SimFly-Relay.exe is not running, with no errors or warnings.
-
-As of v3.34.0, AA also streams **live alert telemetry** to the panel: the next alert predicted to fire and a running **ETA countdown**, updated once per second. AA owns the live FSUIPC feed and does the prediction, so the panel can show *what fires next and when* — for example a top-of-descent or an altitude crossing with a time-to-go — without any sim connection of its own. The countdown stays smooth and continuous on the panel even across brief relay reconnects, so a VR pilot gets an at-a-glance heads-up without removing the headset.
 
 ### 🎬 Flight Demo Mode
 For demos and presentations at locations where MSFS / FSUIPC is unavailable (corporate networks, kiosks, conference rooms that block flight-sim sites), AA can run on synthetic telemetry — driving the full alerting system, data panel, breadcrumb trail, and aircraft marker without any live sim connection. Open from **🔌 Live → 🎬 Flight Demo Mode** in the map header.
