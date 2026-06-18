@@ -4936,6 +4936,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #afkAlertsBtn.tripping { background:rgba(255,61,90,0.22); border-color:#ff3d5a; color:#ff8090;
     animation:afkBtnPulse 0.8s ease-in-out infinite alternate; }
   @keyframes afkBtnPulse { from { box-shadow:0 0 0 rgba(255,61,90,0.0); } to { box-shadow:0 0 14px rgba(255,61,90,0.7); } }
+  #relayStatusDot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#444; margin-left:5px; vertical-align:middle; flex-shrink:0; cursor:default; transition:background 0.4s; }
+  #relayStatusDot[data-state="relay"] { background:#ffaa00; box-shadow:0 0 5px rgba(255,170,0,0.5); }
+  #relayStatusDot[data-state="panel"] { background:#44dd44; box-shadow:0 0 5px rgba(68,221,68,0.5); }
 
   /* Config modal */
   #afkConfigModal { z-index:9500; }
@@ -8201,7 +8204,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.32.0';
+const APP_VERSION = '3.33.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -18423,6 +18426,7 @@ const _afkAlarms = (() => {
 
   function _save() {
     try { localStorage.setItem(_AFK_LS_KEY, JSON.stringify(alarms)); } catch (_) {}
+    try { _relayPushAlarms(); } catch (_) {}
   }
 
   function list() { return alarms.slice(); }
@@ -18838,6 +18842,96 @@ try {
     _afkCrossTabReload(keys);
   });
 } catch (_) {}
+
+// =================== RELAY BRIDGE (v3.33.0) ===================
+// Bidirectional sync between the AA desktop app and the SimFly
+// MSFS in-game panel via a local WebSocket relay (SimFly-Relay.exe,
+// port 9876). Relay is optional — AA works normally if not running.
+
+const _RELAY_WS_URL   = 'ws://localhost:9876';
+const _RELAY_RETRY_MS = 15000;
+
+let _relayWs       = null;
+let _relayApplying = false;
+let _relayRetryTmr = 0;
+
+function _relayConnect() {
+  if (_relayWs && _relayWs.readyState <= 1) return;
+  try { _relayWs = new WebSocket(_RELAY_WS_URL); } catch (_) { _relayScheduleRetry(); return; }
+
+  _relayWs.onopen = () => {
+    _relayWs.send(JSON.stringify({ type: 'identify', source: 'AA' }));
+  };
+
+  _relayWs.onmessage = e => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch (_) { return; }
+
+    if (msg.type === 'relay_status') {
+      const panelUp = (msg.clients || []).includes('MSFS_PANEL');
+      _relaySetDot(panelUp ? 'panel' : 'relay');
+      if (panelUp) _relayPushAlarms();
+    }
+
+    if (msg.type === 'client_joined' && msg.client === 'MSFS_PANEL') {
+      _relaySetDot('panel');
+      _relayPushAlarms();  // push current state to the newly-joined panel
+    }
+
+    if (msg.type === 'client_left' && msg.client === 'MSFS_PANEL') {
+      _relaySetDot('relay');
+    }
+
+    if (msg.type === 'alarm_state' && msg.source === 'MSFS_PANEL' && Array.isArray(msg.alarms)) {
+      _relayApplyAlarms(msg.alarms);
+    }
+  };
+
+  _relayWs.onclose = () => {
+    _relayWs = null;
+    _relaySetDot('off');
+    _relayScheduleRetry();
+  };
+
+  _relayWs.onerror = () => {};  // onclose always follows — handled there
+}
+
+function _relayScheduleRetry() {
+  if (_relayRetryTmr) return;
+  _relayRetryTmr = setTimeout(() => { _relayRetryTmr = 0; _relayConnect(); }, _RELAY_RETRY_MS);
+}
+
+// Called from _afkAlarms._save() on every alarm mutation.
+function _relayPushAlarms() {
+  if (_relayApplying) return;
+  if (!_relayWs || _relayWs.readyState !== 1) return;
+  try {
+    _relayWs.send(JSON.stringify({ type: 'alarm_state', source: 'AA', alarms: _afkAlarms.list() }));
+  } catch (_) {}
+}
+
+function _relayApplyAlarms(incoming) {
+  _relayApplying = true;
+  try {
+    localStorage.setItem(_AFK_LS_KEY, JSON.stringify(incoming));
+    _afkCrossTabReload(new Set([_AFK_LS_KEY]));
+  } catch (_) {}
+  // Clear after debounce + buffer so any _save() inside the re-render
+  // can't echo the state straight back to the panel.
+  setTimeout(() => { _relayApplying = false; }, 400);
+}
+
+function _relaySetDot(state) {
+  const dot = document.getElementById('relayStatusDot');
+  if (!dot) return;
+  dot.dataset.state = state;
+  dot.title = {
+    off:   'SimFly Relay — not connected\nStart SimFly-Relay.exe to enable MSFS panel sync.',
+    relay: 'SimFly Relay — connected\nMSFS in-game panel not yet open.',
+    panel: 'SimFly Relay — MSFS panel connected\nAlert sync is live.',
+  }[state] || '';
+}
+// =================== END RELAY BRIDGE ===================
 
 // v2.91.0 — Top-level helpers used by the alarm eval and tick paths so
 // they don't have to reach into _afkGroups directly.
@@ -24457,6 +24551,8 @@ function _afkInit() {
   _afkAlarms.list().forEach(a => {
     if (a.type === 'timer' && a.enabled) _afkScheduleTimer(a);
   });
+  // Attempt relay connection — silent if SimFly-Relay.exe isn't running.
+  try { _relayConnect(); } catch (_) {}
   // 1 Hz heartbeat so elapsed / ETA / countdown fields advance even between
   // live-aircraft updates (or with no live source connected at all).
   setInterval(() => {
@@ -37448,8 +37544,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
+          <span class="release-version">v3.33.0</span>
+          <span class="release-date">June 18, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>SimFly Relay bridge — alert sync to MSFS in-game panel.</strong> AA now connects to a local relay server (SimFly-Relay.exe) that bridges the desktop app with a forthcoming MSFS Community panel. When the relay is running, a small dot appears next to the Alerts button: grey = relay not running, yellow = relay connected but MSFS panel not open, green = panel connected and sync is live. Every alert change you make in AA is pushed to the panel in real time; changes made from inside the cockpit flow back to AA. The relay is fully optional — AA works exactly as before if SimFly-Relay.exe is not running.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
           <span class="release-version">v3.32.0</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -49200,7 +49307,7 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
 
-        <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
+        <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span><span id="relayStatusDot" data-state="off" title="SimFly Relay — not connected&#10;Start SimFly-Relay.exe to enable MSFS panel sync."></span></span>
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <!-- v3.6.21 — #rgHdrRoute (oversized centre dep→arr readout) removed; the
              selected route now shows as a compact breadcrumb pill instead, so it
