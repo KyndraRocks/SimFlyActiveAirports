@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.33.0**
+**Current version: v3.34.0**
 
 ---
 
@@ -340,6 +340,8 @@ The modal validates required fields, includes a **▶ Test** button that fires a
 As of v3.33.0, AA can sync its alert configuration with a forthcoming MSFS in-game panel via a local relay server (SimFly-Relay.exe). When the relay is running, a small dot appears next to the Alerts button in the map header: grey means the relay is not running, yellow means the relay is connected but the MSFS panel is not yet open, green means the panel is connected and alert sync is live.
 
 Every alert you configure in AA — whether adding, adjusting, enabling, or clearing an alarm — is pushed to the MSFS panel in real time. Changes made from inside the cockpit (for example, arming or clearing an alert without removing your VR headset) flow back to AA immediately. The relay is fully optional: AA behaves exactly as before when SimFly-Relay.exe is not running, with no errors or warnings.
+
+As of v3.34.0, AA also streams **live alert telemetry** to the panel: the next alert predicted to fire and a running **ETA countdown**, updated once per second. AA owns the live FSUIPC feed and does the prediction, so the panel can show *what fires next and when* — for example a top-of-descent or an altitude crossing with a time-to-go — without any sim connection of its own. The countdown stays smooth and continuous on the panel even across brief relay reconnects, so a VR pilot gets an at-a-glance heads-up without removing the headset.
 
 ### 🎬 Flight Demo Mode
 For demos and presentations at locations where MSFS / FSUIPC is unavailable (corporate networks, kiosks, conference rooms that block flight-sim sites), AA can run on synthetic telemetry — driving the full alerting system, data panel, breadcrumb trail, and aircraft marker without any live sim connection. Open from **🔌 Live → 🎬 Flight Demo Mode** in the map header.
