@@ -8201,7 +8201,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.32.0';
+const APP_VERSION = '3.32.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15741,12 +15741,14 @@ function _demoSimDisconnect() {
   if (_liveAcMarker) {
     if (typeof _liveAcClear === 'function') _liveAcClear();
     _liveAcSource = 'demo'; // _liveAcClear nulls source; restore for our state
+    if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn();
     _demoSuspendEmit = true;
     const btn = document.getElementById('demoDisconnectBtn');
     if (btn) btn.classList.add('active');
     if (typeof _aaRtToast === 'function') _aaRtToast('📡 Demo: live aircraft disconnected.', 'warn');
   } else {
     _demoSuspendEmit = false;
+    if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn();
     const btn = document.getElementById('demoDisconnectBtn');
     if (btn) btn.classList.remove('active');
     if (typeof _aaRtToast === 'function') _aaRtToast('📡 Demo: live aircraft reconnecting…', 'ok');
@@ -18823,6 +18825,7 @@ function _afkCrossTabReload(keys) {
       try { _afkUpdateBtnState(); } catch (_) {}
       try { _afkUpdateBadge(); } catch (_) {}
       try { _afkSyncTripOverlay(); } catch (_) {}
+      try { if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn(); } catch (_) {}
       // v3.0.13 — Toast removed entirely. The reload still runs (the
       // whole point of the feature); the visual notification is gone
       // because the user-facing checkbox that controlled it was removed
@@ -28400,6 +28403,7 @@ function _rgToggleLiveMenu(ev)  {
   if (!document.getElementById('rgLiveMenu').classList.contains('open')) {
     try { _rgRefreshLiveMenuDisabled(); } catch (_) {}
     try { _maUpdateMenuBadge(); } catch (_) {}
+    try { if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn(); } catch (_) {}
   }
   _rgTogglePulldown('rgLiveMenu',  'rgLiveBtn',  ev);
 }
@@ -37446,10 +37450,23 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.32.1</span>
+          <span class="release-date">June 18, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Follow pin now stays in sync after demo Disconnect / Reconnect.</strong> Simulating a telemetry disconnect in Flight Demo Mode called <code>_liveAcClear()</code> (which hid the 📍 Follow pin and Live-menu Follow button), then restored the demo source — but never called <code>_liveAcUpdateFollowBtn()</code> to re-show them. Both the disconnect and reconnect branches of <code>_demoSimDisconnect</code> now call <code>_liveAcUpdateFollowBtn()</code> immediately after the source is restored, so the pin and menu item reflect the correct state at all times.</li>
+          <li><strong>Follow pin syncs on Live menu open and on cross-tab alert reload.</strong> Two additional defensive sync calls added: one fires when the Live pulldown is opened (so the menu item is always current at the moment the user looks at it), and one fires in the cross-tab alert-group reload path so loading alarms from another tab can never leave the pin in a stale state.</li>
+          <li><strong>🎲 Re-roll button moved left one slot.</strong> The quick Re-roll button now sits between the 🛠 Tools and 👁 Display pulldowns instead of after Display, keeping the random-flight controls adjacent to their source menu.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.32.0</span>
-          <span class="release-date">June 16, 2026 &middot; Current</span>
+          <span class="release-date">June 16, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -49166,6 +49183,10 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
 
+        <!-- Quick re-roll — appears after the first random flight this session.
+             Left-click re-rolls with saved filters; right-click / long-press edits them. -->
+        <button class="rg-btn" id="rgRerollBtn" style="display:none" onclick="_rgRandReroll(event)" oncontextmenu="_rgRandRerollContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Re-roll a random flight with your saved filters · Right-click / long-press to change them">🎲 <span class="rg-btn-label">Re-roll</span></button>
+
         <!-- 👁 Display pulldown — visual layers / overlays (v3.29.0). -->
         <div class="rg-pulldown-wrap" id="rgDisplayWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgDisplayBtn" onclick="_rgToggleDisplayMenu(event)" title="Display menu — level badges, new airports, for-sale">👁 <span class="rg-btn-label">Display</span> <span class="rg-pulldown-caret">▾</span></button>
@@ -49175,10 +49196,6 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map">💰 <span class="rg-btn-label">For Sale Only</span></button>
           </div>
         </div>
-
-        <!-- Quick re-roll — appears after the first random flight this session.
-             Left-click re-rolls with saved filters; right-click / long-press edits them. -->
-        <button class="rg-btn" id="rgRerollBtn" style="display:none" onclick="_rgRandReroll(event)" oncontextmenu="_rgRandRerollContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Re-roll a random flight with your saved filters · Right-click / long-press to change them">🎲 <span class="rg-btn-label">Re-roll</span></button>
 
         <!-- 🔌 Live pulldown — flight plan + live-aircraft sources + follow + icon picker + mobile alerts.
              v2.89.0: SimBrief moved here as the first item; Clear items grey-out when nothing to clear. -->
