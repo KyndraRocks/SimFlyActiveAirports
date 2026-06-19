@@ -3381,13 +3381,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     box-shadow:0 6px 24px rgba(0,0,0,0.18);
   }
   .rg-pulldown-row {
+    display:flex;
+    align-items:center;
     text-align:left;
     justify-content:flex-start;
     width:100%;
     min-width:14em;
     white-space:nowrap;
   }
-  .rg-pulldown-row .rg-btn-label { margin-left:0.4em; }
+  .rg-row-icon {
+    width:1.6em;
+    flex-shrink:0;
+    text-align:center;
+  }
+  .rg-pulldown-row .rg-btn-label { margin-left:0.4em; flex:1; }
   /* Visual divider between functional groups inside a pulldown
      (e.g. between "FSUIPC / Follow / Icon" and the destructive
      "Clear Flight Plan / Clear Aircraft Track" rows). v2.84.1+. */
@@ -4534,6 +4541,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-action-btn { font-family:'Rajdhani',sans-serif; font-size:0.97rem; font-weight:600; padding:0.26rem 0.82rem; border-radius:4px; border:1px solid var(--border); background:var(--surface); color:var(--muted); cursor:pointer; white-space:nowrap; }
   .sl-action-btn:hover { border-color:var(--accent); color:var(--accent); }
   .sl-action-btn.sl-paint-active { background:rgba(0,200,255,0.12); border-color:rgba(0,200,255,0.55); color:var(--accent); }
+  .sl-overflow-item.sl-paint-active { background:rgba(0,200,255,0.10); color:var(--accent); }
   .sl-count { font-family:'Rajdhani',sans-serif; font-size:0.88rem; color:var(--muted); margin-left:auto; }
   /* Enriched list row */
   .sl-cat-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.35); }
@@ -4542,13 +4550,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-addon { font-family:'Rajdhani',sans-serif; font-size:0.87rem; color:var(--muted); white-space:nowrap; flex-shrink:0; }
   /* Overflow menu */
   .sl-overflow-wrap { position:relative; }
-  .sl-overflow-menu { display:none; position:absolute; bottom:calc(100% + 4px); right:0; background:var(--surface); border:1px solid var(--border); border-radius:6px; min-width:188px; z-index:200; box-shadow:0 4px 18px rgba(0,0,0,0.45); }
+  .sl-overflow-menu { display:none; position:absolute; bottom:calc(100% + 4px); right:0; background:var(--surface); border:1px solid var(--border); border-radius:6px; min-width:210px; z-index:200; box-shadow:0 4px 18px rgba(0,0,0,0.45); padding:0.25rem 0; }
   .sl-overflow-menu.open { display:block; }
-  .sl-overflow-item { display:block; width:100%; text-align:left; padding:0.48rem 1rem; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; color:var(--fg); background:none; border:none; cursor:pointer; white-space:nowrap; }
+  .sl-overflow-item { display:flex; align-items:center; gap:0.5em; width:100%; text-align:left; padding:0.48rem 1rem; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; color:var(--fg); background:none; border:none; cursor:pointer; white-space:nowrap; }
   .sl-overflow-item:hover { background:rgba(255,255,255,0.07); color:var(--accent); }
   .sl-overflow-item.sl-overflow-danger { color:var(--danger); }
   .sl-overflow-item.sl-overflow-danger:hover { background:rgba(255,61,90,0.1); color:var(--danger); }
   body.light-mode .sl-overflow-item:hover { background:rgba(0,0,0,0.05); }
+  .sl-overflow-sep { height:1px; background:rgba(255,255,255,0.12); margin:0.2rem 0.6rem; }
+  body.light-mode .sl-overflow-sep { background:rgba(0,0,0,0.1); }
   /* Onboarding */
   .sl-onboard { padding:1rem 1.5rem 0.4rem; }
   .sl-onboard-title { font-family:'Orbitron',monospace; font-size:0.72rem; letter-spacing:0.14em; color:var(--muted); text-transform:uppercase; margin-bottom:0.9rem; }
@@ -8226,7 +8236,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.33.0';
+const APP_VERSION = '3.33.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12607,7 +12617,7 @@ function _sbOfpRender(data, opts) {
   if (btn) {
     const lbl = btn.querySelector('.rg-btn-label');
     if (lbl) lbl.textContent = 'Clear Flight Plan';
-    btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✕ ');
+    const sbIco = btn.querySelector('.rg-row-icon'); if (sbIco) sbIco.textContent = '✕';
     btn.title = 'Remove the plotted SimBrief flight plan — Right-click to open Flight Plan settings';
   }
   // v2.90.4 — SimBrief plan moved from Tools to Live menu in v2.89.0; the
@@ -12656,7 +12666,7 @@ function _sbOfpClear() {
   if (btn) {
     const lbl = btn.querySelector('.rg-btn-label');
     if (lbl) lbl.textContent = 'SimBrief Flight Plan';
-    btn.firstChild && (btn.firstChild.nodeType === 3) && (btn.firstChild.nodeValue = '✈ ');
+    const sbIco = btn.querySelector('.rg-row-icon'); if (sbIco) sbIco.textContent = '✈';
     btn.title = 'Fetch and plot your most recent SimBrief flight plan — Right-click to open Flight Plan settings (Pilot ID, waypoint labels, route color)';
   }
   // v2.90.4 — SimBrief plan-loaded indicator now lights the Live dot
@@ -37671,10 +37681,32 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.33.3</span>
+          <span class="release-date">June 19, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library footer reorganised.</strong> Three primary buttons are always visible: <strong>⤓ Save Scenery</strong>, <strong>⤒ Load Scenery</strong> (matching the Alerts modal's iconography), and <strong>⚙ Developer Stats</strong>. Everything else — Add from map, Scan folder, Paste ICAOs, Stores &amp; Developers, FS Addon Compare, Import scenery config, and Clear all — is consolidated under a <strong>🛠 Manage ▾</strong> dropdown with separator lines grouping related actions. Replaces the previous crowded inline layout and unlabelled <strong>⋯</strong> overflow.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.33.1</span>
+          <span class="release-date">June 19, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Menu icon and text alignment polished.</strong> All rows in the 🛠 Tools, 👁 Display, and 🔌 Live pulldown menus now use a consistent two-column flex layout — icons are fixed-width and centred in their column, text labels start at the same horizontal position on every row. Mixed-width emoji and symbol glyphs (📐 ⊙ 🎲 / ☼ ✦ 💰 / ✈ ⭐ 🔌 🛩 📍 📱 🎬) no longer cause the labels to stagger.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.33.0</span>
-          <span class="release-date">June 19, 2026 &middot; Current</span>
+          <span class="release-date">June 19, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -48850,21 +48882,22 @@ function rgSendToFlightPlanner() {
       <div class="sl-footer">
         <!-- Normal footer buttons -->
         <span id="slFooterNormal" style="display:contents;">
-          <button class="sl-action-btn" onclick="_slImportPaste()" title="Import the ICAO codes you pasted above">Import pasted ICAOs</button>
-          <button class="sl-action-btn" onclick="_slScanFolder()" title="Scan MSFS Community or X-Plane Custom Scenery folder for airports">📂 Scan folder</button>
-          <button class="sl-action-btn" id="slAddFromMapBtn" onclick="_slEnterMapMode()" title="Click airport dots on the map to add or remove them. Tip: Shift+click any dot works the same way without entering this mode.">📍 Add from map</button>
-          <button class="sl-action-btn sl-dev-modal-btn" onclick="openManageValuesModal()"
-                  title="Bulk rename / delete Store and Developer values across the library">🛠 Manage Stores and Developers</button>
-          <button class="sl-action-btn sl-dev-modal-btn" onclick="openDevelopersModal()"
-                  title="Open the Scenery Developers summary — per-developer airport counts and average ratings">⚙ View Developer Stats</button>
+          <button class="sl-action-btn" onclick="_slExportJson()" title="Download a JSON backup of your Scenery Library">⤓ Save Scenery</button>
+          <button class="sl-action-btn" onclick="_slImportJson()" title="Load a JSON backup back into your Scenery Library (merges into existing entries)">⤒ Load Scenery</button>
+          <button class="sl-action-btn" onclick="openDevelopersModal()" title="Per-developer airport counts and average ratings">⚙ Developer Stats</button>
           <div class="sl-overflow-wrap">
-            <button class="sl-action-btn" onclick="_slToggleOverflow()" title="More options">⋯</button>
+            <button class="sl-action-btn" onclick="_slToggleOverflow()" title="Library management — add airports, stores, developers, imports, and clear">🛠 Manage <span style="font-size:0.7em;opacity:0.7;margin-left:0.1em;">▾</span></button>
             <div class="sl-overflow-menu" id="slOverflowMenu">
-              <button class="sl-overflow-item" onclick="_slExportJson();document.getElementById('slOverflowMenu').classList.remove('open')" title="Download a JSON backup of your Scenery Library">💾 Save Scenery Library</button>
-              <button class="sl-overflow-item" onclick="_slImportJson();document.getElementById('slOverflowMenu').classList.remove('open')" title="Load a JSON backup back into your Scenery Library (merges into existing entries)">📂 Load Scenery Library</button>
+              <button class="sl-overflow-item" id="slAddFromMapBtn" onclick="_slEnterMapMode();document.getElementById('slOverflowMenu').classList.remove('open')" title="Click airport dots on the map to add or remove them. Tip: Shift+click any dot works the same way without entering this mode.">📍 Add from map</button>
+              <button class="sl-overflow-item" onclick="_slScanFolder();document.getElementById('slOverflowMenu').classList.remove('open')" title="Scan MSFS Community or X-Plane Custom Scenery folder for airports">📂 Scan folder</button>
+              <button class="sl-overflow-item" onclick="_slImportPaste();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import the ICAO codes you pasted above">⊞ Paste ICAOs</button>
+              <div class="sl-overflow-sep"></div>
+              <button class="sl-overflow-item" onclick="openManageValuesModal();document.getElementById('slOverflowMenu').classList.remove('open')" title="Bulk rename / delete Store and Developer values across the library">🛠 Stores &amp; Developers</button>
+              <div class="sl-overflow-sep"></div>
               <button class="sl-overflow-item" onclick="_slFsacImport();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import from FS Addon Compare .har file">📥 FS Addon Compare</button>
-              <button class="sl-overflow-item" onclick="_slImportSceneryFile();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import X-Plane scenery_packs.ini or MSFS scenery.cfg">Import scenery config</button>
-              <button class="sl-overflow-item sl-overflow-danger" onclick="_slClearAll();document.getElementById('slOverflowMenu').classList.remove('open')">Clear all</button>
+              <button class="sl-overflow-item" onclick="_slImportSceneryFile();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import X-Plane scenery_packs.ini or MSFS scenery.cfg">📄 Import scenery config</button>
+              <div class="sl-overflow-sep"></div>
+              <button class="sl-overflow-item sl-overflow-danger" onclick="_slClearAll();document.getElementById('slOverflowMenu').classList.remove('open')" title="Remove all airports from the Scenery Library — cannot be undone">✕ Clear all</button>
             </div>
           </div>
         </span>
@@ -49414,9 +49447,9 @@ function rgSendToFlightPlanner() {
         <div class="rg-pulldown-wrap" id="rgToolsWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgToolsBtn" onclick="_rgToggleToolsMenu(event)" title="Tools menu — Measurement, Select Regions, Random Flight">🛠 <span class="rg-btn-label">Tools</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgToolsMenu">
-            <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points">📐 <span class="rg-btn-label">Measurement</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix">⊙ <span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)">🎲 <span class="rg-btn-label" id="rgRandomLbl">Create Random Route</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points"><span class="rg-row-icon">📐</span><span class="rg-btn-label">Measurement</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix"><span class="rg-row-icon">⊙</span><span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)"><span class="rg-row-icon">🎲</span><span class="rg-btn-label" id="rgRandomLbl">Create Random Route</span></button>
           </div>
         </div>
 
@@ -49428,9 +49461,9 @@ function rgSendToFlightPlanner() {
         <div class="rg-pulldown-wrap" id="rgDisplayWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgDisplayBtn" onclick="_rgToggleDisplayMenu(event)" title="Display menu — level badges, new airports, for-sale">👁 <span class="rg-btn-label">Display</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgDisplayMenu">
-            <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none">☼ <span class="rg-btn-label">Display Levels</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none">✦ <span class="rg-btn-label">Display New Airports</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map">💰 <span class="rg-btn-label">For Sale Only</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none"><span class="rg-row-icon">☼</span><span class="rg-btn-label">Display Levels</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none"><span class="rg-row-icon">✦</span><span class="rg-btn-label">Display New Airports</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map"><span class="rg-row-icon">💰</span><span class="rg-btn-label">For Sale Only</span></button>
           </div>
         </div>
 
@@ -49439,19 +49472,19 @@ function rgSendToFlightPlanner() {
         <div class="rg-pulldown-wrap" id="rgLiveWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
-            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)">✈ <span class="rg-btn-label">SimBrief Flight Plan</span></button>
-            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Set Default in the Alerts modal. Right-click the ⭐ Set Default button to clear.">⭐ <span class="rg-btn-label">Auto-load Default Alerts</span><span class="afk-auto-badge" id="afkAutoDefaultsBadge">OFF</span></button>
-            <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)">🔌 <span class="rg-btn-label">FSUIPC Live</span></button>
-            <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token">🛩 <span class="rg-btn-label">STKP Live</span></button>
-            <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon">📍 <span class="rg-btn-label">Follow A/C</span></button>
-            <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)">✈ <span class="rg-btn-label">Aircraft Icon…</span></button>
-            <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone.">📱 <span class="rg-btn-label">Mobile Alerts…</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
+            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan</span></button>
+            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Set Default in the Alerts modal. Right-click the ⭐ Set Default button to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span><span class="afk-auto-badge" id="afkAutoDefaultsBadge">OFF</span></button>
+            <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
+            <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
+            <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
+            <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">Aircraft Icon…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone."><span class="rg-row-icon">📱</span><span class="rg-btn-label">Mobile Alerts…</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
             <!-- v2.89.2 — "Clear Flight Plan" row removed (the SimBrief item
                  above doubles as load/clear). v3.6.0 — "Clear Aircraft Track"
                  row removed too: the breadcrumb strip's green "Aircraft Track"
                  pill now clears the trail in one click. -->
             <div class="rg-pulldown-sep"></div>
-            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). Perfect for alert testing or offline demos.">🎬 <span class="rg-btn-label">Flight Demo Mode…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). Perfect for alert testing or offline demos."><span class="rg-row-icon">🎬</span><span class="rg-btn-label">Flight Demo Mode…</span></button>
           </div>
         </div>
 
