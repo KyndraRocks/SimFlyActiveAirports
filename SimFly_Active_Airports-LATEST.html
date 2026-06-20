@@ -4622,13 +4622,30 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .rg-rate-popover { background:rgba(245,248,252,0.97); border-color:rgba(0,120,200,0.45); color:var(--text); }
   .rg-rate-hdr { display:flex; align-items:baseline; gap:0.75rem; margin-bottom:0.6rem; padding-right:1.65rem; }
   .rg-rate-icao { font-family:'Courier New',monospace; font-size:1.53rem; font-weight:700; color:var(--accent); letter-spacing:0.05em; flex-shrink:0; }
-  .rg-rate-name { font-size:1.38rem; color:var(--muted); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rg-rate-name { font-size:1.38rem; color:var(--muted); flex-shrink:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rg-rate-close { position:absolute; top:0.27rem; right:0.6rem; background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.65rem; padding:0 0.38rem; line-height:1; }
   .rg-rate-close:hover { color:var(--text); }
   .rg-rate-hint { font-size:1.17rem; color:rgba(255,200,58,0.85); margin-bottom:0.53rem; line-height:1.3; }
   body.light-mode .rg-rate-hint { color:#6a5200; font-weight:600; } /* v2.97.14 — darker for cream-bg contrast */
   .rg-rate-status { font-size:1.11rem; color:var(--muted); margin-top:0.45rem; letter-spacing:0.04em; }
   .rg-rate-popover .sl-stars-interactive .sl-star { font-size:2.55rem; padding:0 6px; }
+  /* ── Quick-rate popover — v3.34.0 enhancements ── */
+  .rg-rate-hdr-link { display:contents; }
+  .rg-rate-hdr-link:hover .rg-rate-icao,
+  .rg-rate-hdr-link:hover .rg-rate-name { text-decoration:underline dotted; text-underline-offset:3px; }
+  .rg-rate-fields { margin-top:0.55rem; display:flex; flex-direction:column; gap:0.32rem; }
+  .rg-rate-field-row { display:flex; align-items:center; gap:0.45rem; }
+  .rg-rate-field-lbl { font-size:0.85rem; color:var(--muted); min-width:5.5rem; text-transform:uppercase; letter-spacing:0.05em; flex-shrink:0; }
+  .rg-rate-field-inp { flex:1; min-width:0; background:rgba(255,255,255,0.07); border:1px solid rgba(0,200,255,0.18); border-radius:5px; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.0rem; padding:0.22rem 0.45rem; outline:none; }
+  .rg-rate-field-inp:focus { border-color:rgba(0,200,255,0.5); background:rgba(255,255,255,0.11); }
+  body.light-mode .rg-rate-field-inp { background:rgba(0,0,0,0.04); border-color:rgba(0,80,160,0.22); }
+  body.light-mode .rg-rate-field-inp:focus { border-color:rgba(0,80,160,0.5); background:rgba(0,0,0,0.07); }
+  .rg-rate-disk-btn { flex-shrink:0; align-self:center; background:none; border:none; color:var(--accent); cursor:pointer; font-size:1.0rem; padding:0 0.15rem; line-height:1; opacity:0.65; transition:opacity 0.15s; }
+  .rg-rate-disk-btn:hover { opacity:1; }
+  .rg-rate-ext-links { margin-top:0.6rem; border-top:1px solid rgba(255,255,255,0.08); padding-top:0.5rem; display:flex; gap:1rem; flex-wrap:wrap; }
+  body.light-mode .rg-rate-ext-links { border-top-color:rgba(0,0,0,0.1); }
+  .rg-rate-ext-link { display:inline-flex; align-items:center; gap:0.28rem; font-size:0.9rem; color:var(--muted); text-decoration:none; }
+  .rg-rate-ext-link:hover { color:var(--text); }
   /* ── Per-category level filter popover (v3.23.0) ── */
   .rg-lvl-popover {
     position:fixed; z-index:12000;
@@ -8236,7 +8253,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.33.3';
+const APP_VERSION = '3.34.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -26885,11 +26902,11 @@ function _slSetBannerVisible(show) {
   document.getElementById('slBackupBanner')?.classList.toggle('visible', !!show);
   const badge = document.getElementById('slDirtyBadge');
   if (show) {
-    const n = _slDirty;
+    const nAirports = _slDirtyIcaos.size;
     const msg = document.getElementById('slDirtyCountMsg');
-    if (msg) msg.textContent = `${n} unsaved change${n === 1 ? '' : 's'}`;
-    if (badge) { badge.textContent = String(n); badge.classList.add('show'); }
-    const tipSuffix = ` — ${n} unsaved change${n === 1 ? '' : 's'}`;
+    if (msg) msg.textContent = `${nAirports} unsaved airport${nAirports === 1 ? '' : 's'}`;
+    if (badge) { badge.textContent = String(nAirports); badge.classList.add('show'); }
+    const tipSuffix = ` — ${nAirports} unsaved airport${nAirports === 1 ? '' : 's'}`;
     document.getElementById('rgSceneryModeLabel')?.setAttribute('title', 'Cycle scenery display mode' + tipSuffix);
     document.getElementById('rgSceneryBtn')?.querySelector('.rg-sl-edit')?.setAttribute('title', 'Manage scenery library' + tipSuffix);
   } else {
@@ -30129,15 +30146,50 @@ function _rgRefreshRatePopover() {
   const slEntry = _slGet(icao);
   const inLib   = !!slEntry;
   const rating  = slEntry ? (+slEntry.rating || 0) : 0;
+  const store   = slEntry ? (slEntry.store || '') : '';
+  const dev     = slEntry ? (slEntry.developer || '') : '';
+  const isOwned = _slGetOwnedIcaos().has(icao);
+  const extSvg  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,1.5 10.5,1.5 10.5,5.5"/><line x1="10.5" y1="1.5" x2="5" y2="7"/><polyline points="5,2.5 1.5,2.5 1.5,10.5 9.5,10.5 9.5,7"/></svg>`;
+  const storeSugg = _slGetStoreSuggestions().map(v => `<option value="${esc(v)}"></option>`).join('');
+  const devSugg   = _slGetDevSuggestions().map(v => `<option value="${esc(v)}"></option>`).join('');
+  const diskBtn  = `<button id="rgRateDiskBtn" class="rg-rate-disk-btn" onclick="_slExportJson();_rgUpdatePopoverDisk()" title="Save all scenery changes to disk" style="${_slDirty > 0 ? '' : 'display:none'}">💾</button>`;
+  const icaoSpan = `<span class="rg-rate-icao">${icao}</span>`;
+  const nameSpan = name ? `<span class="rg-rate-name">${esc(name)}</span>` : '';
+  // For owned airports the ICAO+name are wrapped in an <a display:contents> so they
+  // remain flex items in rg-rate-hdr while the whole text area links to SimFly.
+  // The disk button is always a sibling inside the div — never inside an <a>.
+  const hdrInner = isOwned
+    ? `<a class="rg-rate-hdr-link" href="https://simfly.io/assets/airport/${icao}/details" target="_blank" rel="noopener" title="View on SimFly">${icaoSpan}${nameSpan}</a>${diskBtn}`
+    : `${icaoSpan}${nameSpan}${diskBtn}`;
   pop.innerHTML =
     `<button class="rg-rate-close" onclick="_rgCloseRatePopover()" title="Close (Esc)">×</button>` +
-    `<div class="rg-rate-hdr">` +
-      `<span class="rg-rate-icao">${icao}</span>` +
-      (name ? `<span class="rg-rate-name">${esc(name)}</span>` : '') +
-    `</div>` +
+    `<div class="rg-rate-hdr">${hdrInner}</div>` +
     (!inLib ? `<div class="rg-rate-hint">Setting a rating will add this airport to your Scenery Library.</div>` : '') +
     _slStarsHtml(rating, { interactive: true, icao }) +
-    `<div class="rg-rate-status">${inLib ? '✓ In Scenery Library' : 'Not yet in library'}</div>`;
+    `<div class="rg-rate-status">${inLib ? '✓ In Scenery Library' : 'Not yet in library'}</div>` +
+    `<div class="rg-rate-fields">` +
+      `<datalist id="rgPopStoreOpts">${storeSugg}</datalist>` +
+      `<datalist id="rgPopDevOpts">${devSugg}</datalist>` +
+      `<div class="rg-rate-field-row">` +
+        `<label class="rg-rate-field-lbl">Store</label>` +
+        `<input class="rg-rate-field-inp" list="rgPopStoreOpts" value="${esc(store)}" placeholder="e.g. FlightSim.to"` +
+        ` onchange="_slSetStore('${icao}',this.value);_rgUpdatePopoverDisk()">` +
+      `</div>` +
+      `<div class="rg-rate-field-row">` +
+        `<label class="rg-rate-field-lbl">Developer</label>` +
+        `<input class="rg-rate-field-inp" list="rgPopDevOpts" value="${esc(dev)}" placeholder="e.g. Orbx"` +
+        ` onchange="_slSetDeveloper('${icao}',this.value);_rgUpdatePopoverDisk()">` +
+      `</div>` +
+    `</div>` +
+    `<div class="rg-rate-ext-links">` +
+      `<a class="rg-rate-ext-link" href="https://flightsim.to/search?q=${icao}" target="_blank" rel="noopener">${extSvg} View on flightsim.to</a>` +
+      `<a class="rg-rate-ext-link" href="https://www.fsaddoncompare.com/search/${icao}" target="_blank" rel="noopener">${extSvg} View on FS Addon Compare</a>` +
+    `</div>`;
+}
+
+function _rgUpdatePopoverDisk() {
+  const btn = document.getElementById('rgRateDiskBtn');
+  if (btn) btn.style.display = _slDirty > 0 ? '' : 'none';
 }
 
 function _rgCloseRatePopover() {
@@ -37474,6 +37526,8 @@ function rgSendToFlightPlanner() {
             <strong>FS Addon Compare import</strong> (⋯ menu): select a <code>.har</code> file captured from the FS Addon Compare website. Open FS Addon Compare → My Library in Chrome/Edge, open DevTools (F12) → Network tab, reload the page, then export and save as HAR.<br/><br/>
             <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
+            The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
+            For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
             <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
@@ -37681,10 +37735,46 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.34.2</span>
+          <span class="release-date">June 20, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery dirty badge counts airports, not changes.</strong> The numeric badge on the Scenery button (and its tooltip) now shows how many distinct airports have unsaved changes, not the total number of individual edits. Three changes to the same airport shows <em>1</em>, not <em>3</em>. The banner message inside the Scenery panel is updated to match (<em>N unsaved airport(s)</em>).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.34.1</span>
+          <span class="release-date">June 20, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Quick-Rate popover — disk button moved inline with airport name.</strong> The 💾 save icon now sits as a flex item in the header row immediately after the airport name, rather than as an absolute-positioned element in the top-right corner. Uses <code>display:contents</code> on the SimFly link wrapper so ICAO and name remain direct flex participants while the disk button stays outside the <code>&lt;a&gt;</code> element (avoiding invalid nested interactive content).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.34.0</span>
+          <span class="release-date">June 20, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Quick-Rate popover — SimFly details link.</strong> When the airport under the cursor is owned by a SimFly player, the ICAO code and name in the popover header become a clickable link to that airport&rsquo;s SimFly details page. Non-owned airports keep the plain header.</li>
+          <li><strong>Quick-Rate popover — inline Store and Developer fields.</strong> Two text inputs now appear below the star rating: <em>Store</em> (the marketplace) and <em>Developer</em> (the publisher). Both autocomplete from the full list of known stores and developers — including your own previously-entered custom values — exactly as they do inside the Scenery Library panel. Committing a value (Tab, Enter, or clicking away) saves it immediately to the library entry; setting a value on an airport not yet in the library adds it automatically, the same as shift-clicking from the map.</li>
+          <li><strong>Quick-Rate popover — save disk button.</strong> A small 💾 icon appears in the popover header whenever there are unsaved scenery changes (rating, store, developer, or anything else that has incremented the dirty count). Clicking it exports the full scenery database to a JSON backup file and clears the dirty count — identical to the Save button inside the Scenery Library panel. The button hides itself after saving.</li>
+          <li><strong>Quick-Rate popover — external links.</strong> Two links appear at the bottom of every popover: <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em>, each using the same external-link icon as the distance calculator. Both open in a new tab and search for the airport&rsquo;s ICAO code on the respective site.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.33.3</span>
-          <span class="release-date">June 19, 2026 &middot; Current</span>
+          <span class="release-date">June 19, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
