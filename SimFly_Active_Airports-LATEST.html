@@ -5082,7 +5082,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      modal layers. Bumping above #afkConfigModal so the natural stacking
      also covers any future scenario where both are technically open. */
   #afkHistoryModal { z-index:9510; }
-  #afkConfigModal .modal { max-width:clamp(820px,58vw,1200px); min-height:62vh; }
+  #afkConfigModal .modal { max-width:clamp(820px,60vw,1280px); min-height:62vh; }
   /* v3.6.20 — The body keeps the modal a substantial size via the modal's own
      min-height (above), NOT via its own min-height. Previously min-height:62vh
      here pinned the body tall, so on shorter viewports the wrapping footer
@@ -5747,6 +5747,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     cursor:pointer;
   }
   .afk-btn-secondary:hover { background:rgba(0,200,255,0.18); color:#9adfff; }
+  /* v3.37.0 — disabled state for footer buttons (Load / Save Defaults gate on
+     saved-defaults presence and current-queue contents respectively). */
+  .afk-btn-secondary:disabled,
+  .afk-btn-secondary:disabled:hover {
+    opacity:0.38; cursor:not-allowed;
+    background:rgba(0,200,255,0.08); color:var(--accent);
+  }
 
   /* Alert History modal (v2.87.0) */
   #afkHistoryModal .modal {
@@ -8345,7 +8352,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.36.2';
+const APP_VERSION = '3.37.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -19735,6 +19742,16 @@ function _afkSaveDefaults() {
     _aaRtToast('Nothing to save — add alerts first.', 'warn');
     return;
   }
+  // v3.37.0 — confirm before overwriting an existing saved default set.
+  const existing = _afkDefaultsCount();
+  if (existing > 0) {
+    const ok = window.confirm(
+      'Overwrite your saved Default Alerts?\n\n' +
+      'This replaces the current defaults (' + existing + ' alarm' + (existing === 1 ? '' : 's') +
+      ') with the ' + alarms.length + ' alarm' + (alarms.length === 1 ? '' : 's') +
+      ' configured now. This cannot be undone.');
+    if (!ok) return;
+  }
   const usedGroupIds = new Set(alarms.filter(a => a.groupId).map(a => a.groupId));
   const groups = {};
   _afkGroups.list().forEach(g => {
@@ -19761,6 +19778,19 @@ function _afkClearDefaults() {
   _afkDefaultsAppliedFp = null;
   _afkUpdateDefaultsUI();
   _aaRtToast('Default alerts cleared.', 'ok');
+}
+
+// v3.37.0 — Manually load the saved defaults into the modal now (the
+// ⭐ Load Defaults button). Replaces the current queue directly.
+function _afkLoadDefaultsManual() {
+  const payload = _afkGetDefaults();
+  if (!payload || !Array.isArray(payload.alarms) || payload.alarms.length === 0) {
+    _aaRtToast('No saved defaults to load.', 'warn');
+    return;
+  }
+  const n = _afkApplyAlarmBundle(payload);
+  if (n < 0) { _aaRtToast('⭐ Load failed — invalid defaults data.', 'err'); return; }
+  _aaRtToast('⭐ Default alerts loaded (' + n + ' alarm' + (n === 1 ? '' : 's') + ').', 'ok');
 }
 
 // Internal import — applies a parsed bundle object without file I/O, prompts,
@@ -19855,9 +19885,17 @@ function _afkUpdateDefaultsUI() {
   const count  = _afkDefaultsCount();
   const hasD   = count > 0;
   const autoOn = _afkAutoDefaultsOn();
-  // Alerts modal footer button
-  const btn = document.getElementById('afkSetDefaultBtn');
-  if (btn) btn.textContent = hasD ? '⭐ Default (' + count + ')' : '⭐ Set Default';
+  const curAlarms = _afkAlarms.list().length;
+  // Alerts modal footer buttons (v3.37.0 — split into Load / Save Defaults).
+  // Load is enabled only when defaults exist; Save only when the current queue
+  // has at least one alert.
+  const loadBtn = document.getElementById('afkLoadDefaultBtn');
+  if (loadBtn) {
+    loadBtn.textContent = hasD ? '⭐ Load Defaults (' + count + ')' : '⭐ Load Defaults';
+    loadBtn.disabled = !hasD;
+  }
+  const saveBtn = document.getElementById('afkSaveDefaultBtn');
+  if (saveBtn) saveBtn.disabled = curAlarms === 0;
   // Live menu toggle row — v3.36.2: green ✓ (checkmark = on) via the standard
   // .active treatment, replacing the old ON/OFF badge.
   const liveRow = document.getElementById('afkAutoDefaultsRow');
@@ -21581,6 +21619,9 @@ function _afkAlarmCardSummary(a) {
 }
 
 function _afkUpdateFooterInfo() {
+  // v3.37.0 — keep the Load / Save Defaults buttons' enabled state in sync with
+  // the live queue (Save gates on current alarm count) on every alarm change.
+  _afkUpdateDefaultsUI();
   // v2.89.0 — renders into the modal-title row (was the footer). Uses
   // proper singular/plural ("1 alert" vs "2 alerts") instead of the
   // lazy "alert(s)" form, and switches the noun to "alert" to match
@@ -38050,9 +38091,9 @@ function rgSendToFlightPlanner() {
             <strong>Hover a collapsed card</strong> to see a tooltip summary of its current settings (sound, duration, alarm-specific params) without expanding it.<br/><br/>
             <strong>Collapse cards to declutter</strong> &mdash; each card has a small chevron button in its top-right action bar that toggles the editor body (sound picker, duration, type-specific inputs). The card header (icon, title, subtitle) stays visible so you can monitor every alarm at a glance. Collapsed state is per-card and survives reloads. Newly-added cards default to expanded so the configuration options are immediately visible. <strong>Cards imported from file default to collapsed</strong> so a large saved set doesn&rsquo;t flood the modal; expand any card individually to review or adjust its settings.<br/><br/>
             <strong>When an alarm trips</strong> a full-screen overlay appears with a pulsing red <strong>ALARM</strong> header listing every alarm currently tripped. The sound loops continuously until you click <strong>DISMISS ALL</strong>. The browser tab title also flashes <em>⚠ ALARM &mdash; SimFly</em> as a cross-window cue. <strong>Only one alarm sound plays at a time</strong> &mdash; the highest-priority alarm wins, so additional alarms that pile on just get added to the overlay list.<br/><br/>
-            <strong>Enable All / Disable All</strong> (modal footer, next to Delete All) flip every configured alert in one click. <em>Disable All</em> disarms everything, removes geofence circles and waypoint highlights from the map, and stops any active sound &mdash; configuration is preserved so a follow-up <em>Enable All</em> (v2.88.0+) re-arms the whole queue and reschedules any timer countdowns. <strong>Delete All</strong> permanently removes every alert from the queue. The per-card ✕ button does the same for a single alert. The footer is grouped left-to-right: tool buttons (Test Sound, Alert History, Group selected) | Save Alerts / Load Alerts / Set Default | the three bulk state-flip buttons (Enable All, Disable All, Delete All).<br/><br/>
+            <strong>Enable All / Disable All</strong> (modal footer, next to Delete All) flip every configured alert in one click. <em>Disable All</em> disarms everything, removes geofence circles and waypoint highlights from the map, and stops any active sound &mdash; configuration is preserved so a follow-up <em>Enable All</em> (v2.88.0+) re-arms the whole queue and reschedules any timer countdowns. <strong>Delete All</strong> permanently removes every alert from the queue. The per-card ✕ button does the same for a single alert. The footer has two rows: row 1 holds the tool buttons (Test Sound, Alert History, Group selected) | Load Alerts / Save Alerts | Load Defaults / Save Defaults; row 2 holds the three bulk state-flip buttons (Enable All, Disable All, Delete All).<br/><br/>
             <strong>Load Alerts behaviour</strong> (v2.87.1+) &mdash; importing an alarm file always produces a ready-to-fire configuration: every imported alarm is set to <em>enabled</em> regardless of whatever <em>enabled</em> state was saved in the file, and per-type transient state (cruise / descent / alt-min <em>fired</em> sentinels, geofence <em>wasInside</em>, waypoint <em>trippedFixes</em>) is freshly seeded so the next live tick treats each alarm as just-armed. <strong>Airborne import warning</strong>: if the aircraft is actively flying (live source connected and groundspeed &gt; 30&nbsp;kt, or |VS| &gt; 100&nbsp;fpm, or wheels-up confirmed) AA shows a confirmation dialog before applying the import &mdash; some alarm types can fire on the first tick post-load if the current flight state already satisfies their conditions (e.g., a Cruise alarm with a target altitude below your current FL). You can Cancel or Load Anyway.<br/><br/>
-            <strong>⭐ Default Alerts</strong> (v3.33.0) &mdash; configure your go-to alert set once, then have it load automatically with every flight plan. Three steps: (1) build your standard alerts in the Alerts modal; (2) click <strong>⭐ Set Default</strong> in the footer to save them to localStorage; (3) enable <strong>⭐ Auto-load Default Alerts</strong> in the <strong>🔌 Live</strong> menu. From that point on, loading a SimBrief flight plan replaces the queue with your defaults automatically. The same auto-load fires at app startup if the queue is empty. <strong>Safeguards:</strong> auto-load is silently skipped if the aircraft is airborne (groundspeed &gt; 30 kt, vertical speed &gt; 100 fpm, or wheels-up confirmed) — your in-mission alerts are never touched. Re-fetching the same plan (same origin, destination, and waypoint count) after you have already customised your alerts also skips the re-apply, so adding alarms on top of the defaults is safe. The chooser screen&rsquo;s <em>Load SimBrief Flight Plan</em> card shows the same checkbox when defaults are saved, giving you a one-click way to toggle the setting right before you load. <strong>Right-click ⭐ Set Default</strong> to clear saved defaults and reset the toggle. Defaults include your Mobile Alerts provider configuration so the whole setup travels with a single save.<br/><br/>
+            <strong>⭐ Default Alerts</strong> (v3.33.0) &mdash; configure your go-to alert set once, then have it load automatically with every flight plan. Three steps: (1) build your standard alerts in the Alerts modal; (2) click <strong>⭐ Save Defaults</strong> in the footer to save them to localStorage (it asks before overwriting an existing default set, and is disabled when no alerts are configured); (3) enable <strong>⭐ Auto-load Default Alerts</strong> in the <strong>🔌 Live</strong> menu. From that point on, loading a SimBrief flight plan replaces the queue with your defaults automatically. The same auto-load fires at app startup if the queue is empty. You can also pull your saved defaults into the modal at any time with <strong>⭐ Load Defaults</strong> (disabled when none are saved; it replaces the current queue). <strong>Safeguards:</strong> auto-load is silently skipped if the aircraft is airborne (groundspeed &gt; 30 kt, vertical speed &gt; 100 fpm, or wheels-up confirmed) — your in-mission alerts are never touched. Re-fetching the same plan (same origin, destination, and waypoint count) after you have already customised your alerts also skips the re-apply, so adding alarms on top of the defaults is safe. The chooser screen&rsquo;s <em>Load SimBrief Flight Plan</em> card shows the same checkbox when defaults are saved, giving you a one-click way to toggle the setting right before you load. <strong>Right-click ⭐ Load Defaults</strong> to clear saved defaults and reset the toggle. Defaults include your Mobile Alerts provider configuration so the whole setup travels with a single save.<br/><br/>
 
             <strong>Persistence</strong> &mdash; alarms are saved to <code>localStorage</code> and survive page reloads (with their <em>enabled</em> state preserved &mdash; that's distinct from file import, which always re-enables everything). If the loaded SimBrief flight plan changes (different origin/destination/fix count), any <em>Specific waypoints</em> picks are automatically cleared (since the old fix idents no longer apply) and you&rsquo;re notified by toast.<br/><br/>
             <strong>🔊 Test Sound</strong> (v2.87.0, picker in v2.88.0) &mdash; a button at the bottom of the Alerts modal that previews one of the five built-in sounds for ~2.5 seconds so you can verify audio is working without arming an alarm. Plain click cycles through the library. <strong>Shift-click</strong> or <strong>right-click</strong> opens a popup picker so you can preview any specific sound directly. If an alarm is actively tripped and sounding when you click, the preview takes over briefly and the original alarm sound resumes automatically afterwards.<br/><br/>
@@ -38095,7 +38136,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Storage and privacy.</strong> Provider settings are stored locally in <code>localStorage</code> under the key <code>aa_mobile_alerts_v1</code>. Tokens, webhook URLs, and topic names never leave your browser except as the body of the HTTPS POST to the provider you configured. Click <strong>Clear</strong> in the modal to wipe the settings entirely &mdash; the per-alarm Mobile alert toggles also disappear from every alarm card, since the row only renders when a provider is configured.<br/><br/>
 
-            <strong>Travel with your alarms.</strong> The 🔔 Alerts modal's <strong>⤓ Save Alerts</strong> button bundles your Mobile Alerts provider configuration alongside the alarm queue in the exported JSON, and <strong>⤒ Load Alerts</strong> applies it on the way back in. The <strong>⭐ Set Default</strong> button saves the same bundle to localStorage for auto-load on plan load. One file is enough to recreate the whole setup on another machine. If the file's Mobile Alerts settings would overwrite a different existing configuration on load, AA asks first &mdash; you can choose to keep your current settings. Older save files that predate v2.85.0 still import cleanly and leave the current Mobile Alerts config alone. <em>Note that exported files contain whatever tokens / webhook URLs / topic names you have configured</em>, so they&rsquo;re fine for personal backup but worth being careful with when shared.
+            <strong>Travel with your alarms.</strong> The 🔔 Alerts modal's <strong>⤓ Save Alerts</strong> button bundles your Mobile Alerts provider configuration alongside the alarm queue in the exported JSON, and <strong>⤒ Load Alerts</strong> applies it on the way back in. The <strong>⭐ Save Defaults</strong> button saves the same bundle to localStorage for auto-load on plan load (and <strong>⭐ Load Defaults</strong> pulls it back into the modal on demand). One file is enough to recreate the whole setup on another machine. If the file's Mobile Alerts settings would overwrite a different existing configuration on load, AA asks first &mdash; you can choose to keep your current settings. Older save files that predate v2.85.0 still import cleanly and leave the current Mobile Alerts config alone. <em>Note that exported files contain whatever tokens / webhook URLs / topic names you have configured</em>, so they&rsquo;re fine for personal backup but worth being careful with when shared.
           </div>
         </div>
       </div>
@@ -38153,10 +38194,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.37.0</span>
+          <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Default Alerts now has separate Load and Save buttons.</strong> The single <em>⭐ Set Default</em> button in the Alerts modal footer was ambiguous about what it did. It's now two clearly-labelled buttons: <strong>⭐ Save Defaults</strong> (snapshot the current alarm queue) and <strong>⭐ Load Defaults</strong> (pull your saved set into the modal on demand).</li>
+          <li><strong>Buttons disable when they can't do anything.</strong> <em>Load Defaults</em> is greyed out when no defaults are saved; <em>Save Defaults</em> is greyed out when there are no alerts configured to save.</li>
+          <li><strong>Save now confirms before overwriting.</strong> If you already have a saved default set, <em>Save Defaults</em> asks for confirmation before replacing it.</li>
+          <li><strong>Right-click ⭐ Load Defaults to clear</strong> your saved defaults — the clear shortcut moved from the old combined button.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.36.2</span>
-          <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-date">June 21, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -49809,26 +49864,28 @@ function rgSendToFlightPlanner() {
       </div>
     </div>
     <div class="afk-modal-footer">
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;flex:1 1 auto;">
-        <!-- v2.89.0 — Footer order:
-             [Test Sound] [Alert History] [Group X (when active)]
-             | [Save] [Load]
-             | [Enable All] [Disable All] [Delete All]
-             Enable All moved next to Disable/Delete because they share
-             the "bulk state-flip" semantics. Counter relocated to title. -->
-        <button class="afk-btn-secondary" onclick="_afkTestSound(event)" oncontextmenu="_afkTestSound(event);return false;" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; Shift-click or right-click to pick a specific sound from a menu.">🔊 Test Sound</button>
-        <button class="afk-btn-secondary" onclick="_afkBulkSetSoundMenu(event)" title="Bulk-set every alarm at once. Opens a picker with two sections: choose one sound to apply to all alarms, or set the &quot;Sound for&quot; auto-dismiss duration (indefinite / 5 / 10 / 30 / 60 s) on all alarms.">🔊→All</button>
-        <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
-        <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
-        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
-        <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save Alerts</button>
-        <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load Alerts</button>
-        <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
-        <button class="afk-btn-secondary" id="afkSetDefaultBtn" onclick="_afkSaveDefaults()" oncontextmenu="_afkClearDefaults();return false" title="Save the current alarm queue as your Default Alerts — stored in localStorage and auto-loaded whenever a flight plan loads (when Auto-load is on in the Live menu). Right-click to clear saved defaults.">⭐ Set Default</button>
-        <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
-        <button class="afk-btn-secondary" onclick="_afkEnableAll()" title="Enable every configured alert at once — useful for re-arming after a Disable All or after importing a saved alert set.">Enable All</button>
-        <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alert, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
-        <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alert from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
+      <!-- v3.37.0 — explicit two-row footer so the layout is deterministic at any
+           width: Row 1 = tools + Save/Load Alerts + Load/Save Defaults;
+           Row 2 = the bulk state-flip cluster (Enable / Disable / Delete All). -->
+      <div style="display:flex;flex-direction:column;gap:0.5rem;flex:1 1 auto;align-items:stretch;">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+          <button class="afk-btn-secondary" onclick="_afkTestSound(event)" oncontextmenu="_afkTestSound(event);return false;" title="Preview an alarm sound for 2.5 s so you can verify audio is working. Each click cycles to the next sound in the library; Shift-click or right-click to pick a specific sound from a menu.">🔊 Test Sound</button>
+          <button class="afk-btn-secondary" onclick="_afkBulkSetSoundMenu(event)" title="Bulk-set every alarm at once. Opens a picker with two sections: choose one sound to apply to all alarms, or set the &quot;Sound for&quot; auto-dismiss duration (indefinite / 5 / 10 / 30 / 60 s) on all alarms.">🔊→All</button>
+          <button class="afk-btn-secondary" onclick="_afkOpenHistory()" title="Open the Alert History log — the last 100 alert events with timestamps, parameters, aircraft telemetry, and dismissal reason. You can plot any logged alert on the map for review.">📜 Alert History</button>
+          <button class="afk-btn-secondary" id="afkGroupSelectedBtn" style="display:none" onclick="_afkGroupSelected()" title="Form a group from the currently Shift-selected alarms. Group members fire together; dismissing any one dismisses + disables all.">⛓ Group 0 Selected</button>
+          <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
+          <button class="afk-btn-secondary" onclick="document.getElementById('afkImportFileInput').click()" title="Replace the current alarm queue with a previously-saved JSON file. If the file includes Mobile Alerts settings, they're applied too (you'll be asked first if they would overwrite a different existing configuration). The local-storage autosave is overwritten.">⤒ Load Alerts</button>
+          <input type="file" id="afkImportFileInput" accept="application/json,.json" style="display:none" onchange="_afkImportAlarms(this)">
+          <button class="afk-btn-secondary" onclick="_afkExportAlarms()" title="Save the current alarm queue (every alarm + its settings) AND your Mobile Alerts provider configuration (if any) to a JSON file on disk. Lets you keep multiple named alarm setups for different flights / aircraft. Note: the saved file will contain any tokens / webhook URLs you have configured.">⤓ Save Alerts</button>
+          <div aria-hidden="true" style="width:1px;height:1.6rem;background:rgba(255,255,255,0.18);margin:0 0.4rem;"></div>
+          <button class="afk-btn-secondary" id="afkLoadDefaultBtn" onclick="_afkLoadDefaultsManual()" oncontextmenu="_afkClearDefaults();return false" title="Load your saved Default Alerts into the modal now, replacing the current queue. Disabled when no defaults are saved. Right-click to clear your saved defaults.">⭐ Load Defaults</button>
+          <button class="afk-btn-secondary" id="afkSaveDefaultBtn" onclick="_afkSaveDefaults()" title="Save the current alarm queue as your Default Alerts — stored in your browser and auto-loaded when a flight plan loads (if Auto-load is on in the Live menu). Disabled when no alerts are configured; asks before overwriting an existing default set.">⭐ Save Defaults</button>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+          <button class="afk-btn-secondary" onclick="_afkEnableAll()" title="Enable every configured alert at once — useful for re-arming after a Disable All or after importing a saved alert set.">Enable All</button>
+          <button class="afk-btn-disable-all" onclick="_afkDisableAll()" title="Disarm every alert, clear geofence circles and waypoint highlights, and stop any sound. Configuration is preserved so you can re-enable individually.">Disable All</button>
+          <button class="afk-btn-delete-all" onclick="_afkDeleteAll()" title="Permanently remove every alert from the queue. Geofences and waypoint highlights are cleared. This cannot be undone.">Delete All</button>
+        </div>
       </div>
     </div>
   </div>
@@ -50095,7 +50152,7 @@ function rgSendToFlightPlanner() {
           <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan</span></button>
-            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Set Default in the Alerts modal. Right-click the ⭐ Set Default button to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
+            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
