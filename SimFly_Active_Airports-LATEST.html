@@ -4109,7 +4109,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      font configuration; only colour and border differentiate them. */
   .rg-nm-label { position:absolute; top:0; left:0; pointer-events:none; z-index:1000; background:var(--panel); border:1px solid var(--accent); border-radius:4px; padding:0.15rem 0.45rem; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:0.02em; color:var(--accent); white-space:nowrap; display:none; transform:translate(14px,12px); }
   .rg-nm-label.arr { border-color:var(--accent2); color:var(--accent2); }
-  .rg-hero-lbl { background:rgba(0,8,18,0.88); color:#00c8ff; font-family:'Courier New',Courier,monospace; font-size:0.88rem; font-weight:700; padding:0.22rem 0.65rem; border-radius:5px; border:1px solid rgba(0,200,255,0.45); white-space:nowrap; letter-spacing:0.04em; pointer-events:none; box-shadow:0 0 10px 2px rgba(0,200,255,0.25); display:inline-block; }
+  /* Hero (region center-to-center) distance label — shares the route label's
+     Rajdhani font + neutral text / gold-border scheme (v3.35.3); stays
+     non-interactive (no swap/close), unlike .rg-route-info-lbl. */
+  .rg-hero-lbl { background:rgba(0,8,18,0.88); color:var(--text); font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; padding:0.28rem 1rem; border-radius:5px; border:1px solid rgba(255,209,102,0.5); white-space:nowrap; pointer-events:none; box-shadow:0 0 8px 2px rgba(255,209,102,0.18); display:inline-block; }
   /* "Crosses antimeridian" 2nd-row chip — solid dark pill with amber border so it's legible against both street and satellite map backgrounds. Used by the live + saved measurement labels, the dot-click route info label, and the dep→arr hero label. */
   .rg-am-note { background:rgba(0,8,18,0.92); color:#ffb347; font-family:'Rajdhani',sans-serif; font-size:0.78rem; font-weight:700; letter-spacing:0.04em; padding:0.14rem 0.55rem; border-radius:4px; border:1px solid rgba(255,179,71,0.7); margin-top:0.22rem; white-space:nowrap; pointer-events:none; box-shadow:0 1px 6px rgba(0,0,0,0.55), 0 0 6px rgba(255,179,71,0.25); display:inline-block; }
   /* Specificity override needed to beat Leaflet's default white background */
@@ -4839,9 +4842,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .rg-ri-close:hover { color:rgba(0,0,0,0.8); }
   body.light-mode .rg-hero-lbl {
     background:rgba(250,248,243,0.96);
-    border-color:rgba(0,102,153,0.45);
-    color:var(--accent);
-    box-shadow:0 0 8px 1px rgba(0,102,153,0.15);
+    border-color:rgba(140,90,0,0.40);
+    color:var(--text);
+    box-shadow:0 0 6px 1px rgba(140,90,0,0.10);
   }
   body.light-mode .rg-am-note {
     background:rgba(250,248,243,0.96);
@@ -8278,7 +8281,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.35.1';
+const APP_VERSION = '3.35.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -30433,6 +30436,17 @@ function _rgAttachLongPress(marker, icao) {
       return;
     }
     if (btn > 0) return;          // right / other buttons don't start a long-press
+    // During a region-draw workflow, a left-press on a dot must drive the
+    // region draw — NOT the rate popover. Dots are canvas markers that swallow
+    // the map's own mousedown (so the draw never starts and the long-press timer
+    // pops the rate card instead). Forward this event — it carries .latlng — to
+    // the map handler and skip the long-press. Mirrors the phase guard the dot
+    // contextmenu handler already uses.
+    if (_rgPhase === 'idle' || _rgPhase === 'dep_drag' ||
+        _rgPhase === 'ruler' || _rgPhase === 'arr_drag') {
+      if (typeof _rgMapMouseDown === 'function') _rgMapMouseDown(e);
+      return;
+    }
     clearTimeout(timer);
     fired = false;
     const ll = marker.getLatLng();
@@ -33602,6 +33616,7 @@ function _rgToggleRotationGauge() {
   try { localStorage.setItem('simfly_aa_rotation_gauge', _rgRotationGaugeVisible ? '1' : '0'); } catch (_) {}
   _rgSyncRotationGaugeButton();
   if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();  // show/hide the gauge chip
 }
 function _rgSyncRotationGaugeButton() {
   const featureAvailable = !!_rgPayoutDataJsonCache;
@@ -35096,9 +35111,13 @@ function _rgUpdateBreadcrumbs() {
   // touch long-press the first time the strip renders in region mode).
   _rgSyncLevelFilterButtons();
 
-  function mkChip(text, onClickBody, onClickX) {
+  // opts (optional): { title } sets a tooltip on the whole chip; { xTitle }
+  // overrides the ✕ button's default "Remove filter" tooltip.
+  function mkChip(text, onClickBody, onClickX, opts) {
+    opts = opts || {};
     const chip = document.createElement('span');
     chip.className = 'rg-bc';
+    if (opts.title) chip.title = opts.title;
     const lbl = document.createElement('span');
     lbl.textContent = text;
     chip.appendChild(lbl);
@@ -35109,7 +35128,7 @@ function _rgUpdateBreadcrumbs() {
       const x = document.createElement('span');
       x.className = 'rg-bc-x';
       x.textContent = '✕';
-      x.title = 'Remove filter';
+      x.title = opts.xTitle || 'Remove filter';
       x.addEventListener('click', e => { e.stopPropagation(); onClickX(); });
       chip.appendChild(x);
     }
@@ -35175,6 +35194,15 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkChip('Black Dot = Has Scenery', _slCycleMode, null));
   } else {
     container.appendChild(mkChip('No Scenery Indicator', _slCycleMode, null));
+  }
+
+  // 3b. Rotation gauge — display indicator shown whenever the gauge is on. ✕
+  // hides it; the chip tooltip notes the middle-click shortcut. This is a
+  // display toggle (like Category Colors / scenery), so ⊗ Clear All leaves it.
+  if (_rgRotationGaugeVisible && _rgPayoutDataJsonCache) {
+    container.appendChild(mkChip('🔄 Rotation Gauge', null,
+      () => { if (typeof _rgToggleRotationGauge === 'function') _rgToggleRotationGauge(); },
+      { title: 'Rotation gauge is shown on airport dots. Tip: middle-click the map to toggle it on/off.', xTitle: 'Hide the rotation gauge' }));
   }
 
   // 4. Scenery Quality filter — grouped right after the Scenery chip
@@ -37812,7 +37840,7 @@ function rgSendToFlightPlanner() {
             Every SimFly airport has a weekly pool of flight <strong>rotations</strong> — the number of times it can be flown into before its traffic resets for the week. The size of the pool (its <em>capacity</em>) grows with the airport's level. The <strong>rotation gauge</strong> shows, at a glance, how much of that pool is still available right now.<br/><br/>
             Each airport dot's <strong>outline</strong> doubles as a low-rotation warning. Because what matters for planning is whether an airport is running <em>low</em> this week, the outline only depletes in the danger zone: an airport with <strong>10 or more rotations remaining</strong> shows a <strong>full 3&nbsp;px black ring</strong>, and once it drops below 10 the ring shrinks <strong>anti-clockwise from 12 o'clock</strong> as a percentage of 10 (9 remaining ≈ 90% of the ring, 5 ≈ 50%, 1 ≈ 10%). An airport with <strong>zero rotations left has no outline at all</strong> — so the airports to avoid this week are simply the ones with no ring. The ring sits clear of the level-badge corona spikes, which radiate outside the dot.<br/><br/>
             <strong>Exact numbers</strong> — hover any airport dot and its tooltip shows the rotations remaining and total alongside its category and level: "<em>ICAO &nbsp;Cat&nbsp;n &nbsp;Lvl&nbsp;n &nbsp;(remaining / total)</em>". The detailed airport tooltip and the right-click <strong>Quick-Rate</strong> card both carry a "Rotations: X / Y left this week" line as well, colour-coded green (10 or more left) / amber (fewer than 10) / red (none) so the count is available everywhere you inspect an airport.<br/><br/>
-            <strong>Toggle the gauge</strong> — open the <strong>👁 Display</strong> menu and click <strong>🔄 Display Rotations</strong>, or simply <strong>middle-click anywhere on the map</strong> for a quick on/off. It is on by default; your choice is remembered between sessions.<br/><br/>
+            <strong>Toggle the gauge</strong> — open the <strong>👁 Display</strong> menu and click <strong>🔄 Display Rotations</strong>, or simply <strong>middle-click anywhere on the map</strong> for a quick on/off. While it is on, a <strong>🔄 Rotation Gauge</strong> chip also appears in the filter strip — click its <strong>✕</strong> to hide the gauge. It is on by default; your choice is remembered between sessions.<br/><br/>
             <strong>Rotations Left Only filter</strong> — also under <strong>👁 Display</strong>, click <strong>🔄 Rotations Left Only</strong> to hide every airport that has exhausted its rotations for the week, leaving just the airports you can still fly into. Airports with no rotation data are left visible. While the filter is active a removable <strong>🔄 Rotations Left</strong> chip appears in the filter strip; its ✕ clears it, and ⊗ Clear All removes it along with every other filter. Rotation data refreshes automatically through the same hourly pipeline that feeds owner colours, levels, and categories.<br/><br/>
             <strong>Low-rotation warnings (3 or fewer left)</strong> — when a departure/arrival pair is selected, the on-map distance label adds a red <strong>⚠ Low rotations</strong> note naming any endpoint with 3 or fewer rotations remaining, and a yellow <strong>⚠</strong> badge appears on the <strong>File on SimBrief</strong> buttons. Clicking <strong>File on SimBrief</strong> (the main button or the floating map route pill) then shows a confirmation first if the departure or arrival is at 3 or fewer — it lists the airport and its remaining count, and shows <em>before</em> the new-pilot-codes prompt. Cancel to back out, or <strong>File Anyway →</strong> to continue.
           </div>
@@ -37881,6 +37909,7 @@ function rgSendToFlightPlanner() {
             <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
+            <strong>🔄 Rotation Gauge</strong> — appears whenever the rotation gauge is being shown on airport dots. Click <strong>&times;</strong> to hide the gauge (you can also middle-click the map to toggle it).<br/><br/>
             <strong>🏷 For Sale</strong> — appears when the <em>🏷 For Sale Only</em> toggle in the 👁 Display menu is on, restricting the map (and matrix) to airports currently listed for sale. Click <strong>&times;</strong> to turn it off.<br/><br/>
             <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
@@ -38040,10 +38069,43 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.35.4</span>
+          <span class="release-date">June 20, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Drawing a region that starts on an airport dot no longer opens the airport's rate popover.</strong> Beginning a region-circle drag on top of an airport used to be swallowed by the dot — the region never started and the dot's long-press popped its Quick-Rate card instead. A press on a dot during region drawing now drives the region draw as expected; normal long-press / right-click rating still works everywhere else.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.35.3</span>
+          <span class="release-date">June 20, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Region distance label restyled to match the route label.</strong> The center-to-center distance label shown between two selected region circles now uses the same Rajdhani font and neutral-text / gold-border styling as the dep&thinsp;&rarr;&thinsp;arr route label, instead of its old cyan monospace look — so the two on-map distance labels look consistent.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.35.2</span>
+          <span class="release-date">June 20, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Rotation gauge now has a filter-strip chip.</strong> While the rotation gauge is shown, a <em>🔄 Rotation Gauge</em> chip appears in the map's filter strip — click its <strong>✕</strong> to hide the gauge. Hovering the chip reminds you that you can also middle-click the map to toggle the gauge on and off.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.35.1</span>
-          <span class="release-date">June 20, 2026 &middot; Current</span>
+          <span class="release-date">June 20, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
