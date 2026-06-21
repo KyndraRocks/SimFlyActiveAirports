@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.34.2**
+**Current version: v3.35.0**
 
 ---
 
@@ -152,12 +152,19 @@ Every SimFly airport earns a **level** (separate from its category) as it accumu
 
 The marks read like a clock: the first spike sits at **12 o'clock**, and each additional level adds another evenly-spaced spike around the circle. Level 2 shows top + bottom, level 3 shows 12/4/8 o'clock, level 4 shows 12/3/6/9, and higher levels keep spreading the marks evenly. A thin white halo behind each mark keeps it legible on both the default and satellite basemaps. The spikes stay the same pixel size at every zoom level.
 
-Badges are **on by default** and only level 2 and above are drawn — a single level 1 tick on hundreds of dots adds noise rather than information. Toggle them off any time; your choice is remembered across sessions. On mobile, the same toggle appears in the right-hand button band. (The 👁 Display menu also groups the **✦ Display New Airports** and **💰 For Sale Only** toggles, keeping the 🛠 Tools menu focused on Measurement, Select Regions, and Random Flight.)
+Badges are **on by default** and only level 2 and above are drawn — a single level 1 tick on hundreds of dots adds noise rather than information. Toggle them off any time; your choice is remembered across sessions. On mobile, the same toggle appears in the right-hand button band. (The 👁 Display menu also groups the **🔄 Display Rotations** / **✦ Display New Airports** / **🏷 For Sale Only** toggles, keeping the 🛠 Tools menu focused on Measurement, Select Regions, and Random Flight.)
 
 **Filter the map by level** (v3.23.0) — **right-click any of the Map category circles** in the map header (long-press on touch) to open that category's level filter. The menu lists only the levels that real airports of that category actually have on the map under your current filters — each with a live count — so empty levels are never offered (if no Category 5 / Level 3 airports are in view, Level 3 simply isn't a choice). Tick individual levels for a custom mix, or use the **≥** button beside any level to keep that level and everything above it in one tap. **All** restores every level; **None** hides the whole category. Each category keeps its own independent level selection. A small dot marks any circle that has a level filter applied, a **Level Filtering** chip joins the filter status strip (hover to see each category's kept levels, ✕ to clear them all), and **⊗ Clear All** sweeps it up with every other filter. Level filtering applies to both the map dots and the region distance matrix, exactly like the category filter.
 
-### 💰 Airports For Sale
-Airports listed for sale in the [SimFly user marketplace](https://simfly.io/marketplace/users/airports) are flagged automatically. Any for-sale airport shows a **💰 Listed for sale** line in its tooltip — **double right-click** a for-sale airport dot to open its marketplace listing in a new tab — and **💰 For Sale Only** in the **👁 Display** menu filters the map (and the region distance matrix) down to just the airports currently for sale — it gets its own chip in the filter status strip, is swept up by ⊗ Clear All, and stacks with every other filter (including the Random Flight "currently shown" option). The list refreshes every hour through the same pipeline that feeds owner colors, categories, and levels. *(For Sale is a desktop feature and is not shown on the mobile version.)*
+### Airport Rotations
+Every SimFly airport has a weekly pool of flight **rotations** — the number of times it can be flown into before its traffic resets for the week — and the pool grows with the airport's level. **🔄 Display Rotations** in the **👁 Display** menu (on by default) turns the **dot's outline into a fuel gauge** for what's left this week. Because what matters for planning is whether an airport is running *low*, the outline only depletes in the danger zone: an airport with **10 or more rotations remaining** shows a full 3 px black ring; once it drops below 10 the ring shrinks anti-clockwise from 12 o'clock as a percentage of 10 (about 90 % of the ring at 9 left, half at 5, and so on); and an airport with **zero rotations left has no outline at all** — so the airports to avoid this week are simply the ones with no ring. Toggle the gauge from the 👁 Display menu or by **middle-clicking anywhere on the map**.
+
+Every airport's exact count is shown wherever you inspect it: the dot hover tooltip reads *ICAO · Cat n · Lvl n · (remaining / total)*, the detailed tooltip and the right-click Quick-Rate card both carry a *Rotations: X / Y left this week* line, all colour-coded (green = 10+ left, amber = fewer than 10, red = none). The new **🔄 Rotations Left Only** filter in the 👁 Display menu hides airports that have exhausted their rotations for the week.
+
+**Low-rotation warnings (3 or fewer left)** — when a departure/arrival pair is selected, the on-map distance label adds a red **⚠ Low rotations** note naming any endpoint that's down to 3 or fewer, and a yellow **⚠** badge appears on both **File on SimBrief** buttons (the main button and the floating map route pill). Clicking File on SimBrief then shows a confirmation first if either endpoint is at 3 or fewer — listing the airport and its remaining count — before the new-pilot-codes prompt; cancel to back out, or *File Anyway →* to continue. Rotation data refreshes hourly through the same pipeline that feeds owner colours, categories, and levels.
+
+### 🏷 Airports For Sale
+Airports listed for sale in the [SimFly user marketplace](https://simfly.io/marketplace/users/airports) are flagged automatically. Any for-sale airport shows a **🏷 Listed for sale** line in its tooltip. To open an airport's marketplace listing, **right-click the dot** and click **🏷 View sale listing on SimFly** in the Quick-Rate popover — or use the shortcut of **double right-clicking** the dot to jump straight there in a new tab. **🏷 For Sale Only** in the **👁 Display** menu filters the map (and the region distance matrix) down to just the airports currently for sale — it gets its own chip in the filter status strip, is swept up by ⊗ Clear All, and stacks with every other filter (including the Random Flight "currently shown" option). The list refreshes every hour through the same pipeline that feeds owner colors, categories, and levels. *(For Sale is a desktop feature and is not shown on the mobile version.)*
 
 ### Filter Status Strip
 A row of chips overlaid on the map to the right of the search bar shows every active filter at a glance. Chips are grouped contextually — payout-related filters sit together, scenery-related filters sit together — so you can read the map's current state without opening any panels.
@@ -173,7 +180,8 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 | **Rating ≥ N stars** | Star filter active + threshold > 0 | ✕ turns filter off |
 | **Category Filtering** | Any of the 7 map categories hidden | ✕ restores all categories |
 | **Level Filtering** | Any category has a per-level filter (v3.23.0) | ✕ clears every level filter; hover to see each category's kept levels |
-| **💰 For Sale** | The For Sale Only filter is on (v3.28.0+) | ✕ turns it off |
+| **🏷 For Sale** | The For Sale Only filter is on (v3.28.0+) | ✕ turns it off |
+| **🔄 Rotations Left** | The Rotations Left Only filter is on (v3.35.0+) | ✕ turns it off |
 | **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners; hover to see names + airport counts |
 | **[Country name]** / **N Countries** | Country filter active (via search) | ✕ clears country filter; hover "N Countries" to see list |
 | **[Continent name]** / **N Continents** | Continent filter active (via search) | ✕ clears continent filter; hover "N Continents" to see list |
@@ -421,7 +429,7 @@ Your selection is **remembered between sessions** — the aircraft, fuel%, and p
 When a pilot's SimFly profile URL is on record, their name becomes a clickable link in the matrix tooltips, Distance Map info cards, and the owner dropdown panels.
 
 ### Airport Info & External Links
-Click any ICAO to open a tooltip with the airport's SimFly **category and level**, runway details, surface type, elevation, and direct links to external resources. Airports listed for sale also show a **💰 Listed for sale** marker.
+Click any ICAO to open a tooltip with the airport's SimFly **category and level**, **rotations remaining this week**, runway details, surface type, elevation, and direct links to external resources. Airports listed for sale also show a **🏷 Listed for sale** marker.
 
 ### Light Mode
 Toggle dark / light mode with the button in the top-right corner. Light mode uses a darker accessible color palette for ICAO category labels (crimson, burnt orange, dark gold, forest green, dark teal, royal blue, dark magenta) ensuring clear contrast on the cream background.
