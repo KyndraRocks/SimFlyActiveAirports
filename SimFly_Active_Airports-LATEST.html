@@ -4535,6 +4535,21 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-meta-input:hover  { border-color:rgba(0,200,255,0.45); }
   .sl-meta-input:focus  { border-color:var(--accent); }
   .sl-meta-input::placeholder { color:var(--muted); opacity:0.55; }
+  /* ── Per-airport Notes (v3.38.0) — collapsible free-text, ≤1024 chars.
+     Shared by the Scenery Library rows and the Quick-Rate popover. Collapsed to
+     a ▶ disclosure by default; ▼ when expanded. */
+  .sl-notes { margin-top:0.35rem; }
+  .sl-row-notes { padding-left:1.5rem; }
+  .sl-notes-toggle { display:inline-flex; align-items:center; gap:0.3rem; background:none; border:none; padding:0.1rem 0; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:1.05rem; font-weight:600; color:var(--muted); }
+  .sl-notes-toggle:hover { color:var(--accent); }
+  .sl-notes-tri { font-size:0.78em; width:0.9em; display:inline-block; text-align:center; }
+  .sl-notes-dot { color:var(--accent); font-size:0.7em; margin-left:0.15rem; }
+  .sl-notes-body { margin-top:0.25rem; }
+  .sl-notes-ta { width:100%; box-sizing:border-box; min-height:3.4rem; resize:vertical; font-family:'Rajdhani',sans-serif; font-size:1.05rem; line-height:1.35; padding:0.32rem 0.55rem; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text); outline:none; }
+  .sl-notes-ta:hover  { border-color:rgba(0,200,255,0.45); }
+  .sl-notes-ta:focus  { border-color:var(--accent); }
+  .sl-notes-ta::placeholder { color:var(--muted); opacity:0.55; }
+  .sl-notes-count { text-align:right; font-family:'Rajdhani',sans-serif; font-size:0.85rem; color:var(--muted); margin-top:0.12rem; }
   /* ── Developers Modal ───────────────────────────────────────────────── */
   #developersModal { z-index:10600; }
   #developersModal .modal-body { display:flex; flex-direction:column; }
@@ -8352,7 +8367,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.37.0';
+const APP_VERSION = '3.38.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -26870,12 +26885,15 @@ function _slAdd(entry) {
   // shift-click / dot click doesn't wipe out user-attributed store/dev metadata).
   const store     = (entry.store     !== undefined ? entry.store     : (prev && prev.store)     || '');
   const developer = (entry.developer !== undefined ? entry.developer : (prev && prev.developer) || '');
+  // notes preserved like store/developer so a partial _slAdd (shift-click /
+  // dot-click) never wipes user-entered notes. Clamped to 1024 chars.
+  const notes     = (entry.notes     !== undefined ? entry.notes     : (prev && prev.notes)     || '');
   const norm = {
     icao: u,
     addon: entry.addon || '',
     type:  entry.type  || '',
     sim:   entry.sim   || '',
-    notes: entry.notes || '',
+    notes: _slClampNotes(notes),
     rating: _slClampRating(rating),
     store, developer,
   };
@@ -26889,6 +26907,13 @@ function _slClampRating(r) {
   if (n <= 0) return 0;
   if (n >= 5) return 5;
   return Math.round(n * 2) / 2;
+}
+// v3.38.0 — per-airport free-text Notes (≤ 1024 chars). Escaping helper for
+// textarea content (used by both the library rows and the Quick-Rate popover).
+const _SL_NOTES_MAX = 1024;
+function _slClampNotes(s) { return String(s == null ? '' : s).slice(0, _SL_NOTES_MAX); }
+function _slEscHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 // Set store / developer attribution on a library entry. Mirrors _slSetRating's
 // semantics: if the airport isn't yet in the library, setting a value adds it
@@ -26938,6 +26963,29 @@ function _slSetDeveloper(icao, val) {
     _rgApplySceneryState();
   }
   _slRefreshDevFilterUI();
+}
+
+// Set the free-text notes on a library entry (≤ 1024 chars). Mirrors _slSetStore:
+// auto-adds the airport (and enables Highlight) if a non-empty note is set on a
+// non-library airport. Notes don't surface in the dot tooltip, so no map refresh.
+function _slSetNotes(icao, val) {
+  const arr = _slLoad();
+  const u   = (icao || '').toUpperCase();
+  const v   = _slClampNotes(val);
+  const idx = arr.findIndex(e => e.icao.toUpperCase() === u);
+  if (idx < 0) {
+    if (!v.trim()) return;
+    arr.push({ icao: u, addon: '', type: '', sim: '', notes: v, rating: 0, store: '', developer: '' });
+    if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
+    _slShowToast(u + ' added to Scenery Library');
+    _slUpdateToggles();
+  } else {
+    arr[idx] = { ...arr[idx], notes: v };
+  }
+  _slSave(arr);
+  _slDirty++;
+  _slDirtyIcaos.add(u);
+  _slSetBannerVisible(_slDirty);
 }
 
 function _slSetRating(icao, rating) {
@@ -27348,6 +27396,18 @@ function _slRenderList(query) {
           `<label class="sl-meta-lbl" title="Scenery developer / publisher">Dev</label>` +
           `<input type="text" class="sl-meta-input" list="slDevOptions" value="${devVal}" placeholder="—" ` +
             `data-icao="${e.icao}" onchange="_slDevInput(this)" onkeydown="_slMetaTab(event,'slDevOptions')" autocomplete="off" spellcheck="false">` +
+        `</div>` +
+        `<div class="sl-notes sl-row-notes">` +
+          `<button type="button" class="sl-notes-toggle" onclick="_slToggleNotes(this)" aria-expanded="false" title="Show / hide notes for this airport">` +
+            `<span class="sl-notes-tri">▶</span>Notes` +
+            ((e.notes && e.notes.trim()) ? `<span class="sl-notes-dot" title="Notes saved">●</span>` : '') +
+          `</button>` +
+          `<div class="sl-notes-body" hidden>` +
+            `<textarea class="sl-notes-ta" maxlength="${_SL_NOTES_MAX}" rows="3" spellcheck="true" ` +
+              `placeholder="Notes about this scenery (up to ${_SL_NOTES_MAX} characters)…" ` +
+              `data-icao="${e.icao}" oninput="_slNotesCount(this)" onchange="_slNotesInput(this)">${_slEscHtml(e.notes || '')}</textarea>` +
+            `<div class="sl-notes-count">${(e.notes || '').length} / ${_SL_NOTES_MAX}</div>` +
+          `</div>` +
         `</div>`;
       list.appendChild(li);
     });
@@ -27390,6 +27450,39 @@ function _slDevInput(inp) {
   inp.value  = val;
   _slSetDeveloper(icao, val);
   _slRefreshDatalists();
+}
+// Notes textarea (library rows) — persist on change (blur / Enter is not used in
+// a textarea, so this fires on blur). Value preserved verbatim aside from the
+// 1024-char clamp inside _slSetNotes.
+function _slNotesInput(ta) {
+  if (!ta) return;
+  _slSetNotes(ta.dataset.icao, ta.value);
+}
+// Live character counter on the notes textarea.
+function _slNotesCount(ta) {
+  if (!ta) return;
+  const c = ta.parentElement && ta.parentElement.querySelector('.sl-notes-count');
+  if (c) c.textContent = ta.value.length + ' / ' + _SL_NOTES_MAX;
+}
+// Collapsible Notes disclosure — shared by the library rows and the Quick-Rate
+// popover. Collapsed shows ▶; expanded shows ▼ (global SimFly convention). The
+// body is the toggle button's next sibling.
+function _slToggleNotes(btn) {
+  if (!btn) return;
+  const body = btn.nextElementSibling;
+  if (!body) return;
+  const tri = btn.querySelector('.sl-notes-tri');
+  if (body.hasAttribute('hidden')) {
+    body.removeAttribute('hidden');
+    if (tri) tri.textContent = '▼';
+    btn.setAttribute('aria-expanded', 'true');
+    const ta = body.querySelector('textarea');
+    if (ta) ta.focus();
+  } else {
+    body.setAttribute('hidden', '');
+    if (tri) tri.textContent = '▶';
+    btn.setAttribute('aria-expanded', 'false');
+  }
 }
 
 // Tab key on the Store / Developer inputs autocompletes to the topmost matching
@@ -30441,6 +30534,10 @@ function _rgRefreshRatePopover() {
   const rating  = slEntry ? (+slEntry.rating || 0) : 0;
   const store   = slEntry ? (slEntry.store || '') : '';
   const dev     = slEntry ? (slEntry.developer || '') : '';
+  const notes   = slEntry ? (slEntry.notes || '') : '';
+  // v3.38.0 — the popover opens the Notes field already expanded when a note
+  // exists, so saved notes are visible without a click; empty stays collapsed.
+  const notesOpen = !!(notes && notes.trim());
   const isOwned = _slGetOwnedIcaos().has(icao);
   const extSvg  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,1.5 10.5,1.5 10.5,5.5"/><line x1="10.5" y1="1.5" x2="5" y2="7"/><polyline points="5,2.5 1.5,2.5 1.5,10.5 9.5,10.5 9.5,7"/></svg>`;
   const storeSugg = _slGetStoreSuggestions().map(v => `<option value="${esc(v)}"></option>`).join('');
@@ -30483,6 +30580,18 @@ function _rgRefreshRatePopover() {
         `<label class="rg-rate-field-lbl">Developer</label>` +
         `<input class="rg-rate-field-inp" list="rgPopDevOpts" value="${esc(dev)}" placeholder="e.g. Orbx"` +
         ` onchange="_slSetDeveloper('${icao}',this.value);_rgUpdatePopoverDisk()">` +
+      `</div>` +
+      `<div class="sl-notes">` +
+        `<button type="button" class="sl-notes-toggle" onclick="_slToggleNotes(this)" aria-expanded="${notesOpen ? 'true' : 'false'}" title="Show / hide notes for this airport">` +
+          `<span class="sl-notes-tri">${notesOpen ? '▼' : '▶'}</span>Notes` +
+          (notesOpen ? `<span class="sl-notes-dot" title="Notes saved">●</span>` : '') +
+        `</button>` +
+        `<div class="sl-notes-body"${notesOpen ? '' : ' hidden'}>` +
+          `<textarea class="sl-notes-ta" maxlength="${_SL_NOTES_MAX}" rows="3" spellcheck="true" ` +
+            `placeholder="Notes (up to ${_SL_NOTES_MAX} characters)…" ` +
+            `oninput="_slNotesCount(this)" onchange="_slSetNotes('${icao}',this.value);_rgUpdatePopoverDisk()">${_slEscHtml(notes)}</textarea>` +
+          `<div class="sl-notes-count">${notes.length} / ${_SL_NOTES_MAX}</div>` +
+        `</div>` +
       `</div>` +
     `</div>` +
     `<div class="rg-rate-ext-links">` +
@@ -37984,10 +38093,11 @@ function rgSendToFlightPlanner() {
             <strong>FS Addon Compare import</strong> (⋯ menu): select a <code>.har</code> file captured from the FS Addon Compare website. Open FS Addon Compare → My Library in Chrome/Edge, open DevTools (F12) → Network tab, reload the page, then export and save as HAR.<br/><br/>
             <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
-            The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
+            The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. A collapsible <strong>▶ Notes</strong> field is here too — click the triangle to expand it and jot a free-text note (up to 1,024 characters); a ● beside the label marks airports that already have one. When a note already exists, the popover opens with it expanded so you see it without a click. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
             For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
             <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
+            <strong>Notes</strong> — each library row also has a collapsible <strong>▶ Notes</strong> disclosure beneath the Store / Dev inputs (kept minimised until you click the triangle). Expand it to record a free-text note of up to 1,024 characters — install quirks, version numbers, reminders — with a live character counter. Notes are saved to local storage and round-trip through Save / Load Scenery Library. The same field appears in the right-click Quick-Rate popover.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
             <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
             <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button in the Scenery Library footer to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort. Click a developer row to expand or collapse their airport list; click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer.<br/><br/>
@@ -38196,8 +38306,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.37.0</span>
+          <span class="release-version">v3.38.0</span>
           <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Per-airport scenery Notes.</strong> Each airport in your Scenery Library can now carry a free-text note (up to 1,024 characters) — handy for install quirks, version numbers, or reminders. Notes are saved with the library and round-trip through Save / Load Scenery Library.</li>
+          <li><strong>Notes appear in two places.</strong> A <strong>▶ Notes</strong> disclosure sits in each Scenery Library row and in the right-click Quick-Rate popover. Click the triangle to expand the field for entry or editing (it becomes <strong>▼</strong>); a small ● next to the label marks airports that already have a note. The popover opens with the note <strong>already expanded</strong> when one exists, so saved notes are visible at a glance — library rows stay collapsed to keep the list compact.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.37.0</span>
+          <span class="release-date">June 21, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
