@@ -3360,19 +3360,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     width:6px; height:6px; border-radius:50%;
     background:#ffc107; box-shadow:0 0 4px rgba(255,193,7,0.7);
   }
-  /* Same status dot on the FSUIPC Tracking… menu row */
+  /* FSUIPC row status dot — v3.36.2 sits in the same right-justified trailing
+     slot as the menu checkmarks (was absolute-positioned at a different offset).
+     A 1.1em flex box with the 6px dot drawn centered via radial-gradient, so the
+     live / no-signal dot lines up with the ✓ column on the other Live rows. */
   #fsuipcLiveBtn { position:relative; }
+  #fsuipcLiveBtn.has-active::after,
+  #fsuipcLiveBtn.live-no-signal::after {
+    content:''; flex:0 0 auto; align-self:center;
+    min-width:1.1em; height:1em; margin-left:0.5em;
+  }
   #fsuipcLiveBtn.has-active::after {
-    content:''; position:absolute; top:50%; right:8px;
-    transform:translateY(-50%);
-    width:6px; height:6px; border-radius:50%;
-    background:#00e676; box-shadow:0 0 4px rgba(0,230,118,0.7);
+    background:radial-gradient(circle at center, #00e676 0 3px, transparent 3.5px);
+    filter:drop-shadow(0 0 3px rgba(0,230,118,0.7));
   }
   #fsuipcLiveBtn.live-no-signal::after {
-    content:''; position:absolute; top:50%; right:8px;
-    transform:translateY(-50%);
-    width:6px; height:6px; border-radius:50%;
-    background:#ffc107; box-shadow:0 0 4px rgba(255,193,7,0.7);
+    background:radial-gradient(circle at center, #ffc107 0 3px, transparent 3.5px);
+    filter:drop-shadow(0 0 3px rgba(255,193,7,0.7));
   }
   .rg-pulldown {
     position:absolute;
@@ -3427,6 +3431,57 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     pointer-events:auto; /* keep tooltip working */
   }
   .rg-pulldown-row.disabled:hover { background:transparent !important; color:inherit !important; }
+
+  /* ── 👁 Display menu — grouped layout (v3.36.0) ───────────────────────────
+     Small uppercase caption rows label each functional group ("Overlays" /
+     "Filters"); a .rg-pulldown-sep divides them. Captions are inert. */
+  .rg-pulldown-cap {
+    font-family:'Orbitron',sans-serif;
+    font-size:0.58rem;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--muted);
+    opacity:0.7;
+    padding:0.1rem 0.45rem 0.05rem;
+    margin-top:0.1rem;
+    pointer-events:none;
+    user-select:none;
+  }
+  .rg-pulldown .rg-pulldown-cap:first-child { margin-top:0; }
+
+  /* Active pulldown items (Display / Tools / Live menus) are flagged with a
+     right-aligned green tick instead of the filled cyan highlight — cleaner,
+     and the ticks line up in their own reserved right gutter across every row.
+     The .active class is still toggled by all the sync functions; only its
+     appearance changes. v3.36.0 — applied across the Display, Tools, and Live
+     menus for app-wide consistency. */
+  .rg-pulldown .rg-pulldown-row.active {
+    background:rgba(255,255,255,0.04);
+    border-color:var(--border);
+    color:var(--text);
+  }
+  body.light-mode .rg-pulldown .rg-pulldown-row.active {
+    background:rgba(0,0,0,0.03);
+  }
+  .rg-pulldown .rg-pulldown-row.active:hover {
+    border-color:var(--accent);
+    color:var(--accent);
+  }
+  /* Right-justified trailing indicator slot. The checkmark only renders on
+     active rows — combined with the label's flex:1, every trailing indicator
+     (✓, FSUIPC status dot, mobile-alert counter) lands at the same right edge,
+     so the indicator column is consistent across the menu. v3.36.2 dropped the
+     always-on empty gutter (it pushed margin-left:auto badges off the edge). */
+  .rg-pulldown .rg-pulldown-row.active::after {
+    content:'\2713';
+    flex:0 0 auto;
+    min-width:1.1em;
+    margin-left:0.5em;
+    text-align:center;
+    font-weight:700;
+    color:#37d637;
+  }
+  body.light-mode .rg-pulldown .rg-pulldown-row.active::after { color:#138a13; }
 
   /* Floating measurement toolbar — appears over the map when measurement
      mode is active. Replaces the inline Distance Ring / Clear All buttons
@@ -4033,6 +4088,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-btn-close { border-color:rgba(255,61,90,0.35); color:var(--danger); }
   .rg-btn-close:hover { background:rgba(255,61,90,0.1) !important; border-color:var(--danger) !important; color:var(--danger) !important; }
   .rg-btn.active { background:rgba(0,200,255,0.18); border-color:var(--accent); color:var(--accent); }
+  /* Dismiss ✕ on the 🎲 Re-roll header button (v3.36.1). A span inside the
+     button with its own click handler (stopPropagation prevents a re-roll);
+     hides the whole Re-roll button for the rest of the session. */
+  .rg-reroll-btn .rg-reroll-x {
+    margin-left:0.55em; padding:0 0.2em; font-size:0.82em; line-height:1;
+    color:var(--muted); border-radius:3px; cursor:pointer;
+    border-left:1px solid var(--border); padding-left:0.45em;
+  }
+  .rg-reroll-btn .rg-reroll-x:hover { color:var(--danger); background:rgba(255,61,90,0.12); }
   .rg-sort-dot { position:absolute; top:2px; right:9px; font-size:1.02rem; background:none; border:none; color:var(--muted); cursor:pointer; padding:0; line-height:1; opacity:0.45; z-index:5; }
   .rg-sort-dot:hover { opacity:1; color:var(--accent); }
   .rg-sort-dot.active { opacity:1; color:var(--accent); }
@@ -4118,7 +4182,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Specificity override needed to beat Leaflet's default white background */
   .leaflet-tooltip.rg-dot-tip { background:rgba(0,8,18,0.96); border:1px solid rgba(0,200,255,0.65); border-radius:5px; padding:0.53rem 1.05rem; white-space:nowrap; box-shadow:0 2px 14px rgba(0,0,0,0.85), 0 0 6px rgba(0,200,255,0.15); pointer-events:none; color:#dff0ff; user-select:none; }
   .leaflet-tooltip.rg-dot-tip.leaflet-tooltip-top::before { border-top-color:rgba(0,8,18,0.96); }
-  #rgNewAirportsBtn.active { background:var(--aa-new-bg); border-color:var(--aa-new-color); color:#fff; }
+  /* v3.36.2 — New Airports no longer paints a pulse-colored highlight when
+     active; the green ✓ in the Display menu is the sole on indicator, matching
+     every other toggle. (The mobile direct button still uses its own contrast
+     styling.) */
   .rg-dt-new  { display:block; background:var(--aa-new-color); color:#fff; font-family:'Orbitron',monospace; font-size:0.7rem; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; padding:0.22rem 0.6rem; border-radius:4px; margin-bottom:0.4rem; text-align:center; }
   .rg-dt-icao { font-family:'Courier New',Courier,monospace; font-size:1.58rem; font-weight:700; color:#fff; }
   .rg-dt-cat  { font-family:'Rajdhani',sans-serif; font-size:1.28rem; color:rgba(180,220,255,0.75); margin-left:0.45rem; }
@@ -4987,14 +5054,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     line-height:18px; text-align:center; align-self:center; flex-shrink:0;
   }
   .ma-menu-badge.show { display:inline-flex; align-items:center; justify-content:center; }
-  /* v3.33.0 — Auto-load Default Alerts toggle badge in Live menu */
-  .afk-auto-badge {
-    margin-left:auto; padding:0 6px; height:18px;
-    background:rgba(255,255,255,0.12); color:rgba(255,255,255,0.45);
-    border-radius:9px; font-family:'Rajdhani',sans-serif; font-size:0.78rem;
-    font-weight:700; line-height:18px; text-align:center; align-self:center; flex-shrink:0;
-  }
-  .afk-auto-badge--on { background:rgba(80,220,120,0.22); color:#50dc78; }
+  /* v3.36.2 — the Auto-load Default Alerts row now uses the standard green ✓
+     (checkmark = on) like every other toggle, replacing the old ON/OFF badge. */
   /* v3.33.0 — Chooser card default-alerts checkbox row */
   .aa-choice-default-wrap {
     margin-top:0.55rem; padding-top:0.45rem;
@@ -7297,19 +7358,21 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
        mostly-transparent background) and a vivid on state (saturated
        background + bright border + glow). v3.19.18 applied this to
        #rgMobileNewAirportsBtn only; v3.19.20 extends to the sibling
-       display toggles #rgPayoutBtn (💰) and #rgStarFilterBtn (⭐)
-       so all three toggles share the same visual state language. */
+       display toggles #rgMobilePayoutBtn (💰) and #rgMobileRatingBtn (⭐)
+       so all three toggles share the same visual state language.
+       v3.36.0 — Payout / Rating now live in the 👁 Display menu on desktop;
+       these selectors target their mobile-only right-band twins. */
     .rg-hdr-right #rgMobileNewAirportsBtn,
-    .rg-hdr-right #rgPayoutBtn,
-    .rg-hdr-right #rgStarFilterBtn {
+    .rg-hdr-right #rgMobilePayoutBtn,
+    .rg-hdr-right #rgMobileRatingBtn {
       border-color: rgba(255, 255, 255, 0.18) !important;
       background: rgba(255, 255, 255, 0.04) !important;
       color: rgba(255, 255, 255, 0.45) !important;
       opacity: 0.78;
     }
     .rg-hdr-right #rgMobileNewAirportsBtn.active,
-    .rg-hdr-right #rgPayoutBtn.active,
-    .rg-hdr-right #rgStarFilterBtn.active {
+    .rg-hdr-right #rgMobilePayoutBtn.active,
+    .rg-hdr-right #rgMobileRatingBtn.active {
       border-color: var(--accent) !important;
       background: rgba(0, 200, 255, 0.22) !important;
       color: var(--accent) !important;
@@ -7317,15 +7380,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       box-shadow: 0 0 8px rgba(0, 200, 255, 0.45);
     }
     body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn,
-    body.light-mode .rg-hdr-right #rgPayoutBtn,
-    body.light-mode .rg-hdr-right #rgStarFilterBtn {
+    body.light-mode .rg-hdr-right #rgMobilePayoutBtn,
+    body.light-mode .rg-hdr-right #rgMobileRatingBtn {
       border-color: rgba(0, 0, 0, 0.18) !important;
       background: rgba(0, 0, 0, 0.04) !important;
       color: rgba(0, 0, 0, 0.45) !important;
     }
     body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn.active,
-    body.light-mode .rg-hdr-right #rgPayoutBtn.active,
-    body.light-mode .rg-hdr-right #rgStarFilterBtn.active {
+    body.light-mode .rg-hdr-right #rgMobilePayoutBtn.active,
+    body.light-mode .rg-hdr-right #rgMobileRatingBtn.active {
       border-color: var(--accent) !important;
       background: rgba(0, 120, 180, 0.18) !important;
       color: var(--accent) !important;
@@ -7847,18 +7910,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     /* (7) Display-toggle button on/off contrast — neutral off,
        vivid on. The default .rg-btn cyan-tinted border made both
        states look similar to touch users. Same treatment as
-       v3.19.18 / v3.19.20 / v3.19.19's light-mode equivalents. */
+       v3.19.18 / v3.19.20 / v3.19.19's light-mode equivalents.
+       v3.36.0 — targets the mobile-only Payout / Rating twins. */
     .rg-hdr-right #rgMobileNewAirportsBtn,
-    .rg-hdr-right #rgPayoutBtn,
-    .rg-hdr-right #rgStarFilterBtn {
+    .rg-hdr-right #rgMobilePayoutBtn,
+    .rg-hdr-right #rgMobileRatingBtn {
       border-color: rgba(255, 255, 255, 0.18) !important;
       background: rgba(255, 255, 255, 0.04) !important;
       color: rgba(255, 255, 255, 0.45) !important;
       opacity: 0.78;
     }
     .rg-hdr-right #rgMobileNewAirportsBtn.active,
-    .rg-hdr-right #rgPayoutBtn.active,
-    .rg-hdr-right #rgStarFilterBtn.active {
+    .rg-hdr-right #rgMobilePayoutBtn.active,
+    .rg-hdr-right #rgMobileRatingBtn.active {
       border-color: var(--accent) !important;
       background: rgba(0, 200, 255, 0.22) !important;
       color: var(--accent) !important;
@@ -7866,15 +7930,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       box-shadow: 0 0 8px rgba(0, 200, 255, 0.45);
     }
     body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn,
-    body.light-mode .rg-hdr-right #rgPayoutBtn,
-    body.light-mode .rg-hdr-right #rgStarFilterBtn {
+    body.light-mode .rg-hdr-right #rgMobilePayoutBtn,
+    body.light-mode .rg-hdr-right #rgMobileRatingBtn {
       border-color: rgba(0, 0, 0, 0.18) !important;
       background: rgba(0, 0, 0, 0.04) !important;
       color: rgba(0, 0, 0, 0.45) !important;
     }
     body.light-mode .rg-hdr-right #rgMobileNewAirportsBtn.active,
-    body.light-mode .rg-hdr-right #rgPayoutBtn.active,
-    body.light-mode .rg-hdr-right #rgStarFilterBtn.active {
+    body.light-mode .rg-hdr-right #rgMobilePayoutBtn.active,
+    body.light-mode .rg-hdr-right #rgMobileRatingBtn.active {
       border-color: var(--accent) !important;
       background: rgba(0, 120, 180, 0.18) !important;
       color: var(--accent) !important;
@@ -8281,7 +8345,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.35.4';
+const APP_VERSION = '3.36.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -19794,13 +19858,12 @@ function _afkUpdateDefaultsUI() {
   // Alerts modal footer button
   const btn = document.getElementById('afkSetDefaultBtn');
   if (btn) btn.textContent = hasD ? '⭐ Default (' + count + ')' : '⭐ Set Default';
-  // Live menu toggle row
-  const liveRow   = document.getElementById('afkAutoDefaultsRow');
-  const liveBadge = document.getElementById('afkAutoDefaultsBadge');
-  if (liveRow)   liveRow.style.display = hasD ? '' : 'none';
-  if (liveBadge) {
-    liveBadge.textContent = autoOn ? 'ON' : 'OFF';
-    liveBadge.className   = 'afk-auto-badge' + (autoOn ? ' afk-auto-badge--on' : '');
+  // Live menu toggle row — v3.36.2: green ✓ (checkmark = on) via the standard
+  // .active treatment, replacing the old ON/OFF badge.
+  const liveRow = document.getElementById('afkAutoDefaultsRow');
+  if (liveRow) {
+    liveRow.style.display = hasD ? '' : 'none';
+    liveRow.classList.toggle('active', autoOn);
   }
   // Chooser screen checkbox
   const chkWrap = document.getElementById('afkChoiceDefaultWrap');
@@ -30831,6 +30894,15 @@ function _rgRandShowReroll() {
   const btn = document.getElementById('rgRerollBtn');
   if (btn) btn.style.display = '';
 }
+// v3.36.1 — dismiss the header Re-roll button via its right-side ✕. Resets the
+// session flag so it stays hidden until the next random flight is generated
+// (a fresh Tools-menu roll calls _rgRandShowReroll again).
+function _rgRandHideReroll(e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  _rgRandRerolled = false;
+  const btn = document.getElementById('rgRerollBtn');
+  if (btn) btn.style.display = 'none';
+}
 
 function _rgRandomGenerate() {
   if (!_rgMap) { if (typeof _aaRtToast === 'function') _aaRtToast('Open the map to generate a random flight.', 'warn'); return; }
@@ -33833,6 +33905,24 @@ function _rgNewApSaveAndClose() {
   if (modal) modal.remove();
 }
 
+// v3.36.0 — 💰 Payout and ⭐ Rating now live in the 👁 Display menu (desktop)
+// with a mobile-only direct twin in the right band. Both must reflect mode
+// state: the Display-menu row shows a green tick (#rgDisplayMenu CSS), the
+// mobile twin shows the cyan .active highlight. These helpers toggle the pair
+// together so the two stay in sync wherever the old code flipped .active.
+function _rgSetPayoutActive(on) {
+  ['rgPayoutBtn', 'rgMobilePayoutBtn'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('active', !!on);
+  });
+}
+function _rgSetStarActive(on) {
+  ['rgStarFilterBtn', 'rgMobileRatingBtn'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('active', !!on);
+  });
+}
+
 function _rgTogglePayoutMode(preserveFilter) {
   // Suppress the synthesised click that follows a long-press on the Payout
   // button (long-press opens the palette editor via contextmenu, then the
@@ -33849,15 +33939,13 @@ function _rgTogglePayoutMode(preserveFilter) {
   const legendEl = document.getElementById('rgPayoutLegend');
   if (_rgPayoutMode && legendEl && legendEl.style.display === 'none') {
     legendEl.style.display = '';
-    const _rpBtn = document.getElementById('rgPayoutBtn');
-    if (_rpBtn) _rpBtn.classList.add('active');
+    _rgSetPayoutActive(true);
     _rgPayoutSyncBarGrad();
     _rgRepositionFilterPanels();
     return;
   }
   _rgPayoutMode = !_rgPayoutMode;
-  const btn = document.getElementById('rgPayoutBtn');
-  if (btn) btn.classList.toggle('active', _rgPayoutMode);
+  _rgSetPayoutActive(_rgPayoutMode);
   const legend = document.getElementById('rgPayoutLegend');
   if (legend) legend.style.display = _rgPayoutMode ? '' : 'none';
   // v2.98.0 — keep the gradient bar painted from the user's palette.
@@ -34189,8 +34277,7 @@ function _rgStarFiltCheck(icao) {
 function _rgClearStarFilter() {
   if (!_rgStarFilterMode && _rgStarFilter === 0) return;
   _rgStarFilterMode = false;
-  const btn = document.getElementById('rgStarFilterBtn');
-  if (btn) btn.classList.remove('active');
+  _rgSetStarActive(false);
   const leg = document.getElementById('rgStarFilterLegend');
   if (leg) leg.style.display = 'none';
   if (_rgStarFilter > 0) {
@@ -34211,14 +34298,12 @@ function _rgToggleStarFilter() {
   const legEl = document.getElementById('rgStarFilterLegend');
   if (_rgStarFilterMode && legEl && legEl.style.display === 'none') {
     legEl.style.display = '';
-    const _sfBtn = document.getElementById('rgStarFilterBtn');
-    if (_sfBtn) _sfBtn.classList.add('active');
+    _rgSetStarActive(true);
     _rgRepositionFilterPanels();
     return;
   }
   _rgStarFilterMode = !_rgStarFilterMode;
-  const btn = document.getElementById('rgStarFilterBtn');
-  if (btn) btn.classList.toggle('active', _rgStarFilterMode);
+  _rgSetStarActive(_rgStarFilterMode);
   const leg = document.getElementById('rgStarFilterLegend');
   if (leg) leg.style.display = _rgStarFilterMode ? '' : 'none';
   if (!_rgStarFilterMode && _rgStarFilter > 0) {
@@ -34238,12 +34323,11 @@ function _rgToggleStarFilter() {
 // mirrors panel visibility (chip visible ↔ button active). The button regains
 // .active when the panel is re-opened via the button's own click handler.
 function _rgHideFilterPanel(which) {
-  const id    = which === 'star' ? 'rgStarFilterLegend' : 'rgPayoutLegend';
-  const btnId = which === 'star' ? 'rgStarFilterBtn'    : 'rgPayoutBtn';
+  const id = which === 'star' ? 'rgStarFilterLegend' : 'rgPayoutLegend';
   const el = document.getElementById(id);
   if (el) el.style.display = 'none';
-  const btn = document.getElementById(btnId);
-  if (btn) btn.classList.remove('active');
+  // v3.36.0 — dim both the Display-menu row and the mobile twin.
+  if (which === 'star') _rgSetStarActive(false); else _rgSetPayoutActive(false);
   _rgRepositionFilterPanels();
 }
 
@@ -37586,7 +37670,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
             If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
-            After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them).<br/><br/>
+            After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them). Click the small <strong>✕</strong> on its right to dismiss it; it returns the next time you create a random flight.<br/><br/>
             <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
           </div>
         </div>
@@ -37813,7 +37897,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Airports added to SimFly within a configurable window (14 days by default) are highlighted on the map with a pulsing ring and a <strong>✦ New Airport</strong> banner in their tooltip. The ring is a double radar-sweep animation that radiates outward from the dot — noticeable without being distracting.<br/><br/>
             The ring disappears automatically once the airport ages past your configured window — no manual upkeep needed. The date each airport first appeared is recorded by the hourly data pipeline.<br/><br/>
-            <strong>Toggle visibility</strong> — open the <strong>👁 Display</strong> menu and left-click <strong>✦ Display New Airports</strong> to show or hide the indicators. The item only appears when new airports are present; it is highlighted in the chosen color when active.<br/><br/>
+            <strong>Toggle visibility</strong> — open the <strong>👁 Display</strong> menu and left-click <strong>✦ Display New Airports</strong> to show or hide the indicators. The item only appears when new airports are present; a green tick on the right of the row marks it when active.<br/><br/>
             <strong>Display options</strong> — right-click <strong>✦ Display New Airports</strong> to open the options panel. Choose the ring <strong>color</strong> (8 presets or a custom picker), <strong>pulse duration</strong> (1–30 s slider, labeled Fast ↔ Slow), and how many <strong>days</strong> an airport counts as new (1–365, drag up/down to scrub). A live <strong>preview</strong> inside the panel shows the pulsing ring updating in real time as you adjust settings. All settings are saved in browser storage; a <em>Reset Defaults</em> button restores the original 14-day, 6 s magenta configuration.
           </div>
         </div>
@@ -37876,9 +37960,9 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Star Rating Filter</div>
           <div class="help-feature-desc">
-            The <strong>⭐ Rating</strong> button in the map header opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter.<br/><br/>
+            <strong>⭐ Star Rating</strong> lives in the <strong>👁 Display</strong> menu (on mobile, the <strong>⭐ Rating</strong> button in the right-hand button band). It opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter. A green tick marks the menu row while the filter is on.<br/><br/>
             The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.<br/><br/>
-            <strong>Closing the panel keeps the filter on</strong> — clicking the panel's <strong>✕</strong> just hides the panel; the rating threshold stays applied to the map and matrix. To actually turn the filter off, click the <em>Rating ≥ N stars</em> chip in the breadcrumb strip. Clicking the <strong>⭐ Rating</strong> button again re-opens the panel without changing the filter.
+            <strong>Closing the panel keeps the filter on</strong> — clicking the panel's <strong>✕</strong> just hides the panel; the rating threshold stays applied to the map and matrix. To actually turn the filter off, click the <em>Rating ≥ N stars</em> chip in the breadcrumb strip. Clicking <strong>⭐ Star Rating</strong> again re-opens the panel without changing the filter.
           </div>
         </div>
       </div>
@@ -37888,7 +37972,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Pilot Payout Map</div>
           <div class="help-feature-desc">
-            The <strong>💰 Payout</strong> button in the Region Mode header switches the map to payout-percentage coloring. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
+            <strong>💰 Payout Colors</strong> in the <strong>👁 Display</strong> menu (on mobile, the <strong>💰 Payout</strong> button in the right-hand button band) switches the map to payout-percentage coloring. A green tick marks the menu row while the mode is on. The scale is anchored so <strong>50% = yellow</strong> and <strong>60% = green</strong>, making those two values immediately distinguishable at a glance. Below that: 1–20% runs red through orange-red (the non-premium range, capped at 20%), 20–40% runs orange through amber, and 40–50% transitions from amber into yellow. Grey dots indicate airports with no payout data available.<br/><br/>
             A legend in the lower-left corner of the map shows the gradient scale while the mode is active. Click the button again to return to standard category/owner coloring.<br/><br/>
             <strong>Closing the legend keeps payout coloring on</strong> — clicking the legend's <strong>✕</strong> just hides the legend; the map keeps coloring dots by payout. To actually turn payout mode off, click the <em>Payout Colors</em> chip in the breadcrumb strip (or the <strong>💰 Payout</strong> button again with the legend visible). Clicking <strong>💰 Payout</strong> while the legend is hidden re-opens it without flipping the mode.<br/><br/>
             <strong>Quick toggle for 0% airports</strong> &mdash; click the gray dot on the legend to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue. The slider can still be used for any other threshold above 1%.<br/><br/>
@@ -38069,10 +38153,47 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.36.2</span>
+          <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Live menu indicators now line up.</strong> The checkmarks, the FSUIPC live-signal dot, and the Mobile Alerts counter are all right-justified in a single consistent column on their menu rows, instead of sitting at slightly different positions.</li>
+          <li><strong>Auto-load Default Alerts uses a checkmark.</strong> The Live-menu <em>Auto-load Default Alerts</em> row now shows a green ✓ when on (and nothing when off), matching every other toggle, in place of the old ON/OFF badge.</li>
+          <li><strong>New Airports no longer double-signals.</strong> The <em>✦ Display New Airports</em> item in the 👁 Display menu used to paint a colored highlight when active; now the green ✓ alone marks it on, consistent with the rest of the menu.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.36.1</span>
+          <span class="release-date">June 21, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The 🎲 Re-roll button can now be dismissed.</strong> Once you generate a random flight, the Re-roll button in the map header used to stay for the rest of the session with no way to remove it. It now has a small <strong>✕</strong> on its right — click it to hide the button. It reappears the next time you create a random flight from the 🛠 Tools menu.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.36.0</span>
+          <span class="release-date">June 21, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Payout and Rating moved into the 👁 Display menu.</strong> The standalone <em>💰 Payout</em> and <em>⭐ Rating</em> header buttons are gone on desktop — both now live inside the Display menu alongside the other map overlays and filters, decluttering the map header. On phones and tablets, where the Display menu is hidden, they stay available as direct buttons in the right-hand button band.</li>
+          <li><strong>Display menu reorganised into Overlays and Filters.</strong> The menu is now split into two labelled groups separated by a divider: <em>Overlays</em> (Display Levels, Display Rotations, Display New Airports, Payout Colors) for things drawn onto the map, and <em>Filters</em> (For Sale Only, Rotations Left Only, Star Rating) for things that hide airports — so related settings sit together.</li>
+          <li><strong>Active items now show a green check instead of a highlight.</strong> Across the <em>Display</em>, <em>Tools</em>, and <em>Live</em> menus, rows no longer light up with a filled cyan background when on. Instead a green ✓ appears on the right of each active row, right-justified and aligned in its own column — a cleaner, more legible on/off cue that's now consistent app-wide.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.35.4</span>
-          <span class="release-date">June 20, 2026 &middot; Current</span>
+          <span class="release-date">June 20, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -49943,17 +50064,28 @@ function rgSendToFlightPlanner() {
 
         <!-- Quick re-roll — appears after the first random flight this session.
              Left-click re-rolls with saved filters; right-click / long-press edits them. -->
-        <button class="rg-btn" id="rgRerollBtn" style="display:none" onclick="_rgRandReroll(event)" oncontextmenu="_rgRandRerollContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Re-roll a random flight with your saved filters · Right-click / long-press to change them">🎲 <span class="rg-btn-label">Re-roll</span></button>
+        <button class="rg-btn rg-reroll-btn" id="rgRerollBtn" style="display:none" onclick="_rgRandReroll(event)" oncontextmenu="_rgRandRerollContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Re-roll a random flight with your saved filters · Right-click / long-press to change them">🎲 <span class="rg-btn-label">Re-roll</span><span class="rg-reroll-x" role="button" tabindex="-1" title="Dismiss the Re-roll button" onclick="_rgRandHideReroll(event)" oncontextmenu="event.stopPropagation();event.preventDefault();" ontouchstart="event.stopPropagation();">✕</span></button>
 
         <!-- 👁 Display pulldown — visual layers / overlays (v3.29.0). -->
         <div class="rg-pulldown-wrap" id="rgDisplayWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgDisplayBtn" onclick="_rgToggleDisplayMenu(event)" title="Display menu — level badges, rotations, new airports, for-sale">👁 <span class="rg-btn-label">Display</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgDisplayMenu">
+            <!-- Group 1 — Overlays: things drawn onto the dots (additive, hide nothing). -->
+            <div class="rg-pulldown-cap">Overlays</div>
             <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none"><span class="rg-row-icon">☼</span><span class="rg-btn-label">Display Levels</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none"><span class="rg-row-icon">✦</span><span class="rg-btn-label">Display New Airports</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map. Tip: double right-click a for-sale airport dot to open its SimFly sale page."><span class="rg-row-icon">🏷</span><span class="rg-btn-label">For Sale Only</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRotationGaugeBtn" onclick="_rgToggleRotationGauge();_rgCloseAnyPulldown()" title="Toggle the rotation gauge — each airport dot's 3px black outline flags low rotations this week (full ring = 10+ left, partial ring = fewer than 10, no outline = none left). Shortcut: middle-click anywhere on the map." style="display:none"><span class="rg-row-icon">🔄</span><span class="rg-btn-label">Display Rotations</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none"><span class="rg-row-icon">✦</span><span class="rg-btn-label">Display New Airports</span></button>
+            <!-- 💰 Payout moved here from the right band (v3.36.0) — it recolours
+                 the dots, so it belongs with the overlays. Right-click / long-press
+                 still opens the palette editor. -->
+            <button class="rg-btn rg-pulldown-row" id="rgPayoutBtn" onclick="_rgTogglePayoutMode();_rgCloseAnyPulldown()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Left-click to color airports by pilot payout · Right-click to customize the palette"><span class="rg-row-icon">💰</span><span class="rg-btn-label">Payout Colors</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <!-- Group 2 — Filters: hide airports that don't match. -->
+            <div class="rg-pulldown-cap">Filters</div>
+            <button class="rg-btn rg-pulldown-row" id="rgForSaleBtn" onclick="_rgToggleForSaleFilter();_rgCloseAnyPulldown()" title="Show only airports listed for sale on the map. Tip: double right-click a for-sale airport dot to open its SimFly sale page."><span class="rg-row-icon">🏷</span><span class="rg-btn-label">For Sale Only</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRotationFilterBtn" onclick="_rgToggleRotationFilter();_rgCloseAnyPulldown()" title="Show only airports that still have flight rotations available this week" style="display:none"><span class="rg-row-icon">🔄</span><span class="rg-btn-label">Rotations Left Only</span></button>
+            <!-- ⭐ Rating moved here from the right band (v3.36.0). -->
+            <button class="rg-btn rg-pulldown-row" id="rgStarFilterBtn" onclick="_rgToggleStarFilter();_rgCloseAnyPulldown()" title="Filter airports by minimum scenery star rating"><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Star Rating</span></button>
           </div>
         </div>
 
@@ -49963,7 +50095,7 @@ function rgSendToFlightPlanner() {
           <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan</span></button>
-            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Set Default in the Alerts modal. Right-click the ⭐ Set Default button to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span><span class="afk-auto-badge" id="afkAutoDefaultsBadge">OFF</span></button>
+            <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Set Default in the Alerts modal. Right-click the ⭐ Set Default button to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
@@ -50023,8 +50155,14 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
-        <button class="rg-btn" id="rgPayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" ontouchstart="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=setTimeout(function(){_rgPayoutBtnLongPressT=null;_rgPayoutPaletteOpen(null);},600);" ontouchend="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" ontouchmove="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" title="Click to color airports by pilot payout · Right-click to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
-        <button class="rg-btn" id="rgStarFilterBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
+        <!-- v3.36.0 — 💰 Payout and ⭐ Rating moved into the 👁 Display menu on
+             desktop. The Display menu (left band) is hidden on mobile, so these
+             mobile-only twins keep both toggles reachable on phones/tablets —
+             same pattern as the ✦ New / ☼ Levels mobile buttons below. They
+             share the toggle functions with the menu rows; _rgSetPayoutActive /
+             _rgSetStarActive keep the pair's state in sync. -->
+        <button class="rg-btn rg-mobile-only" id="rgMobilePayoutBtn" onclick="_rgTogglePayoutMode()" oncontextmenu="_rgPayoutPaletteOpen(event)" ontouchstart="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=setTimeout(function(){_rgPayoutBtnLongPressT=null;_rgPayoutPaletteOpen(null);},600);" ontouchend="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" ontouchmove="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" title="Color airports by pilot payout · Long-press to customize the palette" tabindex="-1">💰 <span class="rg-btn-label">Payout</span></button>
+        <button class="rg-btn rg-mobile-only" id="rgMobileRatingBtn" onclick="_rgToggleStarFilter()" title="Filter airports by minimum scenery star rating" tabindex="-1">⭐ <span class="rg-btn-label">Rating</span></button>
         <!-- v3.19.17 — mobile-only direct toggle for "Display New Airports".
              On desktop this feature is inside the 🛠 Tools dropdown alongside
              Measurement and Select Regions. On mobile those two are hidden
