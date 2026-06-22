@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.38.0**
+**Current version: v3.39.0**
 
 ---
 
@@ -246,7 +246,7 @@ Open the interactive map and click the **🔌 Live** pulldown in the header, the
 
 **Adaptive push cadence** (v2.88.0+) — updates push every **500 ms while on the ground** (so taxi detail captures cleanly) and every **1000 ms in flight** (eases the per-second JS work for the rest of the trip). The cadence switches automatically the moment flight phase changes. The breadcrumb trail decimates by distance so cadence has no visible effect on track quality at cruise. The icon grays out automatically after 30 seconds without a fresh fix (sim paused, MSFS exited, FSUIPC stopped). As of v3.31.0 the plane icon always draws **above** every flight-path element — the SimBrief route line, waypoint markers, route labels, and its own breadcrumb trail — so it's never hidden behind the route it's flying.
 
-**Auto-connect after a flight plan loads** (v3.32.0) — once you plot a SimBrief flight plan, Active Airports quietly checks for FSUIPC about once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don't have to remember to click **FSUIPC Live** before alt-tabbing to the sim. The first time it can't find FSUIPC you get a single heads-up, then it keeps checking silently. Clicking **FSUIPC Live** yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks. Desktop only — FSUIPC needs a PC sim.
+**Auto-connect after a flight plan loads** (v3.32.0) — once you plot a SimBrief flight plan, Active Airports quietly checks for FSUIPC about once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don't have to remember to click **FSUIPC Live** before alt-tabbing to the sim. The first time it can't find FSUIPC you get a single heads-up, then it keeps checking silently. As of **v3.39.0** it also re-checks the instant you switch back to the Active Airports tab — so popping over to confirm your flight connects on the spot instead of waiting out the once-a-minute timer (browsers throttle background timers), and **touchscreen flight-sim PCs are no longer mistaken for phones/tablets and skipped**. Clicking **FSUIPC Live** yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks. Desktop only — FSUIPC needs a PC sim.
 
 **One-time setup:**
 1. Install **FSUIPC7** from [fsuipc.com](https://fsuipc.com/). The free unregistered tier is sufficient — position reads (latitude, longitude, altitude, heading, ground speed) are not paid features.
@@ -254,7 +254,7 @@ Open the interactive map and click the **🔌 Live** pulldown in the header, the
 3. Run FSUIPC7 alongside MSFS. Load any flight.
 4. In the map header open the **🔌 Live** pulldown and click **FSUIPC Live**. The button switches to **⏹ FSUIPC Tracking…** and within ~1 second your aircraft appears.
 
-Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), the app shows an error toast on the first failure and then **silently retries every 15 seconds** in the background while the button stays active — MSFS restarts don't require re-clicking, and a long-running disconnect no longer spams the toast stack on every retry.
+Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), the app shows an error toast on the first failure and then **silently retries every 15 seconds** in the background — MSFS restarts don't require re-clicking, and a long-running disconnect no longer spams the toast stack on every retry. As of **v3.39.0** the button reads **⏹ FSUIPC Reconnecting…** while it's re-establishing a dropped link (rather than falsely showing *Tracking…*) and flips back to **⏹ FSUIPC Tracking…** the moment the connection returns, so the button always reflects the real state.
 
 **Auto-resume across reloads** (v3.1.0+) — if FSUIPC tracking was active when you refresh the tab (or the browser crashes and reopens), the app silently reconnects on the next page load and restores the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were — no need to re-click **FSUIPC Live**. The auto-reconnect is quiet (no connecting / retry toasts; one confirmation toast on success) and **gives up after 2 minutes** if the sim can't be reached, so opening the app on a machine without FSUIPC running — a laptop away from the sim PC — won't retry localhost forever. Explicitly clicking **⏹ FSUIPC Tracking…** to stop clears the resume intent, so a deliberate disconnect stays disconnected across reloads.
 

@@ -8367,7 +8367,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.38.0';
+const APP_VERSION = '3.39.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -13701,16 +13701,24 @@ function _fsuipcStop() {
   if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(false);
 }
 
-function _fsuipcUpdateButtonState(active) {
+// v3.39.0 — tri-state. `active` true → connected ("Tracking…"). `active` false
+// with mode==='retrying' → an unexpected drop whose silent 15-s reconnect loop
+// is still running ("Reconnecting…"): the button stays armed (toggle-to-stop,
+// counts as enabled for the Follow button + Live dot) but no longer claims it's
+// tracking. Otherwise → idle ("FSUIPC Live"). The retrying state stops the old
+// bug where a dropped link sat on "Tracking…" with nothing connected.
+function _fsuipcUpdateButtonState(active, mode) {
   const btn = document.getElementById('fsuipcLiveBtn');
   if (!btn) return;
+  const retrying = !active && mode === 'retrying';
+  const enabled  = active || retrying;
   const lbl = btn.querySelector('.rg-btn-label');
-  if (lbl) lbl.textContent = active ? 'FSUIPC Tracking…' : 'FSUIPC Live';
-  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.nodeValue = active ? '⏹ ' : '🔌 ';
-  btn.title = active
+  if (lbl) lbl.textContent = active ? 'FSUIPC Tracking…' : (retrying ? 'FSUIPC Reconnecting…' : 'FSUIPC Live');
+  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.nodeValue = enabled ? '⏹ ' : '🔌 ';
+  btn.title = enabled
     ? 'Stop FSUIPC live-aircraft tracking'
     : 'Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 100 ms updates)';
-  btn.classList.toggle('active', active);
+  btn.classList.toggle('active', enabled);
   _liveAcUpdateFollowBtn();
   if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
 }
@@ -13796,6 +13804,7 @@ function _fsuipcOpenWs() {
     const _wasRetry = _fsuipcRetryCount > 0;
     _fsuipcRetryCount = 0;
     _fsuipcEverConnected = true;
+    _fsuipcUpdateButtonState(true); // v3.39.0 — re-light the active label after a reconnect (onclose now idles it on drop)
     // v3.1.0 — first successful open lifts the auto-resume cap, so a later
     // mid-flight socket drop retries with the normal uncapped behaviour.
     const _wasAuto = _fsuipcAutoResume;
@@ -13857,6 +13866,12 @@ function _fsuipcOpenWs() {
     _fsuipcWs = null;
     _fsuipcCurInterval = 0;
     if (!_fsuipcUserActive) return;
+    // v3.39.0 — an unexpected drop is no longer "Tracking…". Show the armed-but-
+    // disconnected "Reconnecting…" label while the silent 15-s reconnect loop
+    // retries, so the UI never falsely claims it's tracking; onopen restores the
+    // "Tracking…" label the moment a retry succeeds, and an explicit Stop / the
+    // auto-resume give-up both drop it to idle.
+    _fsuipcUpdateButtonState(false, 'retrying');
     // v2.88.0 — silent retry. The very first failure (no _liveAcMarker yet
     // AND retryCount=0) still surfaces a toast so the user knows tracking
     // didn't start; every subsequent retry is silent so a long-running
@@ -13916,16 +13931,23 @@ let _fsuipcProbeTmr       = 0;          // setInterval handle for the probe loop
 let _fsuipcProbeActive    = false;      // true while the flight-plan probe loop runs
 let _fsuipcProbeAnnounced = false;      // one-time heads-up toast, per loop, on first miss
 let _fsuipcProbeBusy      = false;      // a trial socket is currently settling
+let _fsuipcProbeWakeBound = false;      // visibility/focus wake listener attached once (v3.39.0)
 
 function _fsuipcStartAutoProbe() {
   if (_fsuipcProbeActive) return;                                            // already looping
-  if (typeof _aaIsTouchDevice === 'function' && _aaIsTouchDevice()) return;  // desktop only
+  // Desktop only — but NOT via _aaIsTouchDevice(): that also returns true for
+  // touchscreen Windows laptops/desktops (it tests 'ontouchstart'), which are
+  // exactly the FSUIPC machines we want to auto-connect. Gate on (hover: none)
+  // alone so a real pointer device (mouse/trackpad) still arms the probe even
+  // when the screen also accepts touch. (v3.39.0)
+  if (window.matchMedia && window.matchMedia('(hover: none)').matches) return; // phones/tablets only
   if (typeof WebSocket === 'undefined') return;
   // Nothing to do if FSUIPC is already connecting/tracking (manual click or a
   // reload auto-resume), or another live source (Demo) is driving the map.
   if (_fsuipcUserActive || _liveAcSource) return;
   _fsuipcProbeActive    = true;
   _fsuipcProbeAnnounced = false;
+  _fsuipcBindProbeWake();                              // v3.39.0 — catch up the instant the tab regains focus
   _fsuipcProbeTick();                                  // immediate first probe
   _fsuipcProbeTmr = setInterval(_fsuipcProbeTick, _FSUIPC_PROBE_INTERVAL);
 }
@@ -13933,6 +13955,25 @@ function _fsuipcStartAutoProbe() {
 function _fsuipcStopAutoProbe() {
   _fsuipcProbeActive = false;
   if (_fsuipcProbeTmr) { clearInterval(_fsuipcProbeTmr); _fsuipcProbeTmr = 0; }
+}
+
+// v3.39.0 — Background tabs throttle setInterval, so the 1-min probe can stall
+// exactly while the user has alt-tabbed to the sim. Re-probe the instant AA
+// regains focus/visibility so flipping back to the tab connects on the spot.
+// The listener is attached once and self-guards on _fsuipcProbeActive, so it's
+// inert whenever the probe loop isn't running.
+function _fsuipcBindProbeWake() {
+  if (_fsuipcProbeWakeBound) return;
+  _fsuipcProbeWakeBound = true;
+  const wake = () => {
+    if (!_fsuipcProbeActive) return;
+    if (document.visibilityState === 'hidden') return;
+    _fsuipcProbeTick();
+  };
+  try {
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+  } catch (_) {}
 }
 
 function _fsuipcProbeTick() {
@@ -37833,7 +37874,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Open the interactive map and click <strong>🔌 FSUIPC Live</strong> in the header bar. AA connects to <a href="http://fsuipcwebsockets.paulhenty.com/" target="_blank" rel="noopener">Paul Henty's WebSocket Server</a> running locally as part of <a href="https://fsuipc.com/" target="_blank" rel="noopener">FSUIPC7</a> and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age. Updates push every 500&nbsp;ms (2&nbsp;Hz) — smooth across a continental-scale map. The plane grays out automatically after 30 seconds without a fresh fix.<br/><br/>
 
-            <strong>Auto-connect after a flight plan loads</strong> (v3.32.0) &mdash; once you plot a SimBrief flight plan, AA quietly checks for FSUIPC once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don&rsquo;t have to remember to click <strong>FSUIPC Live</strong> before alt-tabbing to the sim. The first time it can&rsquo;t find FSUIPC you get a single heads-up toast, then it keeps checking silently. Clicking <strong>FSUIPC Live</strong> yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks.<br/><br/>
+            <strong>Auto-connect after a flight plan loads</strong> (v3.32.0) &mdash; once you plot a SimBrief flight plan, AA quietly checks for FSUIPC once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don&rsquo;t have to remember to click <strong>FSUIPC Live</strong> before alt-tabbing to the sim. The first time it can&rsquo;t find FSUIPC you get a single heads-up toast, then it keeps checking silently. As of v3.39.0 it also re-checks the instant you switch back to the AA tab &mdash; so popping over to confirm your flight connects on the spot instead of waiting out the once-a-minute timer (which browsers throttle while the tab is in the background), and touchscreen flight-sim PCs are no longer mistaken for phones/tablets and skipped. Clicking <strong>FSUIPC Live</strong> yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks.<br/><br/>
 
             <strong>Live button status dot:</strong>
             <ul style="margin:0.3rem 0 0.6rem 1.4rem;padding:0;">
@@ -37850,7 +37891,7 @@ function rgSendToFlightPlanner() {
               <li>In AA's map header click <strong>🔌 FSUIPC Live</strong>. The button switches to <strong>⏹ FSUIPC Tracking…</strong> and within ~1 second your green plane appears.</li>
             </ol>
             <br/>
-            Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 15 seconds while the button stays active — so MSFS restarts don't require re-clicking.<br/><br/>
+            Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC not running, or the Henty add-on not enabled), AA shows an error toast and retries every 15 seconds — so MSFS restarts don't require re-clicking. While it's retrying after a drop the button reads <strong>⏹ FSUIPC Reconnecting…</strong> (v3.39.0) rather than <em>Tracking…</em>, so you can tell at a glance it's re-establishing the link; it returns to <strong>⏹ FSUIPC Tracking…</strong> the moment the link is back.<br/><br/>
 
             <strong>Auto-resume across reloads</strong> (v3.1.0) &mdash; if FSUIPC tracking was active when you refresh the tab (or the browser crashes and reopens), AA silently reconnects on the next page load and restores the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were &mdash; no need to re-click <em>FSUIPC Live</em>. The auto-reconnect is quiet (no connecting / retry toasts; a single confirmation toast on success) and gives up after <strong>2 minutes</strong> if the sim can't be reached &mdash; so opening AA on a machine without FSUIPC (a laptop away from the sim PC) won't retry localhost forever. Explicitly clicking <em>⏹ FSUIPC Tracking…</em> to stop clears the auto-resume intent, so a deliberate disconnect stays disconnected after a reload.<br/><br/>
 
@@ -38304,10 +38345,23 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.39.0</span>
+          <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Auto-connect now reaches touchscreen PCs.</strong> The FSUIPC auto-connect that arms when you load a SimBrief flight plan was being skipped on any machine that reports touch support — which wrongly included touchscreen Windows laptops and desktops. It now only stands down on true touch-only devices (phones and tablets), so a touchscreen flight-sim PC auto-connects like any other desktop.</li>
+          <li><strong>Auto-connect catches up when you return to the tab.</strong> Browsers throttle background timers, so the once-a-minute FSUIPC check could stall while you were alt-tabbed into the sim. Active Airports now re-checks the instant you switch back to its tab, so flipping over to confirm your flight connects on the spot instead of waiting out the timer.</li>
+          <li><strong>FSUIPC button no longer shows a false &ldquo;Tracking…&rdquo;.</strong> When a live connection dropped (sim closed, FSUIPC restarted, a network blip), the button could stay stuck on <strong>FSUIPC Tracking…</strong> while nothing was actually connected. It now reads <strong>FSUIPC Reconnecting…</strong> while the background reconnect retries and flips back to <strong>FSUIPC Tracking…</strong> the instant it succeeds — so the button always reflects the real state (and still toggles off in one click).</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.38.0</span>
-          <span class="release-date">June 21, 2026 &middot; Current</span>
+          <span class="release-date">June 21, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
