@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.39.1**
+**Current version: v3.40.0**
 
 ---
 
@@ -52,6 +52,8 @@ Track which airports you have add-on scenery installed for, and rate the quality
 **Star ratings (0–5, half-star granularity)** — every airport in the library has an interactive 5-star rating shown next to its name. Click the **left half** of a star for a half rating, the **right half** for a full rating; click the same half again to clear back to zero. A live hover preview fills the stars (and a numeric `X.X/5` badge) up to the cursor position so you always know what you're about to set. Ratings are saved automatically, round-trip through Save / Load Scenery Library, and are also shown in the airport's tooltip on the map.
 
 **Quick-Rate popover** — **right-click** any airport dot (or **long-press** for ~½ second on touch devices) to open a small floating popover anchored to that dot. The popover shows the ICAO and airport name — for SimFly-owned airports the name is a clickable link directly to that airport's SimFly details page. Below the header, the same interactive star widget and library status are shown. Setting a rating on a non-library airport adds it to the library automatically, and turns on Highlight so the black scenery dot appears immediately. Two **inline fields** — **Store** and **Developer** — let you set attribution right from the map, with the same autocomplete as the full Scenery Library modal; changes save to localStorage immediately. A collapsible **▶ Notes** field sits below them for a free-text note (up to 1,024 characters) — click the triangle to expand it; when the airport already has a note the popover opens with it **expanded** so you see it at a glance. When the library has unsaved changes, a **💾** button appears in the header — click it to download a JSON backup without leaving the map. At the bottom, quick links open the airport on **flightsim.to** and **FS Addon Compare** for fast scenery research. Close with **×**, **Esc**, by clicking elsewhere, or by zooming the map.
+
+**Keyboard entry** (v3.40.0) — the popover is fully keyboard-driven. It opens with the rating focused, so **←/→** (or ↑/↓) adjust by half a star, **1–5** set a rating outright, and **0** clears it. **Tab** walks Rating → Store → Developer → Notes → links and cycles within the popover; on the **Store** and **Developer** fields, type a few letters and press **Tab** to autocomplete to the top matching suggestion (the native ↑/↓ dropdown still works). Map pan/zoom keys are suppressed while a field is focused, and **Esc** closes from anywhere inside.
 
 **Sort and filter** — three dropdowns above the list:
 - **Show** — *All airports*, *SimFly-owned only* (filters to airports still owned by an active SimFly player), *Rated only*, or *Unrated only*.

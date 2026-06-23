@@ -4739,6 +4739,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .rg-rate-hint { color:#6a5200; font-weight:600; } /* v2.97.14 — darker for cream-bg contrast */
   .rg-rate-status { font-size:1.11rem; color:var(--muted); margin-top:0.45rem; letter-spacing:0.04em; }
   .rg-rate-popover .sl-stars-interactive .sl-star { font-size:2.55rem; padding:0 6px; }
+  /* v3.40.0 — keyboard focus ring on the rating slider + fields (keyboard nav only) */
+  .rg-rate-popover .sl-stars-interactive { display:inline-flex; border-radius:5px; }
+  .rg-rate-popover .sl-stars-interactive:focus { outline:none; }
+  .rg-rate-popover .sl-stars-interactive:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+  .rg-rate-popover .rg-rate-field-inp:focus-visible,
+  .rg-rate-popover .sl-notes-ta:focus-visible,
+  .rg-rate-popover .sl-notes-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   /* ── Quick-rate popover — v3.34.0 enhancements ── */
   .rg-rate-hdr-link { display:contents; }
   .rg-rate-hdr-link:hover .rg-rate-icao,
@@ -8367,7 +8374,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.39.1';
+const APP_VERSION = '3.40.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27078,11 +27085,22 @@ function _slStarsHtml(rating, opts) {
   const r = +(rating) || 0;
   const cls = opts.interactive ? 'sl-stars sl-stars-interactive' : 'sl-stars sl-stars-static';
   const icaoAttr = opts.icao ? ` data-icao="${opts.icao}"` : '';
+  // v3.40.0 — opts.keyboard makes the widget a focusable ARIA slider with
+  // arrow-key control (currently used by the Quick-Rate popover only; library
+  // rows stay mouse-driven to avoid adding a tab stop per row).
+  const kbd = opts.interactive && opts.icao && opts.keyboard;
+  const kbdAttrs = kbd
+    ? ` tabindex="0" role="slider" aria-label="Scenery rating" aria-valuemin="0" aria-valuemax="5"`
+      + ` aria-valuenow="${r}" aria-valuetext="${r > 0 ? r.toFixed(1) + ' of 5 stars' : 'no rating'}"`
+      + ` onkeydown="_slStarsKey(event)"`
+    : '';
   const handlers = opts.interactive && opts.icao
-    ? ` onclick="_slStarsClick(event)" onmousemove="_slStarsHover(event)" onmouseleave="_slStarsLeave(event)"`
+    ? kbdAttrs + ` onclick="_slStarsClick(event)" onmousemove="_slStarsHover(event)" onmouseleave="_slStarsLeave(event)"`
     : '';
   const titleAttr = opts.interactive
-    ? ` title="Click the left or right half of a star to set the rating; click the same half again to clear"`
+    ? ` title="${kbd
+        ? 'Click a star&#39;s left/right half to set the rating (click again to clear). Keyboard: ←/→ adjust by half a star, 1–5 set the rating, 0 clears.'
+        : 'Click the left or right half of a star to set the rating; click the same half again to clear'}"`
     : ` title="Scenery rating: ${(opts.precise ? r.toFixed(2) : r)} / 5"`;
   let html = `<span class="${cls}"${icaoAttr}${handlers}${titleAttr}>`;
   for (let i = 1; i <= 5; i++) {
@@ -27165,6 +27183,31 @@ function _slStarsClick(e) {
     _slRenderList(document.getElementById('slSearch')?.value || '');
   if (document.getElementById('rgRatePopover') && typeof _rgRefreshRatePopover === 'function')
     _rgRefreshRatePopover();
+}
+
+// v3.40.0 — keyboard control for the focusable star slider (popover). Adjusts
+// live and persists without rebuilding the host popover, so focus stays put for
+// rapid arrow-key entry. ←/↓ −0.5, →/↑ +0.5, Home/0 clear, End/5 max, 1–5 set.
+function _slStarsKey(e) {
+  const container = e.currentTarget;
+  const icao = container.dataset.icao;
+  if (!icao) return;
+  const cur = (_slGet(icao) && _slGet(icao).rating) || 0;
+  let next = cur;
+  switch (e.key) {
+    case 'ArrowRight': case 'ArrowUp':   next = Math.min(5, cur + 0.5); break;
+    case 'ArrowLeft':  case 'ArrowDown': next = Math.max(0, cur - 0.5); break;
+    case 'Home': case '0': case 'Delete': case 'Backspace': next = 0; break;
+    case 'End':  next = 5; break;
+    case '1': case '2': case '3': case '4': case '5': next = +e.key; break;
+    default: return;  // let every other key (Tab, Esc, …) pass through
+  }
+  e.preventDefault();
+  _slSetRating(icao, next);
+  _slStarsApplyPreview(container, next);
+  container.setAttribute('aria-valuenow', String(next));
+  container.setAttribute('aria-valuetext', next > 0 ? next.toFixed(1) + ' of 5 stars' : 'no rating');
+  if (typeof _rgUpdatePopoverDisk === 'function') _rgUpdatePopoverDisk();
 }
 
 // ── Scenery Library UI ─────────────────────────────────────────────────
@@ -30564,6 +30607,15 @@ function _rgShowRatePopover(latlng, icao) {
   pop.style.left = left + 'px';
   pop.style.top  = top  + 'px';
 
+  // v3.40.0 — keyboard support. Trap Tab within the popover and stop the map's
+  // keyboard handler (arrows pan, +/- zoom) from firing while a field is focused.
+  // Escape is intentionally NOT stopped so the document handler still closes it.
+  pop.addEventListener('keydown', _rgRatePopoverKeys);
+  // Auto-focus the rating slider so arrow keys / 1–5 work immediately and Tab
+  // walks straight into Store → Developer → Notes.
+  const _starsEl = pop.querySelector('.sl-stars-interactive');
+  if (_starsEl) { try { _starsEl.focus({ preventScroll: true }); } catch (_) { _starsEl.focus(); } }
+
   // Defer outside-click registration so the originating contextmenu doesn't
   // immediately trip the close handler on its own bubbled mousedown.
   setTimeout(() => {
@@ -30617,7 +30669,7 @@ function _rgRefreshRatePopover() {
     rotLine +
     saleLink +
     (!inLib ? `<div class="rg-rate-hint">Setting a rating will add this airport to your Scenery Library.</div>` : '') +
-    _slStarsHtml(rating, { interactive: true, icao }) +
+    _slStarsHtml(rating, { interactive: true, icao, keyboard: true }) +
     `<div class="rg-rate-status">${inLib ? '✓ In Scenery Library' : 'Not yet in library'}</div>` +
     `<div class="rg-rate-fields">` +
       `<datalist id="rgPopStoreOpts">${storeSugg}</datalist>` +
@@ -30625,11 +30677,13 @@ function _rgRefreshRatePopover() {
       `<div class="rg-rate-field-row">` +
         `<label class="rg-rate-field-lbl">Store</label>` +
         `<input class="rg-rate-field-inp" list="rgPopStoreOpts" value="${esc(store)}" placeholder="e.g. FlightSim.to"` +
+        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopStoreOpts')"` +
         ` onchange="_slSetStore('${icao}',this.value);_rgUpdatePopoverDisk()">` +
       `</div>` +
       `<div class="rg-rate-field-row">` +
         `<label class="rg-rate-field-lbl">Developer</label>` +
         `<input class="rg-rate-field-inp" list="rgPopDevOpts" value="${esc(dev)}" placeholder="e.g. Orbx"` +
+        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopDevOpts')"` +
         ` onchange="_slSetDeveloper('${icao}',this.value);_rgUpdatePopoverDisk()">` +
       `</div>` +
       `<div class="sl-notes">` +
@@ -30668,6 +30722,22 @@ function _rgCloseRatePopover() {
 function _rgRatePopoverOutside(e) {
   const pop = document.getElementById('rgRatePopover');
   if (pop && !pop.contains(e.target)) _rgCloseRatePopover();
+}
+
+// v3.40.0 — popover-scoped keydown: keep every key except Escape from reaching
+// the Leaflet map (so arrows don't pan and +/- don't zoom while typing/rating),
+// and implement a Tab focus trap that cycles through the popover's controls.
+function _rgRatePopoverKeys(e) {
+  if (e.key !== 'Escape') e.stopPropagation();
+  if (e.key !== 'Tab') return;
+  const pop = document.getElementById('rgRatePopover');
+  if (!pop) return;
+  const f = [...pop.querySelectorAll('button, [href], input, textarea, [tabindex]:not([tabindex="-1"])')]
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
 function _rgRatePopoverEsc(e) {
@@ -38144,6 +38214,7 @@ function rgSendToFlightPlanner() {
             <strong>FS Addon Compare import</strong> (⋯ menu): select a <code>.har</code> file captured from the FS Addon Compare website. Open FS Addon Compare → My Library in Chrome/Edge, open DevTools (F12) → Network tab, reload the page, then export and save as HAR.<br/><br/>
             <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
+            <strong>Keyboard entry</strong> (v3.40.0) — the popover is fully keyboard-driven for fast data entry. It opens with the rating focused, so <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating outright, and <strong>0</strong> clears it. <strong>Tab</strong> walks Rating → Store → Developer → Notes → links and cycles within the popover; on <strong>Store</strong> / <strong>Developer</strong>, type a few letters and press <strong>Tab</strong> to autocomplete to the top matching suggestion (the native ↑/↓ dropdown works too). Map pan/zoom keys are suppressed while a field is focused, and <strong>Esc</strong> closes from anywhere inside.<br/><br/>
             The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. A collapsible <strong>▶ Notes</strong> field is here too — click the triangle to expand it and jot a free-text note (up to 1,024 characters); a ● beside the label marks airports that already have one. When a note already exists, the popover opens with it expanded so you see it without a click. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
             For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
@@ -38355,10 +38426,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.40.0</span>
+          <span class="release-date">June 22, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Keyboard-friendly Quick-Rate popover.</strong> The right-click airport popover now fully supports the keyboard for fast data entry. Opening it focuses the star rating immediately, and <strong>Tab</strong> walks through Rating → Store → Developer → Notes → links, cycling within the popover.</li>
+          <li><strong>Arrow keys set the rating.</strong> With the stars focused, <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating directly, and <strong>0</strong> clears it — no mouse needed.</li>
+          <li><strong>Tab-to-complete on Store and Developer.</strong> Type the start of a marketplace or developer name and press <strong>Tab</strong> to autocomplete to the top matching suggestion (the native dropdown with ↑/↓ still works too).</li>
+          <li><strong>Escape</strong> still closes the popover from anywhere inside it; the map no longer pans or zooms from key presses while you're typing in a field.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.39.1</span>
-          <span class="release-date">June 22, 2026 &middot; Current</span>
+          <span class="release-date">June 22, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
