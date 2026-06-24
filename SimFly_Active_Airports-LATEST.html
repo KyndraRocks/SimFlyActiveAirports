@@ -3660,7 +3660,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      both dep and arr are set. Dismissible per-route; re-appears on route change. */
   .sb-route-pill {
     position:absolute; bottom:14px; left:50%;
-    transform:translateX(-50%) translateY(calc(100% + 24px));
+    /* --sb-dx / --sb-dy are the live offset from the bottom-centre anchor.
+       The anti-obscure shift and the drag handle both drive these vars so
+       the slide-in animation (transform) is preserved. */
+    --sb-dx:0px; --sb-dy:0px;
+    transform:translate(calc(-50% + var(--sb-dx)), calc(100% + 24px));
     z-index:1003;
     background:rgba(10,14,28,0.96);
     border:1px solid rgba(0,200,255,0.28);
@@ -3674,7 +3678,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     transition:opacity 0.22s ease, transform 0.25s cubic-bezier(0.34,1.2,0.64,1);
     white-space:nowrap;
   }
-  .sb-route-pill.visible { opacity:1; transform:translateX(-50%) translateY(0); }
+  .sb-route-pill.visible { opacity:1; transform:translate(calc(-50% + var(--sb-dx)), var(--sb-dy)); }
+  /* While dragging, kill the slide transition so the pill tracks the pointer 1:1. */
+  .sb-route-pill.sb-dragging { transition:none; }
+  /* Drag handle — a 6-dot grip on the left edge. pointer events drive
+     _sbPillDragStart for unified mouse + touch dragging. */
+  .sb-route-pill-grip {
+    align-self:stretch; flex-shrink:0; cursor:grab;
+    display:flex; align-items:center; justify-content:center;
+    color:rgba(255,255,255,0.34); font-size:1.1rem; line-height:1;
+    padding:0 3px; margin:-4px 2px -4px -5px;
+    touch-action:none; user-select:none;
+  }
+  .sb-route-pill-grip:hover { color:rgba(255,255,255,0.72); }
+  .sb-route-pill.sb-dragging .sb-route-pill-grip { cursor:grabbing; }
   .sb-route-pill-body { display:flex; flex-direction:column; gap:1px; }
   .sb-route-pill-route { font-size:1.28rem; font-weight:700; color:#fff; letter-spacing:0.04em; cursor:pointer; }
   .sb-route-pill-route:hover { opacity:0.75; }
@@ -3710,6 +3727,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .sb-route-pill-file-btn:hover { background:rgba(187,68,0,0.22); border-color:var(--accent2); color:#fff; }
   body.light-mode .sb-route-pill-x { color:rgba(20,30,50,0.3); }
   body.light-mode .sb-route-pill-x:hover { color:rgba(20,30,50,0.65); }
+  body.light-mode .sb-route-pill-grip { color:rgba(20,30,50,0.32); }
+  body.light-mode .sb-route-pill-grip:hover { color:rgba(20,30,50,0.7); }
 
 
   /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
@@ -8398,7 +8417,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.40.3';
+const APP_VERSION = '3.42.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11202,6 +11221,116 @@ function _sbPillUpdate() {
   }
   pill.classList.add('visible');
   if (typeof _rgUpdateSimbriefWarn === 'function') _rgUpdateSimbriefWarn();
+  if (typeof _sbPillReposition === 'function') _sbPillReposition();
+}
+
+// ── SimBrief pill placement (v3.41.0) ───────────────────────────────────────
+// The pill defaults to the bottom-centre of the map. If that footprint would
+// cover the departure or arrival airport it auto-shifts left/right to clear
+// it. A grip handle lets the user drag it anywhere; once dragged the chosen
+// position is remembered for the rest of the session (in-memory only — never
+// persisted to localStorage) and auto-shift is suppressed so it stays put.
+let _sbPillUserPos  = null;    // {dx,dy} once the user drags; null = auto/default
+let _sbPillDragging = false;
+
+function _sbPillApplyOffset(dx, dy) {
+  const pill = document.getElementById('sbRoutePill');
+  if (!pill) return;
+  pill.style.setProperty('--sb-dx', dx + 'px');
+  pill.style.setProperty('--sb-dy', dy + 'px');
+}
+
+// Viewport-space centre point of an airport dot, or null if it isn't a real
+// coordinate or is panned outside the visible map.
+function _sbPillAirportPt(icao) {
+  if (!icao || !_rgMap || typeof lookupICAO !== 'function' || typeof L === 'undefined') return null;
+  const rec = lookupICAO(icao);
+  if (!rec || !isFinite(rec.latitude) || !isFinite(rec.longitude)) return null;
+  let cp;
+  try { cp = _rgMap.latLngToContainerPoint(L.latLng(rec.latitude, rec.longitude)); }
+  catch (_) { return null; }
+  const mr = _rgMap.getContainer().getBoundingClientRect();
+  if (cp.x < 0 || cp.y < 0 || cp.x > mr.width || cp.y > mr.height) return null;
+  return { x: mr.left + cp.x, y: mr.top + cp.y };
+}
+
+function _sbPillReposition() {
+  const pill = document.getElementById('sbRoutePill');
+  if (!pill || !pill.classList.contains('visible') || _sbPillDragging) return;
+  // User has dragged it this session → honour their position, no auto-shift.
+  if (_sbPillUserPos) { _sbPillApplyOffset(_sbPillUserPos.dx, _sbPillUserPos.dy); return; }
+  const mapEl = document.getElementById('rgMapContainer');
+  if (!mapEl) return;
+  const mr = mapEl.getBoundingClientRect();
+  if (!mr.width) return;
+  // Geometry is derived from the map rect (which shares the pill's horizontal
+  // extent and bottom anchor) + the pill's transform-independent box size, so
+  // we never have to read the pill's mid-animation getBoundingClientRect.
+  const w = pill.offsetWidth, h = pill.offsetHeight, pad = 8, r = 22;
+  const bottomPx = parseFloat(getComputedStyle(pill).bottom) || 14;
+  const cx = mr.left + mr.width / 2;            // centred element centre-x
+  const pillBottom = mr.bottom - bottomPx;
+  const pillTop = pillBottom - h;
+  const dep = (document.getElementById('distDep')?.value || '').trim();
+  const arr = (document.getElementById('distArr')?.value || '').trim();
+  const obstacles = [];
+  for (const icao of [dep, arr]) {
+    const pt = _sbPillAirportPt(icao);
+    if (!pt) continue;
+    if (pt.y + r >= pillTop && pt.y - r <= pillBottom) obstacles.push([pt.x - r, pt.x + r]);
+  }
+  if (!obstacles.length) { _sbPillApplyOffset(0, 0); return; }   // nothing covered
+  const dxMin = (mr.left + pad) - (cx - w / 2);
+  const dxMax = (mr.right - pad) - (cx + w / 2);
+  const clears = dx => {
+    if (dx < dxMin || dx > dxMax) return false;
+    const l = cx + dx - w / 2, rr = cx + dx + w / 2;
+    return obstacles.every(o => rr <= o[0] || l >= o[1]);
+  };
+  if (clears(0)) { _sbPillApplyOffset(0, 0); return; }
+  let best = 0;
+  const span = Math.abs(dxMin) + Math.abs(dxMax) + 12;
+  for (let step = 6; step <= span; step += 6) {
+    if (clears(step))  { best = step;  break; }
+    if (clears(-step)) { best = -step; break; }
+  }
+  _sbPillApplyOffset(best, 0);
+}
+
+function _sbPillDragStart(ev) {
+  const pill = document.getElementById('sbRoutePill');
+  const mapEl = document.getElementById('rgMapContainer');
+  if (!pill || !mapEl) return;
+  ev.preventDefault(); ev.stopPropagation();
+  _sbPillDragging = true;
+  pill.classList.add('sb-dragging');
+  const cs = getComputedStyle(pill);
+  let startDx = _sbPillUserPos ? _sbPillUserPos.dx : (parseFloat(cs.getPropertyValue('--sb-dx')) || 0);
+  let startDy = _sbPillUserPos ? _sbPillUserPos.dy : (parseFloat(cs.getPropertyValue('--sb-dy')) || 0);
+  const sx = ev.clientX, sy = ev.clientY;
+  const move = e => {
+    const mr = mapEl.getBoundingClientRect();
+    const w = pill.offsetWidth, h = pill.offsetHeight, pad = 6;
+    const bottomPx = parseFloat(getComputedStyle(pill).bottom) || 14;
+    const cx = mr.left + mr.width / 2;
+    const pillBottom = mr.bottom - bottomPx;
+    let dx = startDx + (e.clientX - sx);
+    let dy = startDy + (e.clientY - sy);
+    dx = Math.max((mr.left + pad) - (cx - w / 2), Math.min((mr.right - pad) - (cx + w / 2), dx));
+    dy = Math.max((mr.top + pad) - (pillBottom - h), Math.min((mr.bottom - pad) - pillBottom, dy));
+    _sbPillUserPos = { dx, dy };
+    _sbPillApplyOffset(dx, dy);
+  };
+  const up = () => {
+    _sbPillDragging = false;
+    pill.classList.remove('sb-dragging');
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
 }
 
 function _sbPillDismiss() {
@@ -28619,7 +28748,7 @@ let _rgLevelBadgesVisible = (() => { try { const v = localStorage.getItem('simfl
 let _rgForSaleFilter = (() => { try { return localStorage.getItem('simfly_aa_forsale_filter') === '1'; } catch (_) { return false; } })();
 // Rotation gauge (v3.35.0) — a rim arc on each dot showing rotations remaining
 // this week (rot/mrot from payout-data.json). Default ON; toggleable.
-let _rgRotationGaugeVisible = (() => { try { const v = localStorage.getItem('simfly_aa_rotation_gauge'); return v === null ? true : v === '1'; } catch (_) { return true; } })();
+let _rgRotationGaugeVisible = (() => { try { const v = localStorage.getItem('simfly_aa_rotation_gauge'); return v === null ? false : v === '1'; } catch (_) { return false; } })();
 // Rotation filter (v3.35.0) — when on, only airports with rotations left show.
 let _rgRotationFilter = (() => { try { return localStorage.getItem('simfly_aa_rotation_filter') === '1'; } catch (_) { return false; } })();
 let _rgPayoutDataJsonCache = null;  // cached for settings-driven rebuild without re-fetch
@@ -29489,7 +29618,11 @@ async function _rgInitMap() {
     }
   });
   _rgMap.on('movestart', () => { clearTimeout(_rgTipTimer); if (!_rgDblClickActive) { _rgZoomedToIcao = null; _rgPreZoomState = null; } });
-  _rgMap.on('moveend',   () => { _rgDblClickActive = false; });
+  _rgMap.on('moveend',   () => { _rgDblClickActive = false; if (typeof _sbPillReposition === 'function') _sbPillReposition(); });
+  // Pan/zoom moves the airport dots under the pill — re-run the anti-obscure
+  // shift so the SimBrief chip keeps clear of the dep/arr dots (no-op once the
+  // user has dragged the pill to their own position).
+  _rgMap.on('zoomend',   () => { if (typeof _sbPillReposition === 'function') _sbPillReposition(); });
   // Manual drag always wins over follow-aircraft mode — if the user grabs
   // the map, stop chasing the plane. Programmatic panTo / setView calls do
   // NOT fire dragstart, so the follow loop itself doesn't disable itself.
@@ -31531,6 +31664,20 @@ function _rgRandReadNum(id) {
   const n = parseFloat(v);
   return (isFinite(n) && n >= 0) ? n : null;
 }
+// Clear every in-modal field — distance, flight time, scope toggle, and the
+// category / continent / country / owner selections on BOTH the departure and
+// arrival working sets — back to its default (no limit). Non-destructive: this
+// only repaints the open form; nothing is persisted until Save & Generate.
+function _rgRandReset() {
+  const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setV('rgRandMinNm', '');  setV('rgRandMaxNm', '');
+  setV('rgRandMinMin', ''); setV('rgRandMaxMin', '');
+  const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = false;
+  // Both endpoints back to empty so switching tabs shows a cleared panel too.
+  _rgRandWork = { dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp() };
+  _rgRandRenderTab();   // rebuilds the active tab's controls from the empty set + recounts
+}
+
 function _rgRandSaveAndGenerate() {
   _rgRandSnapshotTab();   // capture the endpoint currently on screen into its working set
   const visEl = document.getElementById('rgRandVisible');
@@ -37833,6 +37980,7 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="fp-settings-btns">
+        <button class="npc-btn npc-btn-cancel" style="margin-right:auto" onclick="_rgRandReset()" title="Clear every filter on both the departure and arrival panels back to its default (no limit)">&#8634; Reset</button>
         <button class="npc-btn npc-btn-cancel" onclick="_rgRandCloseModal()">Cancel</button>
         <button class="npc-btn npc-btn-save" onclick="_rgRandSaveAndGenerate()">Save &amp; Generate</button>
       </div>
@@ -37964,7 +38112,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Once both departure and arrival ICAOs are valid, the <strong>File on SimBrief →</strong> button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.<br/><br/>
             <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.<br/><br/>
-            <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and flight number (<em>Flt: XXXXXX</em>). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. <strong>Click the DEP → ARR route text</strong> to swap departure and arrival in one click — the map breadcrumb, highlight, and main-screen fields all update together. Dismiss with ✕ &mdash; the pill reappears automatically if you change either endpoint.
+            <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and flight number (<em>Flt: XXXXXX</em>). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. <strong>Click the DEP → ARR route text</strong> to swap departure and arrival in one click — the map breadcrumb, highlight, and main-screen fields all update together. Dismiss with ✕ &mdash; the pill reappears automatically if you change either endpoint.<br/><br/>
+            <strong>Move the pill</strong> (v3.41.0+) &mdash; it sits at the bottom centre by default and automatically shifts left or right if that spot would cover your departure or arrival airport. Grab the <strong>⠿ handle</strong> on its left edge to drag it anywhere over the map. Your chosen position is remembered for the rest of the session; reload the app to return to the default bottom-centre placement.
           </div>
         </div>
       </div>
@@ -37998,7 +38147,7 @@ function rgSendToFlightPlanner() {
             For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
             If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
             After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them). Click the small <strong>✕</strong> on its right to dismiss it; it returns the next time you create a random flight.<br/><br/>
-            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
+            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click (it takes effect once you <em>Save &amp; Generate</em>). Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
           </div>
         </div>
       </div>
@@ -38251,7 +38400,7 @@ function rgSendToFlightPlanner() {
             Every SimFly airport has a weekly pool of flight <strong>rotations</strong> — the number of times it can be flown into before its traffic resets for the week. The size of the pool (its <em>capacity</em>) grows with the airport's level. The <strong>rotation gauge</strong> shows, at a glance, how much of that pool is still available right now.<br/><br/>
             Each airport dot's <strong>outline</strong> doubles as a low-rotation warning. Because what matters for planning is whether an airport is running <em>low</em> this week, the outline only depletes in the danger zone: an airport with <strong>10 or more rotations remaining</strong> shows a <strong>full 3&nbsp;px black ring</strong>, and once it drops below 10 the ring shrinks <strong>anti-clockwise from 12 o'clock</strong> as a percentage of 10 (9 remaining ≈ 90% of the ring, 5 ≈ 50%, 1 ≈ 10%). An airport with <strong>zero rotations left has no outline at all</strong> — so the airports to avoid this week are simply the ones with no ring. The ring sits clear of the level-badge corona spikes, which radiate outside the dot.<br/><br/>
             <strong>Exact numbers</strong> — hover any airport dot and its tooltip shows the rotations remaining and total alongside its category and level: "<em>ICAO &nbsp;Cat&nbsp;n &nbsp;Lvl&nbsp;n &nbsp;(remaining / total)</em>". The detailed airport tooltip and the right-click <strong>Quick-Rate</strong> card both carry a "Rotations: X / Y left this week" line as well, colour-coded green (10 or more left) / amber (fewer than 10) / red (none) so the count is available everywhere you inspect an airport.<br/><br/>
-            <strong>Toggle the gauge</strong> — open the <strong>👁 Display</strong> menu and click <strong>🔄 Display Rotations</strong>, or simply <strong>middle-click anywhere on the map</strong> for a quick on/off. While it is on, a <strong>🔄 Rotation Gauge</strong> chip also appears in the filter strip — click its <strong>✕</strong> to hide the gauge. It is on by default; your choice is remembered between sessions.<br/><br/>
+            <strong>Toggle the gauge</strong> — open the <strong>👁 Display</strong> menu and click <strong>🔄 Display Rotations</strong>, or simply <strong>middle-click anywhere on the map</strong> for a quick on/off. While it is on, a <strong>🔄 Rotation Gauge</strong> chip also appears in the filter strip — click its <strong>✕</strong> to hide the gauge. It is off by default; once you turn it on your choice is remembered between sessions.<br/><br/>
             <strong>Rotations Left Only filter</strong> — also under <strong>👁 Display</strong>, click <strong>🔄 Rotations Left Only</strong> to hide every airport that has exhausted its rotations for the week, leaving just the airports you can still fly into. Airports with no rotation data are left visible. While the filter is active a removable <strong>🔄 Rotations Left</strong> chip appears in the filter strip; its ✕ clears it, and ⊗ Clear All removes it along with every other filter. Rotation data refreshes automatically through the same hourly pipeline that feeds owner colours, levels, and categories.<br/><br/>
             <strong>Low-rotation warnings (3 or fewer left)</strong> — when a departure/arrival pair is selected, the on-map distance label adds a red <strong>⚠ Low rotations</strong> note naming any endpoint with 3 or fewer rotations remaining, and a yellow <strong>⚠</strong> badge appears on the <strong>File on SimBrief</strong> buttons. Clicking <strong>File on SimBrief</strong> (the main button or the floating map route pill) then shows a confirmation first if the departure or arrival is at 3 or fewer — it lists the airport and its remaining count, and shows <em>before</em> the new-pilot-codes prompt. Cancel to back out, or <strong>File Anyway →</strong> to continue.
           </div>
@@ -38482,10 +38631,34 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.42.0</span>
+          <span class="release-date">June 24, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Reset button on the Random Flight Filters window.</strong> A new <em>↺ Reset</em> button in the bottom-left corner clears every filter back to its default in one click — categories, continents, countries, owners (on <em>both</em> the Departure and Arrival panels), the distance and flight-time ranges, and the "only airports shown on the map" toggle. Nothing is saved until you click <em>Save &amp; Generate</em>, so you can reset, tweak, and still cancel if you change your mind.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.41.0</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The File on SimBrief chip now stays clear of your airports.</strong> The floating chip still defaults to the bottom centre of the map, but if that spot would cover your departure or arrival airport it now automatically slides left or right to keep both airports visible — a frequent problem on smaller, lower-resolution screens.</li>
+          <li><strong>You can drag the File on SimBrief chip anywhere.</strong> A new <em>⠿</em> grip handle on the left edge of the chip lets you move it to wherever suits you. Your chosen spot is remembered for the rest of your session; reloading the app returns it to the default bottom-centre placement.</li>
+          <li><strong>The rotation gauge now starts off.</strong> When you first open the map, airport dots no longer show the rotation gauge ring by default — a cleaner first look. Turn it on any time from the <em>👁 Display</em> menu (or middle-click the map), and your choice is remembered between sessions as before.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.40.3</span>
-          <span class="release-date">June 23, 2026 &middot; Current</span>
+          <span class="release-date">June 23, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -50826,6 +50999,8 @@ function rgSendToFlightPlanner() {
       </div>
     <div class="sb-route-pill" id="sbRoutePill"
          onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <div class="sb-route-pill-grip" onpointerdown="_sbPillDragStart(event)"
+           title="Drag to move this chip">⠿</div>
       <div class="sb-route-pill-body">
         <div class="sb-route-pill-route" id="sbPillRoute" onclick="(typeof _rgSwapDotSel==='function'&&_rgDotSelDep&&_rgDotSelArr)?_rgSwapDotSel():_distSwapIcaos()" title="Click to swap departure ↔ arrival">— → —</div>
         <div class="sb-route-pill-meta" id="sbPillMeta" style="display:none" title="Selected aircraft · flight number"></div>
