@@ -8398,7 +8398,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.40.2';
+const APP_VERSION = '3.40.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27270,11 +27270,6 @@ function openSceneryModal() {
   }
 }
 
-function closeSceneryModal(e) {
-  if (e && e.target !== document.getElementById('sceneryModal')) return;
-  _slCloseBtn();
-}
-
 function _slCloseBtn() {
   if (_slDirty) { _slSetBannerVisible(true); return; }
   _slDoClose();
@@ -28111,10 +28106,6 @@ function openDevelopersModal() {
   el.classList.add('open');
   _devRender();
 }
-function closeDevelopersModal(e) {
-  if (e && e.target !== document.getElementById('developersModal')) return;
-  _devCloseModal();
-}
 function _devCloseModal() {
   document.getElementById('developersModal')?.classList.remove('open');
 }
@@ -28237,10 +28228,6 @@ function openManageValuesModal() {
   if (!el) return;
   el.classList.add('open');
   _mvRender();
-}
-function closeManageValuesModal(e) {
-  if (e && e.target !== document.getElementById('manageValuesModal')) return;
-  _mvCloseModal();
 }
 function _mvCloseModal() {
   document.getElementById('manageValuesModal')?.classList.remove('open');
@@ -31522,17 +31509,19 @@ function _rgRandCloseModal() {
   const modal = document.getElementById('rgRandModal');
   if (modal) modal.classList.remove('open');
 }
-// Backdrop click-to-close, guarded against drags that START on a control. A
-// plain `click` fires on the common ancestor of the press and release points,
-// so pressing inside a tiny distance box and releasing a few px away on the
-// backdrop (easy when selecting text) would target the overlay and wrongly
-// close the modal. We only close when BOTH the press and the release land on
-// the overlay itself.
-let _rgRandDownOnBackdrop = false;
-function _rgRandOverlayDown(e) { _rgRandDownOnBackdrop = (e.target === e.currentTarget); }
-function _rgRandOverlayClick(e) {
-  if (e.target === e.currentTarget && _rgRandDownOnBackdrop) _rgRandCloseModal();
-  _rgRandDownOnBackdrop = false;
+// Shared backdrop click-to-close, guarded against drags that START on a
+// control. A plain `click` fires on the common ancestor of the press and
+// release points, so pressing inside a tiny input and releasing a few px away
+// on the backdrop (easy when selecting text) would target the overlay and
+// wrongly close the modal. We only close when BOTH the press and the release
+// land on the overlay itself. Wire any `.modal-overlay` with:
+//   onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, closeFn)"
+// where closeFn is the modal's no-argument close routine.
+let _aaOverlayDownOnBackdrop = false;
+function _aaOverlayDown(e) { _aaOverlayDownOnBackdrop = (e.target === e.currentTarget); }
+function _aaOverlayClickToClose(e, closeFn) {
+  if (e.target === e.currentTarget && _aaOverlayDownOnBackdrop) closeFn();
+  _aaOverlayDownOnBackdrop = false;
 }
 function _rgRandReadNum(id) {
   const el = document.getElementById(id);
@@ -37684,7 +37673,7 @@ function rgSendToFlightPlanner() {
 
 
 <!-- Help Modal -->
-<div class="modal-overlay" id="lrcModal" onclick="if(event.target===this)_closeLowRotConfirm()">
+<div class="modal-overlay" id="lrcModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _closeLowRotConfirm)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <span class="modal-title">⚠ &nbsp;Low Rotations</span>
@@ -37701,7 +37690,7 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
-<div class="modal-overlay" id="npcModal" onclick="if(event.target===this)_closeNewPilotConfirm()">
+<div class="modal-overlay" id="npcModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _closeNewPilotConfirm)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <span class="modal-title">✈ &nbsp;New Pilot Codes</span>
@@ -37719,7 +37708,7 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
-<div class="modal-overlay" id="fpSettingsModal" onclick="if(event.target===this)_fpCloseModal()">
+<div class="modal-overlay" id="fpSettingsModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _fpCloseModal)">
   <div class="modal" style="max-width:480px;">
     <div class="modal-header">
       <span class="modal-title">✈ &nbsp;SimBrief Flight Plan Settings</span>
@@ -37763,7 +37752,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Random flight filter options — v3.26.0 -->
-<div class="modal-overlay" id="rgRandModal" onmousedown="_rgRandOverlayDown(event)" onclick="_rgRandOverlayClick(event)">
+<div class="modal-overlay" id="rgRandModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _rgRandCloseModal)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <span class="modal-title">&#127922; &nbsp;Random Flight Filters</span>
@@ -37852,7 +37841,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Flight Demo Mode configuration modal — v2.97.0 -->
-<div class="modal-overlay" id="demoModal" onclick="if(event.target===this)_demoCloseModal()">
+<div class="modal-overlay" id="demoModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _demoCloseModal)">
   <div class="modal" style="max-width:640px;">
     <div class="modal-header">
       <span class="modal-title">🎬 &nbsp;Flight Demo Mode</span>
@@ -37901,7 +37890,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Live-aircraft icon picker (Shift-click on 📍 Follow A/C) — v2.77.0 -->
-<div class="modal-overlay" id="liveAcIconModal" onclick="if(event.target===this)_liveAcCloseIconPicker()">
+<div class="modal-overlay" id="liveAcIconModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _liveAcCloseIconPicker)">
   <div class="modal" style="max-width:520px;">
     <div class="modal-header">
       <span class="modal-title">📍 &nbsp;Aircraft Marker Icon</span>
@@ -37919,7 +37908,7 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
-<div class="modal-overlay" id="helpModal" onclick="closeHelp(event)">
+<div class="modal-overlay" id="helpModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, closeHelp)">
   <div class="modal" style="max-width:clamp(680px,35vw,1400px);">
     <div class="modal-header">
       <span class="modal-title">? &nbsp;How to Use This Tool</span>
@@ -38478,7 +38467,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Release Notes Modal -->
-<div class="modal-overlay" id="releaseModal" onclick="closeReleaseNotes(event)">
+<div class="modal-overlay" id="releaseModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, closeReleaseNotes)">
   <div class="modal" style="max-width:clamp(640px,33vw,1400px);">
     <div class="modal-header">
       <span class="modal-title">📋 &nbsp;Release Notes</span>
@@ -38495,8 +38484,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.40.2</span>
+          <span class="release-version">v3.40.3</span>
           <span class="release-date">June 23, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>No modal window closes unexpectedly while you select text inside it.</strong> Every pop-up window now uses the same press-origin guard the Random Flight Filters window got last release. Pressing inside a text or number box and drifting a few pixels onto the dimmed background before releasing — easy to do when selecting text — used to be misread as a click on the background and close the window, losing your work. Windows now close only when you both press and release on the dark area outside the panel. This covers the Scenery Library, Scenery Developers, Manage Values, Help, Release Notes, Map Annotations, all AFK Alert windows, and every other pop-up.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.40.2</span>
+          <span class="release-date">June 23, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -49813,7 +49813,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Scenery Library Modal -->
-<div class="modal-overlay" id="sceneryModal" onclick="closeSceneryModal(event)">
+<div class="modal-overlay" id="sceneryModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _slCloseBtn)">
   <div class="modal" style="max-width:1230px;">
     <div class="modal-header">
       <span class="modal-title">⬤ &nbsp;Scenery Library</span>
@@ -49954,7 +49954,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Developers Modal — aggregate per-developer view derived from the Scenery Library -->
-<div class="modal-overlay" id="developersModal" onclick="closeDevelopersModal(event)">
+<div class="modal-overlay" id="developersModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _devCloseModal)">
   <div class="modal" style="max-width:1140px;">
     <div class="modal-header">
       <span class="modal-title">⚙ &nbsp;Scenery Developers</span>
@@ -49981,7 +49981,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Manage Values Modal — bulk rename / delete for Store + Developer values across the library -->
-<div class="modal-overlay" id="manageValuesModal" onclick="closeManageValuesModal(event)">
+<div class="modal-overlay" id="manageValuesModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _mvCloseModal)">
   <div class="modal" style="max-width:1140px;">
     <div class="modal-header">
       <span class="modal-title">🛠 &nbsp;Manage Store &amp; Developer Values</span>
@@ -50055,7 +50055,7 @@ function rgSendToFlightPlanner() {
   #rgNewApSlider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--aa-new-color);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,0.5);}
   #rgNewApSlider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--aa-new-color);cursor:pointer;border:none;box-shadow:0 0 4px rgba(0,0,0,0.5);}
 </style>
-<div class="modal-overlay" id="maModal" onclick="if(event.target===this)_maCloseModal()">
+<div class="modal-overlay" id="maModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _maCloseModal)">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">📱 &nbsp;Mobile Alerts</span>
@@ -50211,7 +50211,7 @@ function rgSendToFlightPlanner() {
 </script>
 
 <!-- AFK Alerts Configuration Modal -->
-<div class="modal-overlay" id="afkConfigModal" onclick="if(event.target===this)_afkCloseConfig()">
+<div class="modal-overlay" id="afkConfigModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _afkCloseConfig)">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">🔔 &nbsp;Alerts</span>
@@ -50266,7 +50266,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- AFK Alert History Modal (v2.87.0) — log of the last 100 alert events -->
-<div class="modal-overlay" id="afkHistoryModal" onclick="if(event.target===this)_afkCloseHistory()">
+<div class="modal-overlay" id="afkHistoryModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _afkCloseHistory)">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">📜 &nbsp;Alert History</span>
@@ -50309,7 +50309,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- AFK Per-Waypoint Quick-Add Modal (opened by right-clicking a SimBrief waypoint) -->
-<div class="modal-overlay" id="afkWpAlarmModal" onclick="if(event.target===this)_afkWpAlarmModalCancel()">
+<div class="modal-overlay" id="afkWpAlarmModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _afkWpAlarmModalCancel)">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">🔔 &nbsp;Add Waypoint Alarm</span>
@@ -50354,7 +50354,7 @@ function rgSendToFlightPlanner() {
 <!-- AFK Geofence Anchor Picker (v2.84.0+) — shown before the draw / config
      step. Lets the user choose between a fixed-coords fence (drawn on map)
      and a plan-relative fence anchored to Departure or Arrival airport. -->
-<div class="modal-overlay" id="afkGfAnchorModal" onclick="if(event.target===this)_afkGeofenceAnchorPickerClose()">
+<div class="modal-overlay" id="afkGfAnchorModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _afkGeofenceAnchorPickerClose)">
   <div class="modal" style="max-width:520px;">
     <div class="modal-header">
       <span class="modal-title">⊙ &nbsp;New Geofence — where should it live?</span>
@@ -50397,7 +50397,7 @@ function rgSendToFlightPlanner() {
 <style>#afkGfAnchorModal { z-index:9560; } #afkGfAnchorModal .modal label:hover { border-color:var(--accent); background:rgba(0,200,255,0.06); }</style>
 
 <!-- AFK Per-Geofence Sub-Modal (opened after drawing) -->
-<div class="modal-overlay" id="afkGeofenceModal" onclick="if(event.target===this)_afkGeofenceModalCancel()">
+<div class="modal-overlay" id="afkGeofenceModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _afkGeofenceModalCancel)">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">⊙ &nbsp;Configure Geofence</span>
