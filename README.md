@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.40.0**
+**Current version: v3.40.2**
 
 ---
 
@@ -135,7 +135,7 @@ The map includes a **📐 Measurement** ruler — click **📐 Measurement** in 
 ### 🎲 Random Flight
 For when you just want to fly somewhere new. **🎲 Create Random Route** in the **🛠 Tools** menu picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and pops up the **File on SimBrief** button so you can fly it immediately. If you've already selected a departure airport (click a dot), it becomes **🎲 Choose Random Destination** — keeping your departure and re-rolling only the destination each click. After the first roll a **🎲 Re-roll** button appears in the map header for one-click re-rolls; click the small **✕** on its right to dismiss it (it returns the next time you create a random flight).
 
-**Right-click** the menu item (long-press on touch) to set filters — they all stack: restrict to airports **currently shown on the map**; pick destination **airport categories** and **continents**; multi-select destination **countries** and **owners** (searchable, with live counts that update as you change the other filters); a **distance** range; and — when the selected aircraft has flight-time calibration — a **flight-time** range. In *Create Random Route* mode a **Departure / Arrival** toggle lets you filter each end of the route independently (e.g. depart a Cat 1 grass strip, arrive at a Cat 5 international). Filters are saved in your browser, so the first use opens the dialog to set your preferences and every click after that generates instantly. Any existing route is cleared first, so the map never shows more than one random route.
+**Right-click** the menu item (long-press on touch) to set filters — they all stack: restrict to airports **currently shown on the map**; pick destination **airport categories** and **continents**; multi-select destination **countries** and **owners** (searchable, with live counts that update as you change the other filters); a **distance** range; and — when the selected aircraft has flight-time calibration — a **flight-time** range. In *Create Random Route* mode a **Departure / Arrival** toggle lets you filter each end of the route independently (e.g. depart a Cat 1 grass strip, arrive at a Cat 5 international). Filters are saved in your browser, so the first use opens the dialog to set your preferences and every click after that generates instantly. Any existing route is cleared first, so the map never shows more than one random route. Consecutive rolls won't hand you back the same route (or, with a departure pinned, the same destination) whenever another valid option exists — so each click feels like it did something.
 
 ### New Airports
 Airports recently added to SimFly are highlighted on the map with a pulsing ring and a **✦ New Airport** banner in their tooltip. The default window is **14 days** with a **magenta** ring, but all display settings are configurable.

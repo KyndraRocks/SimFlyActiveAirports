@@ -4501,6 +4501,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode #rgCapSelect, body.light-mode #rgSortSelect { background:#faf7f2; }
 
   /* ── Scenery Library ────────────────────────────────────────────────── */
+  /* v3.40.1 — drop the live backdrop-filter:blur for the two big scrolling
+     modals. A composited, scrolling modal layer sitting above a backdrop-filter
+     forces Chrome to re-rasterize the blur every scroll frame — the main reason
+     BOTH modals felt laggy regardless of row count. A slightly darker static
+     scrim replaces it; the blur stays on the lighter release/help modals. */
+  #sceneryModal, #developersModal { backdrop-filter:none; -webkit-backdrop-filter:none; background:rgba(0,0,0,0.82); }
   #sceneryModal { z-index:10500; }
   .sl-search-row { display:flex; gap:0.5rem; align-items:center; padding:0.65rem 1.5rem 0; }
   .sl-controls-row { display:flex; gap:0.5rem; align-items:center; padding:0.5rem 1.5rem 0; flex-wrap:wrap; }
@@ -4514,7 +4520,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      pegged to ~75vh (see the per-id rule below), and .modal-body is flex:1, so
      this max-height of 100% lets the list span all the vertical room left after
      the search/controls rows and the footer. */
-  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:100%; min-height:200px; flex:1; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
+  /* v3.40.1 — the row list is the actual scroll container (modal-body lets it
+     grow via flex:1), so the compositor promotion has to live HERE, not on
+     .modal-body. will-change+isolation mirror the proven .dist-matrix-wrap
+     recipe: scrolling translates a dedicated GPU layer instead of repainting
+     the whole list on the main thread. overflow-anchor:none stops the
+     scrollbar from jumping as content-visibility rows render / de-render. */
+  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:100%; min-height:200px; flex:1; scrollbar-width:thin; scrollbar-color:var(--border) transparent; will-change:transform; isolation:isolate; overflow-anchor:none; }
   /* Both library + developers modals occupy ~75% of the viewport height so the
      longer rows + the per-row inputs and the developer table aren't cramped. */
   #sceneryModal .modal, #developersModal .modal { min-height:75vh; max-height:90vh; }
@@ -4522,7 +4534,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-list::-webkit-scrollbar { width:7px; } .sl-list::-webkit-scrollbar-track { background:transparent; } .sl-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; }
   /* Two-line list row: header (.sl-row-hdr) holds the existing ICAO + name + stars + delete
      button; .sl-row-meta below it carries the two free-text inputs for Store and Developer. */
-  .sl-row { display:flex; flex-direction:column; gap:0.18rem; padding:0.5rem 0 0.55rem; border-bottom:1px solid rgba(255,255,255,0.05); }
+  /* v3.40.1 — each row is heavy (ICAO link + interactive stars + two
+     datalist-backed inputs + a notes textarea). content-visibility:auto lets
+     the browser skip layout + paint for any row not currently on screen, so a
+     library of hundreds of airports only ever renders the visible handful.
+     contain-intrinsic-size is the placeholder height for an un-rendered row
+     (~collapsed height) so the scrollbar stays stable. Same technique already
+     used on the release-notes list; safe here because .sl-row is a block <li>,
+     not a table row. */
+  .sl-row { display:flex; flex-direction:column; gap:0.18rem; padding:0.5rem 0 0.55rem; border-bottom:1px solid rgba(255,255,255,0.05); content-visibility:auto; contain-intrinsic-size:0 96px; }
   body.light-mode .sl-row { border-bottom-color:var(--border); }
   .sl-row-hdr  { display:flex; align-items:center; gap:0.6rem; }
   .sl-row-meta { display:flex; align-items:center; gap:0.35rem; padding-left:1.5rem; flex-wrap:wrap; }
@@ -4552,7 +4572,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-notes-count { text-align:right; font-family:'Rajdhani',sans-serif; font-size:0.85rem; color:var(--muted); margin-top:0.12rem; }
   /* ── Developers Modal ───────────────────────────────────────────────── */
   #developersModal { z-index:10600; }
-  #developersModal .modal-body { display:flex; flex-direction:column; }
+  /* v3.40.1 — the dev table scrolls inside .modal-body (which already carries
+     will-change:transform). isolation:isolate completes the .dist-matrix-wrap
+     recipe so the sticky header + table repaint stays inside its own layer
+     instead of pulling in the rest of the page on each scroll frame. */
+  #developersModal .modal-body { display:flex; flex-direction:column; isolation:isolate; }
   /* All font-sizes in this modal are +40% from their pre-2.45.3 values so the
      developer summary reads at a comfortable size. The contextual rule on
      .dev-c-rating .sl-star also scales the static stars in proportion. */
@@ -8374,7 +8398,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.40.0';
+const APP_VERSION = '3.40.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31001,6 +31025,8 @@ let _rgRandTab  = 'arr';                  // which endpoint the modal's Dep/Arr 
 let _rgRandWork = { dep: {}, arr: {} };   // in-modal working copy of per-endpoint filters
 let _rgRandPoolMeta = null;               // cached option lists (present cats/continents, country/owner items)
 let _rgRandRerolled = false;              // a route was generated this session → show the header re-roll button
+let _rgRandLastDep = null;                // last generated departure ICAO (anti-repeat)
+let _rgRandLastArr = null;                // last generated arrival ICAO (anti-repeat)
 
 // Per-endpoint filter set helpers (category / continent / country / owner).
 function _rgRandEmptyEp() { return { cats: [], continents: [], countries: [], owners: [] }; }
@@ -31092,6 +31118,19 @@ function _rgRandShuffle(a) {
     const t = a[i]; a[i] = a[j]; a[j] = t;
   }
   return a;
+}
+
+// Pick a random candidate, avoiding `avoidIcao` whenever the list offers an
+// alternative. Without this, a small destination set makes Math.random() land
+// on the same airport on consecutive rolls — which looks to the user like the
+// button did nothing. Falls back to a plain random pick if avoiding would leave
+// nothing (i.e. the avoided airport is genuinely the only option).
+function _rgRandPickAvoiding(list, avoidIcao) {
+  if (avoidIcao && list.length > 1) {
+    const alt = list.filter(c => c.icao !== avoidIcao);
+    if (alt.length) return alt[Math.floor(Math.random() * alt.length)];
+  }
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 // Does airport c pass a per-endpoint filter set f { cats, continents, countries, owners }?
@@ -31204,15 +31243,29 @@ function _rgRandomGenerate() {
     if (!dep || !dep.rec || !isFinite(dep.rec.latitude)) { _aaRtToast('Selected departure has no position data.', 'warn'); return; }
     const dests = pool.filter(c => _rgRandRouteOK(dep, c, opts, useTime));
     if (!dests.length) { _aaRtToast('No destinations match your filters from ' + dep.icao + ' — widen them (right-click).', 'warn'); return; }
-    arr = dests[Math.floor(Math.random() * dests.length)];
+    // Same departure as last roll → don't hand back the same destination if
+    // there's another to choose.
+    arr = _rgRandPickAvoiding(dests, dep.icao === _rgRandLastDep ? _rgRandLastArr : null);
   } else {
     // Create Random Route — departure must pass the DEPARTURE filters, arrival the ARRIVAL filters.
+    // depPool is freshly shuffled each call (so the departure varies), but on a
+    // small pool the first usable departure can repeat. Prefer a departure that
+    // isn't the one we just used, keeping the first usable as a fallback for
+    // when it's the only option.
     const depPool = _rgRandShuffle(pool.filter(c => _rgRandEndpointOK(c, opts.dep)));
     const cap = Math.min(depPool.length, 300);   // bound worst-case scan on impossible filters
+    let fallback = null;
     for (let i = 0; i < cap; i++) {
       const cand = depPool[i];
       const dests = pool.filter(c => _rgRandRouteOK(cand, c, opts, useTime));
-      if (dests.length) { dep = cand; arr = dests[Math.floor(Math.random() * dests.length)]; break; }
+      if (!dests.length) continue;
+      const pick = { dep: cand, dests };
+      if (!fallback) fallback = pick;
+      if (cand.icao !== _rgRandLastDep) { dep = cand; arr = _rgRandPickAvoiding(dests, null); break; }
+    }
+    if (!dep && fallback) {   // only the previous departure was usable — reuse it, but vary the arrival
+      dep = fallback.dep;
+      arr = _rgRandPickAvoiding(fallback.dests, _rgRandLastArr);
     }
     if (!dep) { _aaRtToast('No route matches your filters — widen them (right-click the menu item).', 'warn'); return; }
   }
@@ -31221,6 +31274,8 @@ function _rgRandomGenerate() {
   if (typeof _rgClearDotSel === 'function') _rgClearDotSel();
   _rgDotSelDep = dep.icao; _rgDotSelArr = arr.icao;
   _rgRandLastAutoDep = dep.icao;
+  // Remember this pairing so the next roll can avoid repeating it (anti-repeat).
+  _rgRandLastDep = dep.icao; _rgRandLastArr = arr.icao;
   // _rgClearDotSel just wiped the pin — restore it in "Choose Random Destination"
   // mode so successive clicks keep re-rolling the destination from the same dep.
   _rgRandPinnedDep = userDepIcao || null;
@@ -31466,6 +31521,18 @@ function _rgRandOpenModal() {
 function _rgRandCloseModal() {
   const modal = document.getElementById('rgRandModal');
   if (modal) modal.classList.remove('open');
+}
+// Backdrop click-to-close, guarded against drags that START on a control. A
+// plain `click` fires on the common ancestor of the press and release points,
+// so pressing inside a tiny distance box and releasing a few px away on the
+// backdrop (easy when selecting text) would target the overlay and wrongly
+// close the modal. We only close when BOTH the press and the release land on
+// the overlay itself.
+let _rgRandDownOnBackdrop = false;
+function _rgRandOverlayDown(e) { _rgRandDownOnBackdrop = (e.target === e.currentTarget); }
+function _rgRandOverlayClick(e) {
+  if (e.target === e.currentTarget && _rgRandDownOnBackdrop) _rgRandCloseModal();
+  _rgRandDownOnBackdrop = false;
 }
 function _rgRandReadNum(id) {
   const el = document.getElementById(id);
@@ -37696,7 +37763,7 @@ function rgSendToFlightPlanner() {
 </div>
 
 <!-- Random flight filter options — v3.26.0 -->
-<div class="modal-overlay" id="rgRandModal" onclick="if(event.target===this)_rgRandCloseModal()">
+<div class="modal-overlay" id="rgRandModal" onmousedown="_rgRandOverlayDown(event)" onclick="_rgRandOverlayClick(event)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <span class="modal-title">&#127922; &nbsp;Random Flight Filters</span>
@@ -38426,10 +38493,35 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.40.2</span>
+          <span class="release-date">June 23, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Random flights stop repeating the same route.</strong> The random flight generator now avoids handing back the route — or, when you have a departure pinned, the destination — it just gave you, as long as another valid option exists. Previously a small pool of matching airports could land on the same pick twice in a row, making it look like the button hadn't done anything.</li>
+          <li><strong>Random Flight Filters window no longer closes unexpectedly.</strong> Clicking and dragging inside the distance or flight-time boxes (for example, to select the text) could be misread as a click on the dimmed background and close the whole window. It now only closes when you actually click the dark area outside the panel.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.40.1</span>
+          <span class="release-date">June 23, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library scrolling is smooth again.</strong> The library list now only renders the rows currently on screen, so scrolling a library of hundreds of airports no longer stutters. Previously every scroll repainted all rows at once — including their inputs and rating stars — which made the list feel slow and clunky on desktop.</li>
+          <li><strong>Scenery Developers modal scrolls smoothly too.</strong> The developer summary table was given the same scroll-isolation treatment so its sticky header and rows no longer lag while scrolling.</li>
+          <li><strong>Removed the live background blur behind these two modals.</strong> The blurred backdrop was being re-computed on every scroll frame, which was the main reason both windows felt heavy. It's replaced with a plain dim — the same blur still appears behind the Release Notes and Help windows.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.40.0</span>
-          <span class="release-date">June 22, 2026 &middot; Current</span>
+          <span class="release-date">June 22, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
