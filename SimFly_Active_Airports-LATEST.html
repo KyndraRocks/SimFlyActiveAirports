@@ -703,6 +703,47 @@
   /* Random Flight filters — opened from the map's Tools menu, so must clear
      the region map (z-index 9000) like the other map-opened modals above. */
   #rgRandModal { z-index: 9500; }
+
+  /* 🗂 Map Layers (z-order) modal — opened from the Display menu on the map. */
+  #rgLayersModal { z-index: 9500; }
+  .rgl-stack-cap { text-align:center; font-family:'Rajdhani',sans-serif; font-size:0.74rem; letter-spacing:0.14em; color:var(--muted); text-transform:uppercase; margin:0.15rem 0 0.4rem; }
+  .rgl-stack-cap.bottom { margin:0.45rem 0 0.1rem; }
+  #rgLayersList { display:flex; flex-direction:column; gap:0.34rem; }
+  .rg-layer-row {
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.4rem 0.55rem; border-radius:7px;
+    background:rgba(255,255,255,0.045); border:1px solid rgba(255,255,255,0.1);
+    user-select:none;
+  }
+  body.light-mode .rg-layer-row { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.1); }
+  .rg-layer-row.rgl-dragging { opacity:0.35; }
+  .rg-layer-row.rgl-drop-before { border-top:2px solid var(--accent); margin-top:-1px; }
+  .rg-layer-row.rgl-drop-after  { border-bottom:2px solid var(--accent); margin-bottom:-1px; }
+  .rg-layer-grip { flex:0 0 auto; color:var(--muted); cursor:grab; letter-spacing:-2px; font-size:1.05rem; line-height:1; }
+  .rg-layer-row:active .rg-layer-grip { cursor:grabbing; }
+  .rg-layer-preview {
+    flex:0 0 46px; height:30px; display:flex; align-items:center; justify-content:center;
+    border-radius:5px; overflow:hidden;
+    background:linear-gradient(135deg, rgba(120,150,120,0.16), rgba(90,120,150,0.18));
+    border:1px solid rgba(255,255,255,0.09);
+  }
+  body.light-mode .rg-layer-preview { background:linear-gradient(135deg, rgba(150,180,150,0.25), rgba(150,180,210,0.28)); }
+  .rg-layer-text { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+  .rg-layer-label { font-family:'Rajdhani',sans-serif; font-weight:600; font-size:1.02rem; color:var(--text); line-height:1.12; }
+  .rg-layer-desc { font-size:0.78rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .rg-layer-z { flex:0 0 auto; font-family:'Courier New',monospace; font-size:0.72rem; color:var(--muted); background:rgba(0,0,0,0.28); padding:0.08rem 0.34rem; border-radius:4px; }
+  body.light-mode .rg-layer-z { background:rgba(0,0,0,0.08); }
+  .rg-layer-nudge { flex:0 0 auto; display:flex; flex-direction:column; gap:1px; }
+  .rg-layer-arrow { width:21px; height:15px; line-height:1; padding:0; font-size:0.66rem; cursor:pointer; border-radius:3px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.06); color:var(--text); }
+  .rg-layer-arrow:hover:not(:disabled) { background:var(--accent); color:#06121a; border-color:var(--accent); }
+  .rg-layer-arrow:disabled { opacity:0.28; cursor:default; }
+  /* Preview-swatch inner bits — miniature versions of the real elements. */
+  .rgl-pv-tip { font-family:'Courier New',monospace; font-size:0.58rem; font-weight:700; color:#fff; background:rgba(10,14,28,0.95); border:1px solid rgba(0,200,255,0.45); border-radius:3px; padding:1px 3px; }
+  .rgl-pv-alert { font-family:'Rajdhani',sans-serif; font-size:0.54rem; font-weight:700; color:#1a1400; background:#ffd400; border-radius:3px; padding:1px 3px; white-space:nowrap; }
+  .rgl-pv-wpt { font-family:'Rajdhani',sans-serif; font-size:0.58rem; font-weight:700; color:#111; background:#fff; border-radius:3px; padding:1px 4px; }
+  .rgl-pv-rlbl { font-family:'Rajdhani',sans-serif; font-size:0.55rem; font-weight:700; color:#fff; background:rgba(40,46,60,0.95); border:1px solid rgba(255,255,255,0.18); border-radius:3px; padding:1px 3px; }
+  .rgl-pv-mark { width:9px; height:9px; background:#ff2db5; transform:rotate(45deg); border:1px solid rgba(255,255,255,0.75); }
+
   .live-ac-icon-grid {
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
@@ -8417,7 +8458,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.42.0';
+const APP_VERSION = '3.44.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8572,7 +8613,18 @@ let runwayDB           = null;
 let runwaySupplementDB = null; // Map: ICAO → runway array; loaded from SimFly_Airport_Overrides.json
 let categoryDB         = null;
 let payoutDB           = null; // Map: ICAO.toUpperCase() → percToUser (0–100); loaded from localStorage
-let newAirportsDB      = null; // Set of ICAO.toUpperCase() added within the last 30 days (from payout-data.json first_seen)
+let newAirportsDB      = null; // Set of ICAO.toUpperCase() activated within the configured window (from payout-data.json `act` = SimFly activation_date)
+
+// True when an airport was ACTIVATED on SimFly within the window. `act` is the
+// activation_date from the rewards API as a Unix timestamp in SECONDS — the
+// airport's real birthday. v3.43.2 switched the "new airport" indicator to this
+// from the old `first_seen` heuristic, which recorded when the hourly PIPELINE
+// first saw an airport and so falsely flagged long-established airports as new
+// whenever a transient rewards-feed drop (or the pipeline's own recent rollout)
+// made them "reappear" — e.g. EGPN (activated Jan 2025) showing as new.
+function _rgIsNewByAct(info, cutoffMs) {
+  return !!(info && info.act && info.act * 1000 >= cutoffMs);
+}
 let aircraftDB = new Map();   // Map: ICAO_Code → {label, brand, model, cat, simfly_cat, mtow_ft, land_ft, pavedOnly, range_nm}
 let dbLookupDB = new Map(); // Map: SimFly code → OurAirports ident (DB_LOOKUP cross-mappings, e.g. EGON → GB-0464)
 let dbLoadPromise = null;
@@ -8701,13 +8753,13 @@ function loadAirportDB() {
         try { localStorage.setItem('simfly_payout_db', JSON.stringify(payoutJson)); } catch(e) {}
       }
 
-      // ── Build new-airports set (airports with first_seen within the configured window) ──
+      // ── Build new-airports set (airports activated within the configured window) ──
       if (payoutDataJson && typeof payoutDataJson === 'object') {
         _rgPayoutDataJsonCache = payoutDataJson;
         const cutoff = Date.now() - _rgNewAirportSettings.pulseDays * 24 * 60 * 60 * 1000;
         newAirportsDB = new Set();
         for (const [icao, info] of Object.entries(payoutDataJson)) {
-          if (info.first_seen && new Date(info.first_seen).getTime() >= cutoff)
+          if (_rgIsNewByAct(info, cutoff))
             newAirportsDB.add(icao.toUpperCase());
         }
         if (newAirportsDB.size > 0) {
@@ -24011,7 +24063,7 @@ function _afkEnsureLabelPane() {
   if (!_rgMap.getPane('afkLabelPane')) {
     _rgMap.createPane('afkLabelPane');
     const p = _rgMap.getPane('afkLabelPane');
-    if (p) { p.style.zIndex = '1150'; p.style.pointerEvents = 'none'; }
+    if (p) { p.style.zIndex = _rgPaneZ('afkLabelPane'); p.style.pointerEvents = 'none'; }
   }
   return 'afkLabelPane';
 }
@@ -29533,6 +29585,179 @@ function _rgPivotClick(event, icao, axis) {
   _rgRenderMatrix();
 }
 
+// ── Map layer z-order manager (v3.44.0) ─────────────────────────────────────
+// User-configurable stacking order for the map's overlay panes. Each managed
+// layer maps to exactly one Leaflet pane. The default z-values form a FIXED,
+// closed set of "slots"; reordering is a pure permutation among those slots, so
+// a layer can never drop below the base tiles (z 200) or rise into the map
+// chrome / modals (9000+). Order persists to localStorage; Reset restores the
+// defaults below. Drives Display → 🗂 Layers.
+const _RG_LAYER_LS = 'simfly_aa_layer_order';
+const _RG_LAYER_DEFS = [
+  { id:'tooltip',  pane:'rgDotTipPane',    defaultZ:1200, label:'Airport tooltip',       desc:'Hover / tap info card' },
+  { id:'alerts',   pane:'afkLabelPane',    defaultZ:1150, label:'Alert labels',          desc:'Geofence & waypoint-alarm tags' },
+  { id:'wptlabel', pane:'tooltipPane',     defaultZ:1100, label:'Waypoint labels',       desc:'SimBrief flight-plan pills' },
+  { id:'acicon',   pane:'liveAcPane',      defaultZ:675,  label:'Aircraft icon',         desc:'Live aircraft marker' },
+  { id:'actrail',  pane:'liveAcTrailPane', defaultZ:670,  label:'Aircraft trail',        desc:'Breadcrumb track' },
+  { id:'routelbl', pane:'routeLabelPane',  defaultZ:650,  label:'Route labels',          desc:'Distance / route text' },
+  { id:'markers',  pane:'markerPane',      defaultZ:600,  label:'Waypoint markers',      desc:'Plan fixes & new-airport rings' },
+  { id:'routeln',  pane:'routeLinePane',   defaultZ:450,  label:'Route line',            desc:'SimBrief plotted route' },
+  { id:'geom',     pane:'rgGeomPane',      defaultZ:420,  label:'Measurement & regions', desc:'Rings, ranges, rulers' },
+  { id:'dots',     pane:'overlayPane',     defaultZ:400,  label:'Airport dots',          desc:'Every airport dot' },
+];
+// The ONLY z-values we ever assign, highest first. Reorder = permute these.
+const _RG_LAYER_SLOTS = _RG_LAYER_DEFS.map(d => d.defaultZ).slice().sort((a, b) => b - a);
+const _rgLayerDef = id => _RG_LAYER_DEFS.find(d => d.id === id);
+let _rgLayerZ = {};                       // { paneName: z }
+
+function _rgLoadLayerOrder() {
+  const def = _RG_LAYER_DEFS.map(d => d.id);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(_RG_LAYER_LS) || 'null'); } catch (_) {}
+  if (!Array.isArray(saved)) return def;
+  // Keep only known ids (drops corrupt / foreign entries), then append any
+  // missing ids in default position — forward-compatible if layers are added.
+  const valid = saved.filter(id => _rgLayerDef(id) && saved.indexOf(id) === saved.lastIndexOf(id));
+  for (const id of def) if (valid.indexOf(id) === -1) valid.push(id);
+  return valid.length === def.length ? valid : def;
+}
+let _rgLayerOrder = _rgLoadLayerOrder();   // array of ids, top → bottom
+
+function _rgSaveLayerOrder() {
+  try { localStorage.setItem(_RG_LAYER_LS, JSON.stringify(_rgLayerOrder)); } catch (_) {}
+}
+// Build { paneName: z } from the current order: top row → highest slot.
+function _rgComputeLayerZ() {
+  _rgLayerZ = {};
+  _rgLayerOrder.forEach((id, i) => {
+    const d = _rgLayerDef(id);
+    if (d) _rgLayerZ[d.pane] = _RG_LAYER_SLOTS[i];
+  });
+  return _rgLayerZ;
+}
+// Single source of truth for every pane-creation site (handles lazy panes).
+function _rgPaneZ(paneName) {
+  if (!_rgLayerZ || !Object.keys(_rgLayerZ).length) _rgComputeLayerZ();
+  if (_rgLayerZ[paneName] != null) return _rgLayerZ[paneName];
+  const d = _RG_LAYER_DEFS.find(x => x.pane === paneName);
+  return d ? d.defaultZ : undefined;
+}
+// Re-apply the current z-order to every managed pane that already exists.
+function _rgApplyLayerZ() {
+  if (!_rgMap) return;
+  _rgComputeLayerZ();
+  for (const d of _RG_LAYER_DEFS) {
+    const p = _rgMap.getPane(d.pane);
+    if (p) p.style.zIndex = _rgLayerZ[d.pane];
+  }
+}
+
+// Tiny authentic mini-render of each layer's real element, for the modal rows.
+function _rgLayerPreview(id) {
+  switch (id) {
+    case 'dots':
+      return '<svg viewBox="0 0 24 24" width="22" height="22">' +
+        '<circle cx="12" cy="12" r="6.5" fill="#ffd23f" stroke="rgba(0,0,0,0.6)" stroke-width="1.2"/>' +
+        '<g stroke="#fff" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="4.4" x2="12" y2="1.4"/><line x1="18.6" y1="15.6" x2="21.2" y2="17.1"/><line x1="5.4" y1="15.6" x2="2.8" y2="17.1"/></g>' +
+        '<g stroke="#16161c" stroke-width="1.2" stroke-linecap="round"><line x1="12" y1="4.4" x2="12" y2="1.4"/><line x1="18.6" y1="15.6" x2="21.2" y2="17.1"/><line x1="5.4" y1="15.6" x2="2.8" y2="17.1"/></g></svg>';
+    case 'tooltip':  return '<span class="rgl-pv-tip">KPVU</span>';
+    case 'alerts':   return '<span class="rgl-pv-alert">⚠ @ARR</span>';
+    case 'wptlabel': return '<span class="rgl-pv-wpt">TOD</span>';
+    case 'acicon': {
+      let body = '';
+      try {
+        const d = (typeof _LIVE_AC_ICONS !== 'undefined') ? (_LIVE_AC_ICONS[(typeof _liveAcGetIconId === 'function') ? _liveAcGetIconId() : 'airliner'] || _LIVE_AC_ICONS.airliner) : null;
+        if (d) body = (d.body || '').replace(/\{C\}/g, '#00e676');
+      } catch (_) {}
+      return '<svg viewBox="0 0 24 24" width="22" height="22" style="display:block">' + body + '</svg>';
+    }
+    case 'actrail':  return '<svg viewBox="0 0 46 24" width="40" height="22"><path d="M3 19 Q14 4 23 13 T43 7" fill="none" stroke="#00e676" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 4"/></svg>';
+    case 'routelbl': return '<span class="rgl-pv-rlbl">128 nm</span>';
+    case 'markers':  return '<span class="rgl-pv-mark"></span>';
+    case 'routeln':  return '<svg viewBox="0 0 46 24" width="40" height="22"><line x1="3" y1="12" x2="43" y2="12" stroke="#ffd166" stroke-width="5"/><line x1="3" y1="12" x2="43" y2="12" stroke="#fff" stroke-width="1.4"/></svg>';
+    case 'geom':     return '<svg viewBox="0 0 46 24" width="40" height="22"><circle cx="23" cy="12" r="8.5" fill="rgba(255,106,0,0.12)" stroke="#ff6a00" stroke-width="1.6"/><circle cx="23" cy="12" r="1.9" fill="#ff6a00"/></svg>';
+  }
+  return '';
+}
+
+function _rgLayersRender() {
+  const list = document.getElementById('rgLayersList');
+  if (!list) return;
+  _rgComputeLayerZ();
+  list.innerHTML = _rgLayerOrder.map((id, i) => {
+    const d = _rgLayerDef(id); if (!d) return '';
+    const z = _RG_LAYER_SLOTS[i];
+    const upDis = i === 0 ? ' disabled' : '';
+    const dnDis = i === _rgLayerOrder.length - 1 ? ' disabled' : '';
+    return '<div class="rg-layer-row" draggable="true" data-lid="' + id + '" ' +
+        'ondragstart="_rgLayersDragStart(event,\'' + id + '\')" ondragover="_rgLayersDragOver(event,\'' + id + '\')" ' +
+        'ondragleave="_rgLayersDragLeave(event)" ondrop="_rgLayersDrop(event,\'' + id + '\')" ondragend="_rgLayersDragEnd(event)">' +
+        '<span class="rg-layer-grip" title="Drag to reorder">⋮⋮</span>' +
+        '<span class="rg-layer-preview">' + _rgLayerPreview(id) + '</span>' +
+        '<span class="rg-layer-text"><span class="rg-layer-label">' + d.label + '</span>' +
+          '<span class="rg-layer-desc">' + d.desc + '</span></span>' +
+        '<span class="rg-layer-z" title="Stacking value (higher = on top)">z' + z + '</span>' +
+        '<span class="rg-layer-nudge">' +
+          '<button class="rg-layer-arrow" title="Move up"' + upDis + ' onclick="_rgLayersMove(\'' + id + '\',-1)">▲</button>' +
+          '<button class="rg-layer-arrow" title="Move down"' + dnDis + ' onclick="_rgLayersMove(\'' + id + '\',1)">▼</button>' +
+        '</span></div>';
+  }).join('');
+}
+function _rgLayersApply() { _rgSaveLayerOrder(); _rgApplyLayerZ(); _rgLayersRender(); }
+function _rgLayersMove(id, dir) {
+  const i = _rgLayerOrder.indexOf(id), j = i + dir;
+  if (i < 0 || j < 0 || j >= _rgLayerOrder.length) return;
+  const t = _rgLayerOrder[i]; _rgLayerOrder[i] = _rgLayerOrder[j]; _rgLayerOrder[j] = t;
+  _rgLayersApply();
+}
+function _rgLayersReset() { _rgLayerOrder = _RG_LAYER_DEFS.map(d => d.id); _rgLayersApply(); }
+function _rgLayersOpenModal() {
+  const m = document.getElementById('rgLayersModal'); if (!m) return;
+  _rgLayersRender(); m.classList.add('open');
+}
+function _rgLayersCloseModal() {
+  const m = document.getElementById('rgLayersModal'); if (m) m.classList.remove('open');
+}
+// Drag-to-reorder (native HTML5 DnD, mirrors the alerts cards; before/after only).
+let _rgLayersDragId = null;
+function _rgLayersDragStart(ev, id) {
+  _rgLayersDragId = id;
+  if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', id); } catch (_) {} }
+  if (ev.currentTarget) ev.currentTarget.classList.add('rgl-dragging');
+}
+function _rgLayersDragZone(ev, row) {
+  const r = row.getBoundingClientRect();
+  return (ev.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+}
+function _rgLayersDragOver(ev, id) {
+  if (!_rgLayersDragId || id === _rgLayersDragId) return;
+  ev.preventDefault();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+  const row = ev.currentTarget;
+  row.classList.remove('rgl-drop-before', 'rgl-drop-after');
+  row.classList.add(_rgLayersDragZone(ev, row) === 'before' ? 'rgl-drop-before' : 'rgl-drop-after');
+}
+function _rgLayersDragLeave(ev) { ev.currentTarget.classList.remove('rgl-drop-before', 'rgl-drop-after'); }
+function _rgLayersDrop(ev, toId) {
+  ev.preventDefault();
+  const fromId = _rgLayersDragId, row = ev.currentTarget;
+  const where = _rgLayersDragZone(ev, row);
+  row.classList.remove('rgl-drop-before', 'rgl-drop-after');
+  if (!fromId || fromId === toId) return;
+  const from = _rgLayerOrder.indexOf(fromId);
+  if (from >= 0) _rgLayerOrder.splice(from, 1);
+  let to = _rgLayerOrder.indexOf(toId);
+  if (where === 'after') to += 1;
+  _rgLayerOrder.splice(to, 0, fromId);
+  _rgLayersApply();
+}
+function _rgLayersDragEnd() {
+  _rgLayersDragId = null;
+  const list = document.getElementById('rgLayersList');
+  if (list) list.querySelectorAll('.rgl-dragging,.rgl-drop-before,.rgl-drop-after')
+    .forEach(el => el.classList.remove('rgl-dragging', 'rgl-drop-before', 'rgl-drop-after'));
+}
+
 // ── Map initialisation ──────────────────────────────────────────────────
 
 async function _rgInitMap() {
@@ -29562,7 +29787,7 @@ async function _rgInitMap() {
   // above dots (400) and below the route-line pane (450).
   if (!_rgMap.getPane('rgGeomPane')) {
     const gp = _rgMap.createPane('rgGeomPane');
-    gp.style.zIndex = 420;
+    gp.style.zIndex = _rgPaneZ('rgGeomPane');
     gp.style.pointerEvents = 'none';
   }
   // Dedicated high-z-index pane for the live-aircraft breadcrumb trail so
@@ -29572,7 +29797,7 @@ async function _rgInitMap() {
   // trail since the trail is decorative path data, not an annotation.
   if (!_rgMap.getPane('liveAcTrailPane')) {
     const tp = _rgMap.createPane('liveAcTrailPane');
-    tp.style.zIndex = 670;
+    tp.style.zIndex = _rgPaneZ('liveAcTrailPane');
     tp.style.pointerEvents = 'none';
   }
   // v3.31.0 — dedicated pane for the live-aircraft icon so the plane draws
@@ -29583,14 +29808,32 @@ async function _rgInitMap() {
   // (hover tooltip + double-click zoom), so this pane must keep pointer events.
   if (!_rgMap.getPane('liveAcPane')) {
     const ap = _rgMap.createPane('liveAcPane');
-    ap.style.zIndex = 675;
+    ap.style.zIndex = _rgPaneZ('liveAcPane');
   }
   // v3.31.0 — lift the tooltip pane above the breadcrumb filter strip
   // (.rg-map-breadcrumbs, z-index 1000). The breadcrumb div is a child of
   // #rgMapContainer and competes directly with the Leaflet sub-panes, so a
   // dot tooltip near the top of the map was being painted under the chips.
   const _rgTtPane = _rgMap.getPane('tooltipPane');
-  if (_rgTtPane) _rgTtPane.style.zIndex = 1100;
+  if (_rgTtPane) _rgTtPane.style.zIndex = _rgPaneZ('tooltipPane');
+
+  // v3.43.4 — dedicated pane for the airport dot info tooltip, ABOVE the
+  // geofence / waypoint-alarm labels (afkLabelPane, z-index 1150). The shared
+  // tooltipPane (1100) sits BELOW afkLabelPane on purpose — that keeps the
+  // permanent SimBrief waypoint label pills under the alert annotations
+  // (v3.31.1). The airport tooltip needs the opposite: it must read over an
+  // alert tag that happens to overlap the airport you're inspecting. Putting it
+  // in its own higher pane lifts ONLY the dot tooltip without disturbing the
+  // waypoint pills. pointer-events:none so it never intercepts map gestures.
+  if (!_rgMap.getPane('rgDotTipPane')) {
+    _rgMap.createPane('rgDotTipPane');
+    const _dtp = _rgMap.getPane('rgDotTipPane');
+    if (_dtp) { _dtp.style.zIndex = _rgPaneZ('rgDotTipPane'); _dtp.style.pointerEvents = 'none'; }
+  }
+  // v3.44.0 — apply the user's saved layer order to every pane that now exists
+  // (incl. the default overlayPane / markerPane). Lazily-created panes
+  // (afkLabelPane, routeLinePane, routeLabelPane) pick it up via _rgPaneZ.
+  _rgApplyLayerZ();
 
   // Restore the user's last-picked tile layer (v2.78.0+). Default street.
   try { _rgMapSat = (localStorage.getItem(_RG_MAP_LAYER_LS) === 'sat'); }
@@ -29831,6 +30074,16 @@ function _rgSplitEnd() {
 
 // ── Airport dot layer ──────────────────────────────────────────────────
 
+// Force the dot canvas's NEXT (already-scheduled) redraw to clear the WHOLE
+// canvas instead of just the resized dot's bounds. The level corona + rotation
+// gauge paint beyond a dot's _pxBounds, so Leaflet's partial-clear on setRadius
+// would leave "dust" — leftover spikes/ring fragments — when a hovered dot grows
+// or shrinks. Nulling _redrawBounds makes the pending repaint a full clear. (v3.43.1)
+function _rgRepaintDots(marker) {
+  const r = (marker && marker._renderer) || (typeof _rgCanvasRenderer !== 'undefined' ? _rgCanvasRenderer : null);
+  if (r) r._redrawBounds = null;
+}
+
 function _rgBindDotTip(marker, icao, rec, ownerName) {
   // Tooltip HTML is stable for a given ICAO within a render pass (owner, category,
   // runway data don't change mid-session). Use a per-ICAO cache so _rgHighlightDots
@@ -29940,7 +30193,17 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       `</div>`;
     _rgTipHtmlCache.set(cacheKey, html);
   }
-  marker.bindTooltip(html, { direction: 'top', permanent: false, className: 'rg-dot-tip' });
+  // Hover-grow geometry (v3.43.0). The dot doubles in size after a 500 ms hover
+  // (see the mouseover handler below) so its rotation gauge ring + level corona
+  // are easy to read. Lift the tooltip so it clears the GROWN 12 o'clock corona
+  // spike (or the grown dot edge when no corona) instead of covering it.
+  const _baseRadius = marker.options.radius;
+  const _grownR     = _baseRadius * 2;
+  marker._rgBaseR   = _baseRadius;   // read by _updatePath to scale gauge/corona stroke widths
+  const _topReach   = ((marker.options.coronaLevel | 0) >= 1)
+    ? (_grownR + 1.5) + Math.max(4, _grownR * 0.6) + 3   // grown corona spike + gap
+    : _grownR + 4;                                        // grown dot edge + gap
+  marker.bindTooltip(html, { direction: 'top', permanent: false, className: 'rg-dot-tip', offset: [0, -_topReach], pane: 'rgDotTipPane' });
   // Block Leaflet's auto-open entirely via a permanent instance no-op.
   // Leaflet's _openTooltip calls this.openTooltip() on mouseover; the no-op stops
   // that chain without touching any event registrations (ruler stays intact).
@@ -29962,10 +30225,38 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       tip.setLatLng(self.getLatLng());
       tip.openOn(self._map);
     }, 250);
+    // Hover-grow — the dot doubles in size (its gauge ring + corona scale with
+    // it) and rises above neighbours so it reads clearly. Restored on mouseout.
+    // Uses the SAME 250 ms delay as the tooltip above so the dot grows in step
+    // with the tooltip rather than a beat behind it.
+    clearTimeout(self._rgGrowT);
+    self._rgGrowT = setTimeout(function() {
+      if (!self._map || (_rgPhase !== 'explore' && _rgPhase !== 'results')) return;
+      if (self.options.radius !== _baseRadius) return;
+      self.setRadius(_grownR);
+      try { self.bringToFront(); } catch (_) {}
+      // The "has scenery" centre dot is a separate marker — scale it in step and
+      // bring it to front AFTER the airport dot so it draws last (stays on top of
+      // the grown dot instead of being buried by the airport's bringToFront).
+      const sc = self._rgSceneryDot;
+      if (sc && sc._map) {
+        sc._rgScBase = sc._rgScBase || sc.options.radius;
+        sc.setRadius(sc._rgScBase * (_grownR / _baseRadius));
+        try { sc.bringToFront(); } catch (_) {}
+      }
+      _rgRepaintDots(self);
+    }, 250);
   });
   marker.on('mouseout', function() {
     clearTimeout(_rgTipTimer);
     this.closeTooltip();
+    clearTimeout(this._rgGrowT);
+    if (this.options.radius !== _baseRadius) {
+      this.setRadius(_baseRadius);
+      const sc = this._rgSceneryDot;
+      if (sc && sc._map && sc._rgScBase) { sc.setRadius(sc._rgScBase); try { sc.bringToFront(); } catch (_) {} }
+      _rgRepaintDots(this);
+    }
   });
   // v3.19.4 — touch tap-to-pin tooltip. The mouseover/mouseout dance above
   // is hostile to touch: on a tap, the browser synthesizes mouseover →
@@ -30034,13 +30325,17 @@ function _rgCoronaMarker(latlng, opts) {
         if (!r || !r._ctx || !this._point) return;
         if (this._empty && this._empty()) return;
         const ctx   = r._ctx, p = this._point;
+        // Stroke widths scale with the dot so the gauge ring + corona stay
+        // proportionally bold when a hovered dot grows (v3.43.1). scale = 1 at
+        // base size, 2 when the hover-grow doubles the radius.
+        const scale = this._radius / (this._rgBaseR || this._radius);
         if (gf != null && gf > 0) {
           ctx.save();
           ctx.beginPath();
           const start = -Math.PI / 2;                       // 12 o'clock
           ctx.arc(p.x, p.y, this._radius, start, start - Math.min(1, gf) * 2 * Math.PI, true);  // anti-clockwise
           ctx.strokeStyle = 'rgba(0,0,0,0.9)';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 3 * scale;
           ctx.lineCap = gf >= 1 ? 'butt' : 'round';
           ctx.stroke();
           ctx.restore();
@@ -30048,7 +30343,7 @@ function _rgCoronaMarker(latlng, opts) {
         // ── Level corona ─────────────────────────────────────────────────
         const lvl = this.options.coronaLevel | 0;
         if (lvl < 1) return;
-        const inner = this._radius + 1.5;                  // just outside the border
+        const inner = this._radius + 1.5 * scale;          // just outside the border
         const outer = inner + Math.max(4, this._radius * 0.6);
         const seg = [];
         for (let i = 0; i < lvl; i++) {
@@ -30059,12 +30354,12 @@ function _rgCoronaMarker(latlng, opts) {
         ctx.save();
         ctx.lineCap = 'round';
         ctx.strokeStyle = 'rgba(255,255,255,0.85)';        // halo
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3 * scale;
         ctx.beginPath();
         for (const s of seg) { ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); }
         ctx.stroke();
         ctx.strokeStyle = this.options.coronaColor || 'rgba(15,15,20,0.92)';  // core
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.6 * scale;
         ctx.beginPath();
         for (const s of seg) { ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]); }
         ctx.stroke();
@@ -30259,7 +30554,7 @@ function _rgRenderDots() {
       }).addTo(_rgPulseLayer);
     }
     if (_rgShowScenery && _slHas(ap.icao)) {
-      L.circleMarker([rec.latitude, rec.longitude], {
+      m._rgSceneryDot = L.circleMarker([rec.latitude, rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
         fillColor: '#000000', fillOpacity: 1, interactive: false,
       }).addTo(_rgDotLayer);
@@ -30311,7 +30606,7 @@ function _rgRenderDots() {
     // black center dot exactly like owned airports get in the main loop, so a
     // manually-searched non-SimFly airport still shows its scenery dot.
     if (_rgShowScenery && _slHas(icaoUp)) {
-      L.circleMarker([rec.latitude, rec.longitude], {
+      m._rgSceneryDot = L.circleMarker([rec.latitude, rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
         fillColor: '#000000', fillOpacity: 1, interactive: false,
       }).addTo(_rgDotLayer);
@@ -30423,10 +30718,10 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   // routeLinePane (450) > overlayPane (400); routeLabelPane (650) > markerPane (600).
   if (!_rgMap.getPane('routeLinePane')) {
     const lp = _rgMap.createPane('routeLinePane');
-    lp.style.zIndex = 450;
+    lp.style.zIndex = _rgPaneZ('routeLinePane');
     lp.style.pointerEvents = 'none';
     const lbp = _rgMap.createPane('routeLabelPane');
-    lbp.style.zIndex = 650;
+    lbp.style.zIndex = _rgPaneZ('routeLabelPane');
     lbp.style.pointerEvents = 'none';
   }
 
@@ -30592,7 +30887,7 @@ function _rgHighlightDots() {
     m.addTo(_rgHiLayer);
     _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
     if (_rgShowScenery && _slHas(a.icao)) {
-      L.circleMarker([a.rec.latitude, a.rec.longitude], {
+      m._rgSceneryDot = L.circleMarker([a.rec.latitude, a.rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
         fillColor: '#000000', fillOpacity: 1, interactive: false,
       }).addTo(_rgHiLayer);
@@ -30668,7 +30963,7 @@ function _rgHighlightDots() {
     m.addTo(_rgHiLayer);
     _rgVisibleIcaosFromHi.add(a.icao.toUpperCase());
     if (_rgShowScenery && _slHas(a.icao)) {
-      L.circleMarker([a.rec.latitude, a.rec.longitude], {
+      m._rgSceneryDot = L.circleMarker([a.rec.latitude, a.rec.longitude], {
         renderer: _rgCanvasRenderer, radius: 3, weight: 0,
         fillColor: '#000000', fillOpacity: 1, interactive: false,
       }).addTo(_rgHiLayer);
@@ -31666,8 +31961,10 @@ function _rgRandReadNum(id) {
 }
 // Clear every in-modal field — distance, flight time, scope toggle, and the
 // category / continent / country / owner selections on BOTH the departure and
-// arrival working sets — back to its default (no limit). Non-destructive: this
-// only repaints the open form; nothing is persisted until Save & Generate.
+// arrival working sets — back to its default (no limit), AND persist that
+// cleared state to localStorage so closing and re-opening the modal doesn't
+// recall the old filters. `configured` is preserved so a plain 🎲 click still
+// generates rather than re-triggering the first-run modal.
 function _rgRandReset() {
   const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   setV('rgRandMinNm', '');  setV('rgRandMaxNm', '');
@@ -31676,6 +31973,12 @@ function _rgRandReset() {
   // Both endpoints back to empty so switching tabs shows a cleared panel too.
   _rgRandWork = { dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp() };
   _rgRandRenderTab();   // rebuilds the active tab's controls from the empty set + recounts
+  _rgRandSaveOpts({
+    configured: _rgRandLoadOpts().configured,
+    minNm: null, maxNm: null, minMin: null, maxMin: null,
+    visibleOnly: false,
+    dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp(),
+  });
 }
 
 function _rgRandSaveAndGenerate() {
@@ -34225,7 +34528,7 @@ function _rgRebuildNewAirports() {
   const cutoff = Date.now() - _rgNewAirportSettings.pulseDays * 24 * 60 * 60 * 1000;
   newAirportsDB = new Set();
   for (const [icao, info] of Object.entries(_rgPayoutDataJsonCache)) {
-    if (info.first_seen && new Date(info.first_seen).getTime() >= cutoff)
+    if (_rgIsNewByAct(info, cutoff))
       newAirportsDB.add(icao.toUpperCase());
   }
   const btn = document.getElementById('rgNewAirportsBtn');
@@ -37988,6 +38291,26 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- 🗂 Map Layers (z-order) modal — v3.44.0 -->
+<div class="modal-overlay" id="rgLayersModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _rgLayersCloseModal)">
+  <div class="modal" style="max-width:430px;">
+    <div class="modal-header">
+      <span class="modal-title">&#128450; &nbsp;Map Layers</span>
+      <button class="modal-close" onclick="_rgLayersCloseModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="rgrand-intro">Set what draws on top of what. Drag a layer up &mdash; or use the &#9650;&#9660; buttons &mdash; to lift it above the others. The top of the list is drawn on top of everything. Changes apply instantly and are saved in this browser.</p>
+      <div class="rgl-stack-cap">&#9650; &nbsp;Drawn on top</div>
+      <div id="rgLayersList"></div>
+      <div class="rgl-stack-cap bottom">Drawn underneath &nbsp;&#9660;</div>
+      <div class="fp-settings-btns">
+        <button class="npc-btn npc-btn-cancel" style="margin-right:auto" onclick="_rgLayersReset()" title="Restore the default stacking order">&#8634; Reset to Default</button>
+        <button class="npc-btn npc-btn-save" onclick="_rgLayersCloseModal()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Flight Demo Mode configuration modal — v2.97.0 -->
 <div class="modal-overlay" id="demoModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _demoCloseModal)">
   <div class="modal" style="max-width:640px;">
@@ -38147,7 +38470,7 @@ function rgSendToFlightPlanner() {
             For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
             If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
             After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them). Click the small <strong>✕</strong> on its right to dismiss it; it returns the next time you create a random flight.<br/><br/>
-            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click (it takes effect once you <em>Save &amp; Generate</em>). Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
+            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click — and saves that cleared state immediately, so it sticks even if you close the window without generating. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
           </div>
         </div>
       </div>
@@ -38367,6 +38690,19 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">🗂</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Map Layers (stacking order)</div>
+          <div class="help-feature-desc">
+            Open the <strong>👁 Display</strong> menu and click <strong>🗂 Layers…</strong> to choose which map elements draw on top of which. The window lists every overlay — <em>airport dots, airport tooltips, waypoint labels, the aircraft icon and trail, route line and labels, alert labels,</em> and <em>measurement/region overlays</em> — each with a small graphic of the real element and its stacking value.<br/><br/>
+            <strong>Reorder</strong> — drag a layer up (grab the <strong>⋮⋮</strong> handle) or use the <strong>▲▼</strong> buttons to nudge it one step. The <strong>top of the list draws on top of everything</strong>; the bottom draws underneath. Changes apply to the map instantly and are saved in your browser, so your chosen order is remembered between sessions.<br/><br/>
+            This is the permanent way to settle any "which label covers which" question — e.g. if you'd rather a geofence alert tag sit above airport tooltips, just drag <em>Alert labels</em> above <em>Airport tooltip</em>. Layers can only be reordered among themselves: nothing can ever drop below the base map or rise above the menus and pop-up windows.<br/><br/>
+            <strong>↺ Reset to Default</strong> at the bottom-left restores the original sensible order in one click, so you can experiment freely and undo any mess instantly.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">🆕</div>
         <div class="help-feature-body">
           <div class="help-feature-title">New Airports</div>
@@ -38400,6 +38736,7 @@ function rgSendToFlightPlanner() {
             Every SimFly airport has a weekly pool of flight <strong>rotations</strong> — the number of times it can be flown into before its traffic resets for the week. The size of the pool (its <em>capacity</em>) grows with the airport's level. The <strong>rotation gauge</strong> shows, at a glance, how much of that pool is still available right now.<br/><br/>
             Each airport dot's <strong>outline</strong> doubles as a low-rotation warning. Because what matters for planning is whether an airport is running <em>low</em> this week, the outline only depletes in the danger zone: an airport with <strong>10 or more rotations remaining</strong> shows a <strong>full 3&nbsp;px black ring</strong>, and once it drops below 10 the ring shrinks <strong>anti-clockwise from 12 o'clock</strong> as a percentage of 10 (9 remaining ≈ 90% of the ring, 5 ≈ 50%, 1 ≈ 10%). An airport with <strong>zero rotations left has no outline at all</strong> — so the airports to avoid this week are simply the ones with no ring. The ring sits clear of the level-badge corona spikes, which radiate outside the dot.<br/><br/>
             <strong>Exact numbers</strong> — hover any airport dot and its tooltip shows the rotations remaining and total alongside its category and level: "<em>ICAO &nbsp;Cat&nbsp;n &nbsp;Lvl&nbsp;n &nbsp;(remaining / total)</em>". The detailed airport tooltip and the right-click <strong>Quick-Rate</strong> card both carry a "Rotations: X / Y left this week" line as well, colour-coded green (10 or more left) / amber (fewer than 10) / red (none) so the count is available everywhere you inspect an airport.<br/><br/>
+            <strong>Hover to enlarge</strong> — rest the mouse on any airport dot for half a second and it doubles in size, making the rotation ring and level-corona spikes easy to read on the airport you're examining. It returns to normal as soon as you move away.<br/><br/>
             <strong>Toggle the gauge</strong> — open the <strong>👁 Display</strong> menu and click <strong>🔄 Display Rotations</strong>, or simply <strong>middle-click anywhere on the map</strong> for a quick on/off. While it is on, a <strong>🔄 Rotation Gauge</strong> chip also appears in the filter strip — click its <strong>✕</strong> to hide the gauge. It is off by default; once you turn it on your choice is remembered between sessions.<br/><br/>
             <strong>Rotations Left Only filter</strong> — also under <strong>👁 Display</strong>, click <strong>🔄 Rotations Left Only</strong> to hide every airport that has exhausted its rotations for the week, leaving just the airports you can still fly into. Airports with no rotation data are left visible. While the filter is active a removable <strong>🔄 Rotations Left</strong> chip appears in the filter strip; its ✕ clears it, and ⊗ Clear All removes it along with every other filter. Rotation data refreshes automatically through the same hourly pipeline that feeds owner colours, levels, and categories.<br/><br/>
             <strong>Low-rotation warnings (3 or fewer left)</strong> — when a departure/arrival pair is selected, the on-map distance label adds a red <strong>⚠ Low rotations</strong> note naming any endpoint with 3 or fewer rotations remaining, and a yellow <strong>⚠</strong> badge appears on the <strong>File on SimBrief</strong> buttons. Clicking <strong>File on SimBrief</strong> (the main button or the floating map route pill) then shows a confirmation first if the departure or arrival is at 3 or fewer — it lists the airport and its remaining count, and shows <em>before</em> the new-pilot-codes prompt. Cancel to back out, or <strong>File Anyway →</strong> to continue.
@@ -38633,8 +38970,79 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.42.0</span>
+          <span class="release-version">v3.44.0</span>
           <span class="release-date">June 24, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New "Layers" manager — control what draws on top.</strong> The <em>👁 Display</em> menu has a new <strong>🗂 Layers…</strong> item that opens a window listing every map layer — airport dots, airport tooltips, waypoint labels, the aircraft icon and trail, route line and labels, alert labels, and measurement/region overlays — each shown with a little graphic of the real element and its stacking value. <strong>Drag a layer up</strong> (or use the ▲▼ buttons) to lift it above the others; the top of the list draws on top of everything. Changes apply instantly and are saved in your browser, so the stacking order you pick sticks between sessions.</li>
+          <li><strong>Reset to Default if you ever bork it.</strong> A <em>↺ Reset to Default</em> button restores the sensible factory order in one click. By design no layer can ever be pushed below the base map or above the menus/windows, so you can experiment freely.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.43.4</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport tooltips now sit above geofence and waypoint alert tags.</strong> When an alert label (a geofence ring tag or a waypoint-alarm tag) overlapped the airport you were inspecting, it could cover the airport's tooltip. The airport info tooltip now renders on top of those alert tags, so it's always fully readable. The flight-plan waypoint labels still sit beneath the alert tags as before.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.43.3</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The "has scenery" dot now grows with the airport and stays on top.</strong> When you hover an airport you have scenery for, its black centre dot now enlarges in proportion to the growing airport dot and remains on top throughout. Previously the scenery dot stayed small and, after a hover, could end up hidden behind the airport dot.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.43.2</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New-airport indicator now uses each airport's real activation date.</strong> The pulsing "new airport" ring was being driven by when our hourly data feed <em>first noticed</em> an airport, which could be reset by a brief hiccup in SimFly's data — so long-established airports you've owned for over a year (e.g. EGPN, active since January 2025) were wrongly showing as new. It now reads the airport's actual SimFly activation date, so only genuinely brand-new airports get the ring. This corrected a batch of about thirty airports that were falsely flagged.</li>
+          <li><strong>Hovered dots grow in step with the tooltip.</strong> The hover-to-enlarge delay now matches the tooltip's, so the dot grows at the same moment its tooltip appears instead of a beat later.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.43.1</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Hovered dots no longer leave "corona dust" behind.</strong> When an airport dot grew or shrank on hover, fragments of its level-corona spikes and rotation ring could be left painted on the map. The map now fully repaints on each resize, so the dot grows and shrinks cleanly with nothing left behind.</li>
+          <li><strong>The rotation ring and corona spikes get bolder as the dot grows.</strong> While a hovered dot is enlarged, its rotation gauge ring and level-corona spikes now thicken in proportion (instead of staying hairline-thin on the bigger dot), so they're genuinely easier to read.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.43.0</span>
+          <span class="release-date">June 24, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport dots grow when you hover them.</strong> Linger the mouse over any airport dot for half a second and it doubles in size (and lifts above its neighbours), making its rotation gauge ring and level corona spikes much easier to read on the airport you're examining. The dot snaps back to normal as soon as you move away.</li>
+          <li><strong>Tooltip no longer covers the level corona.</strong> The airport tooltip now sits a little higher above the dot so it clears the 12 o'clock corona spike instead of hiding it — you can read the tooltip and see the level marks at the same time.</li>
+          <li><strong>Random Flight Reset now sticks.</strong> The <em>↺ Reset</em> button in the Random Flight Filters window now also clears the saved settings, so the cleared state is remembered — closing and re-opening the window no longer brings the old filters back. Previously Reset only cleared the on-screen fields.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.42.0</span>
+          <span class="release-date">June 24, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -50690,6 +51098,8 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgRotationFilterBtn" onclick="_rgToggleRotationFilter();_rgCloseAnyPulldown()" title="Show only airports that still have flight rotations available this week" style="display:none"><span class="rg-row-icon">🔄</span><span class="rg-btn-label">Rotations Left Only</span></button>
             <!-- ⭐ Rating moved here from the right band (v3.36.0). -->
             <button class="rg-btn rg-pulldown-row" id="rgStarFilterBtn" onclick="_rgToggleStarFilter();_rgCloseAnyPulldown()" title="Filter airports by minimum scenery star rating"><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Star Rating</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <button class="rg-btn rg-pulldown-row" id="rgLayersBtn" onclick="_rgLayersOpenModal();_rgCloseAnyPulldown()" title="Reorder which map layers draw on top of others — drag to set the stacking order"><span class="rg-row-icon">🗂</span><span class="rg-btn-label">Layers…</span></button>
           </div>
         </div>
 
