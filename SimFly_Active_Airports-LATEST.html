@@ -8458,7 +8458,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.44.0';
+const APP_VERSION = '3.44.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -28859,6 +28859,13 @@ let _rgArrOwnerFilter = null;
 let _rgMapOwnerFilter   = null; // map-wide owner filter — Set of owner names, null = show all
 let _rgMapCountryFilter = null; // map-wide country filter — Set of ISO codes, null = show all
 let _rgPinnedIcaos      = new Set(); // ICAOs explicitly pinned via search; always rendered
+// v3.44.1 — pins are normally PURELY ADDITIVE (shown on top of whatever else is
+// visible). This flag flips them to EXCLUSIVE ("show only the pins") and is set
+// true ONLY by a non-additive single-ICAO search (e.g. typing "KSFO" zooms to
+// just KSFO). An additive "+KSFO" leaves it untouched, so "+KSFO" on the default
+// view keeps every airport that was already visible and adds the pin. Reset to
+// false by any full clear or when the pin set is emptied.
+let _rgPinExclusiveMode = false;
 // Country name lookup tables — populated during airportDB parse
 let _rgCountryIsoToName = new Map(); // 'DE' → 'Germany'
 let _rgCountryNameToIso = new Map(); // 'germany' → 'DE'
@@ -33551,12 +33558,15 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
       _rgMapDeveloperFilter !== null ||
-      (_rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
+      (_rgPinExclusiveMode && _rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
     // Inclusion gate: if any include-set is active, the airport must match
     // at least one (or be pinned). When no include-set is active, every
     // airport passes this gate. Developer is part of the same OR chain —
     // a `+Orbx` search adds Orbx airports alongside whatever else is
-    // included.
+    // included. NOTE: a pin only *triggers* this gate in EXCLUSIVE mode
+    // (a non-additive single-ICAO search). An additive "+ICAO" pin is purely
+    // additive — it never narrows the view — so it does not trigger the gate;
+    // pinned airports still always pass via the `!isPinned` bypass below.
     const country     = _rgRecCountry(rec);
     const inOwner     = _rgMapOwnerFilter   !== null && _rgMapOwnerFilter.has(ownerName || '');
     const inCountry   = _rgMapCountryFilter !== null && _rgMapCountryFilter.has(country);
@@ -35929,6 +35939,7 @@ function _rgClearAllFilters() {
   }
   // Pinned ICAOs
   if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) _rgPinnedIcaos.clear();
+  _rgPinExclusiveMode = false;
   // Exclude sets
   if (_rgExcludedOwners      && _rgExcludedOwners.size      > 0) _rgExcludedOwners.clear();
   if (_rgExcludedCountries   && _rgExcludedCountries.size   > 0) _rgExcludedCountries.clear();
@@ -36198,7 +36209,7 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkChip(
       label,
       null,
-      () => { _rgPinnedIcaos.clear(); _rgApplyMapFilter(); }
+      () => { _rgPinnedIcaos.clear(); _rgPinExclusiveMode = false; _rgApplyMapFilter(); }
     ));
   }
 
@@ -37742,6 +37753,7 @@ function _rgClearAllSearchFilters() {
   _rgMapDeveloperFilter = null;
   _rgMapCompoundFilter  = null;
   _rgPinnedIcaos.clear();
+  _rgPinExclusiveMode   = false;
   _rgExcludedOwners.clear();
   _rgExcludedCountries.clear();
   _rgExcludedRegions.clear();
@@ -37904,15 +37916,30 @@ function _rgMapSrSelect(icao) {
     _rgApplyMapFilter(); _rgMapSrClear(); return;
   }
   if (_rgMapSrAdditive) {
+    // Purely additive: keep whatever is currently visible and add the pin.
+    // Leave _rgPinExclusiveMode as-is (false on the default view → default +
+    // pin; true after a prior exclusive pin → both pins stay exclusive).
     _rgPinnedIcaos.add(icaoUp);
   } else {
+    // Replace the view: clear everything, then show ONLY this airport.
     _rgClearAllSearchFilters();
     _rgPinnedIcaos.add(icaoUp);
+    _rgPinExclusiveMode = true;
   }
   _rgApplyMapFilter();
-  // Fit the map to all currently-visible airports — covers KSEA, then +KPDX
-  // landing on a viewport that shows both pinned airports together.
-  _rgFitAllVisibleAirports();
+  // Zoom. Normally we fit ALL currently-visible airports — e.g. plain KSEA
+  // then +KPDX frames both pins; Washington then +KSFO frames the region + pin.
+  // BUT an additive +ICAO added to the DEFAULT view (no filter active, not in
+  // exclusive-pin mode) leaves every owned airport visible, so "fit all" would
+  // zoom out to the whole world. In that one case, zoom to the airport just
+  // added instead (v3.44.2, requested).
+  const _zoomToNewPin = _rgMapSrAdditive && !_rgPinExclusiveMode &&
+    _rgMapOwnerFilter === null && _rgMapCountryFilter === null &&
+    _rgMapRegionFilter === null && _rgMapContinentFilter === null &&
+    _rgMapDeveloperFilter === null &&
+    (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length);
+  if (_zoomToNewPin) _rgMap.flyTo([rec.latitude, rec.longitude], 9, { duration: 0.6 });
+  else _rgFitAllVisibleAirports();
   _rgMapSrClear();
 }
 
@@ -38968,10 +38995,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.44.1</span>
+          <span class="release-date">June 24, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Additive "+ICAO" search no longer clears the map.</strong> Pinning an airport with a <em>+</em> prefix (e.g. <em>+KSFO</em>) is meant to <em>add</em> that airport on top of whatever is currently shown. When no filter was active, it was wrongly clearing the map and leaving only the pinned airport. Now <em>+KSFO</em> on the default view keeps every airport that was already visible and simply adds KSFO. A plain <em>KSFO</em> search (no +) still replaces the view and zooms to just that airport, as before.</li>
+          <li><strong>…and it zooms to the airport you just added.</strong> When you <em>+pin</em> an airport onto the default view, the map now flies to that airport instead of zooming all the way out to fit every airport in the world. (When a filter is already active — e.g. <em>Washington</em> then <em>+KSFO</em> — the map still frames everything that's visible together, as before.)</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.44.0</span>
-          <span class="release-date">June 24, 2026 &middot; Current</span>
+          <span class="release-date">June 24, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
