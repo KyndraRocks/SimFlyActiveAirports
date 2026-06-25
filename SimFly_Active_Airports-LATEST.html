@@ -3733,6 +3733,19 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   .sb-route-pill-grip:hover { color:rgba(255,255,255,0.72); }
   .sb-route-pill.sb-dragging .sb-route-pill-grip { cursor:grabbing; }
+  /* Generic draggable-chip grip (v3.46.0) — reused by the Pilot Payout and
+     Scenery Rating legends, the Payout Palette editor, the airport Quick-Rate
+     popover, and the pill's airport-stats popup so they all drag like the pill. */
+  .aa-chip-draghandle { cursor:move; touch-action:none; }
+  .aa-chip-grip {
+    cursor:grab; color:rgba(255,255,255,0.32); font-size:1rem; line-height:1;
+    padding:0 2px; user-select:none; touch-action:none; flex-shrink:0;
+  }
+  .aa-chip-grip:hover { color:rgba(255,255,255,0.7); }
+  .aa-chip-dragging, .aa-chip-dragging .aa-chip-draghandle,
+  .aa-chip-dragging .aa-chip-grip { cursor:grabbing; }
+  body.light-mode .aa-chip-grip { color:rgba(0,0,0,0.3); }
+  body.light-mode .aa-chip-grip:hover { color:rgba(0,0,0,0.6); }
   .sb-route-pill-body { display:flex; flex-direction:column; gap:1px; }
   .sb-route-pill-route { font-size:1.28rem; font-weight:700; color:#fff; letter-spacing:0.04em; cursor:pointer; }
   .sb-route-pill-route:hover { opacity:0.75; }
@@ -7610,7 +7623,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     #rgPayoutPaletteEditor {
       max-height: 60vh !important;
       overflow-y: auto !important;
-      min-width: min(280px, calc(100vw - 16px)) !important;
+      width: min(416px, calc(100vw - 16px)) !important;
     }
 
     /* ── v3.19.28 (supersedes v3.19.27's font shrink) ────────────
@@ -8511,7 +8524,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.45.0';
+const APP_VERSION = '3.46.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11440,6 +11453,99 @@ function _sbPillDragStart(ev) {
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
 }
+
+// ── Draggable map chips (v3.46.0) ────────────────────────────────────────────
+// Generalises the File-on-SimBrief pill's drag behaviour to the other floating
+// map chips — the Pilot Payout and Scenery Rating legends, the Payout Palette
+// editor, the airport Quick-Rate popover, and the pill's airport-stats popup.
+// A grip handle starts a unified mouse + touch (pointer) drag. The chosen
+// position is remembered for the rest of the session in memory only — never
+// persisted to localStorage — and re-applied when a chip is shown again.
+const _aaChipDragPos = Object.create(null);   // { elementId: {left, top} }
+
+// Begin dragging `el` from a pointerdown on one of its grip handles. Converts
+// whatever anchoring the chip currently uses (right/bottom or a centring
+// transform) into absolute left/top within its offset parent, then tracks the
+// pointer. Clamping is done in viewport space so it works regardless of how
+// large or small the chip's offset parent happens to be (the stats popup, for
+// instance, is parented to the small pill but must clamp to the whole window).
+function _aaChipDragStart(ev, el) {
+  if (!el) return;
+  if (ev.button != null && ev.button > 0) return;        // primary button / touch only
+  ev.preventDefault();
+  ev.stopPropagation();
+  const parent = el.offsetParent || el.parentElement || document.body;
+  const er = el.getBoundingClientRect();
+  const pr = parent.getBoundingClientRect();
+  // Rendered position relative to the offset parent's padding-box origin.
+  let left = er.left - pr.left - (parent.clientLeft || 0) + (parent.scrollLeft || 0);
+  let top  = er.top  - pr.top  - (parent.clientTop  || 0) + (parent.scrollTop  || 0);
+  el.style.left      = left + 'px';
+  el.style.top       = top  + 'px';
+  el.style.right     = 'auto';
+  el.style.bottom    = 'auto';
+  el.style.transform = 'none';                            // neutralise any centring transform
+  el.classList.add('aa-chip-dragging');
+  const sx = ev.clientX, sy = ev.clientY, startLeft = left, startTop = top;
+  // Clamp the WHOLE window inside the map container (falling back to the
+  // viewport) so it can never be dragged partially off-screen. Computed in
+  // viewport space, then mapped back to the offset-parent-relative left/top —
+  // this is why the stats popup, whose offset parent is the small pill, still
+  // clamps to the map rather than to the pill.
+  const pad = 6;
+  const mapEl = document.getElementById('rgMapContainer');
+  const move = e => {
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const vw = window.innerWidth  || document.documentElement.clientWidth  || 100000;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 100000;
+    const mr = mapEl ? mapEl.getBoundingClientRect() : null;
+    const minX = mr ? mr.left + pad           : pad;
+    const maxX = mr ? mr.right - w - pad       : vw - w - pad;
+    const minY = mr ? mr.top  + pad            : pad;
+    const maxY = mr ? mr.bottom - h - pad      : vh - h - pad;
+    const clamp = (v, lo, hi) => hi < lo ? lo : (v < lo ? lo : (v > hi ? hi : v));
+    let vx = clamp(er.left + (e.clientX - sx), minX, maxX);
+    let vy = clamp(er.top  + (e.clientY - sy), minY, maxY);
+    const nl = startLeft + (vx - er.left);
+    const nt = startTop  + (vy - er.top);
+    el.style.left = nl + 'px';
+    el.style.top  = nt + 'px';
+    if (el.id) _aaChipDragPos[el.id] = { left: nl, top: nt };
+  };
+  const up = () => {
+    el.classList.remove('aa-chip-dragging');
+    window.removeEventListener('pointermove',   move);
+    window.removeEventListener('pointerup',     up);
+    window.removeEventListener('pointercancel', up);
+  };
+  window.addEventListener('pointermove',   move);
+  window.addEventListener('pointerup',     up);
+  window.addEventListener('pointercancel', up);
+}
+
+// pointerdown wiring for a grip/header that lives inside the chip with id `id`.
+// Presses that land on an interactive control are ignored so buttons, links and
+// inputs inside a draggable header still work normally.
+function _aaChipDragFromHandle(ev, id) {
+  if (ev.target.closest &&
+      ev.target.closest('button, a, input, textarea, select, [role="button"], .sl-star, .sl-stars-interactive')) return;
+  _aaChipDragStart(ev, document.getElementById(id));
+}
+
+// Re-apply a remembered session position to a chip. Returns true when one
+// existed, so callers can skip their own auto-placement.
+function _aaChipApplyDragPos(el) {
+  if (!el || !el.id) return false;
+  const p = _aaChipDragPos[el.id];
+  if (!p) return false;
+  el.style.left      = p.left + 'px';
+  el.style.top       = p.top  + 'px';
+  el.style.right     = 'auto';
+  el.style.bottom    = 'auto';
+  el.style.transform = 'none';
+  return true;
+}
+function _aaChipHasDragPos(id) { return !!_aaChipDragPos[id]; }
 
 function _sbPillDismiss() {
   const dep = (document.getElementById('distDep')?.value || '').trim();
@@ -24829,8 +24935,26 @@ function _afkDpDragOver(ev, id) {
   const el = ev.currentTarget;
   const r  = el.getBoundingClientRect();
   const before = ev.clientX < r.left + r.width / 2;
-  el.classList.toggle('afk-dp-drop-before', before);
-  el.classList.toggle('afk-dp-drop-after',  !before);
+  // v3.46.0 — show exactly ONE insertion line per gap. "Insert after this
+  // element" and "insert before the next element" are the same drop, so each
+  // internal gap previously lit up two markers (this element's right edge AND
+  // the next element's left edge). We now always render the marker on the
+  // leading edge of the element that would follow the insertion point, and only
+  // fall back to a trailing marker on the very last element. Clearing every
+  // mark first guarantees a single visible line.
+  const host = el.parentNode;
+  if (host) host.querySelectorAll('.afk-dp-drop-before, .afk-dp-drop-after')
+                .forEach(m => m.classList.remove('afk-dp-drop-before', 'afk-dp-drop-after'));
+  if (before) {
+    el.classList.add('afk-dp-drop-before');
+  } else {
+    let nxt = el.nextElementSibling;
+    while (nxt && (!nxt.classList.contains('afk-dp-draggable') || nxt.dataset.dpId === _afkDpDragFromId)) {
+      nxt = nxt.nextElementSibling;
+    }
+    if (nxt) nxt.classList.add('afk-dp-drop-before');
+    else     el.classList.add('afk-dp-drop-after');
+  }
 }
 function _afkDpDragLeave(ev) {
   const el = ev.currentTarget;
@@ -31235,7 +31359,7 @@ function _rgRefreshRatePopover() {
     : '';
   pop.innerHTML =
     `<button class="rg-rate-close" onclick="_rgCloseRatePopover()" title="Close (Esc)">×</button>` +
-    `<div class="rg-rate-hdr">${hdrInner}</div>` +
+    `<div class="rg-rate-hdr aa-chip-draghandle" onpointerdown="_aaChipDragFromHandle(event,'rgRatePopover')" title="Drag to move this popover"><span class="aa-chip-grip" aria-hidden="true">⠿</span>${hdrInner}</div>` +
     rotLine +
     saleLink +
     (!inLib ? `<div class="rg-rate-hint">Setting a rating will add this airport to your Scenery Library.</div>` : '') +
@@ -31642,7 +31766,7 @@ function _rgRandUserDep() {
 
 function _rgRandUpdateLabel() {
   const lbl = document.getElementById('rgRandomLbl');
-  if (lbl) lbl.textContent = _rgRandUserDep() ? 'Choose Random Destination' : 'Create Random Route';
+  if (lbl) lbl.textContent = _rgRandUserDep() ? 'Choose Random Destination…' : 'Create Random Route…';
 }
 
 // Flat list of all owned airports: { icao, owner, rec }.
@@ -34167,29 +34291,45 @@ function _rgPayoutPaletteOpen(event) {
   // Stamp so _rgTogglePayoutMode can suppress the synthesised click that
   // follows a long-press on the Payout button.
   _rgPayoutPaletteOpenTs = Date.now();
+  // v3.46.0 — when opened from the 👁 Display ▸ Payout Colors… row (right-click),
+  // close the pulldown first. Otherwise the menu stays open over the map and the
+  // very click used to dismiss the menu also trips the editor's outside-dismiss,
+  // making the palette unusable. With the menu gone the editor is the only thing
+  // open and the user interacts with it directly.
+  if (typeof _rgCloseAnyPulldown === 'function') { try { _rgCloseAnyPulldown(); } catch (_) {} }
   const ed  = document.getElementById('rgPayoutPaletteEditor');
   const leg = document.getElementById('rgPayoutLegend');
   if (!ed) return;
   _rgPayoutPaletteLoad();
   _rgPayoutPaletteRender();
   ed.style.display = 'block';
-  // Anchor: top-right corner of the legend (so it sits just to the left
-  // of the legend) for predictable placement that doesn't depend on
-  // exact cursor coordinates.
-  if (leg) {
-    const r = leg.getBoundingClientRect();
+  // Position. A session drag wins (chip stays where the user left it);
+  // otherwise anchor just left of the Pilot Payout legend when it is showing,
+  // or — when it is hidden (payout mode off / opened from the menu) — drop the
+  // editor into the legend's normal top-right slot so it appears where the user
+  // expects rather than pinned under the menu at the top-left.
+  if (!_aaChipApplyDragPos(ed)) {
     const mapEl = ed.parentElement;
-    const mapRect = mapEl ? mapEl.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth };
-    const desiredW = 320;
-    const left = Math.max(8, r.left - mapRect.left - desiredW - 10);
-    const top  = Math.max(8, r.top  - mapRect.top);
-    ed.style.left = left + 'px';
-    ed.style.top  = top  + 'px';
+    const mapRect = mapEl ? mapEl.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    const legVisible = leg && leg.style.display !== 'none' && leg.getBoundingClientRect().width > 0;
+    const edW = ed.offsetWidth || 416;
+    let left, top;
+    if (legVisible) {
+      const r = leg.getBoundingClientRect();
+      left = Math.max(8, r.left - mapRect.left - edW - 10);
+      top  = Math.max(8, r.top  - mapRect.top);
+    } else {
+      left = Math.max(8, mapRect.width - 8 - edW);   // flush to the top-right
+      top  = 50;
+    }
+    ed.style.right  = 'auto';
+    ed.style.bottom = 'auto';
+    ed.style.left   = left + 'px';
+    ed.style.top    = top  + 'px';
     // Flip upward if the editor would clip the bottom of the map container.
-    const mapH = mapEl ? mapEl.getBoundingClientRect().height : window.innerHeight;
+    const mapH = mapRect.height || (mapEl ? mapEl.getBoundingClientRect().height : window.innerHeight);
     if (top + ed.offsetHeight > mapH - 8) {
-      const legBottom = r.bottom - mapRect.top;
-      ed.style.top = Math.max(8, legBottom - ed.offsetHeight) + 'px';
+      ed.style.top = Math.max(8, mapH - 8 - ed.offsetHeight) + 'px';
     }
   }
   // Outside-tap dismiss — added on next tick so the opening gesture doesn't
@@ -34410,12 +34550,15 @@ function _rgPayoutPaletteRender() {
     colorIn.addEventListener('input', () => {
       const newHex = _rgPayoutSanitizeHex(colorIn.value) || s.color;
       _rgPayoutPalette[i].color = newHex;
-      _rgPayoutPaletteCommit();
+      // v3.46.0 — live mode: gradient/legend update instantly, map repaint is
+      // coalesced to one-per-frame so dragging in the OS picker stays smooth.
+      _rgPayoutPaletteCommit({ live: true });
       // Live-update the tick handle color in-place without rebuilding DOM
       const _prev = document.getElementById('rgPayoutPalettePreview');
       if (_prev) { const _tw = _prev.querySelector('[data-stop-idx="' + i + '"]'); if (_tw && _tw.children[1]) _tw.children[1].style.background = newHex; }
     });
-    colorIn.addEventListener('change', () => { _rgPayoutPaletteRender(); });
+    // On close (change), flush a full immediate commit + rebuild the rows.
+    colorIn.addEventListener('change', () => { _rgPayoutPaletteCommit(); _rgPayoutPaletteRender(); });
     swatchWrap.appendChild(colorIn);
 
     const pctIn = document.createElement('input');
@@ -34428,11 +34571,11 @@ function _rgPayoutPaletteRender() {
       if (!isFinite(v)) return;
       v = Math.max(1, Math.min(100, v));
       _rgPayoutPalette[i].pct = v;
-      _rgPayoutPaletteCommit();
+      _rgPayoutPaletteCommit({ live: true });
     });
     // v2.98.2 — Direct-type commit re-renders so the row order updates if
     // the user types a pct that re-sorts the stop above/below a neighbour.
-    pctIn.addEventListener('change', () => { _rgPayoutPaletteRender(); });
+    pctIn.addEventListener('change', () => { _rgPayoutPaletteCommit(); _rgPayoutPaletteRender(); });
     const pctLbl = document.createElement('span');
     pctLbl.textContent = '% pilot payout';
     pctLbl.style.cssText = 'color:rgba(255,255,255,0.55);font-size:0.85rem;';
@@ -34489,12 +34632,37 @@ function _rgPayoutPaletteReset() {
   _rgPayoutPaletteCommit();
   _rgPayoutPaletteRender();
 }
+// v3.46.0 — Coalesce the expensive map repaint that a palette edit triggers.
+// Repainting every airport dot + the matrix on every native-color-picker
+// `input` event (which fires continuously as the user drags inside the OS
+// picker) made the live gradient feel sluggish. We now run that heavy work at
+// most once per animation frame, and debounce the localStorage write, while
+// the cheap gradient preview / legend bar still update instantly on each input.
+let _rgPayoutRepaintRAF = 0;
+function _rgPayoutScheduleHeavyRepaint() {
+  if (!_rgPayoutMode || _rgPayoutRepaintRAF) return;
+  _rgPayoutRepaintRAF = requestAnimationFrame(() => {
+    _rgPayoutRepaintRAF = 0;
+    try { _rgRenderDots(); } catch (_) {}
+    try { _rgHighlightDots(); } catch (_) {}
+    if (_rgPhase === 'results' && typeof _rgRenderMatrix === 'function') { try { _rgRenderMatrix(); } catch (_) {} }
+  });
+}
+let _rgPayoutSaveT = 0;
+function _rgPayoutSaveDebounced() {
+  clearTimeout(_rgPayoutSaveT);
+  _rgPayoutSaveT = setTimeout(_rgPayoutPaletteSave, 220);
+}
+
 // Commit the current in-memory palette: sort, persist, repaint legend,
 // and re-render the map dots + matrix so the new colors propagate
-// everywhere they're used.
-function _rgPayoutPaletteCommit() {
+// everywhere they're used. Pass { live:true } during a continuous gesture
+// (color-picker drag, pct typing) to keep the gradient live while coalescing
+// the heavy map repaint to one-per-frame and debouncing the disk write.
+function _rgPayoutPaletteCommit(opts) {
+  const live = !!(opts && opts.live);
   _rgPayoutPalette.sort((a, b) => a.pct - b.pct);
-  _rgPayoutPaletteSave();
+  if (live) _rgPayoutSaveDebounced(); else { clearTimeout(_rgPayoutSaveT); _rgPayoutPaletteSave(); }
   _rgPayoutSyncBarGrad();
   const preview = document.getElementById('rgPayoutPalettePreview');
   if (preview) {
@@ -34502,9 +34670,15 @@ function _rgPayoutPaletteCommit() {
     preview.style.background = 'linear-gradient(to right,' + _cParts.join(',') + ')';
   }
   if (_rgPayoutMode) {
-    try { _rgRenderDots(); } catch (_) {}
-    try { _rgHighlightDots(); } catch (_) {}
-    if (_rgPhase === 'results' && typeof _rgRenderMatrix === 'function') { try { _rgRenderMatrix(); } catch (_) {} }
+    if (live) {
+      _rgPayoutScheduleHeavyRepaint();
+    } else {
+      // Flush any pending coalesced frame so the immediate path isn't double-painted.
+      if (_rgPayoutRepaintRAF) { cancelAnimationFrame(_rgPayoutRepaintRAF); _rgPayoutRepaintRAF = 0; }
+      try { _rgRenderDots(); } catch (_) {}
+      try { _rgHighlightDots(); } catch (_) {}
+      if (_rgPhase === 'results' && typeof _rgRenderMatrix === 'function') { try { _rgRenderMatrix(); } catch (_) {} }
+    }
   }
 }
 
@@ -35250,22 +35424,33 @@ function _rgRepositionFilterPanels() {
   const payoutLeg = document.getElementById('rgPayoutLegend');
   const starLeg   = document.getElementById('rgStarFilterLegend');
   if (!starLeg) return;
-  const payoutVisible = payoutLeg && payoutLeg.style.display !== 'none';
+  // v3.46.0 — a legend the user has dragged this session keeps its own position
+  // and drops out of the auto-stack; the other legend then takes the default
+  // top-right slot as if it were alone.
+  const payoutDragged = _aaChipHasDragPos('rgPayoutLegend');
+  const starDragged   = _aaChipHasDragPos('rgStarFilterLegend');
+  if (payoutDragged && payoutLeg) _aaChipApplyDragPos(payoutLeg);
+  if (starDragged) _aaChipApplyDragPos(starLeg);
+  const payoutVisible = payoutLeg && payoutLeg.style.display !== 'none' && !payoutDragged;
   if (_aaIsTouchDevice()) {
     const base = 50; // px above bottom — clears the Leaflet attribution bar
     const gap  = 8;
-    if (payoutLeg) {
+    if (payoutLeg && !payoutDragged) {
       payoutLeg.style.top    = 'auto';
       payoutLeg.style.bottom = base + 'px';
     }
-    starLeg.style.top    = 'auto';
-    starLeg.style.bottom = payoutVisible
-      ? (base + (payoutLeg ? payoutLeg.offsetHeight : 0) + gap) + 'px'
-      : base + 'px';
+    if (!starDragged) {
+      starLeg.style.top    = 'auto';
+      starLeg.style.bottom = payoutVisible
+        ? (base + (payoutLeg ? payoutLeg.offsetHeight : 0) + gap) + 'px'
+        : base + 'px';
+    }
   } else {
-    if (payoutLeg) { payoutLeg.style.top = '50px'; payoutLeg.style.bottom = ''; }
-    starLeg.style.top    = payoutVisible ? (50 + (payoutLeg ? payoutLeg.offsetHeight : 0) + 10) + 'px' : '50px';
-    starLeg.style.bottom = '';
+    if (payoutLeg && !payoutDragged) { payoutLeg.style.top = '50px'; payoutLeg.style.bottom = ''; }
+    if (!starDragged) {
+      starLeg.style.top    = payoutVisible ? (50 + (payoutLeg ? payoutLeg.offsetHeight : 0) + 10) + 'px' : '50px';
+      starLeg.style.bottom = '';
+    }
   }
 }
 
@@ -38354,7 +38539,7 @@ function rgSendToFlightPlanner() {
 
 <!-- Random flight filter options — v3.26.0 -->
 <div class="modal-overlay" id="rgRandModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _rgRandCloseModal)">
-  <div class="modal" style="max-width:440px;">
+  <div class="modal" style="max-width:880px;">
     <div class="modal-header">
       <span class="modal-title">&#127922; &nbsp;Random Flight Filters</span>
       <button class="modal-close" onclick="_rgRandCloseModal()">&times;</button>
@@ -38846,7 +39031,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Map Layers (stacking order)</div>
           <div class="help-feature-desc">
-            Open the <strong>👁 Display</strong> menu and click <strong>🗂 Layers…</strong> to choose which map elements draw on top of which. The window lists every overlay — <em>airport dots, airport tooltips, waypoint labels, the aircraft icon and trail, route line and labels, alert labels,</em> and <em>measurement/region overlays</em> — each with a small graphic of the real element and its stacking value.<br/><br/>
+            Open the <strong>👁 Display</strong> menu and click <strong>🗂 Layers</strong> to choose which map elements draw on top of which. The window lists every overlay — <em>airport dots, airport tooltips, waypoint labels, the aircraft icon and trail, route line and labels, alert labels,</em> and <em>measurement/region overlays</em> — each with a small graphic of the real element and its stacking value.<br/><br/>
             <strong>Reorder</strong> — drag a layer up (grab the <strong>⋮⋮</strong> handle) or use the <strong>▲▼</strong> buttons to nudge it one step. The <strong>top of the list draws on top of everything</strong>; the bottom draws underneath. Changes apply to the map instantly and are saved in your browser, so your chosen order is remembered between sessions.<br/><br/>
             This is the permanent way to settle any "which label covers which" question — e.g. if you'd rather a geofence alert tag sit above airport tooltips, just drag <em>Alert labels</em> above <em>Airport tooltip</em>. Layers can only be reordered among themselves: nothing can ever drop below the base map or rise above the menus and pop-up windows.<br/><br/>
             <strong>↺ Reset to Default</strong> at the bottom-left restores the original sensible order in one click, so you can experiment freely and undo any mess instantly.
@@ -38929,7 +39114,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             <strong>⭐ Star Rating</strong> lives in the <strong>👁 Display</strong> menu (on mobile, the <strong>⭐ Rating</strong> button in the right-hand button band). It opens the Scenery Rating filter panel. Hover over the five stars to preview a threshold, then click to set it — airports in the Scenery Library with a rating below that value are hidden on the map and removed from the distance matrix. Click the same star again to clear the filter. A green tick marks the menu row while the filter is on.<br/><br/>
             The filter only applies to airports that are <em>in your Scenery Library</em> with a rating set — airports with no rating entry are always hidden when any threshold is active. If the Pilot Payout filter is also open, the Scenery Rating panel sits directly beneath it. Airport ratings are set via right-click (or long-press on touch) on any map dot.<br/><br/>
-            <strong>Closing the panel keeps the filter on</strong> — clicking the panel's <strong>✕</strong> just hides the panel; the rating threshold stays applied to the map and matrix. To actually turn the filter off, click the <em>Rating ≥ N stars</em> chip in the breadcrumb strip. Clicking <strong>⭐ Star Rating</strong> again re-opens the panel without changing the filter.
+            <strong>Closing the panel keeps the filter on</strong> — clicking the panel's <strong>✕</strong> just hides the panel; the rating threshold stays applied to the map and matrix. To actually turn the filter off, click the <em>Rating ≥ N stars</em> chip in the breadcrumb strip. Clicking <strong>⭐ Star Rating</strong> again re-opens the panel without changing the filter.<br/><br/>
+            <strong>Move it out of the way (v3.46.0).</strong> Grab the panel's title bar — the <strong>⠿</strong> grip next to <em>SCENERY RATING</em> — to drag it anywhere on the map. It stays where you put it for the rest of the session and returns to its default top-right spot on reload.
           </div>
         </div>
       </div>
@@ -38944,9 +39130,20 @@ function rgSendToFlightPlanner() {
             <strong>Closing the legend keeps payout coloring on</strong> — clicking the legend's <strong>✕</strong> just hides the legend; the map keeps coloring dots by payout. To actually turn payout mode off, click the <em>Payout Colors</em> chip in the breadcrumb strip (or the <strong>💰 Payout</strong> button again with the legend visible). Clicking <strong>💰 Payout</strong> while the legend is hidden re-opens it without flipping the mode.<br/><br/>
             <strong>Quick toggle for 0% airports</strong> &mdash; click the gray dot on the legend to switch the filter between 0% (show every airport) and 1% (hide airports with no payout set). When the filter is active the dot dims and gains a yellow inset ring as a visible state cue. The slider can still be used for any other threshold above 1%.<br/><br/>
             Payout data is imported via the <strong>SimFly KML Generator</strong> (v2.20.3+) using the Pilot Payout Data panel. The KML Generator stores it in your browser&rsquo;s <code>localStorage</code> under the key <code>simfly_payout_db</code>, which this app reads automatically on load. Payout percentages are also shown in airport tooltips (after the owner name) whenever data is available.<br/><br/>
-            <strong>Custom palette (v2.98.0).</strong> Right-click the gradient bar in the legend to open a small palette editor. Place 2&ndash;5 color stops at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to the legend bar, the map dots, and the matrix, and persists in <code>localStorage</code> (key <code>simfly_aa_payout_palette</code>) so it survives across sessions. A <em>Reset</em> button restores the original red &rarr; orange &rarr; amber &rarr; yellow &rarr; green default. The 0% no-data grey is fixed and is not a user stop.<br/><br/>
+            <strong>Custom palette (v2.98.0).</strong> Right-click the gradient bar in the legend &mdash; or right-click <strong>💰 Payout Colors&hellip;</strong> in the <strong>👁 Display</strong> menu &mdash; to open a small palette editor. Place 2&ndash;5 color stops at any percentages you want; each stop has a native color picker and a % position field. The change applies instantly to the legend bar, the map dots, and the matrix, and persists in <code>localStorage</code> (key <code>simfly_aa_payout_palette</code>) so it survives across sessions. A <em>Reset</em> button restores the original red &rarr; orange &rarr; amber &rarr; yellow &rarr; green default. The 0% no-data grey is fixed and is not a user stop. <em>(v3.46.0: opening it from the menu now drops the editor in its normal top-right spot, and dragging in the color picker stays smooth because the map repaint is batched to one per frame.)</em><br/><br/>
             <strong>Drag-to-position (v2.98.2).</strong> Each swatch in the editor is draggable &mdash; drop it anywhere on the preview gradient and the stop's % snaps to that x-position. Rows auto-sort low &rarr; high after each drop. Clicking a swatch (without dragging) still opens the native color picker.<br/><br/>
             <strong>Tick bars are draggable too (v2.98.3).</strong> Each tick on the preview gradient is a grab-target in its own right &mdash; mousedown and drag horizontally to reposition the stop directly. The colored chevron above each tick is the stop's own color so overlapping ticks stay distinguishable. The active drag lifts above siblings (gold outline + z-index) and re-sorts only on release. Maximum stops raised to 10 (was 5).
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">⠿</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Movable Map Panels</div>
+          <div class="help-feature-desc">
+            <strong>(v3.46.0)</strong> The floating panels on the region map can be dragged out of the way, just like the <strong>File on SimBrief</strong> route chip. Look for the <strong>⠿</strong> grip on the title bar and drag from there. This works on the <strong>Pilot Payout</strong> legend, the <strong>Scenery Rating</strong> panel, the <strong>Payout Palette</strong> editor, the airport <strong>right-click rating popover</strong>, and the <strong>ⓘ airport-stats</strong> panel attached to the File-on-SimBrief chip.<br/><br/>
+            Each panel remembers where you left it for the rest of the session, so reopening it brings it back to your chosen spot. Positions are <em>not</em> saved permanently — a page reload returns every panel to its default location.
           </div>
         </div>
       </div>
@@ -39122,8 +39319,22 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.45.0</span>
+          <span class="release-version">v3.46.0</span>
           <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Drag the map panels wherever you want.</strong> The <strong>Pilot Payout</strong> legend, the <strong>Scenery Rating</strong> panel, the <strong>Payout Palette</strong> editor, the airport <strong>right-click rating popover</strong>, and the <strong>ⓘ airport-stats panel</strong> on the File-on-SimBrief chip can now all be dragged by their title bar (look for the <strong>⠿</strong> grip), exactly like the File-on-SimBrief chip itself. Move a panel out of the way of an airport you're trying to see and it stays where you put it for the rest of the session. Positions reset on reload — nothing is saved permanently.</li>
+          <li><strong>Right-clicking <em>Payout Colors…</em> in the Display menu now works properly.</strong> Previously the palette editor opened tucked under the menu and the click you used to dismiss the menu also closed the editor, making it impossible to use. The menu now closes cleanly and the palette opens in its normal spot at the top-right of the map.</li>
+          <li><strong>Customizing palette colors is smooth now.</strong> Dragging inside the color picker to set a new stop color used to feel laggy because the whole map repainted on every tiny change. The gradient still updates live, but the heavy map repaint is now batched to once per frame — so the picker tracks your cursor without the stutter.</li>
+          <li><strong>A “…” on a menu row now means “right-click for more”.</strong> The four rows with a right-click alternate — <em>Display New Airports…</em>, <em>Payout Colors…</em>, <em>SimBrief Flight Plan…</em>, and <em>Create Random Route…</em> — end with an ellipsis so it's clear there's an extra options menu behind a right-click. To keep the cue unambiguous, the ellipsis was <strong>removed</strong> from rows that merely open a window with no right-click of their own — <em>Layers</em>, <em>Aircraft Icon</em>, <em>Mobile Alerts</em>, and <em>Flight Demo Mode</em>.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.45.0</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -51246,7 +51457,7 @@ function rgSendToFlightPlanner() {
           <div class="rg-pulldown" id="rgToolsMenu">
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points"><span class="rg-row-icon">📐</span><span class="rg-btn-label">Measurement</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix"><span class="rg-row-icon">⊙</span><span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)"><span class="rg-row-icon">🎲</span><span class="rg-btn-label" id="rgRandomLbl">Create Random Route</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)"><span class="rg-row-icon">🎲</span><span class="rg-btn-label" id="rgRandomLbl">Create Random Route…</span></button>
           </div>
         </div>
 
@@ -51262,11 +51473,11 @@ function rgSendToFlightPlanner() {
             <div class="rg-pulldown-cap">Overlays</div>
             <button class="rg-btn rg-pulldown-row" id="rgLevelBadgesBtn" onclick="_rgToggleLevelBadges();_rgCloseAnyPulldown()" title="Toggle airport level badges — tick marks radiating from each dot show its SimFly level (level 2 and up)" style="display:none"><span class="rg-row-icon">☼</span><span class="rg-btn-label">Display Levels</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRotationGaugeBtn" onclick="_rgToggleRotationGauge();_rgCloseAnyPulldown()" title="Toggle the rotation gauge — each airport dot's 3px black outline flags low rotations this week (full ring = 10+ left, partial ring = fewer than 10, no outline = none left). Shortcut: middle-click anywhere on the map." style="display:none"><span class="rg-row-icon">🔄</span><span class="rg-btn-label">Display Rotations</span></button>
-            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none"><span class="rg-row-icon">✦</span><span class="rg-btn-label">Display New Airports</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgNewAirportsBtn" onclick="_rgToggleNewAirports();_rgCloseAnyPulldown()" oncontextmenu="_rgNewAirportSettingsModal(event)" title="Left-click to toggle new airport pulse indicators · Right-click for display options (color, pulse rate, days)" style="display:none"><span class="rg-row-icon">✦</span><span class="rg-btn-label">Display New Airports…</span></button>
             <!-- 💰 Payout moved here from the right band (v3.36.0) — it recolours
                  the dots, so it belongs with the overlays. Right-click / long-press
                  still opens the palette editor. -->
-            <button class="rg-btn rg-pulldown-row" id="rgPayoutBtn" onclick="_rgTogglePayoutMode();_rgCloseAnyPulldown()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Left-click to color airports by pilot payout · Right-click to customize the palette"><span class="rg-row-icon">💰</span><span class="rg-btn-label">Payout Colors</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgPayoutBtn" onclick="_rgTogglePayoutMode();_rgCloseAnyPulldown()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Left-click to color airports by pilot payout · Right-click to customize the palette"><span class="rg-row-icon">💰</span><span class="rg-btn-label">Payout Colors…</span></button>
             <div class="rg-pulldown-sep"></div>
             <!-- Group 2 — Filters: hide airports that don't match. -->
             <div class="rg-pulldown-cap">Filters</div>
@@ -51275,7 +51486,7 @@ function rgSendToFlightPlanner() {
             <!-- ⭐ Rating moved here from the right band (v3.36.0). -->
             <button class="rg-btn rg-pulldown-row" id="rgStarFilterBtn" onclick="_rgToggleStarFilter();_rgCloseAnyPulldown()" title="Filter airports by minimum scenery star rating"><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Star Rating</span></button>
             <div class="rg-pulldown-sep"></div>
-            <button class="rg-btn rg-pulldown-row" id="rgLayersBtn" onclick="_rgLayersOpenModal();_rgCloseAnyPulldown()" title="Reorder which map layers draw on top of others — drag to set the stacking order"><span class="rg-row-icon">🗂</span><span class="rg-btn-label">Layers…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgLayersBtn" onclick="_rgLayersOpenModal();_rgCloseAnyPulldown()" title="Reorder which map layers draw on top of others — drag to set the stacking order"><span class="rg-row-icon">🗂</span><span class="rg-btn-label">Layers</span></button>
           </div>
         </div>
 
@@ -51284,19 +51495,19 @@ function rgSendToFlightPlanner() {
         <div class="rg-pulldown-wrap" id="rgLiveWrap">
           <button class="rg-btn rg-pulldown-trigger" id="rgLiveBtn" onclick="_rgToggleLiveMenu(event)" title="Flight plan, live aircraft tracking, follow A/C, aircraft icon picker, mobile alerts">🔌 <span class="rg-btn-label">Live</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgLiveMenu">
-            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan</span></button>
+            <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan…</span></button>
             <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
-            <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">Aircraft Icon…</span></button>
-            <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone."><span class="rg-row-icon">📱</span><span class="rg-btn-label">Mobile Alerts…</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
+            <button class="rg-btn rg-pulldown-row" onclick="_liveAcOpenIconPicker();_rgCloseAnyPulldown()" title="Pick a different aircraft marker icon (Airliner / Prop / Helicopter / Business Jet)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">Aircraft Icon</span></button>
+            <button class="rg-btn rg-pulldown-row" id="maMenuBtn" onclick="_maOpenModal();_rgCloseAnyPulldown()" title="Configure push-to-phone notifications — ntfy.sh, Pushover, Discord, Telegram, Slack, or a custom webhook. Once configured, every alarm card gains a Mobile alert toggle. The badge shows how many active alarms are set to forward to your phone."><span class="rg-row-icon">📱</span><span class="rg-btn-label">Mobile Alerts</span><span class="ma-menu-badge" id="maMenuBadge"></span></button>
             <!-- v2.89.2 — "Clear Flight Plan" row removed (the SimBrief item
                  above doubles as load/clear). v3.6.0 — "Clear Aircraft Track"
                  row removed too: the breadcrumb strip's green "Aircraft Track"
                  pill now clears the trail in one click. -->
             <div class="rg-pulldown-sep"></div>
-            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). Perfect for alert testing or offline demos."><span class="rg-row-icon">🎬</span><span class="rg-btn-label">Flight Demo Mode…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="demoModeBtn" onclick="_demoOpenModal();_rgCloseAnyPulldown()" title="Flight Demo Mode — drive AA's telemetry and alerting system with a synthetic flight (no MSFS / FSUIPC required). Perfect for alert testing or offline demos."><span class="rg-row-icon">🎬</span><span class="rg-btn-label">Flight Demo Mode</span></button>
           </div>
         </div>
 
@@ -51398,9 +51609,9 @@ function rgSendToFlightPlanner() {
            inside the same map container as the legend so it floats over
            the map. Click outside (via document-level dismiss listener) or
            the X button to close. -->
-      <div id="rgPayoutPaletteEditor" style="display:none;position:absolute;z-index:1002;background:rgba(15,20,35,0.97);border:1px solid rgba(255,255,255,0.22);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;min-width:280px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <span style="font-size:0.92rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PAYOUT PALETTE</span>
+      <div id="rgPayoutPaletteEditor" style="display:none;position:absolute;z-index:1002;background:rgba(15,20,35,0.97);border:1px solid rgba(255,255,255,0.22);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;width:416px;box-sizing:border-box;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;" onpointerdown="_aaChipDragFromHandle(event,'rgPayoutPaletteEditor')" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-size:0.92rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PAYOUT PALETTE</span></span>
           <button onclick="_rgPayoutPaletteClose()" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
         </div>
         <div id="rgPayoutPalettePreview" style="width:100%;height:26px;border-radius:4px;border:1px solid rgba(255,255,255,0.18);margin-bottom:10px;"></div>
@@ -51413,8 +51624,8 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div id="rgPayoutLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation();clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=setTimeout(function(){_rgPayoutBtnLongPressT=null;_rgPayoutPaletteOpen(null);},600);" ontouchend="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;" ontouchmove="clearTimeout(_rgPayoutBtnLongPressT);_rgPayoutBtnLongPressT=null;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
-          <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span>
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;" onpointerdown="_aaChipDragFromHandle(event,'rgPayoutLegend')" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">PILOT PAYOUT</span></span>
           <button onclick="_rgHideFilterPanel('payout')" title="Close this panel — the payout filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
@@ -51435,8 +51646,8 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div id="rgStarFilterLegend" style="display:none;position:absolute;top:50px;right:8px;z-index:1001;min-width:271px;background:rgba(15,20,35,0.92);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:10px 15px;pointer-events:all;user-select:none;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">SCENERY RATING</span>
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;" onpointerdown="_aaChipDragFromHandle(event,'rgStarFilterLegend')" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-family:'Rajdhani',sans-serif;font-size:1.08rem;font-weight:700;color:#aaa;letter-spacing:0.06em;">SCENERY RATING</span></span>
           <button onclick="_rgHideFilterPanel('star')" title="Close this panel — the scenery-rating filter stays on; use the breadcrumb chip to turn it off" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 0 0 12px;transition:color 0.12s;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
         </div>
         <span class="sl-stars sl-stars-interactive" id="rgStarFilterWidget"
@@ -51601,6 +51812,7 @@ function rgSendToFlightPlanner() {
         title="Open SimBrief with this route pre-filled">✈ <span class="sb-warn-badge" id="sbPillWarnBadge" style="display:none" title="One or more airports on this route have 3 or fewer rotations remaining this week">⚠</span>File on SimBrief →</button>
       <button class="sb-route-pill-x" onclick="_sbPillDismiss()" title="Dismiss — pill reappears if route changes">✕</button>
       <div class="sb-stats-pop" id="sbStatsPop" aria-hidden="true">
+        <div class="aa-chip-draghandle" style="display:flex;justify-content:center;align-items:center;height:15px;margin:-2px 0 2px;" onpointerdown="_aaChipDragFromHandle(event,'sbStatsPop')" title="Drag to move this panel"><span class="aa-chip-grip" aria-hidden="true">⠿</span></div>
         <div class="dist-map-info-row">
           <div class="dist-map-info-card" id="sbStatsDepCard">
             <div class="dist-map-info-card-lbl">Departure ▶</div>
