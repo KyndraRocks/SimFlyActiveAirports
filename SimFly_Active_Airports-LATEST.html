@@ -3771,6 +3771,59 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .sb-route-pill-grip { color:rgba(20,30,50,0.32); }
   body.light-mode .sb-route-pill-grip:hover { color:rgba(20,30,50,0.7); }
 
+  /* Stats button on the route pill (v3.45.0) — an info glyph that toggles an
+     inline panel above the pill with the full departure + arrival airport
+     cards (same content as the main-screen Departure/Arrival info panel,
+     including the aircraft-suitability verdict) so the stats are reachable
+     without leaving the map. */
+  .sb-route-pill-stats-btn {
+    background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.4);
+    color:#7fdcff; font-size:1.05rem; font-weight:700; line-height:1;
+    width:30px; height:30px; border-radius:6px; cursor:pointer; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    transition:background 0.13s, border-color 0.13s, color 0.13s;
+  }
+  .sb-route-pill-stats-btn:hover,
+  .sb-route-pill-stats-btn.active { background:rgba(0,200,255,0.28); color:#fff; border-color:rgba(0,200,255,0.7); }
+  body.light-mode .sb-route-pill-stats-btn { background:rgba(0,120,180,0.1); border-color:rgba(0,120,180,0.4); color:#0a6e9e; }
+  body.light-mode .sb-route-pill-stats-btn:hover,
+  body.light-mode .sb-route-pill-stats-btn.active { background:rgba(0,120,180,0.22); color:#fff; border-color:rgba(0,120,180,0.7); }
+
+  /* Inline stats popup — anchored as a child of the pill so it tracks the pill
+     when dragged. Reuses the .dist-map-info-card markup/classes from the
+     main-screen info panel so the cards look identical. */
+  .sb-stats-pop {
+    position:absolute; bottom:calc(100% + 12px); left:50%;
+    transform:translateX(-50%) translateY(6px);
+    width:min(680px, calc(100vw - 28px));
+    max-height:min(62vh, 560px); overflow-y:auto;
+    background:rgba(10,14,28,0.98);
+    border:1px solid rgba(0,200,255,0.28); border-radius:10px;
+    box-shadow:0 10px 34px rgba(0,0,0,0.7),0 0 0 1px rgba(0,200,255,0.06);
+    padding:6px; white-space:normal; cursor:default; z-index:5;
+    opacity:0; visibility:hidden; pointer-events:none;
+    transition:opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
+  }
+  .sb-stats-pop.open { opacity:1; visibility:visible; pointer-events:all; transform:translateX(-50%) translateY(0); }
+  .sb-stats-pop .dist-map-info-card { background:transparent; }
+  #sbStatsDepCard .dist-map-info-card-lbl { color:#00c8ff; }
+  #sbStatsArrCard .dist-map-info-card-lbl { color:#ff6a00; }
+  /* Downward pointer toward the pill. */
+  .sb-stats-pop::after {
+    content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    border:8px solid transparent; border-top-color:rgba(10,14,28,0.98);
+  }
+  body.light-mode .sb-stats-pop {
+    background:rgba(240,245,255,0.98); border-color:rgba(0,120,180,0.35);
+    box-shadow:0 10px 34px rgba(0,0,0,0.2),0 0 0 1px rgba(0,120,180,0.08);
+  }
+  body.light-mode .sb-stats-pop::after { border-top-color:rgba(240,245,255,0.98); }
+  /* Narrow screens — stack the two cards vertically. */
+  @media (max-width:640px) {
+    .sb-stats-pop .dist-map-info-row { flex-direction:column; }
+    .sb-stats-pop .dist-map-info-card + .dist-map-info-card { border-left:none; border-top:1px solid var(--border); }
+  }
+
 
   /* Flight Demo Mode configuration modal — reuses the .fp-settings-*
      conventions used by the SimBrief settings modal so the look is
@@ -8458,7 +8511,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.44.1';
+const APP_VERSION = '3.45.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11253,7 +11306,7 @@ function _sbPillUpdate() {
   if (!pill) return;
   const dep = (document.getElementById('distDep')?.value || '').trim();
   const arr = (document.getElementById('distArr')?.value || '').trim();
-  if (!dep || !arr) { pill.classList.remove('visible'); return; }
+  if (!dep || !arr) { pill.classList.remove('visible'); _sbPillStatsClose(); return; }
   const route = dep + '→' + arr;
   // Any route change (even back to a previously dismissed route) clears the dismiss
   if (route !== _sbPillLastRoute) { _sbPillDismissedRoute = ''; _sbPillLastRoute = route; }
@@ -11274,6 +11327,9 @@ function _sbPillUpdate() {
   pill.classList.add('visible');
   if (typeof _rgUpdateSimbriefWarn === 'function') _rgUpdateSimbriefWarn();
   if (typeof _sbPillReposition === 'function') _sbPillReposition();
+  // Keep an open stats popup in sync with the live route.
+  const _pop = document.getElementById('sbStatsPop');
+  if (_pop && _pop.classList.contains('open')) _sbPillStatsRender();
 }
 
 // ── SimBrief pill placement (v3.41.0) ───────────────────────────────────────
@@ -11391,7 +11447,75 @@ function _sbPillDismiss() {
   _sbPillDismissedRoute = dep + '→' + arr;
   const pill = document.getElementById('sbRoutePill');
   if (pill) pill.classList.remove('visible');
+  _sbPillStatsClose();
 }
+
+// ── Inline route-stats popup (v3.45.0) ──────────────────────────────────────
+// The ⓘ button on the pill toggles a panel above it showing the full
+// departure + arrival airport cards. Content is built with the same
+// _buildTooltipHtml helper the main-screen info panel uses, so the cards are
+// identical and the aircraft-suitability verdict is included automatically.
+// Dep/arr endpoints come from the distDep/distArr fields — the same source the
+// pill itself reads — so the popup always matches the route shown on the pill.
+function _sbPillStatsRender() {
+  const dep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
+  const arr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
+  const depRec = (dep && typeof lookupICAO === 'function') ? lookupICAO(dep) : null;
+  const arrRec = (arr && typeof lookupICAO === 'function') ? lookupICAO(arr) : null;
+  const owner = ic => (typeof _findOwner === 'function') ? _findOwner(ic) : '';
+  const depCard = document.getElementById('sbStatsDepCard');
+  const arrCard = document.getElementById('sbStatsArrCard');
+  const depEl = document.getElementById('sbStatsDepContent');
+  const arrEl = document.getElementById('sbStatsArrContent');
+  if (depRec && depEl) { depEl.innerHTML = _buildTooltipHtml(dep, depRec, false, null, owner(dep), 'dep'); if (depCard) depCard.style.display = ''; }
+  else if (depCard) { depCard.style.display = 'none'; }
+  // Arrival card passes acRole 'arr' so _buildTooltipHtml resolves the
+  // range/suitability check against the current departure automatically.
+  if (arrRec && arrEl) { arrEl.innerHTML = _buildTooltipHtml(arr, arrRec, false, null, owner(arr), 'arr'); if (arrCard) arrCard.style.display = ''; }
+  else if (arrCard) { arrCard.style.display = 'none'; }
+}
+
+function _sbPillStatsOpen() {
+  const pop = document.getElementById('sbStatsPop');
+  if (!pop) return;
+  _sbPillStatsRender();
+  pop.classList.add('open');
+  pop.setAttribute('aria-hidden', 'false');
+  const btn = document.getElementById('sbPillStatsBtn');
+  if (btn) { btn.classList.add('active'); btn.setAttribute('aria-expanded', 'true'); }
+  // Defer listener attach so the originating click doesn't immediately close it.
+  setTimeout(() => {
+    document.addEventListener('pointerdown', _sbPillStatsOutside, true);
+    document.addEventListener('keydown', _sbPillStatsEsc, true);
+  }, 0);
+}
+
+function _sbPillStatsClose() {
+  const pop = document.getElementById('sbStatsPop');
+  if (!pop || !pop.classList.contains('open')) return;
+  pop.classList.remove('open');
+  pop.setAttribute('aria-hidden', 'true');
+  const btn = document.getElementById('sbPillStatsBtn');
+  if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-expanded', 'false'); }
+  document.removeEventListener('pointerdown', _sbPillStatsOutside, true);
+  document.removeEventListener('keydown', _sbPillStatsEsc, true);
+}
+
+function _sbPillStatsToggle(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const pop = document.getElementById('sbStatsPop');
+  if (pop && pop.classList.contains('open')) _sbPillStatsClose();
+  else _sbPillStatsOpen();
+}
+
+// Clicks anywhere inside the pill (including the popup and its owner links) are
+// kept; clicks outside dismiss the popup.
+function _sbPillStatsOutside(ev) {
+  const pill = document.getElementById('sbRoutePill');
+  if (pill && pill.contains(ev.target)) return;
+  _sbPillStatsClose();
+}
+function _sbPillStatsEsc(ev) { if (ev.key === 'Escape') _sbPillStatsClose(); }
 
 function _getRecipPat() {
   try { const p = localStorage.getItem('simfly_gh_pat');   if (p) return p; } catch(e) {}
@@ -38463,7 +38587,8 @@ function rgSendToFlightPlanner() {
             Once both departure and arrival ICAOs are valid, the <strong>File on SimBrief →</strong> button lights up. Click it to open SimBrief's dispatch page pre-filled with your route — ready to generate a full flight plan in one click.<br/><br/>
             <strong>Hover the button</strong> to preview exactly what will be sent: origin, destination, aircraft type (if one is selected), and flight number. The flight number is synthesized from the 3-letter owner codes of the departure and arrival airport owners.<br/><br/>
             <strong>Route pill on the map</strong> (v3.8.0+) &mdash; whenever a complete dep&thinsp;&rarr;&thinsp;arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and flight number (<em>Flt: XXXXXX</em>). Click <em>&thinsp;✈ File on SimBrief →</em> on the pill to file directly from the map screen without returning to the main planner. <strong>Click the DEP → ARR route text</strong> to swap departure and arrival in one click — the map breadcrumb, highlight, and main-screen fields all update together. Dismiss with ✕ &mdash; the pill reappears automatically if you change either endpoint.<br/><br/>
-            <strong>Move the pill</strong> (v3.41.0+) &mdash; it sits at the bottom centre by default and automatically shifts left or right if that spot would cover your departure or arrival airport. Grab the <strong>⠿ handle</strong> on its left edge to drag it anywhere over the map. Your chosen position is remembered for the rest of the session; reload the app to return to the default bottom-centre placement.
+            <strong>Move the pill</strong> (v3.41.0+) &mdash; it sits at the bottom centre by default and automatically shifts left or right if that spot would cover your departure or arrival airport. Grab the <strong>⠿ handle</strong> on its left edge to drag it anywhere over the map. Your chosen position is remembered for the rest of the session; reload the app to return to the default bottom-centre placement.<br/><br/>
+            <strong>ⓘ Full airport stats from the map</strong> (v3.45.0+) &mdash; the <strong>ⓘ</strong> button on the pill pops up a panel just above it showing the complete <strong>departure</strong> and <strong>arrival</strong> airport cards side-by-side &mdash; owner, pilot payout, SimFly category &amp; level, rotations remaining, runways, weather, and the <strong>aircraft-suitability verdict</strong> &mdash; the same cards that otherwise appear at the bottom of the main planner. The panel tracks the pill if you drag it and refreshes as you change the route; click ⓘ again, click off the panel, or press <em>Esc</em> to close it.
           </div>
         </div>
       </div>
@@ -38995,10 +39120,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.45.0</span>
+          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport stats right on the map — no need to leave it.</strong> The floating <em>File on SimBrief</em> route chip now has a small <strong>ⓘ</strong> button. Click it and a panel pops up just above the chip showing the full <strong>departure</strong> and <strong>arrival</strong> airport cards side-by-side — owner, payout, SimFly category &amp; level, rotations left, runways, weather, and the <strong>aircraft-suitability verdict</strong> — exactly the same cards you'd otherwise see at the bottom of the main planner screen. Click ⓘ again, click anywhere off the panel, or press <em>Esc</em> to close it.</li>
+          <li><strong>Stays in sync as you plan.</strong> The panel tracks the chip if you drag it, and refreshes automatically if you swap the route or change endpoints while it's open. On narrow screens the two cards stack vertically.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.44.1</span>
-          <span class="release-date">June 24, 2026 &middot; Current</span>
+          <span class="release-date">June 24, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -51455,12 +51592,26 @@ function rgSendToFlightPlanner() {
         <div class="sb-route-pill-meta" id="sbPillMeta" style="display:none" title="Selected aircraft · flight number"></div>
       </div>
       <div class="sb-route-pill-divider"></div>
+      <button class="sb-route-pill-stats-btn" id="sbPillStatsBtn" onclick="_sbPillStatsToggle(event)"
+              title="Show full airport stats (incl. suitability) for this route" aria-label="Show airport stats" aria-expanded="false">ⓘ</button>
       <button class="sb-route-pill-file-btn" onclick="fileOnSimbrief()"
         onmouseenter="if(window._tipAPI){_tipAPI.showLive(_buildSimbriefTooltip,event.clientX,event.clientY)}"
         onmouseleave="if(window._tipAPI){_tipAPI.hide()}"
         onmousemove="if(window._tipAPI){_tipAPI.move(event.clientX,event.clientY)}"
         title="Open SimBrief with this route pre-filled">✈ <span class="sb-warn-badge" id="sbPillWarnBadge" style="display:none" title="One or more airports on this route have 3 or fewer rotations remaining this week">⚠</span>File on SimBrief →</button>
       <button class="sb-route-pill-x" onclick="_sbPillDismiss()" title="Dismiss — pill reappears if route changes">✕</button>
+      <div class="sb-stats-pop" id="sbStatsPop" aria-hidden="true">
+        <div class="dist-map-info-row">
+          <div class="dist-map-info-card" id="sbStatsDepCard">
+            <div class="dist-map-info-card-lbl">Departure ▶</div>
+            <div id="sbStatsDepContent"></div>
+          </div>
+          <div class="dist-map-info-card" id="sbStatsArrCard">
+            <div class="dist-map-info-card-lbl">▶ Arrival</div>
+            <div id="sbStatsArrContent"></div>
+          </div>
+        </div>
+      </div>
     </div>
     </div>
     <div id="afkDataPanel">

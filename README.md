@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.44.0**
+**Current version: v3.45.0**
 
 ---
 
@@ -239,6 +239,8 @@ Once departure and arrival ICAOs are set, the **File on SimBrief →** button li
 **Route pill on the map** (v3.8.0+) — whenever a complete dep→arr route is set and the interactive map is open, a pill slides up from the bottom centre of the map showing the route, selected aircraft, and synthesised flight number. Click **✈ File on SimBrief →** on the pill to dispatch directly from the map without returning to the main planner. **Click the DEP → ARR route text** to swap departure and arrival — when both region circles are drawn, the circles swap roles (blue ↔ orange), the cross-region matrix rebuilds with the new dep airports as rows and new arr airports as columns, and the selected cell highlights in the rebuilt matrix; the breadcrumb strip and main-screen fields update together in all cases. Dismiss with ✕; the pill re-appears automatically if you change either endpoint.
 
 **Move the pill** (v3.41.0+) — it sits at the bottom centre by default and automatically slides left or right if that position would cover your departure or arrival airport dot, so both ends of the route stay visible even on small, low-resolution screens. Grab the **⠿ handle** on its left edge to drag the pill anywhere over the map; your chosen spot is remembered for the rest of the session, and reloading the app returns it to the default bottom-centre placement.
+
+**ⓘ Full airport stats from the map** (v3.45.0+) — the **ⓘ** button on the route pill pops up a panel just above it with the complete **departure** and **arrival** airport cards side-by-side: owner, pilot payout, SimFly category and level, rotations remaining this week, runways, the latest cached weather, and — when an aircraft is selected — the aircraft-suitability verdict. It's the same detail you'd otherwise see in the cards at the bottom of the main planner, now reachable without leaving the map. The panel follows the pill if you drag it and refreshes as you change the route; close it by tapping ⓘ again, tapping anywhere off the panel, or pressing Esc. On phones the two cards stack vertically.
 
 ### SimBrief Flight Plan — plot the route on the map
 Open the interactive map and click **✈ SimBrief Flight Plan** in the **🔌 Live** pulldown (the first item; promoted from Tools to Live in v2.89.0 since plan data drives so much of the live-flight surface). The app fetches your most recent SimBrief flight plan via SimBrief's public API and draws the full route — origin, every navlog waypoint, and destination — as a polyline with waypoint dots, plus magenta rings at the origin and destination. Each waypoint shows its ident as a permanent label by default; hovering the origin / destination ring brings up the route summary (flight number, total air distance, waypoint count, the SimBrief route string).
