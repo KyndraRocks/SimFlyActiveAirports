@@ -4994,10 +4994,18 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   #sceneryModal.sl-drag-over .modal { outline:2px dashed var(--accent); outline-offset:-3px; background:rgba(0,200,255,0.04); }
   /* Unsaved-changes backup banner */
   .sl-backup-banner { display:none; align-items:center; gap:0.6rem; flex-wrap:wrap; padding:0.55rem 1.5rem; background:rgba(232,224,0,0.08); border-bottom:2px solid rgba(232,224,0,0.4); font-family:'Rajdhani',sans-serif; font-size:0.95rem; color:#bfab00; }
-  .sl-backup-banner.visible { display:flex; animation:slBannerGlow 1.5s ease-in-out infinite alternate; }
-  @keyframes slBannerGlow {
-    from { background:rgba(232,224,0,0.05); border-bottom-color:rgba(232,224,0,0.3);  box-shadow:inset 0 -3px 10px rgba(232,224,0,0.10); }
-    to   { background:rgba(232,224,0,0.16); border-bottom-color:rgba(232,224,0,0.85); box-shadow:inset 0 -3px 22px rgba(232,224,0,0.35), inset 0 0 40px rgba(232,224,0,0.08); }
+  /* Steady (non-pulsing) highlight. The banner used to run an `infinite alternate`
+     box-shadow glow; box-shadow isn't compositor-accelerated, so that pulse forced
+     a full main-thread repaint every frame. With the region map's canvas dots
+     painting behind the modal, the constant repaint competed with keystroke
+     handling and made typing in the Store/Dev/Notes fields feel laggy — as if the
+     input were being "stolen." It's now a static, clearly-visible bar with a single
+     compositor-only entrance fade (opacity/transform), so it grabs the eye on
+     appearance without any ongoing paint cost. */
+  .sl-backup-banner.visible { display:flex; background:rgba(232,224,0,0.15); border-bottom-color:rgba(232,224,0,0.75); box-shadow:inset 0 -3px 18px rgba(232,224,0,0.22); animation:slBannerIn 0.3s ease-out; }
+  @keyframes slBannerIn {
+    from { opacity:0; transform:translateY(-4px); }
+    to   { opacity:1; transform:translateY(0); }
   }
   body.light-mode .sl-backup-banner { background:rgba(180,155,0,0.07); color:#6a5a00; border-bottom-color:rgba(180,155,0,0.32); }
   /* Hide X close button while backup banner is demanding a choice */
@@ -8535,7 +8543,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.47.0';
+const APP_VERSION = '3.48.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -28350,6 +28358,105 @@ function _slImportJson() {
   input.click();
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  FLIGHTSIM.TO IMPORT — copy-a-snippet / load-the-JSON workflow (v3.48.0)
+//  The snippet (verbatim in #slFstoSnippetSrc) runs on flightsim.to and
+//  downloads simfly-flightsimto-scenery.json — an array of
+//  { icao, store:'FlightSim.to', developer, rating:2.5 }. _slFstoIngest
+//  merges it FILL-BLANKS-ONLY: brand-new airports are added in full; for
+//  airports already in the library only an empty Store / Developer / Rating
+//  is filled, so a re-scrape never clobbers values the user has set.
+// ═══════════════════════════════════════════════════════════════════════
+function openFstoImportModal() {
+  const el = document.getElementById('slFstoModal');
+  if (!el) return;
+  const src = document.getElementById('slFstoSnippetSrc');
+  const box = document.getElementById('slFstoSnippetBox');
+  if (src && box && !box.value) box.value = src.textContent.trim();
+  el.classList.add('open');
+}
+function _slFstoClose() {
+  document.getElementById('slFstoModal')?.classList.remove('open');
+}
+function _slFstoCopySnippet() {
+  const box = document.getElementById('slFstoSnippetBox');
+  if (!box) return;
+  const flash = () => {
+    _slShowToast('Snippet copied — paste it into the FlightSim.to console');
+    const b = document.getElementById('slFstoCopyBtn');
+    if (b) { const t = b.textContent; b.textContent = '✓ Copied'; setTimeout(() => { b.textContent = t; }, 1600); }
+  };
+  // Manual-selection fallback for browsers without async clipboard (or when it
+  // rejects). This runs in our own page on a click gesture, so writeText works.
+  const manual = () => { try { box.focus(); box.select(); document.execCommand('copy'); } catch (_) {} flash(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(box.value).then(flash).catch(manual);
+  } else { manual(); }
+}
+function _slFstoLoadFile() {
+  document.getElementById('slFstoFile')?.click();
+}
+function _slFstoFileChange(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { _slShowToast('File too large — max 10 MB'); return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    let data;
+    try { data = JSON.parse(ev.target.result); }
+    catch { _slShowToast('Could not parse JSON — expected the FlightSim.to export'); return; }
+    _slFstoIngest(data);
+  };
+  reader.readAsText(file);
+}
+// Fill-blanks-only merge. Returns nothing; reports via toast.
+function _slFstoIngest(data) {
+  if (!Array.isArray(data)) { _slShowToast('Could not read import — expected a JSON array'); return; }
+  const lib = _slLoad();
+  const byIcao = new Map(lib.map(e => [e.icao.toUpperCase(), e]));
+  let added = 0, filled = 0, unchanged = 0, skipped = 0;
+  const touched = [];
+  for (const item of data) {
+    const icao = (item && item.icao != null ? String(item.icao) : '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,7}$/.test(icao)) { skipped++; continue; }
+    const store     = (item.store     != null ? String(item.store)     : '').trim();
+    const developer = (item.developer != null ? String(item.developer) : '').trim();
+    const rating    = typeof item.rating === 'number' ? item.rating : 0;
+    const ex = byIcao.get(icao);
+    if (!ex) {
+      const norm = { icao, addon: '', type: '', sim: '', notes: '',
+                     rating: _slClampRating(rating), store, developer };
+      lib.push(norm); byIcao.set(icao, norm);
+      added++; touched.push(icao);
+    } else {
+      let changed = false;
+      if (!String(ex.store     || '').trim() && store)     { ex.store     = store;                    changed = true; }
+      if (!String(ex.developer || '').trim() && developer) { ex.developer = developer;                changed = true; }
+      if (!(+ex.rating || 0) && rating)                    { ex.rating    = _slClampRating(rating);   changed = true; }
+      if (changed) { filled++; touched.push(icao); } else { unchanged++; }
+    }
+  }
+  if (!touched.length && !skipped) { _slShowToast('FlightSim.to import — nothing to import'); _slFstoClose(); return; }
+  _slSave(lib);
+  // Mark only the airports we actually changed dirty (so they float to the top
+  // for review and the Save/backup banner nudges a fresh export). Unlike a full
+  // library restore (_slReadJsonFile) this is additive, so we do NOT reset dirty.
+  if (touched.length) { _slDirty++; touched.forEach(u => _slDirtyIcaos.add(u)); }
+  _slSetBannerVisible(_slDirty);
+  _slRefreshDatalists();
+  _slRefreshDevFilterUI();
+  _slRenderList(document.getElementById('slSearch')?.value || '');
+  _rgApplySceneryState();
+  _slUpdateToggles();
+  _slFstoClose();
+  const parts = [`${added} added`];
+  if (filled)    parts.push(`${filled} filled`);
+  if (unchanged) parts.push(`${unchanged} unchanged`);
+  if (skipped)   parts.push(`${skipped} skipped`);
+  _slShowToast('FlightSim.to import — ' + parts.join(' · '));
+}
+
 function _slClearAll() {
   if (!_slLoad().length) return;
   if (!confirm('Remove all airports from your Scenery Library? This cannot be undone.')) return;
@@ -39462,6 +39569,7 @@ function rgSendToFlightPlanner() {
             <strong>Folder scan</strong> (Chrome/Edge only): click <strong>📂 Scan folder</strong>, point at your MSFS Community or X-Plane Custom Scenery folder, and the app detects airport codes from add-on subfolder names. A checkbox preview lets you confirm before importing.<br/><br/>
             <strong>Scenery config import</strong> (⋯ menu): import an X-Plane <code>scenery_packs.ini</code> or MSFS/P3D <code>scenery.cfg</code> directly — same checkbox preview as the folder scan. You can also <strong>drag and drop</strong> any of these files (or a <code>.json</code> backup) straight onto the modal.<br/><br/>
             <strong>FS Addon Compare import</strong> (⋯ menu): select a <code>.har</code> file captured from the FS Addon Compare website. Open FS Addon Compare → My Library in Chrome/Edge, open DevTools (F12) → Network tab, reload the page, then export and save as HAR.<br/><br/>
+            <strong>FlightSim.to import</strong> (🛠 Manage menu → <em>🌐 Import from FlightSim.to</em>): a guided two-step window that pulls in every airport you've downloaded from FlightSim.to — owned by a SimFly player or not. <strong>Step 1</strong> provides a snippet (with a <em>📋 Copy snippet</em> button); paste it into your browser's console (F12) while signed in to FlightSim.to and it saves a <code>simfly-flightsimto-scenery.json</code> file to your Downloads. <strong>Step 2</strong> loads that file with <em>📂 Load JSON file</em>. The import is <em>fill-blanks-only</em>: new airports are added in full, but for airports already in your library it only sets a Store, Developer, or Rating that's currently empty — your hand-set ratings and attributions are never overwritten, so it's safe to re-run whenever you buy more. Imported rows float to the top for review and a toast summarises the result.<br/><br/>
             <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
             <strong>Keyboard entry</strong> (v3.40.0) — the popover is fully keyboard-driven for fast data entry. It opens with the rating focused, so <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating outright, and <strong>0</strong> clears it. <strong>Tab</strong> walks Rating → Store → Developer → Notes → links and cycles within the popover; on <strong>Store</strong> / <strong>Developer</strong>, type a few letters and press <strong>Tab</strong> to autocomplete to the top matching suggestion (the native ↑/↓ dropdown works too). Map pan/zoom keys are suppressed while a field is focused, and <strong>Esc</strong> closes from anywhere inside.<br/><br/>
@@ -39690,8 +39798,31 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.47.0</span>
+          <span class="release-version">v3.48.0</span>
           <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Import your FlightSim.to scenery in one place.</strong> A new <em>🌐 Import from FlightSim.to</em> item under the Scenery Library's <strong>🛠 Manage</strong> menu opens a guided two-step window. <strong>Step 1</strong> gives you a ready-to-run snippet (with a <em>📋 Copy snippet</em> button) to paste into your browser console while signed in to FlightSim.to — it scans everything you've downloaded there and saves a <code>simfly-flightsimto-scenery.json</code> file to your Downloads. <strong>Step 2</strong> loads that file straight into your Scenery Library, pulling in every airport you own scenery for — whether or not a SimFly player owns it.</li>
+          <li><strong>Re-scraping is always safe.</strong> The import only ever <em>fills in blanks</em>: brand-new airports are added in full, but for airports already in your library it only sets a Store, Developer, or Rating that's currently empty. Ratings and attributions you've set by hand are never overwritten, so you can re-run the import any time to pick up new purchases. Imported airports float to the top of the list for review, and the result is summarised in a toast (added / filled / unchanged / skipped).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.47.1</span>
+          <span class="release-date">June 25, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Typing in the Scenery Library no longer feels laggy.</strong> The yellow “unsaved changes” bar at the top of the Scenery Library used to pulse continuously. That glow repainted the whole bar on every frame, and with the map drawing behind it the constant repaint competed with your keystrokes — so typing into the Store, Dev, or Notes fields felt like the input was being swallowed. The bar is now a steady, clearly-visible highlight (it fades in once when changes appear, then holds still), so editing is smooth.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.47.0</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -51284,6 +51415,7 @@ function rgSendToFlightPlanner() {
               <div class="sl-overflow-sep"></div>
               <button class="sl-overflow-item" onclick="openManageValuesModal();document.getElementById('slOverflowMenu').classList.remove('open')" title="Bulk rename / delete Store and Developer values across the library">🛠 Stores &amp; Developers</button>
               <div class="sl-overflow-sep"></div>
+              <button class="sl-overflow-item" onclick="openFstoImportModal();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import every airport you've downloaded from FlightSim.to into the Scenery Library — owned by a SimFly player or not">🌐 Import from FlightSim.to</button>
               <button class="sl-overflow-item" onclick="_slFsacImport();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import from FS Addon Compare .har file">📥 FS Addon Compare</button>
               <button class="sl-overflow-item" onclick="_slImportSceneryFile();document.getElementById('slOverflowMenu').classList.remove('open')" title="Import X-Plane scenery_packs.ini or MSFS scenery.cfg">📄 Import scenery config</button>
               <div class="sl-overflow-sep"></div>
@@ -51366,6 +51498,146 @@ function rgSendToFlightPlanner() {
     </div>
   </div>
 </div>
+
+<!-- FlightSim.to Import Modal (v3.48.0) — scrape your FlightSim.to airport downloads into the Scenery Library -->
+<style>
+  #slFstoModal { z-index:10750; }
+  #slFstoModal .modal { max-width:880px; }
+  #slFstoModal .modal-body { padding:1.1rem 1.4rem 1.4rem; font-family:'Rajdhani',sans-serif; }
+  .fsto-intro { color:var(--muted); font-size:0.98rem; line-height:1.5; margin-bottom:1.1rem; }
+  .fsto-steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1.2rem; }
+  .fsto-step-hd { display:flex; align-items:center; gap:0.5rem; font-size:1.06rem; font-weight:600; color:var(--text); margin-bottom:0.45rem; }
+  .fsto-step-n { display:inline-flex; align-items:center; justify-content:center; width:1.5rem; height:1.5rem; flex:0 0 auto; border-radius:50%; background:var(--accent); color:#03121a; font-weight:700; font-size:0.95rem; }
+  .fsto-step-bd { color:var(--muted); font-size:0.95rem; line-height:1.55; }
+  .fsto-step-bd a { color:var(--accent); text-decoration:none; }
+  .fsto-step-bd a:hover { text-decoration:underline; }
+  .fsto-step-bd code { font-family:'Courier New',monospace; background:rgba(255,255,255,0.07); padding:0.05rem 0.32rem; border-radius:3px; color:var(--text); font-size:0.9em; }
+  .fsto-step-bd kbd { font-family:'Rajdhani',sans-serif; background:var(--surface); border:1px solid var(--border); border-bottom-width:2px; border-radius:4px; padding:0.02rem 0.34rem; font-size:0.86em; color:var(--text); }
+  .fsto-snippet-wrap { margin-top:0.75rem; }
+  .fsto-snippet { width:100%; box-sizing:border-box; height:148px; resize:vertical; font-family:'Courier New',monospace; font-size:0.78rem; line-height:1.42; background:var(--surface); border:1px solid var(--border); border-radius:5px; color:var(--text); padding:0.6rem 0.7rem; white-space:pre; overflow:auto; outline:none; }
+  .fsto-snippet:focus { border-color:var(--accent); }
+  .fsto-copy-btn { margin-top:0.6rem; }
+  .fsto-load-row { margin-top:0.75rem; }
+  body.light-mode .fsto-step-n { color:#fff; }
+  body.light-mode .fsto-step-bd code { background:rgba(0,0,0,0.06); }
+  @media (max-width:768px) {
+    #slFstoModal .modal-body { padding:0.85rem 0.95rem 1rem; }
+    .fsto-snippet { font-size:0.72rem; height:130px; }
+  }
+</style>
+<div class="modal-overlay" id="slFstoModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _slFstoClose)">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">🌐 &nbsp;Import from FlightSim.to</span>
+      <button class="modal-close" onclick="_slFstoClose()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="fsto-intro">
+        Pull every airport you've downloaded from <strong>FlightSim.to</strong> into your Scenery Library — whether or not a SimFly player owns it. It's a two-step copy-and-load: run a small snippet in your browser <em>on FlightSim.to</em> to generate a JSON file, then load that file back here.
+      </div>
+      <ol class="fsto-steps">
+        <li>
+          <div class="fsto-step-hd"><span class="fsto-step-n">1</span> Generate the JSON on FlightSim.to</div>
+          <div class="fsto-step-bd">
+            Sign in at <a href="https://flightsim.to/" target="_blank" rel="noopener">flightsim.to</a>, open your browser's developer console (<kbd>F12</kbd> → <em>Console</em>), paste the snippet below, and press <kbd>Enter</kbd>. It scans your FlightSim.to downloads and saves <code>simfly-flightsimto-scenery.json</code> to your Downloads folder. (The console may warn about pasting code — type <em>allow pasting</em> if prompted.)
+            <div class="fsto-snippet-wrap">
+              <textarea id="slFstoSnippetBox" class="fsto-snippet" readonly spellcheck="false" onclick="this.select()" aria-label="FlightSim.to scrape snippet"></textarea>
+              <button id="slFstoCopyBtn" class="sl-action-btn fsto-copy-btn" onclick="_slFstoCopySnippet()" title="Copy the snippet to your clipboard">📋 Copy snippet</button>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="fsto-step-hd"><span class="fsto-step-n">2</span> Load the downloaded file</div>
+          <div class="fsto-step-bd">
+            Back here, load <code>simfly-flightsimto-scenery.json</code> from your Downloads folder. New airports are added in full; for airports already in your library, only <strong>blank</strong> fields are filled — your existing ratings, stores, and developers are never overwritten. Imported airports float to the top of the list so you can review them, and you'll be nudged to <em>Save</em> a fresh backup.
+            <div class="fsto-load-row">
+              <button class="sl-action-btn fsto-load-btn" onclick="_slFstoLoadFile()" title="Choose the simfly-flightsimto-scenery.json file from your Downloads folder">📂 Load JSON file…</button>
+            </div>
+          </div>
+        </li>
+      </ol>
+      <input type="file" id="slFstoFile" accept=".json,application/json" style="display:none;" onchange="_slFstoFileChange(event)">
+    </div>
+  </div>
+</div>
+<!-- Verbatim scrape snippet — stored as inert text so backticks / ${} / < need no escaping.
+     Populated into #slFstoSnippetBox on modal open. -->
+<script type="text/plain" id="slFstoSnippetSrc">
+(async () => {
+  const STORE = 'FlightSim.to', RATING = 2.5;
+  const api = p => `/backend/user/my-downloads?page=${p}&limit=100&sort=downloaded&category=airports`;
+  const STOP = new Set(['MSFS','FS20','FS24','FS25','PACK','ORBX','FSDT','GSX2','ONLY','FREE',
+    'BETA','FULL','MEGA','CITY','AREA','ICAO','PART','VOL1','VOL2','PAYW','NEXT','TRUE','REAL',
+    'XP11','XP12','LITE','PLUS','2024','2020','SODE','HOME','TEST','PBR0','EARK','KLIA']);
+
+  // Manual ICAO overrides for ambiguous titles (keyed by trimmed title)
+  const OVERRIDE = {
+    'Bangor International Airport Rework':'KBGR',
+    'Phnom Penh International Airport':'VDPP',
+    'Lynden Municipal Airport/Jansen Field, Lynden WA USA - 38W V2.0':'38W',
+    '21W Ranger Creek':'21W',
+    'Project BQ2 (CBQ2/Fort Langley Airport)':'CBQ2',
+    'CAT4 Qualicum Beach Airport':'CAT4',
+    'CAT4 Qualicum Beach, British Columbia':'CAT4',
+    'Barrow Utqiagvik Wiley Post-Will Rogers Memorial Airport (USA Alaska) v1.5':'PABR',
+    'WMKK KLIA (Kuala Lumpur International Airport) Freeware Edition':'WMKK',
+    'Hokitika Airport Scenery Enhancement':'NZHK',
+    'Chilko Lake, British Columbia (CAG3)':'CAG3',
+    'Anacortes Airport - [74S]':'74S',
+    'U36 - Aberdeen Municipal Airport Idaho':'U36',
+    '6S2 - Florence Municipal Airport, Oregon coast, USA':'6S2',
+    'WN47 - Bear Valley Skyranch, Washington State':'WN47',
+    'WA09 ROCHE HARBOR':'WA09',
+    'Stapleford Aerodrome':'EGSG',
+  };
+
+  const items = [];
+  for (let p = 1; p <= 100; p++) {
+    const r = await fetch(api(p), { credentials: 'include', headers: { accept: 'application/json' } });
+    if (!r.ok) { console.warn('page', p, 'HTTP', r.status); break; }
+    const j = await r.json();
+    const arr = j.data || [];
+    items.push(...arr);
+    const lp = j.meta && (j.meta.last_page || j.meta.lastPage || j.meta.totalPages);
+    if (arr.length === 0 || (lp && p >= lp)) break;
+  }
+  if (!items.length) { console.warn('No items.'); return; }
+  console.log('author sample:', items[0].author);
+
+  const devOf = (it) => {
+    const a = it.author;
+    if (!a) return '';
+    if (typeof a === 'string') return a.trim();
+    return (a.name || a.username || a.display_name || a.title || '').trim();
+  };
+  const icaoOf = (it) => {
+    const title = (it.title || '').trim();
+    if (OVERRIDE[title]) return OVERRIDE[title];
+    const cands = [...new Set((title.match(/\b[A-Z]{4}\b/g) || []).filter(t => !STOP.has(t)))];
+    return cands.length === 1 ? cands[0] : null;
+  };
+
+  const out = [], review = [];
+  for (const it of items) {
+    const icao = icaoOf(it);
+    if (icao) out.push({ icao, store: STORE, developer: devOf(it), rating: RATING });
+    else review.push((it.title || '').trim());
+  }
+  const seen = new Set();
+  const final = out.filter(e => (seen.has(e.icao) ? false : seen.add(e.icao)));
+  final.sort((a, b) => a.icao.localeCompare(b.icao));
+
+  console.log(`✅ ${final.length} airports (${out.length - final.length} dupes removed).`);
+  if (review.length) { console.warn(`⚠️ ${review.length} still unresolved:`, review); }
+
+  const blob = new Blob([JSON.stringify(final, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'simfly-flightsimto-scenery.json';
+  a.click();
+  console.log('⬇️ Downloaded simfly-flightsimto-scenery.json');
+})();
+</script>
 
 <!-- Mobile Alerts Configuration Modal (v2.85.0) -->
 <style>

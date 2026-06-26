@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.47.0**
+**Current version: v3.48.0**
 
 ---
 
@@ -48,6 +48,7 @@ Track which airports you have add-on scenery installed for, and rate the quality
 - **Autocomplete add** — type an ICAO in the Add Airport field; results from the global airport database appear as you type.
 - **Paste ICAOs** — paste any block of text containing ICAOs (space-, comma-, or newline-separated). Tokens are validated against the airport database; unrecognized codes are skipped with a count shown.
 - **Import file** — drag and drop (or browse for) a previously exported JSON backup, an X-Plane `scenery_packs.ini`, or an MSFS `scenery.cfg`. ICAOs are extracted automatically.
+- **Import from FlightSim.to** (v3.48.0) — pull in every airport you've downloaded from [FlightSim.to](https://flightsim.to/), whether or not a SimFly player owns it. The **🌐 Import from FlightSim.to** item in the **🛠 Manage** menu opens a guided two-step window: copy the provided snippet and run it in your browser console while signed in to FlightSim.to (it saves a JSON file to your Downloads), then load that file back here. The import is **fill-blanks-only** — new airports are added in full, but for airports already in your library it only fills a Store, Developer, or Rating that's currently empty, so your hand-set ratings and attributions are never overwritten and re-running it any time is safe.
 
 **Star ratings (0–5, half-star granularity)** — every airport in the library has an interactive 5-star rating shown next to its name. Click the **left half** of a star for a half rating, the **right half** for a full rating; click the same half again to clear back to zero. A live hover preview fills the stars (and a numeric `X.X/5` badge) up to the cursor position so you always know what you're about to set. Ratings are saved automatically, round-trip through Save / Load Scenery Library, and are also shown in the airport's tooltip on the map.
 
