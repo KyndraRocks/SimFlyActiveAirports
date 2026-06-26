@@ -4670,13 +4670,18 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      pegged to ~75vh (see the per-id rule below), and .modal-body is flex:1, so
      this max-height of 100% lets the list span all the vertical room left after
      the search/controls rows and the footer. */
-  /* v3.40.1 — the row list is the actual scroll container (modal-body lets it
-     grow via flex:1), so the compositor promotion has to live HERE, not on
-     .modal-body. will-change+isolation mirror the proven .dist-matrix-wrap
-     recipe: scrolling translates a dedicated GPU layer instead of repainting
-     the whole list on the main thread. overflow-anchor:none stops the
-     scrollbar from jumping as content-visibility rows render / de-render. */
-  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:100%; min-height:200px; flex:1; scrollbar-width:thin; scrollbar-color:var(--border) transparent; will-change:transform; isolation:isolate; overflow-anchor:none; }
+  /* v3.40.1 added `will-change:transform` here (the .dist-matrix-wrap recipe) to
+     translate a GPU layer on scroll. DO NOT re-add it (v3.48.3): the matrix is
+     small, but the scenery list grows with the library — at a few hundred rows
+     its content is 40,000px+ tall, and `will-change:transform` promotes the WHOLE
+     scrollable content to one compositor layer of that height. That blows past the
+     GPU max texture size (~8–16k px) and ~100 MB of layer memory, so every repaint
+     (even a keystroke or caret blink in a Store/Dev field) re-rasterises a giant
+     tiled layer — the cause of the "dog slow with a big library, fine from file://
+     with an empty one" typing lag. Scrolling stays smooth WITHOUT it because the
+     rows already use `content-visibility:auto` (off-screen rows skip layout/paint).
+     overflow-anchor:none stops the scrollbar jumping as those rows render. */
+  .sl-list { list-style:none; margin:0.4rem 0 0; padding:0 1.5rem; overflow-y:auto; max-height:100%; min-height:200px; flex:1; scrollbar-width:thin; scrollbar-color:var(--border) transparent; isolation:isolate; overflow-anchor:none; }
   /* Both library + developers modals occupy ~75% of the viewport height so the
      longer rows + the per-row inputs and the developer table aren't cramped. */
   #sceneryModal .modal, #developersModal .modal { min-height:75vh; max-height:90vh; }
@@ -8556,7 +8561,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.48.2';
+const APP_VERSION = '3.48.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27834,17 +27839,6 @@ function _slSetFilterMode(m) {
   _slRenderList(document.getElementById('slSearch')?.value || '');
 }
 
-// v3.48.2 — debounce the search-box re-render. A full _slRenderList rebuilds
-// every visible row (~8 ms with a large library on the loaded region map), so
-// running it synchronously on every keystroke made the search box itself feel
-// laggy. Coalesce to one render shortly after typing stops; keystrokes stay
-// instant and the list still updates effectively immediately.
-let _slSearchTmr = 0;
-function _slSearchInput(value) {
-  clearTimeout(_slSearchTmr);
-  _slSearchTmr = setTimeout(() => _slRenderList(value), 130);
-}
-
 function _slRenderList(query) {
   const list  = document.getElementById('slList');
   const empty = document.getElementById('slEmpty');
@@ -27966,11 +27960,11 @@ function _slRenderList(query) {
         `</div>` +
         `<div class="sl-row-meta">` +
           `<label class="sl-meta-lbl" title="Store / marketplace where the scenery was purchased">Store</label>` +
-          `<input type="text" class="sl-meta-input" value="${storeVal}" placeholder="—" ` +
-            `data-icao="${e.icao}" onchange="_slStoreInput(this)" onkeydown="_slMetaTab(event,'slStoreOptions')" autocomplete="off" spellcheck="false" title="Type a few letters and press Tab to autocomplete">` +
+          `<input type="text" class="sl-meta-input" list="slStoreOptions" value="${storeVal}" placeholder="—" ` +
+            `data-icao="${e.icao}" onchange="_slStoreInput(this)" onkeydown="_slMetaTab(event,'slStoreOptions')" autocomplete="off" spellcheck="false">` +
           `<label class="sl-meta-lbl" title="Scenery developer / publisher">Dev</label>` +
-          `<input type="text" class="sl-meta-input" value="${devVal}" placeholder="—" ` +
-            `data-icao="${e.icao}" onchange="_slDevInput(this)" onkeydown="_slMetaTab(event,'slDevOptions')" autocomplete="off" spellcheck="false" title="Type a few letters and press Tab to autocomplete">` +
+          `<input type="text" class="sl-meta-input" list="slDevOptions" value="${devVal}" placeholder="—" ` +
+            `data-icao="${e.icao}" onchange="_slDevInput(this)" onkeydown="_slMetaTab(event,'slDevOptions')" autocomplete="off" spellcheck="false">` +
         `</div>` +
         `<div class="sl-notes sl-row-notes">` +
           `<button type="button" class="sl-notes-toggle" onclick="_slToggleNotes(this)" aria-expanded="false" title="Show / hide notes for this airport">` +
@@ -31530,14 +31524,14 @@ function _rgRefreshRatePopover() {
       `<datalist id="rgPopDevOpts">${devSugg}</datalist>` +
       `<div class="rg-rate-field-row">` +
         `<label class="rg-rate-field-lbl">Store</label>` +
-        `<input class="rg-rate-field-inp" value="${esc(store)}" placeholder="e.g. FlightSim.to"` +
-        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopStoreOpts')" title="Type a few letters and press Tab to autocomplete"` +
+        `<input class="rg-rate-field-inp" list="rgPopStoreOpts" value="${esc(store)}" placeholder="e.g. FlightSim.to"` +
+        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopStoreOpts')"` +
         ` onchange="_slSetStore('${icao}',this.value);_rgUpdatePopoverDisk()">` +
       `</div>` +
       `<div class="rg-rate-field-row">` +
         `<label class="rg-rate-field-lbl">Developer</label>` +
-        `<input class="rg-rate-field-inp" value="${esc(dev)}" placeholder="e.g. Orbx"` +
-        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopDevOpts')" title="Type a few letters and press Tab to autocomplete"` +
+        `<input class="rg-rate-field-inp" list="rgPopDevOpts" value="${esc(dev)}" placeholder="e.g. Orbx"` +
+        ` autocomplete="off" onkeydown="_slMetaTab(event,'rgPopDevOpts')"` +
         ` onchange="_slSetDeveloper('${icao}',this.value);_rgUpdatePopoverDisk()">` +
       `</div>` +
       `<div class="sl-notes">` +
@@ -39596,11 +39590,11 @@ function rgSendToFlightPlanner() {
             <strong>FlightSim.to import</strong> (🛠 Manage menu → <em>🌐 Import from FlightSim.to</em>): a guided two-step window that pulls in every airport you've downloaded from FlightSim.to — owned by a SimFly player or not. <strong>Step 1</strong> provides a snippet (with a <em>📋 Copy snippet</em> button); paste it into your browser's console (F12) while signed in to FlightSim.to and it saves a <code>simfly-flightsimto-scenery.json</code> file to your Downloads. <strong>Step 2</strong> loads that file with <em>📂 Load JSON file</em>. The import is <em>fill-blanks-only</em>: new airports are added in full, but for airports already in your library it only sets a Store, Developer, or Rating that's currently empty — your hand-set ratings and attributions are never overwritten, so it's safe to re-run whenever you buy more. Imported rows float to the top for review and a toast summarises the result.<br/><br/>
             <strong>Star ratings</strong> — every airport in the library has a 0&ndash;5 star rating shown next to its name. Click the left half of a star for a half rating, the right half for a full rating; click the same half again to clear back to zero. Ratings are saved automatically and round-trip through Save Scenery Library / Load Scenery Library. When a rating is set, it is also displayed in the airport&rsquo;s tooltip on the region map.<br/><br/>
             <strong>Rate from the map</strong> — <strong>right-click any airport dot</strong> on the region map (or <strong>long-press</strong> for ~½ second on touch devices) to open a Quick-Rate popover anchored to that dot. Click stars to set the rating without leaving the map. If the airport is not yet in your Scenery Library, setting a rating adds it automatically (and turns on the Highlight overlay so the black scenery dot appears right away). Close the popover with <strong>×</strong>, <strong>Esc</strong>, by clicking elsewhere on the map, or by zooming.<br/><br/>
-            <strong>Keyboard entry</strong> (v3.40.0) — the popover is fully keyboard-driven for fast data entry. It opens with the rating focused, so <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating outright, and <strong>0</strong> clears it. <strong>Tab</strong> walks Rating → Store → Developer → Notes → links and cycles within the popover; on <strong>Store</strong> / <strong>Developer</strong>, type a few letters and press <strong>Tab</strong> to autocomplete to the top matching suggestion. Map pan/zoom keys are suppressed while a field is focused, and <strong>Esc</strong> closes from anywhere inside.<br/><br/>
+            <strong>Keyboard entry</strong> (v3.40.0) — the popover is fully keyboard-driven for fast data entry. It opens with the rating focused, so <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating outright, and <strong>0</strong> clears it. <strong>Tab</strong> walks Rating → Store → Developer → Notes → links and cycles within the popover; on <strong>Store</strong> / <strong>Developer</strong>, type a few letters and press <strong>Tab</strong> to autocomplete to the top matching suggestion (the native ↑/↓ dropdown works too). Map pan/zoom keys are suppressed while a field is focused, and <strong>Esc</strong> closes from anywhere inside.<br/><br/>
             The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. A collapsible <strong>▶ Notes</strong> field is here too — click the triangle to expand it and jot a free-text note (up to 1,024 characters); a ● beside the label marks airports that already have one. When a note already exists, the popover opens with it expanded so you see it without a click. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
             For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
-            <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Type a few letters and press <strong>Tab</strong> to autocomplete to the best match from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. (Tab-to-complete replaced the old browser autocomplete dropdown in v3.48.2 — on a large library the native dropdown forced a full-page repaint on every keystroke and made typing lag.) Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
+            <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
             <strong>Notes</strong> — each library row also has a collapsible <strong>▶ Notes</strong> disclosure beneath the Store / Dev inputs (kept minimised until you click the triangle). Expand it to record a free-text note of up to 1,024 characters — install quirks, version numbers, reminders — with a live character counter. Notes are saved to local storage and round-trip through Save / Load Scenery Library. The same field appears in the right-click Quick-Rate popover.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
             <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
@@ -39822,8 +39816,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.48.2</span>
+          <span class="release-version">v3.48.3</span>
           <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library speed — the genuine fix this time, with the live autocomplete back.</strong> The real cause of the slowdown with a large library was a graphics setting on the scrolling list: it was being pushed onto the GPU as one single layer the full height of the list. With a few hundred airports that layer is over 40,000 pixels tall — far bigger than the graphics card can handle in one piece — so the browser had to laboriously redraw it for every little change, including each keystroke in a Store or Dev field. Removing that one setting lets the browser draw only the rows actually on screen, which is what makes the small (local-file) library feel instant. Scrolling stays smooth because the list already only renders visible rows.</li>
+          <li><strong>Live Store / Dev autocomplete restored.</strong> The previous attempt removed the as-you-type suggestion dropdown on a hunch that it was the cause — it wasn't, and you correctly flagged the loss. The dropdown is back exactly as before (Tab-to-complete still works too), and the search box is live again.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.48.2</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -51358,7 +51364,7 @@ function rgSendToFlightPlanner() {
       </div>
       <div class="sl-search-row">
         <input type="text" id="slSearch" class="sl-search" placeholder="Search ICAO, name, or addon…"
-               oninput="_slSearchInput(this.value)" autocomplete="off" spellcheck="false">
+               oninput="_slRenderList(this.value)" autocomplete="off" spellcheck="false">
       </div>
       <div class="sl-controls-row">
         <label class="sl-ctrl-lbl" for="slFilterMode">Show</label>
