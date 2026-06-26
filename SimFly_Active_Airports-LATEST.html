@@ -4433,6 +4433,17 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-map-sr-owner:hover, .rg-map-sr-owner.rg-sr-hi { background:rgba(0,200,255,0.18); }
   .rg-map-sr-owner-action { font-size:0.78rem; opacity:0.6; flex-shrink:0; white-space:nowrap; margin-left:auto; padding-left:0.4rem; }
   .rg-map-search-none { padding:0.35rem 0.65rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:0.88rem; }
+  /* Comma multi-search preview — header + per-segment rows (not clickable) and
+     a highlighted "Run all" footer row. */
+  .rg-map-sr-multi-hdr { padding:0.32rem 0.65rem 0.25rem; font-family:'Rajdhani',sans-serif; font-size:0.74rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--accent); opacity:0.85; border-bottom:1px solid rgba(255,255,255,0.06); }
+  .rg-map-sr-multi { cursor:default; }
+  .rg-map-sr-multi:hover { background:transparent; color:rgba(220,240,255,0.85); }
+  .rg-map-sr-multi-miss .rg-map-sr-icao { color:rgba(255,140,140,0.95); }
+  .rg-map-sr-multi-miss .rg-map-sr-info { color:rgba(255,160,160,0.8); }
+  .rg-map-sr-multi-run { cursor:pointer; background:rgba(0,200,255,0.1); border-top:1px solid rgba(0,200,255,0.25); font-weight:600; }
+  .rg-map-sr-multi-run .rg-map-sr-icao { color:var(--accent); }
+  .rg-map-sr-multi-run:hover { background:rgba(0,200,255,0.22); color:#fff; }
+  body.light-mode .rg-map-sr-multi:hover { background:transparent; color:var(--text); }
   body.light-mode .rg-map-search { background:rgba(245,248,252,0.96); border-color:var(--border); color:var(--text); }
   body.light-mode .rg-map-search::placeholder { color:var(--muted); }
   body.light-mode .rg-map-search-xclear { color:var(--muted); }
@@ -8524,7 +8535,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.46.0';
+const APP_VERSION = '3.47.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -29122,6 +29133,12 @@ let _rgRegionCodeToName = new Map(); // 'US-CA' → 'California'
 let _rgRegionNameToCode = new Map(); // 'california' → 'US-CA'
 let _rgMapSrAdditive    = false;     // true when last search was prefixed with '+'
 let _rgMapSrNegative    = false;     // true when last search was prefixed with '-'
+// Comma multi-search — when the user types a comma-separated list (e.g.
+// "California, United States, Europe, Kyndra & Africa") the dropdown shows a
+// per-segment preview and { prefix, segments } is parked here so Enter (or the
+// "Run all" footer row) can apply each segment in sequence. null when the
+// current query isn't a multi-search.
+let _rgMapSrMultiPending = null;
 
 // Compound "owner @ location" filter — an array of {ownerName, locType,
 // locKey, locName} tuples. When non-empty, the per-axis OR inclusion gate
@@ -29264,12 +29281,19 @@ let _rgMapContinentFilter  = null;      // Set of continent codes, null=show all
 // airport "matches" the developer filter when its Scenery Library entry's
 // developer field is in the set.
 let _rgMapDeveloperFilter  = null;      // Set of developer names, null=show all
+// Scenery-store filter — the marketplace an airport's scenery was obtained from
+// (e.g. "SimMarket", "Orbx Direct", "MSFS Marketplace"). Mirrors the developer
+// filter exactly: Set semantics so the map search supports `+SimMarket` style
+// additive filtering. An airport "matches" when its Scenery Library entry's
+// store field is in the set. Separate axis from developer.
+let _rgMapStoreFilter      = null;      // Set of store names, null=show all
 let _rgExcludedOwners      = new Set();
 let _rgExcludedCountries   = new Set();
 let _rgExcludedRegions     = new Set();  // iso_region codes excluded via `-` search
 let _rgExcludedContinents  = new Set();
 let _rgExcludedIcaos       = new Set();
 let _rgExcludedDevelopers  = new Set();  // developer names excluded via `-` search
+let _rgExcludedStores      = new Set();  // store names excluded via `-` search
 
 // Stripe quick-filter — click owner stripe to isolate; click again to restore
 let _rgStripeOwnerDep  = null;   // currently locked owner name (dep), or null
@@ -30827,6 +30851,7 @@ function _rgRenderDots() {
     if (_rgExcludedRegions.size && _rgExcludedRegions.has(_rgRecRegion(rec))) continue;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) continue;
     if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icaoUp))) continue;
+    if (_rgExcludedStores.size && _rgExcludedStores.has(_rgStoreOf(icaoUp))) continue;
     const m = _rgCoronaMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor: '#7a7a90', fillOpacity: 0.75, interactive: true,
@@ -31081,16 +31106,17 @@ function _rgHighlightDots() {
       if (!isPinned) {
         if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
       }
-    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
+      const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(a.icao));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size || _rgExcludedStores.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
@@ -31101,6 +31127,7 @@ function _rgHighlightDots() {
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
       if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
+      if (_rgExcludedStores.size && _rgExcludedStores.has(_rgStoreOf(a.icao))) continue;
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_slDeveloperFilter) {
@@ -31157,16 +31184,17 @@ function _rgHighlightDots() {
       if (!isPinned) {
         if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
       }
-    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgPinnedIcaos.size > 0) {
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
+      const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(a.icao));
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) continue;
     }
-    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size) {
+    if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size || _rgExcludedStores.size) {
       const icaoUp = a.icao.toUpperCase();
       if (_rgExcludedIcaos.has(icaoUp)) continue;
       const ownerName2 = _rgOwnerMap.get(icaoUp) || '';
@@ -31177,6 +31205,7 @@ function _rgHighlightDots() {
         if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(a.rec))) continue;
       }
       if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
+      if (_rgExcludedStores.size && _rgExcludedStores.has(_rgStoreOf(a.icao))) continue;
     }
     if (_rgOnlyScenery && !_slHas(a.icao)) continue;
     if (_slDeveloperFilter) {
@@ -33805,7 +33834,7 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     if (!isPinned && !_rgCompoundPasses(icao, rec, ownerName)) return false;
   } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
-      _rgMapDeveloperFilter !== null ||
+      _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null ||
       (_rgPinExclusiveMode && _rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
     // Inclusion gate: if any include-set is active, the airport must match
     // at least one (or be pinned). When no include-set is active, every
@@ -33821,7 +33850,8 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     const inRegion    = _rgMapRegionFilter  !== null && _rgMapRegionFilter.has(_rgRecRegion(rec));
     const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
     const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(icao));
-    if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !isPinned) return false;
+    const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(icao));
+    if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) return false;
   }
   // Exclusion gate: any matching exclude-set kills the airport.
   if ((_rgExcludedOwners    && _rgExcludedOwners.size)    ||
@@ -33829,13 +33859,15 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
       (_rgExcludedRegions   && _rgExcludedRegions.size)   ||
       (_rgExcludedContinents && _rgExcludedContinents.size) ||
       (_rgExcludedIcaos     && _rgExcludedIcaos.size)     ||
-      (_rgExcludedDevelopers && _rgExcludedDevelopers.size)) {
+      (_rgExcludedDevelopers && _rgExcludedDevelopers.size) ||
+      (_rgExcludedStores    && _rgExcludedStores.size)) {
     if (_rgExcludedIcaos.has(icaoUp)) return false;
     if (_rgExcludedOwners.size    && _rgExcludedOwners.has(ownerName || '')) return false;
     if (_rgExcludedCountries.size && _rgExcludedCountries.has(_rgRecCountry(rec))) return false;
     if (_rgExcludedRegions.size   && _rgExcludedRegions.has(_rgRecRegion(rec))) return false;
     if (_rgExcludedContinents.size && _rgExcludedContinents.has(_rgRecContinent(rec))) return false;
     if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icao))) return false;
+    if (_rgExcludedStores.size    && _rgExcludedStores.has(_rgStoreOf(icao))) return false;
   }
   // Scenery-only mode
   if (_rgOnlyScenery && !_slHas(icao)) return false;
@@ -35273,6 +35305,66 @@ function _rgHideDeveloperLegend() {
   el.style.display = 'none';
 }
 
+// Hover-only popover listing every store in `_rgMapStoreFilter` with a
+// right-justified count of currently-visible airports for that store. Mirror
+// of _rgShowDeveloperLegend — counts honor every other map-wide filter via the
+// shared _rgDotPassesMapFilters chokepoint. Triggered from the breadcrumb
+// "N Stores" chip.
+function _rgShowStoreLegend(anchor) {
+  const el = document.getElementById('rgStoreLegend');
+  if (!el) return;
+  if (!_rgMapStoreFilter || _rgMapStoreFilter.size === 0) {
+    el.classList.remove('visible');
+    el.style.display = 'none';
+    return;
+  }
+  const stores = [..._rgMapStoreFilter].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const storeSet = new Set(stores);
+  const visCount = new Map();
+  const ownerData = _getOwnerData();
+  const counted = new Set();
+  if (ownerData) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        if (counted.has(ap.icao)) continue;
+        counted.add(ap.icao);
+        const st = _rgStoreOf(ap.icao);
+        if (!st || !storeSet.has(st)) continue;
+        const rec = lookupICAO(ap.icao);
+        if (!rec) continue;
+        if (_rgDotPassesMapFilters(ap.icao, rec, owner.name)) {
+          visCount.set(st, (visCount.get(st) || 0) + 1);
+        }
+      }
+    }
+  }
+  const rows = stores.map(name => {
+    const count = visCount.get(name) || 0;
+    return `<div class="rg-owner-legend-row">` +
+             `<span class="rg-owner-legend-name">${esc(name)}</span>` +
+             `<span class="rg-owner-legend-count">${count}</span>` +
+           `</div>`;
+  }).join('');
+  el.innerHTML = `<div class="rg-owner-legend-hdr">Scenery stores</div>` + rows;
+  el.style.display = '';
+  el.classList.add('visible');
+  if (!anchor || !anchor.getBoundingClientRect) return;
+  const r   = anchor.getBoundingClientRect();
+  const vw  = window.innerWidth || document.documentElement.clientWidth;
+  const popW = el.offsetWidth || 200;
+  let left = r.left;
+  if (left + popW + 8 > vw) left = Math.max(8, vw - popW - 8);
+  el.style.left = left + 'px';
+  el.style.top  = (r.bottom + 6) + 'px';
+}
+function _rgHideStoreLegend() {
+  const el = document.getElementById('rgStoreLegend');
+  if (!el) return;
+  el.classList.remove('visible');
+  el.style.display = 'none';
+}
+
 // Sync the 🎨 button's enabled / active visual state with current filter +
 // mode state. Disabled when no owner filter; active class when owner-color
 // mode is on.
@@ -36179,6 +36271,7 @@ function _rgAnyFilterActive() {
   if (_rgMapRegionFilter !== null) return true;
   if (_rgMapContinentFilter !== null) return true;
   if (_rgMapDeveloperFilter !== null) return true;
+  if (_rgMapStoreFilter !== null) return true;
   if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) return true;
   if (_rgExcludedOwners && _rgExcludedOwners.size > 0) return true;
   if (_rgExcludedCountries && _rgExcludedCountries.size > 0) return true;
@@ -36186,6 +36279,7 @@ function _rgAnyFilterActive() {
   if (_rgExcludedContinents && _rgExcludedContinents.size > 0) return true;
   if (_rgExcludedIcaos && _rgExcludedIcaos.size > 0) return true;
   if (_rgExcludedDevelopers && _rgExcludedDevelopers.size > 0) return true;
+  if (_rgExcludedStores && _rgExcludedStores.size > 0) return true;
   return false;
 }
 
@@ -36246,6 +36340,10 @@ function _rgClearAllFilters() {
     if (typeof _rgHideDeveloperLegend === 'function') _rgHideDeveloperLegend();
     _rgMapDeveloperFilter = null;
   }
+  if (_rgMapStoreFilter !== null) {
+    if (typeof _rgHideStoreLegend === 'function') _rgHideStoreLegend();
+    _rgMapStoreFilter = null;
+  }
   // Pinned ICAOs
   if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) _rgPinnedIcaos.clear();
   _rgPinExclusiveMode = false;
@@ -36256,6 +36354,7 @@ function _rgClearAllFilters() {
   if (_rgExcludedContinents  && _rgExcludedContinents.size  > 0) _rgExcludedContinents.clear();
   if (_rgExcludedIcaos       && _rgExcludedIcaos.size       > 0) _rgExcludedIcaos.clear();
   if (_rgExcludedDevelopers  && _rgExcludedDevelopers.size  > 0) _rgExcludedDevelopers.clear();
+  if (_rgExcludedStores      && _rgExcludedStores.size      > 0) _rgExcludedStores.clear();
   if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
   // Also wipe a plotted SimBrief flight plan and any recorded aircraft track —
   // the ⊗ chip is the single "reset the map" entry point. Each of these calls
@@ -36551,6 +36650,22 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(developerChip);
   }
 
+  // 9c. Store include filter — mirrors the developer chip. Hovering pops the
+  // store legend (per-store airport counts honoring all other active filters).
+  // Click ✕ to clear the entire store filter.
+  if (_rgMapStoreFilter !== null) {
+    const names = [..._rgMapStoreFilter];
+    const label = names.length === 1 ? names[0] : `${names.length} Stores`;
+    const storeChip = mkChip(label, null, () => {
+      _rgHideStoreLegend();
+      _rgMapStoreFilter = null;
+      _rgApplyMapFilter();
+    });
+    storeChip.addEventListener('mouseenter', () => _rgShowStoreLegend(storeChip));
+    storeChip.addEventListener('mouseleave', () => _rgHideStoreLegend());
+    container.appendChild(storeChip);
+  }
+
   // 10-13. Exclude chips — styled with red/danger border+text
   function mkExcludeChip(label, onX) {
     const c = mkChip(`−${label}`, null, onX);
@@ -36576,6 +36691,8 @@ function _rgUpdateBreadcrumbs() {
     container.appendChild(mkExcludeChip(icao, () => { _rgExcludedIcaos.delete(icao); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
   for (const dev of _rgExcludedDevelopers)
     container.appendChild(mkExcludeChip(dev, () => { _rgExcludedDevelopers.delete(dev); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
+  for (const st of _rgExcludedStores)
+    container.appendChild(mkExcludeChip(st, () => { _rgExcludedStores.delete(st); _rgApplyMapFilter(); _rgUpdateBreadcrumbs(); }));
 
   // v3.5.0 — "active layer" chips for the plotted SimBrief flight plan and
   // the aircraft breadcrumb track, so each can be removed in one click
@@ -37465,6 +37582,17 @@ function _rgDevOf(icao) {
   return (e && e.developer) ? e.developer : '';
 }
 
+// Scenery-library store lookup for an ICAO. Returns the store string set on the
+// airport's Scenery Library entry (the marketplace the scenery came from), or
+// '' if not in the library or no store set. Used by the store search filter
+// (_rgMapStoreFilter / _rgExcludedStores) so airports without library entries
+// never match a store include/exclude. Mirrors _rgDevOf.
+function _rgStoreOf(icao) {
+  if (typeof _slGet !== 'function') return '';
+  const e = _slGet(icao);
+  return (e && e.store) ? e.store : '';
+}
+
 // Region (state / province) resolution: rec.iso_region first, manual
 // override second. No prefix-based fallback — iso_region values are
 // fine-grained (e.g. 'US-IL', 'CA-ON') and can't be derived from a
@@ -37501,14 +37629,184 @@ function _rgMapSrInput(q) {
   const xclear = document.getElementById('rgMapSearchXClear');
   if (xclear) xclear.classList.toggle('visible', q.length > 0);
   _rgMapSrIdx = -1;
+  _rgMapSrMultiPending = null;
   if (!q.trim()) { _rgMapSrClose(); return; }
   const raw = q.trim();
   _rgMapSrAdditive = raw.startsWith('+');
   _rgMapSrNegative = !_rgMapSrAdditive && raw.startsWith('-');
   const search = (_rgMapSrAdditive || _rgMapSrNegative) ? raw.slice(1).trim() : raw;
   if (!search) { _rgMapSrClose(); return; }
+  // Comma multi-search — "A, B, C" runs each segment in sequence (each added to
+  // the map as though typed with a leading "+"). The compound delimiters are
+  // '@' / '&', never ',', so splitting on commas keeps "Kyndra & Africa" intact.
+  const segments = _rgMapSrSplitMulti(search);
+  if (segments.length >= 2) {
+    const prefix = _rgMapSrAdditive ? '+' : (_rgMapSrNegative ? '-' : '');
+    _rgMapSrRenderMulti(prefix, segments);
+    return;
+  }
   const compound = _rgMapSrParseCompound(search);
   _rgMapSrRender(search, compound);
+}
+
+// Split a query into comma-separated segments, trimming each and dropping
+// empties. Returns a single-element (or empty) array when there's no top-level
+// comma, so callers can treat "< 2 segments" as "not a multi-search".
+function _rgMapSrSplitMulti(raw) {
+  if (!raw || raw.indexOf(',') < 0) return [raw].filter(s => s && s.trim());
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// Read-only resolution of a single segment to its best-match target, for the
+// multi-search preview dropdown. Mirrors the precedence used by
+// _rgMapSrApplySegment so the preview matches what will actually be applied.
+// Returns { icon, label, sub } or null when nothing matches.
+function _rgMapSrPreviewSegment(seg) {
+  const compound = _rgMapSrParseCompound(seg);
+  if (compound) {
+    const rows = _rgMapSrCompoundQuery(compound.left, compound.right);
+    if (rows.length) {
+      const r = rows[0];
+      return { icon: '⊙', label: `${r.owner} in ${r.locName}`, sub: `${r.count} airport${r.count !== 1 ? 's' : ''}` };
+    }
+    return null;
+  }
+  let h;
+  if ((h = _rgMapSrOwnerQuery(seg)).length)      return { icon: '⊙',  label: h[0].name, sub: 'owner' };
+  if ((h = _rgMapSrContinentQuery(seg)).length)  return { icon: '🌍', label: h[0].name, sub: 'continent' };
+  if ((h = _rgMapSrCountryQuery(seg)).length)    return { icon: '🌍', label: h[0].name, sub: 'country' };
+  if ((h = _rgMapSrRegionQuery(seg)).length)     return { icon: '📍', label: h[0].name, sub: 'region' };
+  if ((h = _rgMapSrDeveloperQuery(seg)).length)  return { icon: '📦', label: h[0].name, sub: 'developer' };
+  if ((h = _rgMapSrStoreQuery(seg)).length)      return { icon: '🛒', label: h[0].name, sub: 'store' };
+  if ((h = _rgMapSrQuery(seg)).length)           return { icon: h[0].icao, label: h[0].name || h[0].icao, sub: 'airport' };
+  return null;
+}
+
+// Render the multi-search preview: one row per segment showing what it resolved
+// to (or "no match" in red), plus a footer row to run them all. Parks the parsed
+// query in _rgMapSrMultiPending so Enter / the footer click can apply it.
+function _rgMapSrRenderMulti(prefix, segments) {
+  const res = document.getElementById('rgMapSearchResults');
+  if (!res) return;
+  _rgMapSrMultiPending = { prefix, segments };
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const verb = prefix === '-' ? 'Remove' : (prefix === '+' ? 'Add' : 'Show');
+  let matched = 0;
+  const rows = segments.map(seg => {
+    const p = _rgMapSrPreviewSegment(seg);
+    if (p) {
+      matched++;
+      return `<div class="rg-map-sr rg-map-sr-multi">` +
+               `<span class="rg-map-sr-icao">${esc(p.icon)}</span>` +
+               `<span class="rg-map-sr-info">${esc(p.label)} <span class="rg-map-sr-city">· ${esc(p.sub)}</span></span>` +
+             `</div>`;
+    }
+    return `<div class="rg-map-sr rg-map-sr-multi rg-map-sr-multi-miss">` +
+             `<span class="rg-map-sr-icao">⚠</span>` +
+             `<span class="rg-map-sr-info">${esc(seg)} <span class="rg-map-sr-city">· no match</span></span>` +
+           `</div>`;
+  });
+  const n = segments.length;
+  const footer = `<div class="rg-map-sr rg-map-sr-multi-run" onclick="_rgMapSrRunMultiPending()" onmouseenter="_rgMapSrSetHi(-1)">` +
+                   `<span class="rg-map-sr-icao">▶</span>` +
+                   `<span class="rg-map-sr-info">${verb} ${n} search${n !== 1 ? 'es' : ''} <span class="rg-map-sr-city">· press Enter</span></span>` +
+                 `</div>`;
+  res.innerHTML = `<div class="rg-map-sr-multi-hdr">${verb} ${n} searches in sequence</div>` + rows.join('') + footer;
+  res.classList.add('open');
+}
+
+// Resolve a single segment to its best match and apply it as a map filter,
+// honoring the supplied additive / negative flags. Same precedence as the
+// preview. Returns true if a target was found and applied.
+//
+// Compound ("owner @ place") segments are handled specially in the additive
+// case: rather than calling _rgMapSrFilterToCompound (whose from-empty additive
+// path falls through to REPLACE and would _rgClearAllSearchFilters, wiping the
+// segments already applied this run), we append the tuple + per-axis sets
+// directly. The multi-runner applies compound segments first, so once compound
+// mode is on, the plain additive FilterTo* helpers correctly append wildcard
+// (null-owner) location tuples and the union stays intact.
+function _rgMapSrApplySegment(seg, additive, negative) {
+  _rgMapSrAdditive = additive;
+  _rgMapSrNegative = negative;
+  const compound = _rgMapSrParseCompound(seg);
+  if (compound) {
+    const rows = _rgMapSrCompoundQuery(compound.left, compound.right);
+    if (!rows.length) return false;
+    const r = rows[0];
+    if (negative) {
+      _rgMapSrFilterToCompound(r.owner, r.locType, r.locKey, r.locName);
+      return true;
+    }
+    // Additive append — never clears, so prior segments survive.
+    const dup = _rgMapCompoundFilter && _rgMapCompoundFilter.some(t =>
+      t.ownerName === r.owner && t.locType === r.locType && t.locKey === r.locKey);
+    if (!dup) {
+      if (!_rgMapCompoundFilter) _rgMapCompoundFilter = [];
+      _rgMapCompoundFilter.push({ ownerName: r.owner, locType: r.locType, locKey: r.locKey, locName: r.locName });
+      if (!_rgMapOwnerFilter) _rgMapOwnerFilter = new Set();
+      _rgMapOwnerFilter.add(r.owner);
+      if (r.locType === 'continent')   { if (!_rgMapContinentFilter) _rgMapContinentFilter = new Set(); _rgMapContinentFilter.add(r.locKey); }
+      else if (r.locType === 'country') { if (!_rgMapCountryFilter) _rgMapCountryFilter = new Set(); _rgMapCountryFilter.add(r.locKey); }
+      else if (r.locType === 'region')  { if (!_rgMapRegionFilter) _rgMapRegionFilter = new Set(); _rgMapRegionFilter.add(r.locKey); }
+    }
+    _rgBuildMapOwnerList();
+    _rgUpdateMapOwnerBtn();
+    _rgApplyMapFilter();
+    _rgFitAllVisibleAirports();
+    return true;
+  }
+  let h;
+  if ((h = _rgMapSrOwnerQuery(seg)).length)     { _rgMapSrFilterToOwner(h[0].name); return true; }
+  if ((h = _rgMapSrContinentQuery(seg)).length) { _rgMapSrFilterToContinent(h[0].code, h[0].name); return true; }
+  if ((h = _rgMapSrCountryQuery(seg)).length)   { _rgMapSrFilterToCountry(h[0].iso, h[0].name); return true; }
+  if ((h = _rgMapSrRegionQuery(seg)).length)    { _rgMapSrFilterToRegion(h[0].code, h[0].name); return true; }
+  if ((h = _rgMapSrDeveloperQuery(seg)).length) { _rgMapSrFilterToDeveloper(h[0].name); return true; }
+  if ((h = _rgMapSrStoreQuery(seg)).length)     { _rgMapSrFilterToStore(h[0].name); return true; }
+  if ((h = _rgMapSrQuery(seg)).length)          { _rgMapSrSelect(h[0].icao); return true; }
+  return false;
+}
+
+// Apply a comma multi-search. A bare list (no +/- prefix) replaces the current
+// view: clear search filters once, then add every segment additively so the map
+// shows the UNION of all of them. With "+" we keep the current view and add; with
+// "-" we remove/exclude every listed segment.
+//
+// Compound segments are applied before plain ones. Once compound mode is on, the
+// dot gate switches to the compound OR-of-AND-pairs and the plain additive
+// FilterTo* helpers append wildcard (any-owner) location tuples so each plain
+// segment still contributes its airports to the union. Applying compounds first
+// guarantees that ordering regardless of how the user typed the list.
+function _rgMapSrRunMulti(prefix, segments) {
+  if (!segments || !segments.length) return;
+  const negative = prefix === '-';
+  const additive = prefix === '+';
+  if (!negative && !additive) _rgClearAllSearchFilters();
+  const compoundSegs = [], plainSegs = [];
+  for (const seg of segments) (_rgMapSrParseCompound(seg) ? compoundSegs : plainSegs).push(seg);
+  const ordered = [...compoundSegs, ...plainSegs];
+  let applied = 0; const missed = [];
+  for (const seg of ordered) {
+    // Bare and "+" searches add each segment; "-" removes each.
+    const ok = _rgMapSrApplySegment(seg, !negative, negative);
+    if (ok) applied++; else missed.push(seg);
+  }
+  _rgMapSrAdditive = false;
+  _rgMapSrNegative = false;
+  _rgMapSrMultiPending = null;
+  _rgMapSrClear();
+  if (typeof _aaRtToast === 'function') {
+    const verb = negative ? 'Removed' : 'Applied';
+    if (applied && !missed.length)      _aaRtToast(`${verb} ${applied} search${applied !== 1 ? 'es' : ''}`, 'ok');
+    else if (applied && missed.length)  _aaRtToast(`${verb} ${applied}; no match for ${missed.join(', ')}`, 'warn');
+    else                                _aaRtToast(`No match for ${missed.join(', ')}`, 'warn');
+  }
+}
+
+// Click / Enter entry point for the parked multi-search.
+function _rgMapSrRunMultiPending() {
+  if (!_rgMapSrMultiPending) return;
+  _rgMapSrRunMulti(_rgMapSrMultiPending.prefix, _rgMapSrMultiPending.segments);
 }
 
 // Compound "owner @ location" parser. Returns { left, right } when the input
@@ -37798,6 +38096,34 @@ function _rgMapSrDeveloperQuery(q) {
   return results.slice(0, 3);
 }
 
+// Scenery-store search — mirror of _rgMapSrDeveloperQuery. Only stores attached
+// to at least one SimFly-owned airport are suggested, so the dropdown can't
+// offer a filter that would hide every dot. Counts are "potential matches"
+// (SimFly-owned + has this store), matching the developer lane's behavior.
+function _rgMapSrStoreQuery(q) {
+  if (q.length < 2) return [];
+  const ql = q.toLowerCase();
+  const ownerData = _getOwnerData();
+  const ownedByStore = new Map();
+  if (ownerData) {
+    for (const owner of ownerData) {
+      for (const ap of (owner.airports || [])) {
+        const st = _rgStoreOf(ap.icao);
+        if (!st) continue;
+        ownedByStore.set(st, (ownedByStore.get(st) || 0) + 1);
+      }
+    }
+  }
+  const results = [];
+  for (const [name, count] of ownedByStore) {
+    const nl = name.toLowerCase();
+    if (!nl.includes(ql)) continue;
+    results.push({ name, count, startsWith: nl.startsWith(ql) });
+  }
+  results.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return results.slice(0, 3);
+}
+
 function _rgMapSrContinentQuery(q) {
   if (q.length < 2) return [];
   const ql = q.toLowerCase();
@@ -37877,8 +38203,9 @@ function _rgMapSrRender(q, compound) {
   const regions    = _rgMapSrRegionQuery(q);
   const continents = _rgMapSrContinentQuery(q);
   const developers = _rgMapSrDeveloperQuery(q);
+  const stores     = _rgMapSrStoreQuery(q);
   const airports   = _rgMapSrQuery(q);
-  if (!owners.length && !countries.length && !regions.length && !continents.length && !developers.length && !airports.length) {
+  if (!owners.length && !countries.length && !regions.length && !continents.length && !developers.length && !stores.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
@@ -37920,6 +38247,13 @@ function _rgMapSrRender(q, compound) {
     `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
+  const storeRows = stores.map(s =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="store" data-name="${escAttr(s.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">🛒</span>` +
+    `<span class="rg-map-sr-info">${esc(s.name)} <span class="rg-map-sr-city">· ${s.count} SimFly airport${s.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+    `</div>`
+  );
   const apRows = airports.map(r => {
     const meta = [r.city, r.owner].filter(Boolean).map(esc).join(' · ');
     return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
@@ -37927,7 +38261,7 @@ function _rgMapSrRender(q, compound) {
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...developerRows, ...apRows].join('');
+  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...developerRows, ...storeRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -37968,6 +38302,7 @@ function _rgMapSrActivateEl(el) {
   else if (el.dataset.type === 'country')   _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else if (el.dataset.type === 'region')    _rgMapSrFilterToRegion(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'developer') _rgMapSrFilterToDeveloper(el.dataset.name);
+  else if (el.dataset.type === 'store')     _rgMapSrFilterToStore(el.dataset.name);
   else _rgMapSrSelect(el.dataset.icao);
 }
 
@@ -38060,6 +38395,7 @@ function _rgClearAllSearchFilters() {
   _rgMapRegionFilter    = null;
   _rgMapContinentFilter = null;
   _rgMapDeveloperFilter = null;
+  _rgMapStoreFilter     = null;
   _rgMapCompoundFilter  = null;
   _rgPinnedIcaos.clear();
   _rgPinExclusiveMode   = false;
@@ -38069,6 +38405,7 @@ function _rgClearAllSearchFilters() {
   _rgExcludedContinents.clear();
   _rgExcludedIcaos.clear();
   _rgExcludedDevelopers.clear();
+  _rgExcludedStores.clear();
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
 }
@@ -38211,6 +38548,32 @@ function _rgMapSrFilterToDeveloper(name) {
   _rgMapSrClear();
 }
 
+// Scenery store filter activation — same +/- semantics as developer. `name` is
+// the store string as stored in Scenery Library entries (e.g. "SimMarket",
+// "Orbx Direct"). Airports without a library entry, or with a different store,
+// are excluded from the active filter set.
+function _rgMapSrFilterToStore(name) {
+  if (_rgMapSrNegative) {
+    if (_rgMapStoreFilter && _rgMapStoreFilter.has(name)) {
+      _rgMapStoreFilter.delete(name);
+      if (_rgMapStoreFilter.size === 0) _rgMapStoreFilter = null;
+    } else {
+      _rgExcludedStores.add(name);
+    }
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
+  }
+  if (_rgMapSrAdditive) {
+    if (!_rgMapStoreFilter) _rgMapStoreFilter = new Set();
+    _rgMapStoreFilter.add(name);
+  } else {
+    _rgClearAllSearchFilters();
+    _rgMapStoreFilter = new Set([name]);
+  }
+  _rgApplyMapFilter();
+  _rgFitAllVisibleAirports();
+  _rgMapSrClear();
+}
+
 function _rgMapSrSelect(icao) {
   if (!_rgMap) return;
   const rec = lookupICAO(icao);
@@ -38245,7 +38608,7 @@ function _rgMapSrSelect(icao) {
   const _zoomToNewPin = _rgMapSrAdditive && !_rgPinExclusiveMode &&
     _rgMapOwnerFilter === null && _rgMapCountryFilter === null &&
     _rgMapRegionFilter === null && _rgMapContinentFilter === null &&
-    _rgMapDeveloperFilter === null &&
+    _rgMapDeveloperFilter === null && _rgMapStoreFilter === null &&
     (!_rgMapCompoundFilter || !_rgMapCompoundFilter.length);
   if (_zoomToNewPin) _rgMap.flyTo([rec.latitude, rec.longitude], 9, { duration: 0.6 });
   else _rgFitAllVisibleAirports();
@@ -38264,6 +38627,7 @@ function _rgMapSrClose() {
   const res = document.getElementById('rgMapSearchResults');
   if (res) { res.classList.remove('open'); res.innerHTML = ''; }
   _rgMapSrIdx = -1;
+  _rgMapSrMultiPending = null;
 }
 
 function _rgMapSrHover(i) {
@@ -38281,6 +38645,11 @@ function _rgMapSrKey(e) {
   const res = document.getElementById('rgMapSearchResults');
   if (e.key === 'Escape') { _rgMapSrClear(); e.stopPropagation(); return; }
   if (!res || !res.classList.contains('open')) return;
+  // Comma multi-search preview is open — Enter runs every segment at once.
+  if (_rgMapSrMultiPending) {
+    if (e.key === 'Enter') { e.preventDefault(); _rgMapSrRunMultiPending(); }
+    return;
+  }
   const rows = res.querySelectorAll('.rg-map-sr[data-type]');
   if (!rows.length) return;
   if (e.key === 'ArrowDown') {
@@ -39010,9 +39379,11 @@ function rgSendToFlightPlanner() {
             <strong>Sticky headers</strong> — departure row labels stay pinned to the left edge and arrival column headers stay pinned to the top as you scroll a large matrix, keeping airport identifiers visible at all times.<br/><br/>
             <strong>Owner stripe</strong> — each row and column header shows a thin colored ribbon for the airport owner. Click the ribbon to instantly filter the matrix to that owner only; a second click restores the full list.<br/><br/>
             Drag the <strong>thin handle</strong> between the map and the results bar to resize the map vs. matrix area. Click any matrix cell to select a route; the <strong>Send to Flight Planner →</strong> button closes the modal and populates the main fields.<br/><br/>
-            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, region / state / province name (<em>California</em>, <em>Bavaria</em>, <em>Ontario</em>, …), or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), country rows (<strong>🌍</strong>), and region rows (<strong>📍</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it. <strong>After every search action the map zooms to fit every currently-visible airport</strong> — typing <em>KSEA</em> then <em>+KPDX</em> frames both pinned airports together; adding more pins or filters expands the view as needed.<br/><br/>
-            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+California</em> to also include California airports; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, region, continent, and pinned filters and replaces them with the new result.<br/><br/>
-            <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
+            <strong>Airport search</strong> — a search box floats in the top-left corner of the map. Type an ICAO code, airport name, city, country name, region / state / province name (<em>California</em>, <em>Bavaria</em>, <em>Ontario</em>, …), or continent name to find airports. Owner rows (<strong>⊙</strong>), continent rows (<strong>🌍</strong>), country rows (<strong>🌍</strong>), region rows (<strong>📍</strong>), scenery-developer rows (<strong>📦</strong>), and scenery-store rows (<strong>🛒</strong>) show <strong>Filter map →</strong> and filter the map to matching SimFly-owned airports. Selecting an individual airport row <strong>pins</strong> that airport as a visible dot — SimFly-owned airports appear in their normal category color; non-owned airports appear as a gray dot. Each pinned or filtered result appears as a chip in the filter status strip with a ✕ to clear it. <strong>After every search action the map zooms to fit every currently-visible airport</strong> — typing <em>KSEA</em> then <em>+KPDX</em> frames both pinned airports together; adding more pins or filters expands the view as needed.<br/><br/>
+            <strong>Search by scenery store</strong> — the search box recognizes the marketplace your scenery was obtained from, as recorded in the <strong>Store</strong> field of your Scenery Library (<em>SimMarket</em>, <em>Orbx Direct</em>, <em>MSFS Marketplace</em>, …). A 🛒 store row filters the map to airports purchased there. Stores share the developer filter's behavior: combine several with <code>+</code>, exclude with <code>-</code>, and an active store filter shows as a chip in the filter strip — hover it for a per-store count of currently-visible airports. Only stores attached to at least one SimFly-owned airport in your library are offered.<br/><br/>
+            <strong>Chain searches with commas</strong> — type a comma-separated list to run several searches in one go. For example <em>California, United States, Europe, Kyndra &amp; Africa</em> previews each piece in the dropdown (showing what it resolved to) and, when you press <strong>Enter</strong> or click the <em>▶ Show all</em> row, applies them all at once — the map shows the <em>union</em> of every item, exactly as though you'd searched each one in turn and added it with a <code>+</code>. Each segment can be any single-search term (ICAO, owner, country, region, continent, developer, store) or an <em>owner @ place</em> compound. Prefix the whole line with <code>+</code> to add the list on top of whatever is already shown, or with <code>-</code> to remove every listed item. The compound delimiters are <code>@</code> and <code>&amp;</code>, never the comma, so <em>Kyndra &amp; Africa</em> stays one segment.<br/><br/>
+            <strong>Additive search (&ldquo;+&rdquo; prefix)</strong> — prefix any search with <code>+</code> to accumulate results instead of replacing the current filter. Example: search <em>Europe</em> to filter to SimFly airports in Europe; then <em>+Kyndra</em> to also show Kyndra&rsquo;s airports; then <em>+California</em> to also include California airports; then <em>+Orbx</em> to also include airports with Orbx scenery; then <em>+SimMarket</em> to also include airports bought from SimMarket; then <em>+EGLL</em> to also pin EGLL as a gray dot. A non-prefixed search clears all owner, country, region, continent, developer, store, and pinned filters and replaces them with the new result.<br/><br/>
+            <strong>Negation search (&ldquo;&minus;&rdquo; prefix)</strong> — prefix any search with <code>&minus;</code> to exclude rather than include. <em>&minus;Germany</em> hides all SimFly airports in Germany; <em>&minus;California</em> hides all California airports; <em>&minus;Europe</em> hides all European airports; <em>&minus;Kyndra</em> removes Kyndra from the active owner filter or adds her to the excluded-owners set; <em>&minus;Orbx</em> removes/excludes airports with Orbx scenery; <em>&minus;SimMarket</em> removes/excludes airports bought from SimMarket; <em>&minus;EGLL</em> removes EGLL from pinned or adds it to the excluded ICAOs set. Excluded items appear as red-tinted chips in the filter status strip with a ✕ to un-exclude.<br/><br/>
             <strong>Owner &times; location search (&ldquo;@&rdquo; or &ldquo;&amp;&rdquo; delimiter)</strong> — find all of an owner&rsquo;s SimFly airports inside a single state, province, region, country, or continent by joining the two with <code>@</code> or <code>&amp;</code> (the two delimiters are interchangeable). Examples: <em>Kyndra @ Texas</em>, <em>Kyndra &amp; Texas</em>, <em>Kyndra @ United States</em>, <em>Kyndra @ Europe</em>, <em>Kyndra @ TX</em>, <em>Kyndra @ EU</em>. <strong>Order doesn&rsquo;t matter</strong> &mdash; <em>Texas @ Kyndra</em> works exactly the same. Each result row shows the owner, the resolved place, and the airport count; clicking activates both filters at once. When a place name is ambiguous (e.g. <em>Georgia</em> = US state <em>and</em> country; <em>Punjab</em> = India and Pakistan; <em>Washington</em> = state and D.C.) the dropdown lists each interpretation with a parenthetical qualifier so you can pick the right one. The delimiter must have whitespace on both sides to be treated as a compound split <em>or</em>, if no spaces, the right side must not look like an email domain &mdash; so <em>user123@hotmail.com</em> still searches as a single owner name, but <em>user123@hotmail.com&nbsp;@&nbsp;Texas</em> works as a compound query.<br/><br/>
             <strong>Stacking compound queries with <code>+</code></strong> — prefixing a compound search with <code>+</code> appends it to the active compound filter instead of replacing it, so you can build a union of multiple (owner, place) intersections one query at a time. Start with <em>Kyndra @ Europe</em>, then add <em>+jmribe @ Europe</em>, then <em>+CapitanCabal @ Europe</em> — the map now shows all three pilots&rsquo; European airports together. Mix destinations the same way: <em>Kyndra @ Europe</em> then <em>+Kyndra @ USA</em> shows Kyndra&rsquo;s European and US airports side by side. X&rsquo;ing out an owner or location chip drops only the compound entries that referenced it; orphan chips (owners or places no longer in any compound entry) disappear automatically. A compound query <em>without</em> the <code>+</code> prefix wipes prior filters and starts fresh.<br/><br/>
             <strong>Removing a stacked compound with <code>-</code></strong> — the exact inverse of <code>+</code> stacking. Prefix a compound query with <code>-</code> to drop the matching tuple from the active union. Example: after stacking the three Europe queries above, typing <em>-jmribe @ Europe</em> removes jmribe&rsquo;s European entry and the map snaps to Kyndra + CapitanCabal in Europe. The dropdown automatically filters to show only currently-active compound entries when <code>-</code> is the prefix, so you can&rsquo;t accidentally click a row that wouldn&rsquo;t remove anything. Removing the last surviving tuple clears the compound filter entirely.<br/><br/>
@@ -39154,7 +39525,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter Status Strip</div>
           <div class="help-feature-desc">
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
-            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
+            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer / store includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
             <strong>🔄 Rotation Gauge</strong> — appears whenever the rotation gauge is being shown on airport dots. Click <strong>&times;</strong> to hide the gauge (you can also middle-click the map to toggle it).<br/><br/>
@@ -39319,8 +39690,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.46.0</span>
+          <span class="release-version">v3.47.0</span>
           <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Chain several searches on one line with commas.</strong> Type a comma-separated list in the map search box — e.g. <em>California, United States, Europe, Kyndra &amp; Africa</em> — and the dropdown previews what each piece resolves to. Press <strong>Enter</strong> (or click <em>▶ Show all</em>) and every item is applied at once, exactly as if you'd searched each one and added it with a <code>+</code>. The map shows the union of all of them. Prefix the whole line with <code>+</code> to add the list on top of the current view, or <code>-</code> to remove every listed item.</li>
+          <li><strong>Filter the map by scenery store.</strong> The search box now recognizes the marketplace your scenery came from — type <em>SimMarket</em>, <em>Orbx Direct</em>, <em>MSFS Marketplace</em>, etc. (any store you've recorded in the Scenery Library) to filter the map to airports bought there. Stores work just like the existing developer filter: combine several with <code>+</code>, exclude with <code>-</code>, and an active filter shows as a chip in the filter strip — hover it for a per-store count of visible airports.</li>
+          <li><strong>Search results now include a 🛒 store lane.</strong> Alongside owner, country, region, continent, and developer (📦) matches, the dropdown shows matching scenery stores so you can pick one to filter by in a click.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.46.0</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -51541,6 +51925,7 @@ function rgSendToFlightPlanner() {
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
           <div id="rgOwnerLegend" class="rg-owner-legend"></div>
           <div id="rgDeveloperLegend" class="rg-owner-legend"></div>
+          <div id="rgStoreLegend" class="rg-owner-legend"></div>
           <div id="rgListLegend" class="rg-owner-legend"></div>
           <div id="rgMapOwnerPanel" class="rg-owner-panel">
             <div class="rg-owner-panel-hdr">
@@ -51668,8 +52053,8 @@ function rgSendToFlightPlanner() {
       <div class="rg-nm-label" id="rgNmLabel"></div>
       <div class="rg-map-search-wrap" id="rgMapSearchWrap">
         <div class="rg-map-search-input-row">
-          <input type="text" id="rgMapSearch" class="rg-map-search" placeholder="Search ICAO, name, owner, or owner @ place…"
-                 title="Search ICAO, airport name, owner, country, region, continent, or scenery developer. Use 'owner @ place' (or 'owner & place') in either order to combine — e.g. 'Kyndra @ Texas' or 'Kyndra & Texas'."
+          <input type="text" id="rgMapSearch" class="rg-map-search" placeholder="Search ICAO, name, owner, place, store, or A, B, C…"
+                 title="Search ICAO, airport name, owner, country, region, continent, scenery developer, or scenery store. Combine: 'owner @ place' (or 'owner & place') in either order — e.g. 'Kyndra @ Texas'. Chain multiple searches with commas — e.g. 'California, United States, Europe, Kyndra & Africa' — and press Enter to apply them all. Prefix with + to add or - to remove."
                  oninput="_rgMapSrInput(this.value)" onkeydown="_rgMapSrKey(event)"
                  autocomplete="off" spellcheck="false" tabindex="-1">
           <button class="rg-map-search-xclear" id="rgMapSearchXClear" onclick="_rgMapSrClear()" title="Clear search" tabindex="-1">✕</button>
