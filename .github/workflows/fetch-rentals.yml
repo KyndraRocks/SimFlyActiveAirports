@@ -1,0 +1,130 @@
+name: Fetch SimFly Rentable Aircraft
+
+# Rentable-aircraft feed for Active Airports' "Aircraft Rentals" view mode.
+# The /api/airplanes/rentable endpoint is public (no auth, no cookies), so this
+# is a plain server-side fetch — same shape as fetch-flights.yml.
+#
+# Freshness: GitHub's cron floor is 5 minutes and runs are best-effort (they can
+# be delayed several minutes under load). Every 10 minutes is the practical
+# "as fresh as possible" setting. The app also computes live availability from
+# each plane's inGroundOperationUntil timestamp, so the displayed countdowns stay
+# accurate between refreshes even if a run is delayed.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # Every 10 minutes (5 is the floor; tighten if desired)
+  workflow_dispatch:
+
+jobs:
+  fetch-rentals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch rentable aircraft
+        run: |
+          node << 'SCRIPT'
+          const https = require('https');
+          const fs    = require('fs');
+
+          function getJson(path) {
+            return new Promise((resolve, reject) => {
+              https.get({ hostname: 'simfly.io', path, headers: {
+                'User-Agent': 'SimFly-AA-Rentals/1.0', 'Accept': 'application/json'
+              } }, res => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => {
+                  if (res.statusCode !== 200) return reject(new Error('HTTP ' + res.statusCode + ' on ' + path));
+                  try { resolve(JSON.parse(data)); }
+                  catch (e) { reject(new Error('Parse error on ' + path + ': ' + data.slice(0, 200))); }
+                });
+              }).on('error', reject);
+            });
+          }
+
+          const api = p => `/api/airplanes/rentable?page=${p}`;
+          const MAX_PAGES = 500;          // hard backstop; real count is ~85
+          const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+
+          async function main() {
+            const first = await getJson(api(1));
+            const totalPages = Math.min(+first.totalPages || 1, MAX_PAGES);
+            console.log(`totalItems=${first.totalItems} totalPages=${first.totalPages} (fetching ${totalPages})`);
+
+            const raw = [...(first.list || [])];
+            for (let p = 2; p <= totalPages; p++) {
+              try {
+                const j = await getJson(api(p));
+                const arr = j.list || [];
+                raw.push(...arr);
+                if (arr.length === 0) break;
+              } catch (e) {
+                console.warn(`  page ${p} failed: ${e.message}`);
+              }
+            }
+
+            // Slim, dedupe by tailNumber. Keep only what the UI needs.
+            const seen = new Set();
+            const planes = [];
+            for (const a of raw) {
+              const tail = a.tailNumber;
+              if (!tail || seen.has(tail)) continue;
+              seen.add(tail);
+              const t = a.timers || {};
+              const loc = a.location || {};
+              planes.push({
+                tail,
+                name:    a.name || '',
+                icao:    a.icao || '',
+                cat:     num(a.category),
+                level:   num(a.level),
+                range:   num(a.range),
+                payout:  num(a.percToUser),                 // owner-set 0..60, renter's cut
+                apt:     a.airportICAO || loc.icao || '',
+                aptName: loc.name || '',
+                country: loc.country || '',
+                owner:   (a.owner && a.owner.username) || '',
+                ground:  !!t.inGroundOperation,
+                until:   t.inGroundOperationUntil || null,  // ISO; when it frees up
+                renter:  t.rentUser || null
+              });
+            }
+            planes.sort((x, y) => (x.apt || '').localeCompare(y.apt || '') ||
+                                   (x.tail || '').localeCompare(y.tail || ''));
+
+            const apts = new Set(planes.map(p => p.apt).filter(Boolean));
+            const grounded = planes.filter(p => p.ground).length;
+            console.log(`Wrote ${planes.length} planes · ${apts.size} airports · ${grounded} in ground ops`);
+
+            fs.writeFileSync('rentable-aircraft.json', JSON.stringify({
+              generatedAt: new Date().toISOString(),
+              totalPlanes: planes.length,
+              totalAirports: apts.size,
+              planes
+            }));
+          }
+
+          main().catch(e => { console.error('FAILED:', e.message); process.exit(1); });
+          SCRIPT
+
+      - name: Commit if changed
+        run: |
+          git add rentable-aircraft.json
+          if git diff --cached --quiet; then
+            echo "No changes — skipping commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: rentable aircraft $(date -u '+%Y-%m-%d %H:%M UTC')"
+            for i in 1 2 3; do
+              if git push; then exit 0; fi
+              echo "Push rejected (attempt $i) — pulling with rebase and retrying."
+              git pull --rebase origin main
+            done
+            echo "Push still failing after 3 attempts." >&2
+            exit 1
+          fi
