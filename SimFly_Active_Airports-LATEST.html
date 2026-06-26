@@ -289,6 +289,19 @@
     from { background-position: 0% 50%; }
     to   { background-position: 100% 50%; }
   }
+  /* Perf (v3.48.1): pause the two perpetual background animations whenever the
+     region map (#regionModal) or any modal overlay is open. Both run forever and
+     animate on the MAIN THREAD — aaHeaderShimmer slides background-position across
+     a `background-clip:text` gradient (re-rasterising the masked title every
+     frame), and radar rotates a 200vw×200vh layer. The map/modal overlays are
+     only ~82–85% opaque, so the header still bleeds through and the browser keeps
+     repainting it every frame even though it's effectively hidden. That constant
+     repaint competes with input handling and made typing in modal fields (e.g.
+     the Scenery Library Store / Dev inputs) lag badly. Pausing them while a map
+     or modal is up costs nothing visually (they're covered) and frees the main
+     thread for keystrokes. `:has()` takes a forgiving list, so the comma is OR. */
+  body:has(#regionModal.open, .modal-overlay.open) h1 { animation-play-state: paused; }
+  body:has(#regionModal.open, .modal-overlay.open)::after { animation-play-state: paused; }
 
   .subtitle {
     font-size: 1.2rem;
@@ -8543,7 +8556,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.48.0';
+const APP_VERSION = '3.48.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -39796,10 +39809,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.48.1</span>
+          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Typing in the Scenery Library is smooth now (the real fix).</strong> The animated rainbow page title and the slow radar sweep behind the map were still running every frame even while the map and the Scenery Library window covered them — and because those overlays are slightly see-through, the browser kept repainting the title on every frame. That constant repainting stole time from the keyboard, which is what made typing into the <em>Store</em> and <em>Dev</em> fields feel like it kept dropping characters. Both animations now pause automatically whenever the map or any window is open, freeing the browser to keep up with your typing. They still animate normally on the home screen where you can actually see them.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.48.0</span>
-          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
