@@ -4710,6 +4710,15 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-meta-input:hover  { border-color:rgba(0,200,255,0.45); }
   .sl-meta-input:focus  { border-color:var(--accent); }
   .sl-meta-input::placeholder { color:var(--muted); opacity:0.55; }
+  /* v3.49.0 — inert display cell that visually mirrors .sl-meta-input; it becomes
+     a real <input> only while being edited (_slMetaEdit), so the resting list has
+     no form fields for browser extensions to scan. */
+  .sl-meta-cell { flex:1; min-width:11.7rem; max-width:18.2rem; font-family:'Rajdhani',sans-serif; font-size:1.11rem; font-weight:500; padding:0.18rem 0.58rem; background:var(--surface); border:1px solid var(--border); border-radius:3px; color:var(--text); cursor:text; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.42; outline:none; }
+  .sl-meta-cell:hover { border-color:rgba(0,200,255,0.45); }
+  .sl-meta-cell:focus-visible { border-color:var(--accent); }
+  .sl-meta-cell.sl-meta-cell-empty { color:var(--muted); opacity:0.7; }
+  .sl-meta-cell.sl-meta-cell-editing { padding:0; border:0; overflow:visible; }
+  .sl-meta-cell.sl-meta-cell-editing .sl-meta-input { width:100%; box-sizing:border-box; min-width:0; max-width:none; }
   /* ── Per-airport Notes (v3.38.0) — collapsible free-text, ≤1024 chars.
      Shared by the Scenery Library rows and the Quick-Rate popover. Collapsed to
      a ▶ disclosure by default; ▼ when expanded. */
@@ -7726,7 +7735,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       align-items: center;
     }
     .sl-row .sl-meta-lbl { padding: 0 !important; font-size: 0.92rem !important; }
-    .sl-row .sl-meta-input {
+    .sl-row .sl-meta-input,
+    .sl-row .sl-meta-cell {
       min-width: 0 !important;
       max-width: none !important;
       width: 100% !important;
@@ -8561,7 +8571,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.48.3';
+const APP_VERSION = '3.49.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -27948,10 +27958,15 @@ function _slRenderList(query) {
       const icaoNameBlock = isOwned
         ? `<a class="sl-icao-link" href="https://simfly.io/assets/airport/${e.icao}/details" target="_blank" rel="noopener" title="Open SimFly airport details for ${e.icao}">${icaoNameInner}</a>`
         : icaoNameInner;
-      // Two-line layout: existing header row + new "meta" row with Store and
-      // Developer inline inputs. Shared <datalist> elements (defined in the
-      // modal HTML) provide autocomplete from the preset list + any custom
-      // values already in the library.
+      // Two-line layout: existing header row + a "meta" row with Store and
+      // Developer. v3.49.0 — these (and Notes) render as INERT display elements,
+      // not live form controls: field-scanning browser extensions (Privacy.com,
+      // password managers, Grammarly) enumerate every <input>/<textarea> and
+      // re-scan on focus / DOM change, so a large library's ~2,000 fields made
+      // typing crawl. A .sl-meta-cell becomes a real <input> only while edited
+      // (_slMetaEdit) and the Notes <textarea> is built only while expanded
+      // (_slToggleNotes) — the resting list holds zero form fields. The shared
+      // <datalist> elements still feed autocomplete once a cell is in edit mode.
       li.innerHTML =
         `<div class="sl-row-hdr">` +
           icaoNameBlock +
@@ -27960,23 +27975,22 @@ function _slRenderList(query) {
         `</div>` +
         `<div class="sl-row-meta">` +
           `<label class="sl-meta-lbl" title="Store / marketplace where the scenery was purchased">Store</label>` +
-          `<input type="text" class="sl-meta-input" list="slStoreOptions" value="${storeVal}" placeholder="—" ` +
-            `data-icao="${e.icao}" onchange="_slStoreInput(this)" onkeydown="_slMetaTab(event,'slStoreOptions')" autocomplete="off" spellcheck="false">` +
+          `<div class="sl-meta-cell${e.store ? '' : ' sl-meta-cell-empty'}" tabindex="0" role="button" ` +
+            `aria-label="Store, click to edit" title="Click to edit" ` +
+            `data-icao="${e.icao}" data-field="store" data-list="slStoreOptions" ` +
+            `onmousedown="_slMetaEdit(event,this)" onkeydown="_slMetaCellKey(event,this)">${e.store ? _slEscHtml(e.store) : '—'}</div>` +
           `<label class="sl-meta-lbl" title="Scenery developer / publisher">Dev</label>` +
-          `<input type="text" class="sl-meta-input" list="slDevOptions" value="${devVal}" placeholder="—" ` +
-            `data-icao="${e.icao}" onchange="_slDevInput(this)" onkeydown="_slMetaTab(event,'slDevOptions')" autocomplete="off" spellcheck="false">` +
+          `<div class="sl-meta-cell${e.developer ? '' : ' sl-meta-cell-empty'}" tabindex="0" role="button" ` +
+            `aria-label="Developer, click to edit" title="Click to edit" ` +
+            `data-icao="${e.icao}" data-field="developer" data-list="slDevOptions" ` +
+            `onmousedown="_slMetaEdit(event,this)" onkeydown="_slMetaCellKey(event,this)">${e.developer ? _slEscHtml(e.developer) : '—'}</div>` +
         `</div>` +
         `<div class="sl-notes sl-row-notes">` +
-          `<button type="button" class="sl-notes-toggle" onclick="_slToggleNotes(this)" aria-expanded="false" title="Show / hide notes for this airport">` +
+          `<button type="button" class="sl-notes-toggle" onclick="_slToggleNotes(this)" aria-expanded="false" data-icao="${e.icao}" title="Show / hide notes for this airport">` +
             `<span class="sl-notes-tri">▶</span>Notes` +
             ((e.notes && e.notes.trim()) ? `<span class="sl-notes-dot" title="Notes saved">●</span>` : '') +
           `</button>` +
-          `<div class="sl-notes-body" hidden>` +
-            `<textarea class="sl-notes-ta" maxlength="${_SL_NOTES_MAX}" rows="3" spellcheck="true" ` +
-              `placeholder="Notes about this scenery (up to ${_SL_NOTES_MAX} characters)…" ` +
-              `data-icao="${e.icao}" oninput="_slNotesCount(this)" onchange="_slNotesInput(this)">${_slEscHtml(e.notes || '')}</textarea>` +
-            `<div class="sl-notes-count">${(e.notes || '').length} / ${_SL_NOTES_MAX}</div>` +
-          `</div>` +
+          `<div class="sl-notes-body" hidden></div>` +
         `</div>`;
       list.appendChild(li);
     });
@@ -28036,21 +28050,64 @@ function _slNotesCount(ta) {
 // Collapsible Notes disclosure — shared by the library rows and the Quick-Rate
 // popover. Collapsed shows ▶; expanded shows ▼ (global SimFly convention). The
 // body is the toggle button's next sibling.
+// v3.49.0 — library rows ship an EMPTY .sl-notes-body and the <textarea> is built
+// only while expanded (and torn down on collapse), so hundreds of collapsed rows
+// carry zero textareas for field-scanning browser extensions to choke on. The
+// Quick-Rate popover still ships its textarea inline, so we only lazy-build /
+// tear-down a body we built ourselves (flagged via data-lazy).
 function _slToggleNotes(btn) {
   if (!btn) return;
   const body = btn.nextElementSibling;
   if (!body) return;
   const tri = btn.querySelector('.sl-notes-tri');
   if (body.hasAttribute('hidden')) {
+    // Lazy-build the textarea for library rows (empty body + a data-icao button).
+    if (!body.querySelector('textarea') && btn.dataset.icao) {
+      const rec   = (typeof _slGet === 'function') ? _slGet(btn.dataset.icao) : null;
+      const notes = (rec && rec.notes) || '';
+      body.innerHTML =
+        `<textarea class="sl-notes-ta" maxlength="${_SL_NOTES_MAX}" rows="3" spellcheck="true" ` +
+          `placeholder="Notes about this scenery (up to ${_SL_NOTES_MAX} characters)…" ` +
+          `data-icao="${btn.dataset.icao}" oninput="_slNotesCount(this)" onchange="_slNotesInput(this)"></textarea>` +
+        `<div class="sl-notes-count">${notes.length} / ${_SL_NOTES_MAX}</div>`;
+      body.querySelector('textarea').value = notes;   // set via property — no HTML-escaping needed
+      body.dataset.lazy = '1';
+    }
     body.removeAttribute('hidden');
     if (tri) tri.textContent = '▼';
     btn.setAttribute('aria-expanded', 'true');
     const ta = body.querySelector('textarea');
     if (ta) ta.focus();
   } else {
-    body.setAttribute('hidden', '');
+    const ta = body.querySelector('textarea');
+    if (body.dataset.lazy) {
+      // Save, then remove the textarea so it isn't left in the DOM to be scanned.
+      if (ta) _slSetNotes(ta.dataset.icao, ta.value);
+      body.setAttribute('hidden', '');
+      body.innerHTML = '';
+      _slSyncNotesDot(btn);
+    } else {
+      body.setAttribute('hidden', '');   // popover: keep its inline textarea
+    }
     if (tri) tri.textContent = '▶';
     btn.setAttribute('aria-expanded', 'false');
+  }
+}
+// Add/remove the ● "notes saved" indicator on a library Notes toggle after an edit
+// (the row isn't re-rendered on note edits, so keep the dot in sync here).
+function _slSyncNotesDot(btn) {
+  if (!btn || !btn.dataset.icao) return;
+  const rec = (typeof _slGet === 'function') ? _slGet(btn.dataset.icao) : null;
+  const has = !!(rec && rec.notes && rec.notes.trim());
+  let dot = btn.querySelector('.sl-notes-dot');
+  if (has && !dot) {
+    dot = document.createElement('span');
+    dot.className = 'sl-notes-dot';
+    dot.title = 'Notes saved';
+    dot.textContent = '●';
+    btn.appendChild(dot);
+  } else if (!has && dot) {
+    dot.remove();
   }
 }
 
@@ -28061,9 +28118,8 @@ function _slToggleNotes(btn) {
 //   "simm" + Tab  →  "SimMarket"
 //   "ini"  + Tab  →  "iniBuilds"  (alphabetically-first startsWith match)
 // Empty input, no match, or an already-exact match all fall through silently.
-function _slMetaTab(event, datalistId) {
-  if (event.key !== 'Tab' || event.shiftKey) return;
-  const inp = event.target;
+function _slAutocompleteFill(inp, datalistId) {
+  if (!inp) return;
   const cur = (inp.value || '').trim();
   if (!cur) return;
   const dl = document.getElementById(datalistId);
@@ -28072,9 +28128,88 @@ function _slMetaTab(event, datalistId) {
   // Datalist options are already alphabetised by _slRefreshDatalists, so the
   // first startsWith hit is also the topmost one in the suggestion popup.
   const match = [...dl.options].find(o => o.value.toLowerCase().startsWith(lc));
-  if (!match) return;
-  if (match.value.toLowerCase() === lc) return; // already an exact match
+  if (!match || match.value.toLowerCase() === lc) return; // none / already exact
   inp.value = match.value;
+}
+function _slMetaTab(event, datalistId) {
+  if (event.key !== 'Tab' || event.shiftKey) return;
+  _slAutocompleteFill(event.target, datalistId);   // Quick-Rate popover (live inputs)
+}
+
+// ── Scenery-row Store / Dev click-to-edit (v3.49.0) ──────────────────────────
+// Library rows render Store/Dev as inert .sl-meta-cell divs; a real <input> is
+// materialised only for the cell being edited, so the resting list carries no
+// form fields for a browser extension to scan (the large-library typing-lag fix).
+function _slMetaEdit(event, cell) {
+  if (!cell || cell.querySelector('input')) return;          // already editing — let the input handle the click
+  if (event && event.preventDefault) event.preventDefault(); // keep focus off the div; we focus the input
+  const icao   = cell.dataset.icao;
+  const field  = cell.dataset.field;                          // 'store' | 'developer'
+  const listId = cell.dataset.list;
+  const rec    = (typeof _slGet === 'function') ? _slGet(icao) : null;
+  const cur    = (rec ? (field === 'store' ? rec.store : rec.developer) : '') || '';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'sl-meta-input';
+  inp.setAttribute('list', listId);
+  inp.value = cur;
+  inp.placeholder = '—';
+  inp.autocomplete = 'off';
+  inp.spellcheck = false;
+  cell.textContent = '';
+  cell.appendChild(inp);
+  cell.classList.add('sl-meta-cell-editing');
+  cell.classList.remove('sl-meta-cell-empty');
+  inp.addEventListener('blur', () => _slMetaCommit(cell, inp));
+  inp.addEventListener('keydown', (ev) => _slMetaInputKey(ev, cell, inp, listId));
+  inp.focus();
+  const n = inp.value.length;
+  try { inp.setSelectionRange(n, n); } catch (_) {}
+}
+function _slMetaCommit(cell, inp) {
+  // Guard so the blur backup is a no-op once Enter/Tab/Escape already committed
+  // (this exact input is no longer the cell's child after a commit).
+  if (!cell || !cell.isConnected || cell.querySelector('input') !== inp) return;
+  const icao  = cell.dataset.icao;
+  const field = cell.dataset.field;
+  const v = (inp.value || '').trim();
+  if (field === 'store') _slSetStore(icao, v); else _slSetDeveloper(icao, v);
+  if (typeof _slRefreshDatalists === 'function') _slRefreshDatalists();
+  cell.classList.remove('sl-meta-cell-editing');
+  cell.classList.toggle('sl-meta-cell-empty', !v);
+  cell.textContent = v || '—';                               // back to inert display
+}
+function _slMetaInputKey(ev, cell, inp, listId) {
+  if (ev.key === 'Enter') { ev.preventDefault(); _slMetaCommit(cell, inp); return; }
+  if (ev.key === 'Escape') {
+    ev.preventDefault();
+    // Cancel — revert the cell to its stored value WITHOUT saving (so a no-op
+    // edit doesn't mark the airport dirty). Removing the input blurs it, but the
+    // blur backup's _slMetaCommit no-ops via its guard (input is already gone).
+    const rec  = (typeof _slGet === 'function') ? _slGet(cell.dataset.icao) : null;
+    const orig = (rec ? (cell.dataset.field === 'store' ? rec.store : rec.developer) : '') || '';
+    cell.classList.remove('sl-meta-cell-editing');
+    cell.classList.toggle('sl-meta-cell-empty', !orig);
+    cell.textContent = orig || '—';
+    return;
+  }
+  if (ev.key === 'Tab') {
+    ev.preventDefault();
+    _slAutocompleteFill(inp, listId);                         // accept the top suggestion
+    const next = _slAdjacentMetaCell(cell, ev.shiftKey ? -1 : 1);
+    _slMetaCommit(cell, inp);                                 // commit this cell
+    if (next) _slMetaEdit(null, next);                        // advance straight into edit mode
+  }
+}
+function _slMetaCellKey(event, cell) {
+  if (cell.querySelector('input')) return;                   // editing — let the input handle keys
+  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); _slMetaEdit(null, cell); }
+}
+function _slAdjacentMetaCell(cell, dir) {
+  const row = cell.closest('.sl-row');
+  if (!row) return null;
+  const cells = [...row.querySelectorAll('.sl-meta-cell')];
+  return cells[cells.indexOf(cell) + dir] || null;
 }
 
 // Re-populate the shared store + developer <datalist> elements. Called at
@@ -39594,7 +39729,7 @@ function rgSendToFlightPlanner() {
             The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. A collapsible <strong>▶ Notes</strong> field is here too — click the triangle to expand it and jot a free-text note (up to 1,024 characters); a ● beside the label marks airports that already have one. When a note already exists, the popover opens with it expanded so you see it without a click. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
             For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
             <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
-            <strong>Store and Developer attribution</strong> — each library row has two inline text fields beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). Both fields autocomplete from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows, so your own conventions become suggestions over time. Both fields are persisted to local storage and round-trip through Export / Import JSON.<br/><br/>
+            <strong>Store and Developer attribution</strong> — each library row shows two values beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). <strong>Click a value to edit it</strong> (it turns into a text field); <strong>Enter</strong> or clicking away saves, <strong>Tab</strong> hops to the next field, and <strong>Esc</strong> cancels. Editing autocompletes from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows (type a few letters and press <strong>Tab</strong> to accept the top match). Both values are persisted to local storage and round-trip through Export / Import JSON. <em>(v3.49.0: these — and Notes — are shown as plain text until clicked, instead of always-on input boxes. With a large library that meant ~2,000 text fields on screen, which some browser extensions re-scan on every keystroke and made typing lag; rendering them on demand keeps editing fast regardless of your extensions.)</em><br/><br/>
             <strong>Notes</strong> — each library row also has a collapsible <strong>▶ Notes</strong> disclosure beneath the Store / Dev inputs (kept minimised until you click the triangle). Expand it to record a free-text note of up to 1,024 characters — install quirks, version numbers, reminders — with a live character counter. Notes are saved to local storage and round-trip through Save / Load Scenery Library. The same field appears in the right-click Quick-Rate popover.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
             <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
@@ -39814,10 +39949,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.49.0</span>
+          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library Store / Dev / Notes are now "click to edit" — immune to extension slowdowns.</strong> Some browser extensions (virtual-card tools like Privacy.com, password managers, Grammarly) scan every text field on a page and re-check them on each keystroke and scroll. With a few hundred airports the library held ~2,000 such fields, which is what made typing in <em>Store</em> and <em>Dev</em> crawl for anyone with one of those extensions. Now each row shows those values as plain text and only turns into an editable field <em>when you click it</em> — so at rest there are no fields for an extension to scan, and typing stays fast no matter what's installed. It looks and works almost exactly the same: click a Store/Dev cell to edit, the autocomplete suggestions and <strong>Tab</strong>-to-complete are unchanged, <strong>Tab</strong> hops to the next field, <strong>Enter</strong> saves, and <strong>Esc</strong> cancels. The <strong>Notes</strong> box is likewise built only while a row's notes are expanded.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.48.3</span>
-          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
