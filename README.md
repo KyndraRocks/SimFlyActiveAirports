@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.49.0**
+**Current version: v3.50.0**
 
 ---
 
@@ -24,6 +24,15 @@ On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of eac
 
 ### Startup Choice — Owner View, Explore Map, or SimBrief
 After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'd like to do. **Show airports by Owner** takes you to the classic distance matrix — pick this when you already know which pilots own the airports you want for departure and arrival. **Explore map** opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking live flights, and setting up in-flight alerts. **Load SimBrief Flight Plan** (v3.21.0+) opens the map and immediately fetches and plots your most recent SimBrief flight plan — your Pilot ID is saved on first use, so subsequent launches go straight to the route with one click. This is the fastest path from app open to flight plan on the map. When Default Alerts are saved (see *Default Alerts* in the Alerts section), an **Auto-load default alerts** checkbox appears on this card — checking it enables automatic queue replacement on every plan load. A small *Skip* link (or pressing **Esc**) dismisses the choice and drops you on the matrix. The choice is **bypassed automatically** when Recip Tracker or Relationship Manager Lite launches AA with a specific intent: a `dep` / `arr` / `depOwner` / `arrOwner` URL parameter sends you straight to the matrix with the route prefilled, and a `pilots=` parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters — so cross-app shortcuts still go direct. The app version number is shown beneath the heading on the choice screen (v3.15.3+). On mobile the **Explore map** card shows a shorter description — flight tracking and in-flight alerts are omitted since both require a simulator connection and are hidden on mobile.
+
+### Aircraft Rentals
+New in v3.50.0 — turn on **Aircraft Rentals** from the map menu to see where SimFly's rentable aircraft are, refreshed automatically from a live feed. Every airport's dot recolors by the best **pilot payout** available there — the cut the renting pilot keeps, from 0% up to 60% — and a Rentals panel opens for filtering.
+
+On the map, each airport can show a small stack of chips listing the aircraft types available there. The badges thin out automatically when you're zoomed out and reveal more (up to ten chips per airport) as you zoom in; when space is tight, your own SimFly-owned airports get priority. Hover a badge for a full breakdown — type, registration, owner, payout, and live availability for every matching aircraft. Aircraft temporarily blocked by a ground-operations timer show their countdown in red.
+
+The panel lets you filter by aircraft category (the familiar 1–7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor the spectrum), pick aircraft types and owners from searchable multi-selects, and toggle "available now only." Every section collapses, and the panel is draggable and resizable. The results table lists every matching aircraft — sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport.
+
+Closing the panel with its ✕ leaves the rental colors and badges on the map; the menu item or the breadcrumb pill turns the whole view off. You can also jump straight into a mode by adding `?mode=owner`, `?mode=map`, or `?mode=simbrief` to the app's address. And the map search box now matches your **Scenery Library notes** — type words or a "quoted phrase" and the airports whose notes contain them appear on the map.
 
 ### Point-to-Point Distance
 Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click. Typing a valid owned ICAO auto-selects that pilot's owner entry in the matrix dropdowns.

@@ -8571,7 +8571,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.49.0';
+const APP_VERSION = '3.50.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8714,6 +8714,11 @@ const OVERRIDE_URL           = `https://gist.githubusercontent.com/KyndraRocks/$
 const AA_GIST_ID             = '9cae932383ce289378fff9de8a23f631';
 const PAYOUT_URL             = `https://gist.githubusercontent.com/KyndraRocks/${AA_GIST_ID}/raw/SimFly_Pilot_Payouts.json`;
 const PAYOUT_DATA_URL        = 'https://raw.githubusercontent.com/KyndraRocks/SimFlyActiveAirports/main/payout-data.json';
+// Rentable-aircraft feed (v3.50.0) — public /api/airplanes/rentable mirror,
+// refreshed every ~10 min by fetch-rentals.yml in the public repo. Drives the
+// Aircraft Rentals view mode. Missing/!ok is non-fatal (the mode just shows no
+// data) — same graceful-degradation contract as the payout feeds.
+const RENTABLE_URL           = 'https://raw.githubusercontent.com/KyndraRocks/SimFlyActiveAirports/main/rentable-aircraft.json';
 
 const RECIP_GIST_ID       = '2a6f1d36fdbdc51ac4bf3b4e3e2ee47d';
 const RECIP_GIST_RAW_URL  = `https://gist.githubusercontent.com/KyndraRocks/${RECIP_GIST_ID}/raw/SimFly_Pilot_Reciprocation.json`;
@@ -8855,8 +8860,9 @@ function loadAirportDB() {
     _fetchWithTimeout(OVERRIDE_URL + '?t=' + Date.now()).then(r => r.ok ? r.text() : '{}').catch(() => '{}').then(v => { _bootTick('Field overrides', !v || v === '{}'); return v; }),
     _fetchWithTimeout(PAYOUT_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null).then(v => { _bootTick('Pilot payouts', !v); return v; }),
     _fetchWithTimeout(PAYOUT_DATA_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
+    _fetchWithTimeout(RENTABLE_URL + '?t=' + Date.now()).then(r => r.ok ? r.json() : null).catch(() => null),
   ])
-    .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson, payoutDataJson]) => {
+    .then(([airportCsv, regionCsv, runwayCsv, categoryCsv, aircraftCsv, overrideJson, payoutJson, payoutDataJson, rentableJson]) => {
 
       if (window._aaSplash) window._aaSplash.set(74, 'Building airport index');
 
@@ -8865,6 +8871,12 @@ function loadAirportDB() {
         payoutDB = new Map(Object.entries(payoutJson).map(([k, v]) => [k.toUpperCase(), +v]));
         try { localStorage.setItem('simfly_payout_db', JSON.stringify(payoutJson)); } catch(e) {}
       }
+
+      // ── Build rentable-aircraft model (v3.50.0) — drives Aircraft Rentals mode ──
+      _aaRentIngest(rentableJson);
+      _aaRentLoadPrefs();
+      _aaRentLoadCollapse();
+      _aaRentPaletteLoad();
 
       // ── Build new-airports set (airports activated within the configured window) ──
       if (payoutDataJson && typeof payoutDataJson === 'object') {
@@ -10691,6 +10703,9 @@ const _urlParams = (() => {
       arrOwner: (p.get('arrOwner') || '').trim(),
       fltnum:   (p.get('fltnum')   || '').trim().toUpperCase(),
       pilots:   (p.get('pilots')   || '').trim(),
+      // Direct-mode entry (v3.50.0) — skip the choice screen and open a mode.
+      // Considered LAST, only when no owner/route/pilots handoff is present.
+      mode:     (p.get('mode')     || '').trim().toLowerCase(),
       ac: p.get('acCode') ? {
         code:     (p.get('acCode')  || '').trim().toUpperCase(),
         label:    (p.get('acLabel') || '').trim(),
@@ -10720,6 +10735,17 @@ window._aaChoiceShowIfNeeded = function _aaChoiceShowIfNeeded(){
     const goneToMatrix = !!(_urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner);
     const goneToMap    = !!_urlParams.pilots;
     if (goneToMatrix || goneToMap) return;
+    // Direct-mode entry (?mode=…) — considered LAST so it never overrides an
+    // RT/RM handoff (owner/route/pilots). Accepts e.g. mapmode/map, ownermode/
+    // owner/matrix, simbriefmode/simbrief/sb. Clicks the matching choice card.
+    const _m = (_urlParams.mode || '').replace(/[\s_-]+/g, '').replace(/mode$/, '');
+    if (_m) {
+      const _id = (_m === 'owner' || _m === 'matrix') ? 'aaChoiceOwner'
+                : (_m === 'map' || _m === 'explore') ? 'aaChoiceMap'
+                : (_m === 'simbrief' || _m === 'sb') ? 'aaChoiceSimbrief' : null;
+      const _btn = _id && document.getElementById(_id);
+      if (_btn) { _btn.click(); return; }
+    }
     const ov = document.getElementById('aaChoice');
     if (!ov) return;
     ov.hidden = false;
@@ -29309,6 +29335,206 @@ function _rgMeasCircleStyle() {
     : { color: c, weight: 2, opacity: 0.65, dashArray: '8 5', fillColor: c, fillOpacity: 0.04 };
 }
 let _rgPayoutMode         = false;  // true = color dots by pilot payout % (red→orange→green gradient)
+// ── Aircraft Rentals (v3.50.0) ───────────────────────────────────────────────
+// _rgAircraftMode is a third dot-color mode (peer to _rgPayoutMode /
+// _rgOwnerColorsActive): when on, dots are colored by the best rentable-aircraft
+// payout at that airport. The data model below is built once at boot from the
+// public rentable-aircraft.json feed.
+let _rgAircraftMode       = false;  // true = Aircraft Rentals view mode active
+let _aaRentPlanes         = [];     // flat array of plane records from the feed
+let _aaRentByApt          = new Map(); // ICAO(upper) -> plane[] at that airport
+let _aaRentMeta           = null;   // { generatedAt, totalPlanes, totalAirports }
+let _aaRentTypeCounts     = new Map(); // aircraft ICAO type -> fleet-wide count
+let _aaRentTypeNames      = new Map(); // aircraft ICAO type -> human name (first seen)
+let _aaRentOwnerCounts    = new Map(); // aircraft owner -> fleet-wide plane count
+// Filters (drive both the map gate and the breadcrumbs)
+let _aaRentTypeFilter     = null;   // Set of selected aircraft ICAO types; null = all, empty Set = none
+let _aaRentOwnerFilter    = null;   // Set of selected aircraft owners; null = all, empty Set = none
+let _aaRentCatFilter      = null;   // Set of selected aircraft categories (1-7); null = all, empty Set = none
+// AND-pair tracking (v3.50.0) — each search builds one term {type, acOwner,
+// locType, locKey, locName}; the filter is the UNION of terms (OR of AND-pairs),
+// so "Kyndra & C700" + "+MrSuave & C750" is exactly (Kyndra∧C700)∨(MrSuave∧C750)
+// with no cross-product. When _aaRentTerms is set it SUPERSEDES the per-axis
+// type/owner sets (which the panel uses); panel edits clear it.
+let _aaRentTerms          = null;   // null | Array<{type, acOwner, locType, locKey, locName}>
+let _aaRentMinPayout      = 0;      // minimum renter payout % (0..60)
+let _aaRentAvailNow       = true;   // true = only airports with a plane free right now
+let _aaRentBadgeMode      = 'payout'; // 'payout' | 'count' | 'type' — what dot badges show
+// Results matrix (one row per rentable aircraft): sortable columns + grouping.
+let _aaRentResSort        = 'payout'; // column: 'type' | 'owner' | 'apt' | 'payout' | 'avail'
+let _aaRentResSortDir     = 'desc';   // 'asc' | 'desc'
+let _aaRentResGroup       = 'none';   // 'none' | 'owner' | 'apt'
+let _aaRentTypeSort       = 'icao';  // type list sort field: 'icao' | 'mfr' | 'model' | 'count'
+let _aaRentTypeSortDir    = 'asc';   // 'asc' (A→Z / low→high) | 'desc'
+const _AAR_PREFS_KEY      = 'simfly_aa_rent_prefs';
+// Persisted user preferences (NOT the session filters): badge mode, type sort
+// field + direction, and the available-now default. Loaded at boot.
+function _aaRentLoadPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_AAR_PREFS_KEY) || 'null');
+    if (o && typeof o === 'object') {
+      if (['payout', 'count', 'type'].includes(o.badgeMode)) _aaRentBadgeMode = o.badgeMode;
+      if (['icao', 'mfr', 'model', 'count'].includes(o.typeSort)) _aaRentTypeSort = o.typeSort;
+      if (['asc', 'desc'].includes(o.typeSortDir)) _aaRentTypeSortDir = o.typeSortDir;
+      if (typeof o.availNow === 'boolean') _aaRentAvailNow = o.availNow;
+      if (['type', 'owner', 'apt', 'payout', 'avail'].includes(o.resSort)) _aaRentResSort = o.resSort;
+      if (['asc', 'desc'].includes(o.resSortDir)) _aaRentResSortDir = o.resSortDir;
+      if (['none', 'owner', 'apt', 'type'].includes(o.resGroup)) _aaRentResGroup = o.resGroup;
+    }
+  } catch (_) {}
+}
+// Collapsible-section state (panel sections). Keyed by section: cat/payout/type/
+// owner/results. true = collapsed. Default expanded. Persisted separately.
+const _AAR_COLLAPSE_KEY = 'simfly_aa_rent_collapse';
+let _aaRentCollapse = {};
+function _aaRentLoadCollapse() {
+  try { const o = JSON.parse(localStorage.getItem(_AAR_COLLAPSE_KEY) || '{}'); if (o && typeof o === 'object') _aaRentCollapse = o; } catch (_) {}
+}
+function _aaRentSaveCollapse() {
+  try { localStorage.setItem(_AAR_COLLAPSE_KEY, JSON.stringify(_aaRentCollapse)); } catch (_) {}
+}
+function _aaRentApplySection(key) {
+  const collapsed = !!_aaRentCollapse[key];
+  const hdr = document.querySelector('#aaRentPanel .aar-sec-collapse[data-key="' + key + '"]');
+  const body = document.getElementById('aaRentSec-' + key);
+  if (hdr) { const t = hdr.querySelector('.aar-tri'); if (t) t.textContent = collapsed ? '▶' : '▼'; }
+  if (body) body.style.display = collapsed ? 'none' : '';
+}
+function _aaRentApplyAllSections() { ['cat', 'payout', 'type', 'owner', 'results'].forEach(_aaRentApplySection); }
+function _aaRentToggleSection(key) {
+  _aaRentCollapse[key] = !_aaRentCollapse[key];
+  _aaRentSaveCollapse();
+  _aaRentApplySection(key);
+}
+
+function _aaRentSavePrefs() {
+  try { localStorage.setItem(_AAR_PREFS_KEY, JSON.stringify({
+    badgeMode: _aaRentBadgeMode, typeSort: _aaRentTypeSort, typeSortDir: _aaRentTypeSortDir, availNow: _aaRentAvailNow,
+    resSort: _aaRentResSort, resSortDir: _aaRentResSortDir, resGroup: _aaRentResGroup
+  })); } catch (_) {}
+}
+let _aaRentSkipGate       = false;  // internal: when true, _rgDotPassesMapFilters skips the rental gate
+                                    // so the panel can ask "does this airport pass the GEO filters?"
+// Search-driven rental filtering WITHOUT the full view mode (v3.50.0). When the
+// user surfaces aircraft from the map search box, we filter airports to those
+// with the aircraft but DON'T switch dot coloring — the active color mode
+// (category / owner / payout) stays put. The rental gate + render pool engage on
+// (_rgAircraftMode || _aaRentFilterActive); only _rgAircraftMode recolors dots.
+let _aaRentFilterActive   = false;
+let _aaRentBadgeLayer     = null;   // Leaflet layer holding the on-map badge labels
+const _AAR_BADGE_CAP      = 70;     // max labels at once — when more dots are in view, show the
+                                    // standouts (highest payout) so badges stay readable, never absent
+
+// Ingest the feed JSON into the in-memory model. Null/!ok feed = empty model
+// (mode still works, just shows nothing). Called once at boot.
+function _aaRentIngest(json) {
+  _aaRentPlanes = [];
+  _aaRentByApt = new Map();
+  _aaRentTypeCounts = new Map();
+  _aaRentTypeNames = new Map();
+  _aaRentOwnerCounts = new Map();
+  _aaRentMeta = null;
+  if (!json || !Array.isArray(json.planes)) return;
+  _aaRentMeta = { generatedAt: json.generatedAt || null,
+                  totalPlanes: json.totalPlanes || json.planes.length,
+                  totalAirports: json.totalAirports || 0 };
+  for (const p of json.planes) {
+    if (!p || !p.apt) continue;
+    const apt = String(p.apt).toUpperCase();
+    p._apt = apt;
+    _aaRentPlanes.push(p);
+    if (!_aaRentByApt.has(apt)) _aaRentByApt.set(apt, []);
+    _aaRentByApt.get(apt).push(p);
+    if (p.icao) {
+      _aaRentTypeCounts.set(p.icao, (_aaRentTypeCounts.get(p.icao) || 0) + 1);
+      if (!_aaRentTypeNames.has(p.icao)) _aaRentTypeNames.set(p.icao, p.name || '');
+    }
+    if (p.owner) _aaRentOwnerCounts.set(p.owner, (_aaRentOwnerCounts.get(p.owner) || 0) + 1);
+  }
+}
+
+// True when a plane is rentable RIGHT NOW: not in ground ops (by live clock,
+// not just the stale flag) and not currently rented by someone.
+function _aaRentIsAvailableNow(p) {
+  if (!p || p.renter) return false;
+  // until is the ground-ops end time; if present, availability is purely a
+  // function of the live clock (so an hourly feed stays accurate). No until =
+  // trust the harvest's ground flag.
+  if (p.until) { const t = Date.parse(p.until); return !isFinite(t) || t <= Date.now(); }
+  return !p.ground;
+}
+
+// AND-pair term helpers.
+function _aaRentTermEq(a, b) {
+  return (a.type || '') === (b.type || '') && (a.acOwner || '') === (b.acOwner || '') &&
+         (a.locType || '') === (b.locType || '') && (a.locKey || '') === (b.locKey || '');
+}
+function _aaRentAddTerm(term) {
+  if (!_aaRentTerms) _aaRentTerms = [];
+  if (!_aaRentTerms.some(t => _aaRentTermEq(t, term))) _aaRentTerms.push(term);
+}
+function _aaRentTermLabel(t) {
+  // Read the pill as a phrase: "Airports with C750", "Airports with C750 by
+  // Kyndra in Germany", etc. The leading noun is the aircraft type (or, if no
+  // type, the owner's aircraft); type+owner and location become qualifiers.
+  let lead = t.type ? t.type : (t.acOwner ? t.acOwner + "'s aircraft" : '');
+  if (!lead) return t.locName || t.locKey || '';   // location-only fallback (rare)
+  const quals = [];
+  if (t.type && t.acOwner) quals.push('by ' + t.acOwner);
+  if (t.locType) quals.push('in ' + (t.locName || t.locKey));
+  return 'Airports with ' + lead + (quals.length ? ' ' + quals.join(' ') : '');
+}
+
+// Is a plane in scope of the active TYPE/OWNER/location filter? AND-pair terms
+// (search) supersede the per-axis sets (panel). rec is the airport record — needed
+// only for terms that carry a location. Ignores availability + payout.
+function _aaRentPlaneInScope(p, rec) {
+  if (_aaRentTerms && _aaRentTerms.length) {
+    return _aaRentTerms.some(t => {
+      if (t.type && p.icao !== t.type) return false;
+      if (t.acOwner && p.owner !== t.acOwner) return false;
+      if (t.locType) {
+        if (!rec) return false;
+        const ok = (t.locType === 'country'   && _rgRecCountry(rec)   === t.locKey) ||
+                   (t.locType === 'region'    && _rgRecRegion(rec)    === t.locKey) ||
+                   (t.locType === 'continent' && _rgRecContinent(rec) === t.locKey);
+        if (!ok) return false;
+      }
+      return true;
+    });
+  }
+  if (_aaRentTypeFilter && !_aaRentTypeFilter.has(p.icao)) return false;   // null = all; empty Set = none
+  if (_aaRentOwnerFilter && !_aaRentOwnerFilter.has(p.owner)) return false;
+  return true;
+}
+
+// Does a plane pass ALL active rental filters (scope + payout + avail)? rec carries
+// the airport for location terms.
+function _aaRentPlanePasses(p, rec) {
+  if (!p) return false;
+  if (!_aaRentPlaneInScope(p, rec)) return false;
+  if (_aaRentCatFilter && !_aaRentCatFilter.has(p.cat)) return false;   // aircraft-category circles
+  if (_aaRentMinPayout > 0 && (p.payout == null || p.payout < _aaRentMinPayout)) return false;
+  if (_aaRentAvailNow && !_aaRentIsAvailableNow(p)) return false;
+  return true;
+}
+
+// Planes at an airport that pass the active filters.
+function _aaRentMatchesAt(icao) {
+  const up = (icao || '').toUpperCase();
+  const arr = _aaRentByApt.get(up);
+  if (!arr) return [];
+  const rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get(up) : null;
+  return arr.filter(p => _aaRentPlanePasses(p, rec));
+}
+
+// Best (highest) renter payout among the filtered planes at an airport, or null.
+function _aaRentBestPayoutAt(icao) {
+  const m = _aaRentMatchesAt(icao);
+  let best = null;
+  for (const p of m) if (p.payout != null && (best === null || p.payout > best)) best = p.payout;
+  return best;
+}
 let _rgNewAirportsVisible = true;   // false = pulse rings hidden via toolbar toggle
 // Level "corona" badges — ON by default (v3.28.1), then the user's toggle choice
 // is persisted and honoured; toggled from the Tools menu.
@@ -29547,6 +29773,11 @@ let _rgMapDeveloperFilter  = null;      // Set of developer names, null=show all
 // additive filtering. An airport "matches" when its Scenery Library entry's
 // store field is in the set. Separate axis from developer.
 let _rgMapStoreFilter      = null;      // Set of store names, null=show all
+// Notes search filter — match airports whose Scenery Library notes contain the
+// query's words / quoted phrases. null = inactive; else an array of
+// {tokens:[lowercased words/phrases], label} entries. An airport matches when
+// its notes satisfy ALL tokens of ANY entry (each entry AND, entries OR'd).
+let _rgMapNotesFilter      = null;
 let _rgExcludedOwners      = new Set();
 let _rgExcludedCountries   = new Set();
 let _rgExcludedRegions     = new Set();  // iso_region codes excluded via `-` search
@@ -29750,6 +29981,10 @@ function _rgToggleLiveMenu(ev)  {
     try { if (typeof _liveAcUpdateFollowBtn === 'function') _liveAcUpdateFollowBtn(); } catch (_) {}
   }
   _rgTogglePulldown('rgLiveMenu',  'rgLiveBtn',  ev);
+}
+function _rgToggleRentalsMenu(ev) {
+  if (typeof _aaRentSyncMenuBtn === 'function') _aaRentSyncMenuBtn();
+  _rgTogglePulldown('rgRentalsMenu', 'rgRentalsBtn', ev);
 }
 
 // v2.89.0 — Grey out "Clear Aircraft Track" when no breadcrumb points
@@ -30712,6 +30947,8 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       ? `<span class="rg-dt-new">✦ New Airport</span>`
       : '';
     const _esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    // Aircraft Rentals — grouped-by-type breakdown, shown only in rentals mode.
+    const rentHtml = (typeof _aaRentTooltipHtml === 'function') ? _aaRentTooltipHtml(icaoUpper) : '';
     html =
       `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
       (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
@@ -30728,7 +30965,7 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
       (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
       ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">🏷 For sale</span>` : '') +
       (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
-      payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml +
+      payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml + rentHtml +
       `</div>`;
     _rgTipHtmlCache.set(cacheKey, html);
   }
@@ -31053,10 +31290,26 @@ function _rgRenderDots() {
       pending.push({ ap, rec, catNum, ownerName: owner.name });
     }
   }
+  // Aircraft Rentals mode (v3.50.0) — the owner-airport pool above misses
+  // airports that hold a rentable plane but aren't owned by a SimFly pilot.
+  // Add them so every rental shows on the map (subject to the same filter gate),
+  // and so the map matches the Rentals panel's airport count.
+  if ((_rgAircraftMode || _aaRentFilterActive) && _aaRentByApt && _aaRentByApt.size) {
+    for (const apt of _aaRentByApt.keys()) {
+      if (seen.has(apt)) continue;
+      seen.add(apt);
+      if (_rgRegionIcaos && _rgRegionIcaos.has(apt)) continue;
+      const rec = lookupICAO(apt);
+      if (!rec || !rec.latitude || !rec.longitude) continue;
+      const ownerName = _rgOwnerMap.get(apt) || '';
+      if (!_rgDotPassesMapFilters(apt, rec, ownerName)) continue;
+      pending.push({ ap: { icao: apt }, rec, catNum: +(categoryDB && categoryDB.get(apt)) || 0, ownerName });
+    }
+  }
   pending.sort((a, b) => a.catNum - b.catNum);
   for (const { ap, rec, catNum, ownerName } of pending) {
     const fillColor   = _rgGetDotFill(ap.icao, _rgMapSat ? '#a8d8f0' : '#3a7090');
-    const fillOpacity = (_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75);
+    const fillOpacity = (_rgAircraftMode || _rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75);
     const m = _rgCoronaMarker([rec.latitude, rec.longitude], {
       renderer: _rgCanvasRenderer, radius: 9, weight: 1,
       color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
@@ -31064,6 +31317,7 @@ function _rgRenderDots() {
       gaugeFrac: _rgRotationFrac(ap.icao),
     });
     _rgBindDotTip(m, ap.icao, rec, ownerName);
+    m._aarIcao = ap.icao;   // read by _aaRentRenderBadges (v3.50.0)
     const _dLat = rec.latitude, _dLng = rec.longitude, _dIcao = ap.icao;
     _rgAttachLongPress(m, _dIcao);
     m.on('click', (e) => {
@@ -31366,15 +31620,16 @@ function _rgHighlightDots() {
       if (!isPinned) {
         if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
       }
-    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgPinnedIcaos.size > 0) {
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgMapNotesFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
       const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(a.icao));
+      const inNotes     = _rgMapNotesFilter !== null && _rgNotesAirportMatches(a.icao);
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !inNotes && !isPinned) continue;
     }
     if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size || _rgExcludedStores.size) {
       const icaoUp = a.icao.toUpperCase();
@@ -31401,7 +31656,7 @@ function _rgHighlightDots() {
     const m = _rgCoronaMarker([a.rec.latitude, a.rec.longitude], {
       renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
       weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
-      fillColor: fill, fillOpacity: sel ? 1 : ((_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
+      fillColor: fill, fillOpacity: sel ? 1 : ((_rgAircraftMode || _rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
       coronaLevel: _rgLevelOf(a.icao),
       gaugeFrac: sel ? null : _rgRotationFrac(a.icao),
     });
@@ -31444,15 +31699,16 @@ function _rgHighlightDots() {
       if (!isPinned) {
         if (!_rgCompoundPasses(a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()) || '')) continue;
       }
-    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgPinnedIcaos.size > 0) {
+    } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null || _rgMapRegionFilter !== null || _rgMapContinentFilter !== null || _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgMapNotesFilter !== null || _rgPinnedIcaos.size > 0) {
       const inOwner     = _rgMapOwnerFilter !== null && _rgMapOwnerFilter.has(_rgOwnerMap.get(a.icao.toUpperCase()) || '');
       const inCountry   = _rgMapCountryFilter !== null && a.rec && _rgMapCountryFilter.has(_rgRecCountry(a.rec));
       const inRegion    = _rgMapRegionFilter  !== null && a.rec && _rgMapRegionFilter.has(_rgRecRegion(a.rec));
       const inContinent = _rgMapContinentFilter !== null && a.rec && _rgMapContinentFilter.has(_rgRecContinent(a.rec));
       const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(a.icao));
       const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(a.icao));
+      const inNotes     = _rgMapNotesFilter !== null && _rgNotesAirportMatches(a.icao);
       const isPinned    = _rgPinnedIcaos.has(a.icao.toUpperCase());
-      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) continue;
+      if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !inNotes && !isPinned) continue;
     }
     if (_rgExcludedOwners.size || _rgExcludedCountries.size || _rgExcludedRegions.size || _rgExcludedContinents.size || _rgExcludedIcaos.size || _rgExcludedDevelopers.size || _rgExcludedStores.size) {
       const icaoUp = a.icao.toUpperCase();
@@ -31479,7 +31735,7 @@ function _rgHighlightDots() {
     const m = _rgCoronaMarker([a.rec.latitude, a.rec.longitude], {
       renderer: _rgCanvasRenderer, radius: sel ? 13 : 9,
       weight: sel ? 5 : 1, color: sel ? '#000000' : 'rgba(0,0,0,0.55)',
-      fillColor: fill, fillOpacity: sel ? 1 : ((_rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
+      fillColor: fill, fillOpacity: sel ? 1 : ((_rgAircraftMode || _rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75)), interactive: true,
       coronaLevel: _rgLevelOf(a.icao),
       gaugeFrac: sel ? null : _rgRotationFrac(a.icao),
     });
@@ -34069,6 +34325,11 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   // un-categorized airports still render.
   const catNum = +(categoryDB && categoryDB.get(icaoUp)) || 0;
   if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
+  // Aircraft Rentals (v3.50.0) — the rental pool includes airports that aren't
+  // SimFly-categorized (catNum 0). In normal mode those still render, but when a
+  // category filter is narrowed the user expects ONLY airports of those
+  // categories, so an uncategorized rental airport must not leak through.
+  if ((_rgAircraftMode || _aaRentFilterActive) && catNum === 0 && _globalCatFilter && _globalCatFilter.size < 7) return false;
   // Per-category level filter (v3.23.0). Each category can restrict which
   // airport levels show. An entry's Set lists the levels to keep; an empty Set
   // hides the whole category. `ignoreLevel` is passed by _rgAvailableLevelsForCat
@@ -34094,7 +34355,7 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     if (!isPinned && !_rgCompoundPasses(icao, rec, ownerName)) return false;
   } else if (_rgMapOwnerFilter !== null || _rgMapCountryFilter !== null ||
       _rgMapRegionFilter !== null || _rgMapContinentFilter !== null ||
-      _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null ||
+      _rgMapDeveloperFilter !== null || _rgMapStoreFilter !== null || _rgMapNotesFilter !== null ||
       (_rgPinExclusiveMode && _rgPinnedIcaos && _rgPinnedIcaos.size > 0)) {
     // Inclusion gate: if any include-set is active, the airport must match
     // at least one (or be pinned). When no include-set is active, every
@@ -34111,7 +34372,8 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     const inContinent = _rgMapContinentFilter !== null && _rgMapContinentFilter.has(_rgRecContinent(rec));
     const inDeveloper = _rgMapDeveloperFilter !== null && _rgMapDeveloperFilter.has(_rgDevOf(icao));
     const inStore     = _rgMapStoreFilter !== null && _rgMapStoreFilter.has(_rgStoreOf(icao));
-    if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !isPinned) return false;
+    const inNotes     = _rgMapNotesFilter !== null && _rgNotesAirportMatches(icao);
+    if (!inOwner && !inCountry && !inRegion && !inContinent && !inDeveloper && !inStore && !inNotes && !isPinned) return false;
   }
   // Exclusion gate: any matching exclude-set kills the airport.
   if ((_rgExcludedOwners    && _rgExcludedOwners.size)    ||
@@ -34145,6 +34407,11 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
       (payoutDB.get(icaoUp) ?? 0) < _rgPayoutFilter) return false;
   // Star rating filter
   if (typeof _rgStarFiltCheck === 'function' && !_rgStarFiltCheck(icao)) return false;
+  // Aircraft Rentals (v3.50.0) — show only airports that currently have at least
+  // one rentable plane passing the active type/payout/availability filters. Applies
+  // in the full view mode AND when search has engaged a rental filter (color mode
+  // unchanged). _aaRentSkipGate lets the panel ask "passes the GEO filters?" only.
+  if ((_rgAircraftMode || _aaRentFilterActive) && !_aaRentSkipGate && _aaRentMatchesAt(icao).length === 0) return false;
   return true;
 }
 
@@ -34429,6 +34696,7 @@ function _rgGetOwnerColor(icao) {
 // Unified dot fill picker — every dot loop calls this so the three color
 // modes are consistent and future tweaks land in one place.
 function _rgGetDotFill(icao, fallback) {
+  if (_rgAircraftMode) return _rgAircraftColor(icao);
   if (_rgOwnerColorsActive) {
     const oc = _rgGetOwnerColor(icao);
     if (oc) return oc;
@@ -34437,6 +34705,1138 @@ function _rgGetDotFill(icao, fallback) {
   }
   if (_rgPayoutMode) return _rgPayoutColor(icao);
   return _rgCatOf(icao) || fallback;
+}
+// Aircraft Rentals dot color (v3.50.0) — DEDICATED palette, decoupled from the
+// pilot-payout palette so it (a) never inherits the user's custom payout colors
+// and (b) gets its own intentional, legible scale + 0% color. Renter payout runs
+// 0..60; higher is a better deal, so low→high reads red→amber→green. 0% earns the
+// renter nothing → a warm neutral grey (NOT the payout mode's blue-grey #7a7a90).
+const _RG_RENT_ZERO_COLOR        = '#83817c';
+const _RG_RENT_DEFAULT_PALETTE = [
+  { pct: 1,  color: '#ff0008' },  // low payout — red
+  { pct: 50, color: '#fbff00' },  // mid payout — yellow
+  { pct: 60, color: '#11de02' },  // best payout — green
+];
+const _AAR_PALETTE_KEY = 'simfly_aa_rent_palette';
+const _AAR_PALETTE_MAX = 10;
+let _aaRentPalette = null;  // loaded lazily from localStorage / default
+
+// ── Editable rentals payout palette (cloned from the pilot-payout editor) ────
+function _aaRentPaletteLoad() {
+  if (_aaRentPalette) return _aaRentPalette;
+  try {
+    const raw = localStorage.getItem(_AAR_PALETTE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length >= 2) {
+        const sane = arr
+          .map(s => ({ pct: Math.max(0, Math.min(100, Number(s.pct))), color: _rgPayoutSanitizeHex(s.color) }))
+          .filter(s => isFinite(s.pct) && s.color)
+          .sort((a, b) => a.pct - b.pct)
+          .slice(0, _AAR_PALETTE_MAX);
+        if (sane.length >= 2) { _aaRentPalette = sane; return _aaRentPalette; }
+      }
+    }
+  } catch (_) {}
+  _aaRentPalette = _RG_RENT_DEFAULT_PALETTE.map(s => ({ ...s }));
+  return _aaRentPalette;
+}
+function _aaRentPaletteSave() {
+  try { localStorage.setItem(_AAR_PALETTE_KEY, JSON.stringify(_aaRentPalette || [])); } catch (_) {}
+}
+function _rgRentColorAtPct(pct) {
+  if (!isFinite(pct) || pct <= 0) return _RG_RENT_ZERO_COLOR;
+  const stops = _aaRentPaletteLoad();
+  if (pct <= stops[0].pct) return stops[0].color;
+  if (pct >= stops[stops.length - 1].pct) return stops[stops.length - 1].color;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (pct >= a.pct && pct <= b.pct) {
+      const t = (b.pct - a.pct) > 0 ? (pct - a.pct) / (b.pct - a.pct) : 0;
+      const ca = _rgPayoutHexToRgb(a.color), cb = _rgPayoutHexToRgb(b.color);
+      return 'rgb(' + Math.round(ca[0] + (cb[0]-ca[0])*t) + ',' +
+                      Math.round(ca[1] + (cb[1]-ca[1])*t) + ',' +
+                      Math.round(ca[2] + (cb[2]-ca[2])*t) + ')';
+    }
+  }
+  return stops[stops.length - 1].color;
+}
+function _aaRentPaletteGradientCss() {
+  const stops = _aaRentPaletteLoad();
+  if (!stops || stops.length < 2) return 'linear-gradient(to right,#d0454a,#2ecc71)';
+  const minP = stops[0].pct, maxP = stops[stops.length - 1].pct;
+  const span = Math.max(1, maxP - minP);
+  return 'linear-gradient(to right,' + stops.map(s => s.color + ' ' + Math.round(((s.pct - minP) / span) * 100) + '%').join(',') + ')';
+}
+function _aaRentSyncBarGrad() {
+  const el = document.getElementById('aaRentBarGrad');
+  if (el) el.style.background = _aaRentPaletteGradientCss();
+}
+
+let _aaRentPaletteRepaintRAF = 0;
+function _aaRentPaletteScheduleHeavyRepaint() {
+  if (!_rgAircraftMode || _aaRentPaletteRepaintRAF) return;
+  _aaRentPaletteRepaintRAF = requestAnimationFrame(() => {
+    _aaRentPaletteRepaintRAF = 0;
+    try { _rgRenderDots(); _rgHighlightDots(); _aaRentRenderBadges(); } catch (_) {}
+  });
+}
+let _aaRentPaletteSaveT = 0;
+function _aaRentPaletteSaveDebounced() { clearTimeout(_aaRentPaletteSaveT); _aaRentPaletteSaveT = setTimeout(_aaRentPaletteSave, 220); }
+
+function _aaRentPaletteCommit(opts) {
+  const live = !!(opts && opts.live);
+  _aaRentPalette.sort((a, b) => a.pct - b.pct);
+  if (live) _aaRentPaletteSaveDebounced(); else { clearTimeout(_aaRentPaletteSaveT); _aaRentPaletteSave(); }
+  _aaRentSyncBarGrad();
+  const preview = document.getElementById('aaRentPalettePreview');
+  if (preview) preview.style.background = 'linear-gradient(to right,' + (_aaRentPalette || []).map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%').join(',') + ')';
+  if (_rgAircraftMode) {
+    if (live) _aaRentPaletteScheduleHeavyRepaint();
+    else { if (_aaRentPaletteRepaintRAF) { cancelAnimationFrame(_aaRentPaletteRepaintRAF); _aaRentPaletteRepaintRAF = 0; }
+           try { _rgRenderDots(); _rgHighlightDots(); _aaRentRenderBadges(); } catch (_) {} }
+  }
+}
+
+function _aaRentPaletteOpen(event) {
+  if (event && event.preventDefault) event.preventDefault();
+  if (event && event.stopPropagation) event.stopPropagation();
+  const ed = document.getElementById('aaRentPaletteEditor');
+  if (!ed) return;
+  _aaRentPaletteLoad();
+  _aaRentPaletteRender();
+  ed.style.display = 'block';
+  if (!_aaChipApplyDragPos(ed)) {
+    const mapEl = ed.parentElement;
+    const mapRect = mapEl ? mapEl.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    const panel = document.getElementById('aaRentPanel');
+    const edW = ed.offsetWidth || 416;
+    let left = Math.max(8, mapRect.width - 8 - edW), top = 60;
+    if (panel) { const r = panel.getBoundingClientRect(); left = Math.max(8, r.left - mapRect.left - edW - 10); top = Math.max(8, r.top - mapRect.top); }
+    ed.style.right = 'auto'; ed.style.bottom = 'auto'; ed.style.left = left + 'px'; ed.style.top = top + 'px';
+    const mapH = mapRect.height || window.innerHeight;
+    if (top + ed.offsetHeight > mapH - 8) ed.style.top = Math.max(8, mapH - 8 - ed.offsetHeight) + 'px';
+  }
+  setTimeout(() => {
+    const dismiss = (e) => { if (!ed.contains(e.target)) { document.removeEventListener('mousedown', dismiss, true); _aaRentPaletteClose(); } };
+    document.addEventListener('mousedown', dismiss, true);
+    ed._dismissHandler = dismiss;
+  }, 0);
+}
+function _aaRentPaletteClose() {
+  const ed = document.getElementById('aaRentPaletteEditor');
+  if (!ed) return;
+  if (ed._dismissHandler) { document.removeEventListener('mousedown', ed._dismissHandler, true); ed._dismissHandler = null; }
+  ed.style.display = 'none';
+}
+
+function _aaRentPaletteTickDragStart(idx, downEvt, previewEl, tickWrap, handleEl) {
+  const stop = _aaRentPalette[idx];
+  if (!stop || !previewEl) return;
+  const rect = previewEl.getBoundingClientRect();
+  tickWrap.style.zIndex = '50';
+  if (handleEl) { handleEl.style.outline = '2px solid #ffd84a'; handleEl.style.outlineOffset = '1px'; handleEl.style.boxShadow = '0 0 8px rgba(255,216,74,0.85)'; }
+  document.body.style.cursor = 'ew-resize';
+  const pctFromX = (cx) => Math.max(1, Math.min(100, Math.round(Math.max(0, Math.min(1, (cx - rect.left) / Math.max(1, rect.width))) * 100)));
+  function move(e) {
+    const np = pctFromX(e.clientX);
+    if (np === stop.pct) return;
+    stop.pct = np;
+    previewEl.style.background = 'linear-gradient(to right,' + _aaRentPalette.map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%').join(',') + ')';
+    previewEl.querySelectorAll('.aar-pal-tick').forEach(tw => { const i = +tw.dataset.stopIdx; const s = _aaRentPalette[i]; if (s) tw.style.left = Math.max(0, Math.min(100, s.pct)) + '%'; });
+    const row = document.querySelector('#aaRentPaletteStops [data-idx="' + idx + '"] input[type=number]');
+    if (row && row.value !== String(stop.pct)) row.value = String(stop.pct);
+  }
+  function end() { document.removeEventListener('mousemove', move, true); document.removeEventListener('mouseup', end, true); document.body.style.cursor = ''; _aaRentPaletteCommit(); _aaRentPaletteRender(); }
+  move(downEvt);
+  document.addEventListener('mousemove', move, true);
+  document.addEventListener('mouseup', end, true);
+}
+
+function _aaRentPaletteRender() {
+  const stops = _aaRentPaletteLoad();
+  const preview = document.getElementById('aaRentPalettePreview');
+  if (preview) {
+    preview.innerHTML = ''; preview.style.position = 'relative'; preview.style.overflow = 'visible';
+    preview.style.background = 'linear-gradient(to right,' + stops.map(s => s.color + ' ' + Math.max(0, Math.min(100, s.pct)) + '%').join(',') + ')';
+    stops.forEach((s, idx) => {
+      const safe = Math.max(0, Math.min(100, s.pct));
+      const tw = document.createElement('div');
+      tw.dataset.stopIdx = String(idx); tw.className = 'aar-pal-tick';
+      tw.style.cssText = 'position:absolute;top:-9px;bottom:-9px;left:' + safe + '%;width:14px;transform:translateX(-50%);cursor:ew-resize;z-index:2;touch-action:none;';
+      tw.title = 'Stop #' + (idx + 1) + ' at ' + s.pct + '%. Drag to reposition; right-click to delete.';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:absolute;left:50%;top:9px;bottom:9px;width:2px;background:#fff;transform:translateX(-50%);box-shadow:0 0 4px rgba(0,0,0,0.85);pointer-events:none;';
+      tw.appendChild(bar);
+      const handle = document.createElement('div');
+      handle.style.cssText = 'position:absolute;left:50%;top:-1px;width:12px;height:12px;background:' + (_rgPayoutSanitizeHex(s.color) || '#fff') + ';border:1.5px solid #fff;border-radius:3px;transform:translateX(-50%);box-shadow:0 1px 3px rgba(0,0,0,0.7);pointer-events:none;';
+      tw.appendChild(handle);
+      tw.addEventListener('mousedown', e => { if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); _aaRentPaletteTickDragStart(idx, e, preview, tw, handle); });
+      tw.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); if (_aaRentPalette.length <= 2) return; _aaRentPalette.splice(idx, 1); _aaRentPaletteCommit(); _aaRentPaletteRender(); });
+      preview.appendChild(tw);
+    });
+  }
+  const list = document.getElementById('aaRentPaletteStops');
+  if (!list) return;
+  list.innerHTML = '';
+  stops.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;'; row.dataset.idx = String(i);
+    const colorIn = document.createElement('input');
+    colorIn.type = 'color'; colorIn.value = _rgPayoutSanitizeHex(s.color) || '#ffffff';
+    colorIn.style.cssText = 'width:36px;height:26px;flex:0 0 auto;border:1px solid rgba(255,255,255,0.25);border-radius:3px;background:none;padding:0;cursor:pointer;';
+    colorIn.title = 'Stop color';
+    colorIn.addEventListener('input', () => { _aaRentPalette[i].color = _rgPayoutSanitizeHex(colorIn.value) || s.color; _aaRentPaletteCommit({ live: true }); });
+    colorIn.addEventListener('change', () => { _aaRentPaletteCommit(); _aaRentPaletteRender(); });
+    const pctIn = document.createElement('input');
+    pctIn.type = 'number'; pctIn.min = 1; pctIn.max = 100; pctIn.step = 1; pctIn.value = s.pct;
+    pctIn.style.cssText = 'width:58px;background:rgba(255,255,255,0.07);color:#fff;border:1px solid rgba(255,255,255,0.18);border-radius:3px;padding:0.18rem 0.35rem;font-family:Rajdhani,sans-serif;font-size:0.92rem;';
+    pctIn.addEventListener('input', () => { let v = parseInt(pctIn.value, 10); if (!isFinite(v)) return; _aaRentPalette[i].pct = Math.max(1, Math.min(100, v)); _aaRentPaletteCommit({ live: true }); });
+    pctIn.addEventListener('change', () => { _aaRentPaletteCommit(); _aaRentPaletteRender(); });
+    const pctLbl = document.createElement('span'); pctLbl.textContent = '% payout'; pctLbl.style.cssText = 'color:rgba(255,255,255,0.55);font-size:0.85rem;';
+    const del = document.createElement('button');
+    del.textContent = '✕'; del.disabled = stops.length <= 2;
+    del.title = del.disabled ? 'A palette needs at least 2 stops' : 'Delete this stop';
+    del.style.cssText = 'margin-left:auto;background:none;border:1px solid rgba(255,80,80,0.45);color:#ff8080;padding:0.18rem 0.5rem;border-radius:3px;cursor:' + (del.disabled ? 'not-allowed' : 'pointer') + ';font-size:0.82rem;opacity:' + (del.disabled ? '0.35' : '1') + ';';
+    del.addEventListener('click', () => { if (_aaRentPalette.length <= 2) return; _aaRentPalette.splice(i, 1); _aaRentPaletteCommit(); _aaRentPaletteRender(); });
+    row.appendChild(colorIn); row.appendChild(pctIn); row.appendChild(pctLbl); row.appendChild(del);
+    list.appendChild(row);
+  });
+  const addBtn = document.getElementById('aaRentPaletteAdd');
+  if (addBtn) { const atMax = stops.length >= _AAR_PALETTE_MAX; addBtn.disabled = atMax; addBtn.style.opacity = atMax ? '0.4' : '1'; addBtn.style.cursor = atMax ? 'not-allowed' : 'pointer'; }
+}
+function _aaRentPaletteAddStop() {
+  const stops = _aaRentPaletteLoad();
+  if (stops.length >= _AAR_PALETTE_MAX) return;
+  let bestIdx = stops.length - 1, bestGap = 0;
+  for (let i = 0; i < stops.length - 1; i++) { const gap = stops[i + 1].pct - stops[i].pct; if (gap > bestGap) { bestGap = gap; bestIdx = i; } }
+  const a = stops[bestIdx], b = stops[bestIdx + 1] || { pct: 100, color: a.color };
+  const ca = _rgPayoutHexToRgb(a.color), cb = _rgPayoutHexToRgb(b.color);
+  const hex = '#' + [(ca[0]+cb[0])>>1, (ca[1]+cb[1])>>1, (ca[2]+cb[2])>>1].map(n => n.toString(16).padStart(2, '0')).join('');
+  stops.splice(bestIdx + 1, 0, { pct: Math.round((a.pct + b.pct) / 2), color: hex });
+  _aaRentPaletteCommit(); _aaRentPaletteRender();
+}
+function _aaRentPaletteReset() {
+  _aaRentPalette = _RG_RENT_DEFAULT_PALETTE.map(s => ({ ...s }));
+  _aaRentPaletteCommit(); _aaRentPaletteRender();
+}
+
+// Best (highest) renter payout among the filtered planes at this airport, on the
+// dedicated rentals scale. Only airports with matching rentals reach here.
+function _rgAircraftColor(icao) {
+  const best = _aaRentBestPayoutAt(icao);
+  return _rgRentColorAtPct(best == null ? 0 : best);
+}
+// Toggle the Aircraft Rentals view mode. Mutually exclusive with the payout /
+// owner color modes (same pattern as _rgCycleColorMode). Shows/hides the Rentals
+// panel and repaints the map through the shared filter applier.
+function _rgToggleAircraftMode() {
+  // Empty-state guard — if the feed hasn't loaded, don't enter a mode that would
+  // blank the map (every airport filtered out). Toast and bail instead.
+  if (!_rgAircraftMode && (!_aaRentPlanes || !_aaRentPlanes.length)) {
+    if (typeof _aaRtToast === 'function') _aaRtToast('Rental data is still loading or unavailable — try again shortly', 'info');
+    return;
+  }
+  if (!_rgAircraftMode) {
+    if (_rgPayoutMode) _rgTogglePayoutMode(true);
+    if (_rgOwnerColorsActive) { _rgOwnerColorsActive = false; if (typeof _rgUpdateOwnerColorBtn === 'function') _rgUpdateOwnerColorBtn(); }
+  }
+  _rgAircraftMode = !_rgAircraftMode;
+  _aaRentFilterActive = false;  // the view mode owns rental filtering; clear the search-filter flag
+  // Redraw badges on pan/zoom (viewport-culled). Bound once, gated on the mode.
+  if (_rgAircraftMode && _rgMap && !_rgMap._aarBadgeHooked) {
+    _rgMap.on('moveend zoomend', () => { if (_rgAircraftMode) _aaRentRenderBadges(); });
+    _rgMap._aarBadgeHooked = true;
+  }
+  _aaRentSetBtnActive(_rgAircraftMode);
+  if (typeof _aaRentShowPanel === 'function') _aaRentShowPanel(_rgAircraftMode);
+  if (typeof _rgRepositionFilterPanels === 'function') _rgRepositionFilterPanels();
+  _rgApplyMapFilter();
+  _rgUpdateBreadcrumbs();
+}
+function _aaRentSetBtnActive(on) {
+  const b = document.getElementById('rgAircraftModeBtn');
+  if (b) b.classList.toggle('active', !!on);
+}
+function _aaRentSyncMenuBtn() { _aaRentSetBtnActive(_rgAircraftMode); }
+
+// Close ONLY the Rentals panel — the rental info (recolored dots + on-map badges)
+// stays on the map and the mode stays active. The ✕ on the panel uses this so
+// closing the panel doesn't exit the whole view. The mode itself is toggled by
+// the menu button and the breadcrumb chip (see _rgToggleAircraftMode).
+function _aaRentClosePanel() {
+  if (typeof _aaRentShowPanel === 'function') _aaRentShowPanel(false);
+}
+// Toggle just the panel's visibility (mode stays on). Used by the Aircraft
+// Rentals breadcrumb pill body — left or right click shows/hides the panel.
+function _aaRentTogglePanel() {
+  const p = document.getElementById('aaRentPanel');
+  const open = p && p.classList.contains('aar-open');
+  if (typeof _aaRentShowPanel === 'function') _aaRentShowPanel(!open);
+}
+// Menu-button entry point. Off → turn the mode on (and open the panel). On with
+// the panel already closed (user clicked the panel ✕) → just reopen the panel,
+// keeping the mode. On with the panel open → toggle the whole mode off.
+function _rgRentalsMenuToggle() {
+  const p = document.getElementById('aaRentPanel');
+  const panelOpen = p && p.classList.contains('aar-open');
+  if (_rgAircraftMode && !panelOpen) { if (typeof _aaRentShowPanel === 'function') _aaRentShowPanel(true); return; }
+  _rgToggleAircraftMode();
+}
+
+// ── Rentals control panel (v3.50.0) ─────────────────────────────────────────
+function _aaEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// Resize the panel by dragging any edge/corner. `dir` is a compass string
+// ('n','s','e','w','ne','nw','se','sw'). Edges adjust one dimension; the n/w
+// edges also shift top/left so the opposite border stays put.
+function _aaRentResizeStart(ev, dir) {
+  ev.preventDefault(); ev.stopPropagation();
+  const p = document.getElementById('aaRentPanel');
+  if (!p) return;
+  if (p.style.right && p.style.right !== 'auto') { p.style.left = p.offsetLeft + 'px'; p.style.right = 'auto'; }
+  const s = { x: ev.clientX, y: ev.clientY, w: p.offsetWidth, h: p.offsetHeight, left: p.offsetLeft, top: p.offsetTop };
+  const minW = 264, minH = 240, maxW = 760, maxH = Math.max(minH, (window.innerHeight || 900) - 70);
+  const move = (e) => {
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    let w = s.w, h = s.h, left = s.left, top = s.top;
+    if (dir.indexOf('e') >= 0) w = Math.max(minW, Math.min(maxW, s.w + dx));
+    if (dir.indexOf('w') >= 0) { const nw = Math.max(minW, Math.min(maxW, s.w - dx)); left = s.left + (s.w - nw); w = nw; }
+    if (dir.indexOf('s') >= 0) h = Math.max(minH, Math.min(maxH, s.h + dy));
+    if (dir.indexOf('n') >= 0) { const nh = Math.max(minH, Math.min(maxH, s.h - dy)); top = s.top + (s.h - nh); h = nh; }
+    p.style.width = w + 'px'; p.style.height = h + 'px'; p.style.left = left + 'px'; p.style.top = top + 'px';
+  };
+  const up = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    document.body.style.userSelect = '';
+  };
+  document.body.style.userSelect = 'none';
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+function _aaRentTypeName(icao) { return _aaRentTypeNames.get(icao) || ''; }
+
+// Show/hide the panel; build its type list on first open and sync controls.
+function _aaRentShowPanel(on) {
+  const p = document.getElementById('aaRentPanel');
+  if (!p) return;
+  p.classList.toggle('aar-open', !!on);
+  if (on) {
+    if (!p._aarPosInit) {
+      // Convert the initial right-anchor to a left-anchor once, so the bottom-right
+      // resize grip tracks the pointer (a right-anchored box can't grow rightward).
+      p.style.left = p.offsetLeft + 'px'; p.style.right = 'auto'; p._aarPosInit = true;
+      // Stop wheel/scroll from reaching the map (so scrolling the panel scrolls
+      // the panel, not the map zoom) and clicks from deselecting on the map.
+      if (typeof L !== 'undefined' && L.DomEvent) {
+        L.DomEvent.disableScrollPropagation(p);
+        L.DomEvent.disableClickPropagation(p);
+      }
+    }
+    if (!p._aarBuilt) { _aaRentBuildTypeList(); _aaRentBuildOwnerList(); p._aarBuilt = true; }
+    _aaRentSyncControls();
+    _aaRentRefreshPanel();
+  }
+}
+
+function _aaRentSyncControls() {
+  document.querySelectorAll('#aaRentBadgeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === _aaRentBadgeMode));
+  const t = document.getElementById('aaRentAvailToggle'); if (t) t.classList.toggle('on', _aaRentAvailNow);
+  const sl = document.getElementById('aaRentPayoutSlider'); if (sl) sl.value = _aaRentMinPayout;
+  // position the slider thumb / filtered zone / label without re-applying
+  const pct = (_aaRentMinPayout / 60) * 100;
+  const th = document.getElementById('aaRentThumb'); if (th) { th.style.left = pct + '%'; th.style.display = _aaRentMinPayout > 0 ? '' : 'none'; }
+  const zn = document.getElementById('aaRentFiltZone'); if (zn) zn.style.width = pct + '%';
+  const lb = document.getElementById('aaRentPayoutLbl'); if (lb) lb.style.display = _aaRentMinPayout > 0 ? '' : 'none';
+  const vl = document.getElementById('aaRentPayoutVal'); if (vl) vl.textContent = _aaRentMinPayout;
+  _aaRentSyncResHeadUI();
+  _aaRentSyncCatRow();
+  _aaRentApplyAllSections();
+  _aaRentColInit('results');
+  _aaRentColInit('type');
+  _aaRentSyncTypeSortUI();
+  _aaRentSyncBarGrad();
+  _aaRentUpdateZeroDot();
+}
+
+// Reset everything (filters, sorting, badge mode, availability, palette) to
+// defaults and persist those defaults — the "Reset to defaults" button.
+function _aaRentResetAll() {
+  _aaRentTerms = null; _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentCatFilter = null; _aaRentFilterActive = false;
+  _aaRentMinPayout = 0; _aaRentAvailNow = true; _aaRentBadgeMode = 'payout';
+  _aaRentTypeSort = 'icao'; _aaRentTypeSortDir = 'asc';
+  _aaRentResSort = 'payout'; _aaRentResSortDir = 'desc'; _aaRentResGroup = 'none';
+  _aaRentPalette = _RG_RENT_DEFAULT_PALETTE.map(s => ({ ...s }));
+  _aaRentPaletteSave();
+  _aaRentSavePrefs();
+  const ts = document.getElementById('aaRentTypeSearch'); if (ts) ts.value = '';
+  const ows = document.getElementById('aaRentOwnerSearch'); if (ows) ows.value = '';
+  const sl = document.getElementById('aaRentPayoutSlider'); if (sl) sl.value = 0;
+  _aaRentBuildTypeList();
+  _aaRentBuildOwnerList();
+  _aaRentSyncControls();
+  _aaRentApply();
+  if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges();
+}
+
+// Reset all rental-specific filters (menu action — kept out of the panel to
+// avoid clutter). Does not turn off the mode.
+function _aaRentResetFilters() {
+  _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentCatFilter = null; _aaRentMinPayout = 0; _aaRentAvailNow = true;
+  document.querySelectorAll('#aaRentTypeList input[type=checkbox]').forEach(cb => cb.checked = true);
+  document.querySelectorAll('#aaRentOwnerList input[type=checkbox]').forEach(cb => cb.checked = true);
+  const ts = document.getElementById('aaRentTypeSearch'); if (ts) ts.value = '';
+  const ows = document.getElementById('aaRentOwnerSearch'); if (ows) ows.value = '';
+  _aaRentSyncControls();
+  _aaRentApply();
+}
+
+// Build the multi-select type checklist (sorted by fleet count, descending).
+// Brand/model come from the loaded aircraftDB (SimFly_Aircraft.csv); fall back
+// to the feed's name when a rental ICAO isn't in the DB.
+// A few rentable airframes carry a SimFly type code that differs from the ICAO
+// code used in SimFly_Aircraft.csv (the manufacturer/model source of truth).
+// Map them so brand/model resolve from the CSV instead of showing blank. Add a
+// row here (rental code → CSV code) if a new mismatch ever turns up; or, to keep
+// it out of code, give the airframe a matching row in the Gist CSV.
+const _AAR_ICAO_ALIAS = {
+  A310: 'A313',  // Airbus A310-300
+  B350: 'BE9L',  // Textron Aviation King Air 350
+  KODI: 'K100',  // Daher Socata Kodiak 100
+  DV20: 'DIMO',  // Diamond DV20 Katana
+  HDJT: 'HA4T',  // Honda HondaJet HA420
+  P28A: 'PA28',  // Piper PA-28
+};
+function _aaRentAcOf(icao) {
+  if (typeof aircraftDB === 'undefined' || !aircraftDB) return null;
+  return aircraftDB.get(icao) || aircraftDB.get(_AAR_ICAO_ALIAS[icao]) || null;
+}
+// Manufacturer for a rental type: CSV brand first (via alias), then a best-effort
+// guess from the feed's full name so the column is never blank for an unknown type.
+function _aaRentBrandOf(icao) {
+  const ac = _aaRentAcOf(icao);
+  if (ac && ac.brand) return ac.brand;
+  const nm = _aaRentTypeName(icao);
+  return nm ? nm.trim().split(/\s+/)[0] : '';
+}
+function _aaRentTypeLabel(icao) {
+  const ac = _aaRentAcOf(icao);
+  if (ac) return ((ac.brand ? ac.brand + ' ' : '') + (ac.model || ac.label || '')).trim() || _aaRentTypeName(icao);
+  return _aaRentTypeName(icao);
+}
+function _aaRentTypeSortKey(icao) {
+  const ac = _aaRentAcOf(icao);
+  if (_aaRentTypeSort === 'mfr')   return ((_aaRentBrandOf(icao) || icao) + '|' + icao).toLowerCase();
+  if (_aaRentTypeSort === 'model') return (((ac && ac.model) || _aaRentTypeName(icao) || icao) + '|' + icao).toLowerCase();
+  return icao.toLowerCase();
+}
+
+function _aaRentBuildTypeList() {
+  const el = document.getElementById('aaRentTypeList');
+  if (!el) return;
+  const dir = _aaRentTypeSortDir === 'desc' ? -1 : 1;
+  const types = [..._aaRentTypeCounts.keys()].sort((a, b) => {
+    if (_aaRentTypeSort === 'count') return dir * (((_aaRentTypeCounts.get(a) || 0) - (_aaRentTypeCounts.get(b) || 0)) || a.localeCompare(b));
+    return dir * _aaRentTypeSortKey(a).localeCompare(_aaRentTypeSortKey(b));
+  });
+  const sel = _aaRentTypeFilter;
+  el.innerHTML = types.map(icao => {
+    const checked = (sel === null || sel.has(icao)) ? 'checked' : '';
+    const ac = _aaRentAcOf(icao);
+    const mfr = _aaRentBrandOf(icao);
+    const model = ac ? (ac.model || ac.label || '') : _aaRentTypeName(icao);
+    return `<label class="aar-trow" data-icao="${_aaEsc(icao)}">` +
+           `<input type="checkbox" ${checked} onchange="_aaRentOnTypeToggle('${_aaEsc(icao)}',this.checked)">` +
+           `<span class="aar-c-icao">${_aaEsc(icao)}</span>` +
+           `<span class="aar-c-mfr" title="${_aaEsc(mfr)}">${_aaEsc(mfr)}</span>` +
+           `<span class="aar-c-type" title="${_aaEsc(model)}">${_aaEsc(model)}</span>` +
+           `<span class="aar-tcount">${_aaRentTypeCounts.get(icao)}</span></label>`;
+  }).join('');
+  if (typeof _aaRentColApply === 'function') _aaRentColApply('type');   // re-apply dragged column widths
+}
+
+function _aaRentSyncTypeSortUI() {
+  document.querySelectorAll('#aaRentPanel .aar-th').forEach(th => {
+    const active = th.dataset.sort === _aaRentTypeSort;
+    th.classList.toggle('active', active);
+    const arr = th.querySelector('.aar-th-arr');
+    if (arr) arr.textContent = active ? (_aaRentTypeSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+  });
+}
+function _aaRentApplyTypeSort() {
+  _aaRentSyncTypeSortUI();
+  _aaRentBuildTypeList();
+  _aaRentUpdateTypeCounts();
+  _aaRentSavePrefs();
+}
+// Click a column header to sort by it; click the active column again to flip the
+// direction. Count defaults to high→low; text columns default to A→Z.
+function _aaRentHeaderSort(field) {
+  if (_aaRentTypeSort === field) {
+    _aaRentTypeSortDir = _aaRentTypeSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _aaRentTypeSort = field;
+    _aaRentTypeSortDir = (field === 'count') ? 'desc' : 'asc';
+  }
+  _aaRentApplyTypeSort();
+}
+
+// ── Aircraft-owner multi-select (mirrors the type list) ──────────────────────
+function _aaRentBuildOwnerList() {
+  const el = document.getElementById('aaRentOwnerList');
+  if (!el) return;
+  const owners = [..._aaRentOwnerCounts.keys()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const sel = _aaRentOwnerFilter;
+  el.innerHTML = owners.map(o => {
+    const checked = (sel === null || sel.has(o)) ? 'checked' : '';
+    return `<label class="aar-trow" data-owner="${_aaEsc(o)}"><span style="display:flex;align-items:center;gap:8px;min-width:0;">` +
+           `<input type="checkbox" ${checked} onchange="_aaRentOnOwnerToggle('${_aaEsc(o)}',this.checked)">` +
+           `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_aaEsc(o)}</span></span>` +
+           `<span class="aar-tcount">${_aaRentOwnerCounts.get(o)}</span></label>`;
+  }).join('');
+}
+function _aaRentFilterOwnerList(q) {
+  q = (q || '').trim().toUpperCase();
+  document.querySelectorAll('#aaRentOwnerList .aar-trow').forEach(row => {
+    const matchQ = !q || row.textContent.toUpperCase().includes(q);
+    const selected = _aaRentOwnerFilter && _aaRentOwnerFilter.has(row.dataset.owner);
+    const notZero = row.dataset.zero !== '1' || selected;
+    row.style.display = (matchQ && notZero) ? '' : 'none';
+  });
+}
+function _aaRentUpdateOwnerCounts() {
+  const counts = _aaRentVisibleOwnerCounts();
+  document.querySelectorAll('#aaRentOwnerList .aar-trow').forEach(row => {
+    const c = counts.get(row.dataset.owner) || 0;
+    const cEl = row.querySelector('.aar-tcount'); if (cEl) cEl.textContent = c;
+    row.dataset.zero = c === 0 ? '1' : '0';
+  });
+  _aaRentFilterOwnerList(document.getElementById('aaRentOwnerSearch') ? document.getElementById('aaRentOwnerSearch').value : '');
+}
+function _aaRentOnOwnerToggle(owner, checked) {
+  _aaRentTerms = null;  // panel edit → revert from AND-pair terms to per-axis
+  if (_aaRentOwnerFilter === null) _aaRentOwnerFilter = new Set(_aaRentOwnerCounts.keys());
+  if (checked) _aaRentOwnerFilter.add(owner); else _aaRentOwnerFilter.delete(owner);
+  if (_aaRentOwnerFilter.size === _aaRentOwnerCounts.size) _aaRentOwnerFilter = null;
+  _aaRentApply();
+}
+function _aaRentSelectAllOwners(sel) {
+  _aaRentTerms = null;  // panel edit → revert from AND-pair terms to per-axis
+  _aaRentOwnerFilter = sel ? null : new Set();
+  document.querySelectorAll('#aaRentOwnerList input[type=checkbox]').forEach(cb => cb.checked = sel);
+  _aaRentReassessFilterActive();
+  _aaRentApply();
+}
+
+function _aaRentFilterTypeList(q) {
+  q = (q || '').trim().toUpperCase();
+  document.querySelectorAll('#aaRentTypeList .aar-trow').forEach(row => {
+    const matchQ = !q || row.textContent.toUpperCase().includes(q);
+    // Hide types with no aircraft at the visible airports, unless the user has
+    // them selected (so a selected-but-now-absent type can still be unticked).
+    const selected = _aaRentTypeFilter && _aaRentTypeFilter.has(row.dataset.icao);
+    const notZero = row.dataset.zero !== '1' || selected;
+    row.style.display = (matchQ && notZero) ? '' : 'none';
+  });
+}
+
+// Update per-type counts in the (stable) type list to reflect visible airports,
+// without rebuilding the DOM (preserves checkboxes, search text, scroll).
+function _aaRentUpdateTypeCounts() {
+  const counts = _aaRentVisibleTypeCounts();
+  document.querySelectorAll('#aaRentTypeList .aar-trow').forEach(row => {
+    const c = counts.get(row.dataset.icao) || 0;
+    const cEl = row.querySelector('.aar-tcount');
+    if (cEl) cEl.textContent = c;
+    row.dataset.zero = c === 0 ? '1' : '0';
+  });
+  _aaRentFilterTypeList(document.getElementById('aaRentTypeSearch') ? document.getElementById('aaRentTypeSearch').value : '');
+}
+
+function _aaRentOnTypeToggle(icao, checked) {
+  _aaRentTerms = null;  // panel edit → revert from AND-pair terms to per-axis
+  if (_aaRentTypeFilter === null) _aaRentTypeFilter = new Set(_aaRentTypeCounts.keys()); // materialize "all"
+  if (checked) _aaRentTypeFilter.add(icao); else _aaRentTypeFilter.delete(icao);
+  if (_aaRentTypeFilter.size === _aaRentTypeCounts.size) _aaRentTypeFilter = null; // back to "all" = no filter
+  _aaRentApply();
+}
+
+function _aaRentSelectAllTypes(sel) {
+  _aaRentTerms = null;  // panel edit → revert from AND-pair terms to per-axis
+  _aaRentTypeFilter = sel ? null : new Set();
+  document.querySelectorAll('#aaRentTypeList input[type=checkbox]').forEach(cb => cb.checked = sel);
+  _aaRentReassessFilterActive();
+  _aaRentApply();
+}
+
+// After a rental filter is cleared, disengage the search-driven filter flag when
+// nothing rental remains (no-op while the full view mode is on — the mode owns it).
+function _aaRentReassessFilterActive() {
+  if (_rgAircraftMode) return;
+  if ((!_aaRentTerms || !_aaRentTerms.length) && _aaRentTypeFilter === null && !_aaRentOwnerFilter && _aaRentMinPayout === 0) _aaRentFilterActive = false;
+}
+
+// Remove one AND-pair term (breadcrumb ✕ on a term chip).
+function _aaRentRemoveTerm(i) {
+  if (!_aaRentTerms) return;
+  _aaRentTerms.splice(i, 1);
+  if (!_aaRentTerms.length) _aaRentTerms = null;
+  _aaRentReassessFilterActive();
+  _aaRentApply();
+}
+
+// Clear the aircraft type filter (breadcrumb ✕). Disengages the search filter if
+// it was the only thing active and we're not in the full view mode.
+function _aaRentClearTypeFilter() {
+  _aaRentTerms = null;
+  _aaRentTypeFilter = null;
+  document.querySelectorAll('#aaRentTypeList input[type=checkbox]').forEach(cb => cb.checked = true);
+  _aaRentReassessFilterActive();
+  _aaRentApply();
+}
+
+function _aaRentSetBadgeMode(mode) {
+  _aaRentBadgeMode = mode;
+  document.querySelectorAll('#aaRentBadgeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges();
+  _aaRentSavePrefs();
+}
+
+function _aaRentMinPayoutInput(v) {
+  _aaRentMinPayout = Math.max(0, Math.min(60, +v || 0));
+  const pct = (_aaRentMinPayout / 60) * 100;
+  const th = document.getElementById('aaRentThumb');
+  const zn = document.getElementById('aaRentFiltZone');
+  const lb = document.getElementById('aaRentPayoutLbl');
+  const vl = document.getElementById('aaRentPayoutVal');
+  if (th) { th.style.left = pct + '%'; th.style.display = _aaRentMinPayout > 0 ? '' : 'none'; }
+  if (zn) zn.style.width = pct + '%';
+  if (lb) lb.style.display = _aaRentMinPayout > 0 ? '' : 'none';
+  if (vl) vl.textContent = _aaRentMinPayout;
+  _aaRentUpdateZeroDot();
+  _aaRentApply();
+}
+
+// The 0% legend dot toggles 0%-payout aircraft, mirroring the airport payout
+// zero dot: hide = set the minimum payout to 1%, show = back to 0.
+function _aaRentToggleZero() {
+  const newVal = _aaRentMinPayout === 0 ? 1 : 0;
+  const sl = document.getElementById('aaRentPayoutSlider');
+  if (sl) sl.value = newVal;
+  _aaRentMinPayoutInput(newVal);
+}
+function _aaRentUpdateZeroDot() {
+  const dot = document.getElementById('aaRentZeroDot');
+  if (!dot) return;
+  if (_aaRentMinPayout > 0) {
+    dot.style.opacity = '0.35';
+    dot.style.boxShadow = 'inset 0 0 0 2px rgba(255,204,68,0.85)';
+    dot.title = 'Click to show 0% payout aircraft';
+  } else {
+    dot.style.opacity = '';
+    dot.style.boxShadow = '';
+    dot.title = 'Click to hide 0% payout aircraft';
+  }
+}
+
+function _aaRentToggleAvail() {
+  _aaRentAvailNow = !_aaRentAvailNow;
+  const t = document.getElementById('aaRentAvailToggle');
+  if (t) t.classList.toggle('on', _aaRentAvailNow);
+  _aaRentSavePrefs();
+  _aaRentApply();
+}
+
+// Aircraft-category circles (1-7) — same look as the map title-bar category
+// filter, but they filter rentals by AIRCRAFT category. null = all shown; click
+// one to drop it; clicking back to all 7 collapses to null (no filter).
+function _aaRentToggleCat(n) {
+  if (_aaRentCatFilter === null) _aaRentCatFilter = new Set([1, 2, 3, 4, 5, 6, 7]);
+  if (_aaRentCatFilter.has(n)) _aaRentCatFilter.delete(n); else _aaRentCatFilter.add(n);
+  if (_aaRentCatFilter.size === 7) _aaRentCatFilter = null;
+  _aaRentSyncCatRow();
+  _aaRentApply();
+}
+function _aaRentSyncCatRow() {
+  document.querySelectorAll('#aaRentCatRow .dist-cat-btn').forEach(b => {
+    const n = +b.dataset.cat;
+    b.classList.toggle('active', _aaRentCatFilter === null || _aaRentCatFilter.has(n));
+  });
+}
+// All / None / Invert — mirror the map title-bar category controls.
+function _aaRentCatAll()  { _aaRentCatFilter = null;          _aaRentSyncCatRow(); _aaRentApply(); }
+function _aaRentCatNone() { _aaRentCatFilter = new Set();     _aaRentSyncCatRow(); _aaRentApply(); }
+function _aaRentCatInvert() {
+  const cur = _aaRentCatFilter === null ? new Set([1, 2, 3, 4, 5, 6, 7]) : _aaRentCatFilter;
+  const inv = new Set();
+  for (let n = 1; n <= 7; n++) if (!cur.has(n)) inv.add(n);
+  _aaRentCatFilter = inv.size === 7 ? null : inv;
+  _aaRentSyncCatRow();
+  _aaRentApply();
+}
+
+// Click a results-matrix column header to sort by it; click the active column
+// again to flip direction. Text columns default A→Z, payout high→low, status
+// best-first (available now → soonest → rented).
+function _aaRentResHeaderSort(field) {
+  if (_aaRentResSort === field) {
+    _aaRentResSortDir = _aaRentResSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _aaRentResSort = field;
+    _aaRentResSortDir = (field === 'payout') ? 'desc' : 'asc';
+  }
+  _aaRentSavePrefs();
+  _aaRentRefreshPanel();
+}
+// Cycle the results grouping: none → owner → airport → type → none.
+function _aaRentCycleGroup() {
+  _aaRentResGroup = _aaRentResGroup === 'none' ? 'owner'
+                  : _aaRentResGroup === 'owner' ? 'apt'
+                  : _aaRentResGroup === 'apt' ? 'type' : 'none';
+  _aaRentSavePrefs();
+  _aaRentRefreshPanel();
+}
+function _aaRentResGroupLabel() {
+  return _aaRentResGroup === 'owner' ? 'owner'
+       : _aaRentResGroup === 'apt' ? 'airport'
+       : _aaRentResGroup === 'type' ? 'type' : 'none';
+}
+// Sync the results header: active column highlight + arrow, and grouping label.
+function _aaRentSyncResHeadUI() {
+  document.querySelectorAll('#aaRentResHead .aar-th').forEach(th => {
+    const active = th.dataset.rsort === _aaRentResSort;
+    th.classList.toggle('active', active);
+    const arr = th.querySelector('.aar-th-arr');
+    if (arr) arr.textContent = active ? (_aaRentResSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+  });
+  const g = document.getElementById('aaRentGroup');
+  if (g) g.textContent = 'Group: ' + _aaRentResGroupLabel();
+}
+
+// Central apply: repaint the map (dots + matrix) and refresh breadcrumbs.
+// _rgApplyMapFilter refreshes the panel itself (so external filter changes —
+// owner/country dropdowns — also keep the rental panel in sync).
+function _aaRentApply() {
+  if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
+}
+
+// Does this airport pass the GEO/ownership filters (owner, country, continent,
+// region, developer, store, category, level, for-sale, rotation, payout, star)?
+// Reuses the central gate with the rental gate skipped — so rentals respect
+// whatever airport filtering the user already has on the map.
+function _aaRentAptPassesGeo(icao, rec, owner) {
+  _aaRentSkipGate = true;
+  try { return _rgDotPassesMapFilters(icao, rec, owner); }
+  finally { _aaRentSkipGate = false; }
+}
+
+// Rental airports currently visible on the map: present in airportDB (plottable)
+// AND passing the active geo/ownership filters. This is the universe the panel
+// reflects, so "available aircraft" mirror what's at the airports in view.
+function _aaRentVisibleApts() {
+  const out = [];
+  const odb = (typeof airportDB !== 'undefined') ? airportDB : null;
+  for (const [apt, planes] of _aaRentByApt) {
+    const rec = odb && odb.get(apt);
+    if (!rec) continue;
+    const owner = (typeof _rgOwnerMap !== 'undefined' && _rgOwnerMap) ? _rgOwnerMap.get(apt) : '';
+    if (!_aaRentAptPassesGeo(apt, rec, owner)) continue;
+    out.push({ apt, rec, owner, planes });
+  }
+  return out;
+}
+
+// Per-type counts over visible airports, honoring availability (and owner) but
+// NOT the type or payout filters — so the type list reflects what's in view and
+// doesn't reshuffle when you tick a type or drag the payout slider.
+function _aaRentVisibleTypeCounts() {
+  const counts = new Map();
+  for (const a of _aaRentVisibleApts()) {
+    for (const p of a.planes) {
+      if (_aaRentAvailNow && !_aaRentIsAvailableNow(p)) continue;
+      if (_aaRentOwnerFilter && !_aaRentOwnerFilter.has(p.owner)) continue;
+      if (p.icao) counts.set(p.icao, (counts.get(p.icao) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+// Per-owner counts over visible airports, honoring availability and the TYPE
+// filter (but not the owner filter itself) — so the two multi-selects inform
+// each other without either zeroing itself out.
+function _aaRentVisibleOwnerCounts() {
+  const counts = new Map();
+  for (const a of _aaRentVisibleApts()) {
+    for (const p of a.planes) {
+      if (_aaRentAvailNow && !_aaRentIsAvailableNow(p)) continue;
+      if (_aaRentTypeFilter && !_aaRentTypeFilter.has(p.icao)) continue;
+      if (p.owner) counts.set(p.owner, (counts.get(p.owner) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+// One row per VISIBLE rentable aircraft passing all rental filters. Each row is
+// self-describing (no cryptic aggregate codes): type, owner, airport, payout,
+// live availability. availRank/availTs drive the Status-column sort.
+function _aaRentPlaneRows() {
+  const rows = [];
+  for (const a of _aaRentVisibleApts()) {
+    const aptName = (a.rec && (a.rec.name || a.rec.municipality)) || '';
+    for (const p of a.planes) {
+      if (!_aaRentPlanePasses(p, a.rec)) continue;
+      const now = _aaRentIsAvailableNow(p);
+      let availTxt, availRank, availTs;
+      if (now) { availTxt = 'now'; availRank = 0; availTs = 0; }
+      else if (p.until) {
+        const t = Date.parse(p.until);
+        if (isFinite(t) && t > Date.now()) { availTxt = _aaRentCountdownStr(t); availRank = 1; availTs = t; }
+        else { availTxt = 'now'; availRank = 0; availTs = 0; }
+      } else if (p.renter) { availTxt = 'rented'; availRank = 2; availTs = Infinity; }
+      else { availTxt = '—'; availRank = 2; availTs = Infinity; }
+      rows.push({
+        apt: a.apt, aptName,
+        type: p.icao || '—',
+        owner: p.owner || '—',
+        payout: p.payout == null ? 0 : p.payout,
+        availTxt, availRank, availTs, now
+      });
+    }
+  }
+  const dir = _aaRentResSortDir === 'desc' ? -1 : 1;
+  const cmp = (a, b) => {
+    switch (_aaRentResSort) {
+      case 'owner':  return dir * (a.owner.toLowerCase().localeCompare(b.owner.toLowerCase()) || a.apt.localeCompare(b.apt));
+      case 'apt':    return dir * (a.apt.localeCompare(b.apt) || a.owner.toLowerCase().localeCompare(b.owner.toLowerCase()));
+      case 'type':   return dir * (a.type.localeCompare(b.type) || a.apt.localeCompare(b.apt));
+      case 'avail':  return dir * ((a.availRank - b.availRank) || (a.availTs - b.availTs) || (b.payout - a.payout));
+      default:       return dir * ((a.payout - b.payout) || (a.availRank - b.availRank)) || a.apt.localeCompare(b.apt);
+    }
+  };
+  rows.sort(cmp);
+  return rows;
+}
+
+// Header for one results group. Airport groups are tinted by the airport's SimFly
+// category color (and click to zoom); owner and type groups use a bright accent
+// yellow (via .aar-pgrp-y so light mode can theme it) so the people/aircraft
+// groupings read at a glance.
+function _aaRentGroupHeaderHtml(mode, key, gr) {
+  const n = ` <span class="aar-pgrp-n">${gr.length}</span>`;
+  if (mode === 'apt') {
+    const col = (typeof _rgCatOf === 'function' && _rgCatOf(key)) || '#cfe0f0';
+    const nm = gr[0].aptName;
+    return `<div class="aar-pgrp aar-pgrp-apt" style="color:${col}" onclick="_aaRentFlyTo('${_aaEsc(key)}')" title="Zoom to ${_aaEsc(key)}">` +
+           `${_aaEsc(key)}${nm ? ' · ' + _aaEsc(nm) : ''}${n}</div>`;
+  }
+  if (mode === 'type') {
+    const label = _aaRentTypeLabel(key);
+    const sub = (label && label.toLowerCase() !== key.toLowerCase()) ? ' · ' + label : '';
+    return `<div class="aar-pgrp aar-pgrp-y">${_aaEsc(key + sub)}${n}</div>`;
+  }
+  return `<div class="aar-pgrp aar-pgrp-y">${_aaEsc(key)}${n}</div>`;  // owner
+}
+
+// One results row (one aircraft). Self-describing columns; click zooms to the
+// airport. availTxt is a plain phrase ("now", "2h 14m", "rented") — no codes.
+function _aaRentResRowHtml(r) {
+  const col = _rgRentColorAtPct(r.payout);
+  const aCls = r.now ? 'aar-av-now' : (r.availRank === 1 ? 'aar-av-soon' : 'aar-av-no');
+  const aTitle = r.now ? 'Available now'
+               : r.availRank === 1 ? ('Free in ' + r.availTxt)
+               : r.availTxt === 'rented' ? 'Currently rented' : 'Availability unknown';
+  return `<div class="aar-prow" onclick="_aaRentFlyTo('${_aaEsc(r.apt)}')" title="Zoom to ${_aaEsc(r.apt)}${r.aptName ? ' — ' + _aaEsc(r.aptName) : ''}">` +
+         `<span class="aar-p-type">${_aaEsc(r.type)}</span>` +
+         `<span class="aar-p-owner" title="${_aaEsc(r.owner)}">${_aaEsc(r.owner)}</span>` +
+         `<span class="aar-p-apt">${_aaEsc(r.apt)}</span>` +
+         `<span class="aar-p-pay" style="color:${col}">${r.payout}%</span>` +
+         `<span class="aar-p-av ${aCls}" title="${_aaEsc(aTitle)}">${_aaEsc(r.availTxt)}</span></div>`;
+}
+
+const _AAR_RES_CAP = 600;  // max rendered rows — protects the DOM if everything's in view
+function _aaRentRefreshPanel() {
+  const panel = document.getElementById('aaRentPanel');
+  if (!panel || !panel.classList.contains('aar-open')) return;
+  _aaRentUpdateTypeCounts();
+  _aaRentUpdateOwnerCounts();
+  _aaRentSyncResHeadUI();
+  const rows = _aaRentPlaneRows();
+  const aptSet = new Set(rows.map(r => r.apt));
+  const sum = document.getElementById('aaRentSummary');
+  if (sum) sum.innerHTML = `<b>${rows.length.toLocaleString('en-US')}</b> plane${rows.length !== 1 ? 's' : ''} · ` +
+                           `${aptSet.size.toLocaleString('en-US')} airport${aptSet.size !== 1 ? 's' : ''}`;
+  const res = document.getElementById('aaRentResults');
+  if (!res) return;
+  if (!rows.length) { res.innerHTML = `<div class="aar-empty">No rentals match these filters.</div>`; return; }
+
+  let html = '';
+  if (_aaRentResGroup === 'none') {
+    html = rows.slice(0, _AAR_RES_CAP).map(_aaRentResRowHtml).join('');
+  } else {
+    // Partition the already-sorted rows by group key (so within-group order keeps
+    // the active column sort); order the groups alphabetically by key.
+    const mode = _aaRentResGroup;
+    const groups = new Map();
+    for (const r of rows) {
+      const k = mode === 'owner' ? r.owner : mode === 'type' ? r.type : r.apt;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    }
+    const keys = [...groups.keys()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    let shown = 0;
+    for (const k of keys) {
+      if (shown >= _AAR_RES_CAP) break;
+      const gr = groups.get(k);
+      html += _aaRentGroupHeaderHtml(mode, k, gr);
+      for (const r of gr) { if (shown >= _AAR_RES_CAP) break; html += _aaRentResRowHtml(r); shown++; }
+    }
+  }
+  if (rows.length > _AAR_RES_CAP) html += `<div class="aar-empty">Showing first ${_AAR_RES_CAP.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} — narrow the filters to see the rest.</div>`;
+  res.innerHTML = html;
+  _aaRentColApply('results');   // re-apply any dragged column widths to the new rows
+}
+
+function _aaRentFlyTo(apt) {
+  const rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((apt || '').toUpperCase()) : null;
+  if (!rec || !_rgMap) return;
+  try { _rgMap.flyTo([rec.latitude, rec.longitude], Math.max(_rgMap.getZoom(), 6), { animate: true, duration: 0.6 }); } catch (_) {}
+}
+
+// ── Rentals table column resize ──────────────────────────────────────────────
+// Drag a divider between two column headers to redistribute width between them
+// (the pair's total is constant, so header + rows stay aligned and nothing
+// scrolls horizontally). Double-click a divider to auto-fit — revert to the
+// default responsive template. Widths are kept as fr weights so the header and
+// the (slightly narrower, scrollbar) rows scale together. Mirrors the region
+// matrix resize UX (_rgInitColResize / _rgAutoFitAll). Session-only, like that.
+const _AAR_COL_CFG = {
+  results: { headId: 'aaRentResHead',  rowsId: 'aaRentResults',  rowSel: '.aar-prow' },
+  type:    { headId: 'aaRentTypeHead', rowsId: 'aaRentTypeList', rowSel: '.aar-trow' },
+};
+const _aaRentColW = {};   // key -> fr-weight array, or null/absent = default template
+function _aaRentColApply(key) {
+  const cfg = _AAR_COL_CFG[key]; if (!cfg) return;
+  const tmpl = _aaRentColW[key] ? _aaRentColW[key].map(w => w.toFixed(3) + 'fr').join(' ') : '';
+  const head = document.getElementById(cfg.headId);
+  if (head) head.style.gridTemplateColumns = tmpl;
+  const rows = document.getElementById(cfg.rowsId);
+  if (rows) rows.querySelectorAll(cfg.rowSel).forEach(r => { r.style.gridTemplateColumns = tmpl; });
+}
+function _aaRentColInit(key) {
+  const cfg = _AAR_COL_CFG[key]; if (!cfg) return;
+  const head = document.getElementById(cfg.headId);
+  if (!head || head._aarColInit) return;
+  head._aarColInit = true;
+  const cells = [...head.children];
+  for (let i = 0; i < cells.length - 1; i++) {
+    cells[i].style.position = 'relative';
+    const h = document.createElement('div');
+    h.className = 'aar-col-resize';
+    h.title = 'Drag to resize · double-click to auto-fit columns';
+    cells[i].appendChild(h);
+    h.addEventListener('mousedown', (e) => _aaRentColDown(e, key, i));
+    h.addEventListener('click', (e) => e.stopPropagation());                                 // don't trigger column sort
+    h.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); _aaRentColW[key] = null; _aaRentColApply(key); });
+  }
+}
+function _aaRentColDown(e, key, leftIdx) {
+  e.preventDefault(); e.stopPropagation();
+  const cfg = _AAR_COL_CFG[key];
+  const head = document.getElementById(cfg.headId); if (!head) return;
+  const cells = [...head.children];
+  const widths = cells.map(c => c.getBoundingClientRect().width);
+  const startX = e.clientX, pair = widths[leftIdx] + widths[leftIdx + 1], sl = widths[leftIdx];
+  const MIN = 24;
+  const handle = e.currentTarget; handle.classList.add('aar-col-dragging');
+  document.body.style.cursor = 'col-resize';
+  const move = (ev) => {
+    const nl = Math.max(MIN, Math.min(pair - MIN, sl + (ev.clientX - startX)));
+    const w = widths.slice(); w[leftIdx] = nl; w[leftIdx + 1] = pair - nl;
+    _aaRentColW[key] = w;
+    _aaRentColApply(key);
+  };
+  const up = () => {
+    document.removeEventListener('mousemove', move);
+    handle.classList.remove('aar-col-dragging');
+    document.body.style.cursor = '';
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up, { once: true });
+}
+
+// "2h 14m" / "47m" countdown from a future ms timestamp.
+function _aaRentCountdownStr(ts) {
+  let s = Math.max(0, Math.round((ts - Date.now()) / 1000));
+  const h = Math.floor(s / 3600); s -= h * 3600; const m = Math.floor(s / 60);
+  return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
+}
+
+// Hover-card rentals section (grouped by aircraft type). Honors the type/owner/
+// payout filters but ALWAYS shows availability (free now vs soonest countdown)
+// so the card gives the full picture even with "available now only" on.
+function _aaRentTooltipHtml(icao) {
+  if (!_rgAircraftMode) return '';
+  const _up = (icao || '').toUpperCase();
+  const _rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get(_up) : null;
+  const all = (_aaRentByApt.get(_up) || []).filter(p => {
+    if (!_aaRentPlaneInScope(p, _rec)) return false;
+    if (_aaRentMinPayout > 0 && (p.payout == null || p.payout < _aaRentMinPayout)) return false;
+    return true;
+  });
+  if (!all.length) return '';
+  const byType = new Map();
+  for (const p of all) {
+    let g = byType.get(p.icao);
+    if (!g) { g = { count: 0, best: null, now: 0, soonest: null }; byType.set(p.icao, g); }
+    g.count++;
+    if (p.payout != null && (g.best === null || p.payout > g.best)) g.best = p.payout;
+    if (_aaRentIsAvailableNow(p)) g.now++;
+    else if (p.until) { const t = Date.parse(p.until); if (isFinite(t) && (g.soonest === null || t < g.soonest)) g.soonest = t; }
+  }
+  const rows = [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let html = `<span class="rg-dt-rent"><span class="rg-dt-rent-hdr">🛩 Rentals · ${all.length} here</span>`;
+  for (const [ic, g] of rows) {
+    const col = _rgRentColorAtPct(g.best == null ? 0 : g.best);
+    const avail = g.now > 0 ? `<span class="rg-dt-rent-now">${g.now} now</span>`
+                : (g.soonest ? `<span class="rg-dt-rent-soon">free ${_aaRentCountdownStr(g.soonest)}</span>` : '');
+    html += `<span class="rg-dt-rent-row"><span class="rg-dt-rent-type">${_aaEsc(ic)} <span class="rg-dt-rent-x">×${g.count}</span></span>` +
+            `<span class="rg-dt-rent-meta"><span style="color:${col};font-weight:600">${g.best == null ? 0 : g.best}%</span> ${avail}</span></span>`;
+  }
+  return html + `</span>`;
+}
+
+// How many type-chips to show per airport at the current zoom. Far out → 1 (just
+// the standout type); zooming in reveals more, up to 10. Tuned so a continental
+// view stays sparse and a metro-level view can show a full stack.
+function _aaRentMaxChipsForZoom(z) { return Math.max(1, Math.min(10, Math.floor(z) - 4)); }
+
+// Build a vertical chip stack for one airport's matching planes — grouped by
+// type. maxChips caps how many type-chips render (zoom-driven); when capped we
+// keep the highest-payout types (so standouts win the limited space) but DISPLAY
+// the chosen chips alphabetically by ICAO. Remaining types collapse into a "+N"
+// suffix on the last chip. Returns the stack HTML and the chip count (used to
+// estimate the badge's pixel footprint).
+function _aaRentBadgeStack(matches, maxChips) {
+  const byType = new Map();
+  for (const p of matches) {
+    let g = byType.get(p.icao);
+    if (!g) { g = { best: null, count: 0 }; byType.set(p.icao, g); }
+    g.count++;
+    if (p.payout != null && (g.best === null || p.payout > g.best)) g.best = p.payout;
+  }
+  const byPayout = [...byType.entries()].sort((a, b) => (b[1].best || 0) - (a[1].best || 0) || b[1].count - a[1].count);
+  const shown = byPayout.slice(0, Math.max(1, maxChips)).sort((a, b) => a[0].localeCompare(b[0]));
+  const hidden = byPayout.length - shown.length;
+  const chips = shown.map(([icao, g], i) => {
+    let txt, color;
+    if (_aaRentBadgeMode === 'count')     { txt = icao + ' ×' + g.count; color = '#2ecc71'; }
+    else if (_aaRentBadgeMode === 'type') { txt = icao;                  color = '#cfe8ff'; }
+    else { const b = g.best == null ? 0 : g.best; txt = icao + ' ' + b + '%'; color = _rgRentColorAtPct(b); }
+    const more = (i === shown.length - 1 && hidden > 0) ? `<span class="aar-chip-more">+${hidden}</span>` : '';
+    return `<span class="aar-chip" style="color:${color}">${_aaEsc(txt)}${more}</span>`;
+  }).join('');
+  return { html: `<span class="aar-bstack">${chips}</span>`, nChips: shown.length };
+}
+
+// Draw the on-map rental badges with two-stage "smart" thinning:
+//   1. Per-airport detail scales with zoom — 1 chip far out, up to 10 zoomed in.
+//   2. Screen-space collision culling — badges are placed greedily by payout
+//      prominence; any that would overlap an already-placed badge are dropped.
+// Together: a continental view shows a sparse set of standout airports; zooming
+// in spreads dots apart so more appear, each with a taller stack. Dot colors
+// still encode payout for EVERY airport, badge or not. Re-runs on move/zoom.
+function _aaRentRenderBadges() {
+  if (_aaRentBadgeLayer) { _aaRentBadgeLayer.remove(); _aaRentBadgeLayer = null; }
+  if (!_rgAircraftMode || !_rgMap || !_rgDotLayer) return;
+  const bounds = _rgMap.getBounds();
+  const maxChips = _aaRentMaxChipsForZoom(_rgMap.getZoom());
+  // Collect in-viewport rental dots with their stack + a prominence score
+  // (best payout, then plane count) that drives placement priority. `owned`
+  // flags airports owned by a SimFly player — they win placement when crowded.
+  const items = [];
+  const ownerMap = (typeof _rgOwnerMap !== 'undefined') ? _rgOwnerMap : null;
+  _rgDotLayer.eachLayer(mk => {
+    if (!mk._aarIcao || !bounds.contains(mk.getLatLng())) return;
+    const matches = _aaRentMatchesAt(mk._aarIcao);
+    if (!matches.length) return;
+    let best = -1; for (const p of matches) if (p.payout != null && p.payout > best) best = p.payout;
+    const stack = _aaRentBadgeStack(matches, maxChips);
+    const owned = ownerMap ? !!ownerMap.get(mk._aarIcao.toUpperCase()) : false;
+    items.push({ ll: mk.getLatLng(), icao: mk._aarIcao, html: stack.html, nChips: stack.nChips, prom: best, cnt: matches.length, owned });
+  });
+  // SimFly-owned airports first, then highest payout, then most planes — so the
+  // standouts (and the player's own airports) win the limited screen real estate.
+  items.sort((a, b) => (b.owned - a.owned) || (b.prom - a.prom) || (b.cnt - a.cnt));
+
+  // Greedy screen-space collision cull. Each badge is modeled as a rect anchored
+  // up-and-right of its dot (matching the icon anchor); a candidate overlapping
+  // any placed rect (plus a gutter) is dropped. This is what self-limits density.
+  const PAD = 6, CHIP_W = 88, CHIP_H = 26, HEAD = 11;
+  const placed = [];
+  const layer = L.layerGroup();
+  for (const it of items) {
+    if (placed.length >= _AAR_BADGE_CAP) break;
+    const pt = _rgMap.latLngToContainerPoint(it.ll);
+    const rect = { x: pt.x + 9 - PAD, y: pt.y - HEAD - PAD,
+                   w: CHIP_W + PAD * 2, h: it.nChips * CHIP_H + 4 + PAD * 2 };
+    let hit = false;
+    for (const r of placed) {
+      if (rect.x < r.x + r.w && rect.x + rect.w > r.x && rect.y < r.y + r.h && rect.y + rect.h > r.y) { hit = true; break; }
+    }
+    if (hit) continue;
+    placed.push(rect);
+    // divIcon marker (not a plain tooltip) so the badge is interactive and can
+    // carry its own hover tooltip with comprehensive aircraft detail.
+    const icon = L.divIcon({ className: 'aar-badge-icon', html: it.html, iconSize: null, iconAnchor: [-9, 11] });
+    const m = L.marker(it.ll, { icon, interactive: true, keyboard: false });
+    const detail = _aaRentBadgeDetailHtml(it.icao);
+    if (detail) m.bindTooltip(detail, { direction: 'top', className: 'rg-dot-tip aar-bd-tip', offset: [0, -2], opacity: 1 });
+    layer.addLayer(m);
+  }
+  _aaRentBadgeLayer = layer.addTo(_rgMap);
+}
+
+// Comprehensive per-aircraft detail for a badge's hover tooltip — every plane at
+// the airport matching the active filters, with type, tail, payout, availability
+// and owner. Capped so a busy hub doesn't produce a giant tooltip.
+function _aaRentBadgeDetailHtml(icao) {
+  const up = (icao || '').toUpperCase();
+  const rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get(up) : null;
+  const name = rec && rec.name ? rec.name : '';
+  const all = (_aaRentByApt.get(up) || []).filter(p => {
+    if (!_aaRentPlaneInScope(p, rec)) return false;
+    if (_aaRentMinPayout > 0 && (p.payout == null || p.payout < _aaRentMinPayout)) return false;
+    return true;
+  });
+  if (!all.length) return '';
+  all.sort((a, b) => (a.icao || '').localeCompare(b.icao || '') || (b.payout || 0) - (a.payout || 0) || (a.tail || '').localeCompare(b.tail || ''));
+  const CAP = 18;
+  // Five aligned columns (CSS grid). Headers make it clear that, e.g., the "60%"
+  // and "available" in a row are two separate columns (Pay vs Status).
+  let rows = '';
+  for (const p of all.slice(0, CAP)) {
+    const avail = _aaRentIsAvailableNow(p) ? `<span class="aar-bd-now">available</span>`
+                : (p.until ? `<span class="aar-bd-ground">free ${_aaRentCountdownStr(Date.parse(p.until))}</span>` : '<span class="aar-bd-soon">in use</span>');
+    const col = _rgRentColorAtPct(p.payout == null ? 0 : p.payout);
+    // Show up to the first 30 characters of the owner name before truncating.
+    const ownerFull = p.owner || '—';
+    const ownerDisp = ownerFull.length > 30 ? ownerFull.slice(0, 30) + '…' : ownerFull;
+    rows += `<span class="aar-bd-c aar-bd-type"><b>${_aaEsc(p.icao)}</b></span>` +
+            `<span class="aar-bd-c aar-bd-reg">${_aaEsc(p.tail || '—')}</span>` +
+            `<span class="aar-bd-c aar-bd-own" title="${_aaEsc(ownerFull)}">${_aaEsc(ownerDisp)}</span>` +
+            `<span class="aar-bd-c aar-bd-pay" style="color:${col}">${p.payout == null ? 0 : p.payout}%</span>` +
+            `<span class="aar-bd-c aar-bd-stat">${avail}</span>`;
+  }
+  let html = `<div class="aar-bdetail"><div class="aar-bd-hdr">🛩 ${_aaEsc(up)}${name ? ' · ' + _aaEsc(name) : ''}</div>` +
+             `<div class="aar-bd-sub">${all.length} matching aircraft</div>` +
+             `<div class="aar-bd-grid">` +
+             `<span class="aar-bd-gh">Type</span><span class="aar-bd-gh">Reg</span><span class="aar-bd-gh">Owner</span>` +
+             `<span class="aar-bd-gh aar-bd-pay">Pay</span><span class="aar-bd-gh">Status</span>` +
+             rows + `</div>`;
+  if (all.length > CAP) html += `<div class="aar-bd-more">+${all.length - CAP} more…</div>`;
+  return html + `</div>`;
 }
 
 // KML Generator "both mode" category palette (matches catPins by index = cat-1)
@@ -36519,6 +37919,10 @@ function _rgGetVisibleDotCount() {
 // scenery indicator are display toggles, not filters, so they don't
 // count even though they always render chips.
 function _rgAnyFilterActive() {
+  // Any Aircraft Rentals breadcrumb present (view mode or a search-driven filter)
+  // → the ⊗ clear-all chip must show so the user can wipe it in one click.
+  if (_rgAircraftMode || _aaRentFilterActive || (_aaRentTerms && _aaRentTerms.length) ||
+      _aaRentTypeFilter !== null || _aaRentOwnerFilter !== null || _aaRentMinPayout > 0) return true;
   if (_rgPayoutFilter > 0) return true;
   if (_rgStarFilterMode && _rgStarFilter > 0) return true;
   if (_slDeveloperFilter) return true;
@@ -36532,6 +37936,7 @@ function _rgAnyFilterActive() {
   if (_rgMapContinentFilter !== null) return true;
   if (_rgMapDeveloperFilter !== null) return true;
   if (_rgMapStoreFilter !== null) return true;
+  if (_rgMapNotesFilter !== null) return true;
   if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) return true;
   if (_rgExcludedOwners && _rgExcludedOwners.size > 0) return true;
   if (_rgExcludedCountries && _rgExcludedCountries.size > 0) return true;
@@ -36571,6 +37976,13 @@ function _rgClearAllFilters() {
   const hadFilters = _rgAnyFilterActive();
   const hadPlan    = _rgFlightPlanLoaded();
   const hadTrack   = _rgAcTrackLoaded();
+  // Aircraft Rentals — exit the view mode if on, and clear every rental filter so
+  // no rental breadcrumb survives the ⊗ clear-all.
+  if (_rgAircraftMode && typeof _rgToggleAircraftMode === 'function') _rgToggleAircraftMode();
+  _aaRentFilterActive = false; _aaRentTerms = null; _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentMinPayout = 0;
+  if (typeof _aaRentSyncTypeChecks === 'function') _aaRentSyncTypeChecks();
+  { const _sl = document.getElementById('aaRentPayoutSlider'); if (_sl) _sl.value = 0;
+    const _pv = document.getElementById('aaRentPayoutVal'); if (_pv) _pv.textContent = '≥ 0%'; }
   // Pilot Payout threshold
   if (_rgPayoutFilter > 0 && typeof _rgPayoutSliderInput === 'function') _rgPayoutSliderInput(0);
   // Scenery Rating threshold
@@ -36604,6 +38016,7 @@ function _rgClearAllFilters() {
     if (typeof _rgHideStoreLegend === 'function') _rgHideStoreLegend();
     _rgMapStoreFilter = null;
   }
+  if (_rgMapNotesFilter !== null) _rgMapNotesFilter = null;
   // Pinned ICAOs
   if (_rgPinnedIcaos && _rgPinnedIcaos.size > 0) _rgPinnedIcaos.clear();
   _rgPinExclusiveMode = false;
@@ -36713,7 +38126,10 @@ function _rgUpdateBreadcrumbs() {
   } else {
     modeLbl = `Category Colors (${visCount.toLocaleString('en-US')})`;
   }
-  container.appendChild(mkChip(modeLbl, _rgCycleColorMode, null));
+  // In Aircraft Rentals mode the dots are colored by rental payout, not by the
+  // normal color modes — suppress this chip (the "Aircraft Rentals" chip below
+  // carries the visible count) so it doesn't mislead with "Category Colors".
+  if (!_rgAircraftMode) container.appendChild(mkChip(modeLbl, _rgCycleColorMode, null));
 
   // 2. Pilot Payout filter — grouped right after "Payout Colors". Shown
   // whenever the threshold is set, regardless of current color mode, so the
@@ -36725,6 +38141,47 @@ function _rgUpdateBreadcrumbs() {
       null,
       () => _rgPayoutSliderInput(0)
     ));
+  }
+
+  // Aircraft Rentals (v3.50.0) — mode chip + its active filters, mirroring the
+  // existing chip convention so the strip always reflects the rentals view.
+  if (_rgAircraftMode) {
+    // Pill body (left OR right click) toggles the Rentals panel open/closed; the
+    // ✕ still exits the whole Aircraft Rentals view.
+    const rentChip = mkChip(`Aircraft Rentals (${visCount.toLocaleString('en-US')})`, () => _aaRentTogglePanel(), () => _rgToggleAircraftMode(),
+      { xTitle: 'Exit the Aircraft Rentals view', title: 'Click or right-click to show/hide the Rentals panel · ✕ to exit the view' });
+    rentChip.addEventListener('contextmenu', e => {
+      if (e.target.classList.contains('rg-bc-x')) return;   // let the ✕ keep its own behavior
+      e.preventDefault(); e.stopPropagation();
+      _aaRentTogglePanel();
+    });
+    container.appendChild(rentChip);
+  }
+  // Rental filter chips show whenever rental filtering is engaged — in the full
+  // view mode OR via a search-driven filter (which keeps the active color mode).
+  if (_rgAircraftMode || _aaRentFilterActive) {
+    if (_aaRentTerms && _aaRentTerms.length) {
+      // One chip per AND-pair term (e.g. "C700 · Kyndra", "C750 · Germany") — ✕
+      // removes just that term from the union.
+      _aaRentTerms.forEach((t, i) => {
+        container.appendChild(mkChip(_aaRentTermLabel(t), null, () => _aaRentRemoveTerm(i), { xTitle: 'Remove this aircraft filter' }));
+      });
+    } else {
+      if (_aaRentTypeFilter) {
+        const n = _aaRentTypeFilter.size;
+        const lbl = (n === 1) ? `Aircraft: ${[..._aaRentTypeFilter][0]}` : `${n} Aircraft Types`;
+        container.appendChild(mkChip(lbl, null, () => _aaRentClearTypeFilter(), { xTitle: 'Clear the aircraft filter' }));
+      }
+      if (_aaRentOwnerFilter) {
+        const no = _aaRentOwnerFilter.size;
+        container.appendChild(mkChip(`${no} A/C Owner${no !== 1 ? 's' : ''}`, null,
+          () => { _aaRentOwnerFilter = null; document.querySelectorAll('#aaRentOwnerList input[type=checkbox]').forEach(cb => cb.checked = true); _aaRentReassessFilterActive(); _aaRentApply(); }));
+      }
+    }
+    if (_aaRentMinPayout > 0) {
+      container.appendChild(mkChip(`Rent Payout >= ${_aaRentMinPayout}%`, null,
+        () => { _aaRentMinPayout = 0; const sl = document.getElementById('aaRentPayoutSlider'); if (sl) sl.value = 0; const pv = document.getElementById('aaRentPayoutVal'); if (pv) pv.textContent = '≥ 0%'; _aaRentReassessFilterActive(); _aaRentApply(); }));
+    }
   }
 
   // 3. Scenery mode — always shown
@@ -36924,6 +38381,19 @@ function _rgUpdateBreadcrumbs() {
     storeChip.addEventListener('mouseenter', () => _rgShowStoreLegend(storeChip));
     storeChip.addEventListener('mouseleave', () => _rgHideStoreLegend());
     container.appendChild(storeChip);
+  }
+
+  // 9d. Notes search filter — airports whose Scenery Library notes match the
+  // query word(s)/phrase(s). Click ✕ to clear the whole notes filter.
+  if (_rgMapNotesFilter !== null && _rgMapNotesFilter.length) {
+    const label = _rgMapNotesFilter.length === 1
+      ? `📝 “${_rgMapNotesFilter[0].label}”`
+      : `📝 ${_rgMapNotesFilter.length} note searches`;
+    container.appendChild(mkChip(label, null, () => {
+      _rgMapNotesFilter = null;
+      _rgApplyMapFilter();
+      _rgUpdateBreadcrumbs();
+    }));
   }
 
   // 10-13. Exclude chips — styled with red/danger border+text
@@ -37777,6 +39247,12 @@ function _rgApplyMapFilter() {
   }
   _rgRenderDots();
   _rgHighlightDots();
+  // Keep the Aircraft Rentals panel in sync with whatever filtering just changed
+  // (owner/country/continent dropdowns route through here), so rental options
+  // always reflect the airports currently visible on the map.
+  if (_rgAircraftMode && typeof _aaRentRefreshPanel === 'function') _aaRentRefreshPanel();
+  // Redraw on-map badges (self-clears when the mode is off).
+  if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges();
 }
 
 // Back-compat name kept because callers (and at least one chip handler at
@@ -37932,6 +39408,7 @@ function _rgMapSrPreviewSegment(seg) {
     return null;
   }
   let h;
+  if ((h = _rgMapSrAircraftQuery(seg)).length)   return { icon: '🛩', label: h[0].icao + ' ' + h[0].label, sub: 'aircraft' };
   if ((h = _rgMapSrOwnerQuery(seg)).length)      return { icon: '⊙',  label: h[0].name, sub: 'owner' };
   if ((h = _rgMapSrContinentQuery(seg)).length)  return { icon: '🌍', label: h[0].name, sub: 'continent' };
   if ((h = _rgMapSrCountryQuery(seg)).length)    return { icon: '🌍', label: h[0].name, sub: 'country' };
@@ -38024,6 +39501,7 @@ function _rgMapSrApplySegment(seg, additive, negative) {
   if ((h = _rgMapSrDeveloperQuery(seg)).length) { _rgMapSrFilterToDeveloper(h[0].name); return true; }
   if ((h = _rgMapSrStoreQuery(seg)).length)     { _rgMapSrFilterToStore(h[0].name); return true; }
   if ((h = _rgMapSrQuery(seg)).length)          { _rgMapSrSelect(h[0].icao); return true; }
+  if ((h = _rgMapSrNotesQuery(seg)).length)     { _rgMapSrFilterToNotes(seg); return true; }   // notes catch-all
   return false;
 }
 
@@ -38084,7 +39562,10 @@ function _rgMapSrRunMultiPending() {
 // occurrence of "\s[@&]\s", which is exactly the desired split point.
 function _rgMapSrParseCompound(raw) {
   if (!raw) return null;
-  if (raw.indexOf('@') < 0 && raw.indexOf('&') < 0) return null;
+  // "in" / "IN" is a synonym for "&" — whitespace-bounded so it never matches
+  // inside a word ("Berlin", "India") or a bare "in".
+  const inMatch = raw.match(/\s+in\s+/i);
+  if (raw.indexOf('@') < 0 && raw.indexOf('&') < 0 && !inMatch) return null;
   const strict = raw.search(/\s[@&]\s/);
   if (strict >= 0) {
     const left  = raw.slice(0, strict).trim();
@@ -38092,7 +39573,13 @@ function _rgMapSrParseCompound(raw) {
     if (left && right) return { left, right };
     return null;
   }
+  if (inMatch) {
+    const left  = raw.slice(0, inMatch.index).trim();
+    const right = raw.slice(inMatch.index + inMatch[0].length).trim();
+    if (left && right) return { left, right };
+  }
   const at = raw.search(/[@&]/);
+  if (at < 0 && inMatch) return null;
   if (at <= 0 || at >= raw.length - 1) return null;
   const left  = raw.slice(0, at).trim();
   const right = raw.slice(at + 1).trim();
@@ -38384,6 +39871,66 @@ function _rgMapSrStoreQuery(q) {
   return results.slice(0, 3);
 }
 
+// Parse a notes query into match tokens. Quoted "phrases" / 'phrases' stay
+// intact (matched as contiguous substrings); everything else splits into words.
+// All tokens lowercased. Smart quotes are normalised first.
+function _rgParseNotesTokens(q) {
+  if (!q) return [];
+  const tokens = [];
+  let rest = String(q).replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  rest = rest.replace(/"([^"]+)"|'([^']+)'/g, (m, a, b) => { const ph = (a || b).trim().toLowerCase(); if (ph) tokens.push(ph); return ' '; });
+  rest.split(/\s+/).forEach(w => { w = w.trim().toLowerCase(); if (w) tokens.push(w); });
+  return tokens;
+}
+// True when an airport's Scenery Library notes satisfy the active notes filter.
+function _rgNotesAirportMatches(icao) {
+  if (!_rgMapNotesFilter || !_rgMapNotesFilter.length) return false;
+  const e = (typeof _slGet === 'function') ? _slGet(icao) : null;
+  const notes = e && e.notes ? e.notes.toLowerCase() : '';
+  if (!notes) return false;
+  return _rgMapNotesFilter.some(f => f.tokens.length && f.tokens.every(t => notes.includes(t)));
+}
+// Notes search suggestion — one aggregate row counting plottable airports whose
+// notes contain ALL the query's words / quoted phrases.
+function _rgMapSrNotesQuery(q) {
+  if (!q || q.trim().length < 2) return [];
+  const tokens = _rgParseNotesTokens(q);
+  if (!tokens.length) return [];
+  const lib = (typeof _slLoad === 'function') ? _slLoad() : [];
+  let count = 0, sample = null;
+  for (const e of lib) {
+    const notes = (e.notes || '').toLowerCase();
+    if (!notes || !tokens.every(t => notes.includes(t))) continue;
+    if (typeof lookupICAO === 'function' && !lookupICAO(e.icao)) continue;   // not plottable
+    count++; if (!sample) sample = e.icao;
+  }
+  if (!count) return [];
+  return [{ query: q.trim(), count, sample }];
+}
+// Notes filter activation — same +/- semantics as store/developer.
+function _rgMapSrFilterToNotes(query) {
+  const tokens = _rgParseNotesTokens(query);
+  if (!tokens.length) { _rgMapSrClear(); return; }
+  const key = tokens.join('');
+  if (_rgMapSrNegative) {
+    if (_rgMapNotesFilter) {
+      _rgMapNotesFilter = _rgMapNotesFilter.filter(f => f.tokens.join('') !== key);
+      if (!_rgMapNotesFilter.length) _rgMapNotesFilter = null;
+    }
+    _rgApplyMapFilter(); _rgMapSrClear(); return;
+  }
+  if (_rgMapSrAdditive) {
+    if (!_rgMapNotesFilter) _rgMapNotesFilter = [];
+    if (!_rgMapNotesFilter.some(f => f.tokens.join('') === key)) _rgMapNotesFilter.push({ tokens, label: query.trim() });
+  } else {
+    _rgClearAllSearchFilters();
+    _rgMapNotesFilter = [{ tokens, label: query.trim() }];
+  }
+  _rgApplyMapFilter();
+  _rgFitAllVisibleAirports();
+  _rgMapSrClear();
+}
+
 function _rgMapSrContinentQuery(q) {
   if (q.length < 2) return [];
   const ql = q.toLowerCase();
@@ -38423,6 +39970,12 @@ function _rgMapSrRender(q, compound) {
   // show a syntax hint so the user knows what shape of query works.
   if (compound) {
     let rows = _rgMapSrCompoundQuery(compound.left, compound.right);
+    // Aircraft + location pairs ("C750 & Germany"). Not supported for negative.
+    const acRows = (_rgMapSrNegative || typeof _rgMapSrAircraftCompoundRows !== 'function')
+      ? [] : _rgMapSrAircraftCompoundRows(compound.left, compound.right);
+    // Owner + aircraft pairs ("Kyndra & C750"). Not supported for negative.
+    const oaRows = (_rgMapSrNegative || typeof _rgMapSrOwnerAircraftRows !== 'function')
+      ? [] : _rgMapSrOwnerAircraftRows(compound.left, compound.right);
     // Negative compound (`-X @ Y`) removes a tuple from the active compound
     // stack. Only show rows for tuples that are currently in the array —
     // anything else would be a confusing no-op click. If nothing's active
@@ -38432,11 +39985,11 @@ function _rgMapSrRender(q, compound) {
       rows = rows.filter(r => active.some(t =>
         t.ownerName === r.owner && t.locType === r.locType && t.locKey === r.locKey));
     }
-    if (!rows.length) {
+    if (!rows.length && !acRows.length && !oaRows.length) {
       const hint = _rgMapSrNegative
         ? 'Nothing to remove. Type <code>-owner @ place</code> matching an active compound entry to drop it from the union.'
-        : 'Format: <code>owner @ place</code> or <code>owner &amp; place</code> (either order) — e.g. <code>Kyndra @ Texas</code>';
-      const header = _rgMapSrNegative ? 'No active compound entry matches' : 'No owner + location match';
+        : 'Format: <code>owner @ place</code>, <code>aircraft &amp; place</code>, or <code>owner &amp; aircraft</code> (either order) — e.g. <code>Kyndra @ Texas</code>, <code>C750 &amp; Germany</code>, <code>Kyndra &amp; C750</code>';
+      const header = _rgMapSrNegative ? 'No active compound entry matches' : 'No matching combination';
       res.innerHTML =
         '<div class="rg-map-search-none">' + header +
         '<div style="margin-top:0.25rem;font-size:0.78rem;opacity:0.6;">' + hint + '</div>' +
@@ -38446,6 +39999,21 @@ function _rgMapSrRender(q, compound) {
     }
     const actionText = _rgMapSrNegative ? 'Remove from union &rarr;' : 'Filter map &rarr;';
     let cIdx = 0;
+    const oaCompRows = oaRows.map(r =>
+      `<div class="rg-map-sr rg-map-sr-owner" data-type="owner-aircraft" data-owner="${escAttr(r.owner)}" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${cIdx++})">` +
+        `<span class="rg-map-sr-icao">🛩</span>` +
+        `<span class="rg-map-sr-info">${esc(r.icao)} ${esc(r.label)} <span class="rg-map-sr-city">· owned by ${esc(r.owner)} · ${r.count} airport${r.count !== 1 ? 's' : ''}</span></span>` +
+        `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+        `</div>`
+    );
+    const acCompRows = acRows.map(r => {
+      const qual = r.locQualifier ? ` <span class="rg-map-sr-city">(${esc(r.locQualifier)})</span>` : '';
+      return `<div class="rg-map-sr rg-map-sr-owner" data-type="aircraft-compound" data-icao="${escAttr(r.icao)}" data-loc-type="${escAttr(r.locType)}" data-loc-key="${escAttr(r.locKey)}" data-loc-name="${escAttr(r.locName)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${cIdx++})">` +
+        `<span class="rg-map-sr-icao">🛩</span>` +
+        `<span class="rg-map-sr-info">${esc(r.icao)} ${esc(r.label)} <span class="rg-map-sr-city">in</span> ${esc(r.locName)}${qual}</span>` +
+        `<span class="rg-map-sr-owner-action">Show rentals &rarr;</span>` +
+        `</div>`;
+    });
     const compRows = rows.map(r => {
       const qual = r.locQualifier ? ` <span class="rg-map-sr-city">(${esc(r.locQualifier)})</span>` : '';
       return `<div class="rg-map-sr rg-map-sr-owner" data-type="compound" data-owner="${escAttr(r.owner)}" data-loc-type="${escAttr(r.locType)}" data-loc-key="${escAttr(r.locKey)}" data-loc-name="${escAttr(r.locName)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${cIdx++})">` +
@@ -38454,7 +40022,7 @@ function _rgMapSrRender(q, compound) {
         `<span class="rg-map-sr-owner-action">${actionText}</span>` +
         `</div>`;
     });
-    res.innerHTML = compRows.join('');
+    res.innerHTML = [...oaCompRows, ...acCompRows, ...compRows].join('');
     res.classList.add('open');
     return;
   }
@@ -38464,14 +40032,25 @@ function _rgMapSrRender(q, compound) {
   const continents = _rgMapSrContinentQuery(q);
   const developers = _rgMapSrDeveloperQuery(q);
   const stores     = _rgMapSrStoreQuery(q);
+  const notes      = (typeof _rgMapSrNotesQuery === 'function') ? _rgMapSrNotesQuery(q) : [];
   const airports   = _rgMapSrQuery(q);
-  if (!owners.length && !countries.length && !regions.length && !continents.length && !developers.length && !stores.length && !airports.length) {
+  const aircraft   = (typeof _rgMapSrAircraftQuery === 'function') ? _rgMapSrAircraftQuery(q) : [];
+  if (!aircraft.length && !owners.length && !countries.length && !regions.length && !continents.length && !developers.length && !stores.length && !notes.length && !airports.length) {
     res.innerHTML = '<div class="rg-map-search-none">No results</div>';
     res.classList.add('open');
     return;
   }
   const actionText = _rgMapSrNegative ? 'Exclude &rarr;' : 'Filter map &rarr;';
   let rowIdx = 0;
+  // Aircraft rows lead — a code that matches a rentable type wins (auto-enables
+  // the rentals view). Built first so hover indices match DOM order.
+  const aircraftRows = aircraft.map(a =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="aircraft" data-icao="${escAttr(a.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">🛩</span>` +
+    `<span class="rg-map-sr-info">${esc(a.icao)} ${esc(a.label)} <span class="rg-map-sr-city">· ${a.count} rentable</span></span>` +
+    `<span class="rg-map-sr-owner-action">Show rentals &rarr;</span>` +
+    `</div>`
+  );
   const ownerRows = owners.map(o =>
     `<div class="rg-map-sr rg-map-sr-owner" data-type="owner" data-owner="${escAttr(o.name)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
     `<span class="rg-map-sr-icao">⊙</span>` +
@@ -38514,6 +40093,13 @@ function _rgMapSrRender(q, compound) {
     `<span class="rg-map-sr-owner-action">${actionText}</span>` +
     `</div>`
   );
+  const notesRows = notes.map(n =>
+    `<div class="rg-map-sr rg-map-sr-owner" data-type="notes" data-query="${escAttr(n.query)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
+    `<span class="rg-map-sr-icao">📝</span>` +
+    `<span class="rg-map-sr-info">Notes: “${esc(n.query)}” <span class="rg-map-sr-city">· ${n.count} airport${n.count !== 1 ? 's' : ''}</span></span>` +
+    `<span class="rg-map-sr-owner-action">${actionText}</span>` +
+    `</div>`
+  );
   const apRows = airports.map(r => {
     const meta = [r.city, r.owner].filter(Boolean).map(esc).join(' · ');
     return `<div class="rg-map-sr" data-type="airport" data-icao="${escAttr(r.icao)}" onclick="_rgMapSrActivateEl(this)" onmouseenter="_rgMapSrHover(${rowIdx++})">` +
@@ -38521,7 +40107,7 @@ function _rgMapSrRender(q, compound) {
       `<span class="rg-map-sr-info">${esc(r.name)}${meta ? ' <span class="rg-map-sr-city">· ' + meta + '</span>' : ''}</span>` +
       `</div>`;
   });
-  res.innerHTML = [...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...developerRows, ...storeRows, ...apRows].join('');
+  res.innerHTML = [...aircraftRows, ...ownerRows, ...continentRows, ...countryRows, ...regionRows, ...developerRows, ...storeRows, ...notesRows, ...apRows].join('');
   res.classList.add('open');
 }
 
@@ -38555,14 +40141,156 @@ function _rgMapSrQuery(q) {
   return results.slice(0, 10);
 }
 
+// ── Aircraft-type search (v3.50.0) ───────────────────────────────────────────
+// Matches a query against RENTABLE aircraft types (by ICAO, brand, model, name).
+// Only rentable types appear, so a hit always has rentals to show.
+function _rgMapSrAircraftQuery(q) {
+  if (!q || q.length < 2 || typeof _aaRentTypeCounts === 'undefined' || !_aaRentTypeCounts.size) return [];
+  const ql = q.toLowerCase();
+  const out = [];
+  for (const icao of _aaRentTypeCounts.keys()) {
+    const il = icao.toLowerCase();
+    const label = _aaRentTypeLabel(icao);
+    const hay = (icao + ' ' + label + ' ' + _aaRentTypeName(icao)).toLowerCase();
+    if (!hay.includes(ql)) continue;
+    out.push({ icao, label, count: _aaRentTypeCounts.get(icao), score: il === ql ? 3 : il.startsWith(ql) ? 2 : 1 });
+  }
+  out.sort((a, b) => b.score - a.score || b.count - a.count || a.icao.localeCompare(b.icao));
+  return out.slice(0, 6);
+}
+
+// Aircraft + location pairs for a compound query ("C750 & Germany" either order).
+function _rgMapSrAircraftCompoundRows(left, right) {
+  const out = [], seen = new Set();
+  const consider = (acSide, locSide) => {
+    for (const a of _rgMapSrAircraftQuery(acSide))
+      for (const loc of _rgMapSrLocationMatches(locSide)) {
+        const k = a.icao + ':' + loc.type + ':' + loc.key;
+        if (seen.has(k)) continue; seen.add(k);
+        out.push({ icao: a.icao, label: a.label, locType: loc.type, locKey: loc.key, locName: loc.name, locQualifier: loc.qualifier });
+      }
+  };
+  consider(left, right);
+  consider(right, left);
+  return out.slice(0, 6);
+}
+
+// Aircraft-owner search — matches the query against owners of rentable AIRCRAFT
+// (distinct from airport owners). Drives "owner & aircraft" compounds.
+function _rgMapSrAircraftOwnerQuery(q) {
+  if (!q || q.length < 2 || typeof _aaRentOwnerCounts === 'undefined' || !_aaRentOwnerCounts.size) return [];
+  const ql = q.toLowerCase();
+  const out = [];
+  for (const [name, count] of _aaRentOwnerCounts) {
+    const nl = name.toLowerCase();
+    if (!nl.includes(ql)) continue;
+    out.push({ name, count, startsWith: nl.startsWith(ql) });
+  }
+  out.sort((a, b) => (b.startsWith - a.startsWith) || a.name.localeCompare(b.name));
+  return out.slice(0, 5);
+}
+
+// Airports that currently have an AVAILABLE plane of type icao OWNED BY ownerName
+// (the aircraft owner — airport ownership is irrelevant).
+function _rgMapSrCountAircraftOwnerType(ownerName, icao) {
+  let n = 0;
+  for (const [, arr] of _aaRentByApt)
+    if (arr.some(p => p.icao === icao && p.owner === ownerName && _aaRentIsAvailableNow(p))) n++;
+  return n;
+}
+
+// Owner + aircraft pairs for a compound query ("Kyndra & C700", either order):
+// airports holding a rentable plane of that type owned by that pilot, regardless
+// of who owns the airport.
+function _rgMapSrOwnerAircraftRows(left, right) {
+  const out = [], seen = new Set();
+  const consider = (ownerSide, acSide) => {
+    for (const o of _rgMapSrAircraftOwnerQuery(ownerSide))
+      for (const a of _rgMapSrAircraftQuery(acSide)) {
+        const k = o.name + ':' + a.icao;
+        if (seen.has(k)) continue; seen.add(k);
+        out.push({ owner: o.name, icao: a.icao, label: a.label, count: _rgMapSrCountAircraftOwnerType(o.name, a.icao) });
+      }
+  };
+  consider(left, right);
+  consider(right, left);
+  return out.filter(r => r.count > 0).slice(0, 6);
+}
+
+// Activate an owner + aircraft compound: filter to airports holding a rentable
+// plane of that type owned by that pilot (aircraft-owner + type filters, AND-
+// combined). Keeps the active color mode (no view switch).
+function _rgMapSrFilterToOwnerAircraft(ownerName, icao) {
+  if (!_aaRentTypeCounts.has(icao)) return;
+  _aaRentApplySearchTerm({ type: icao, acOwner: ownerName });
+}
+
+// Sync the panel's type checkboxes to _aaRentTypeFilter (after a search sets it).
+function _aaRentSyncTypeChecks() {
+  const sel = _aaRentTypeFilter;
+  document.querySelectorAll('#aaRentTypeList .aar-trow').forEach(row => {
+    const cb = row.querySelector('input'); if (cb) cb.checked = (sel === null || sel.has(row.dataset.icao));
+  });
+}
+function _aaRentSyncOwnerChecks() {
+  const sel = _aaRentOwnerFilter;
+  document.querySelectorAll('#aaRentOwnerList .aar-trow').forEach(row => {
+    const cb = row.querySelector('input'); if (cb) cb.checked = (sel === null || sel.has(row.dataset.owner));
+  });
+}
+
+// Activate an aircraft-type search result: enable rentals mode and set the type
+// filter (replace / + add / - remove via the standard prefix modifiers).
+// Apply a search term (one AND-pair) to the rental filter — replace, +add, or
+// -remove per the search prefix flags. Builds the union of AND-pair terms and
+// keeps the active color mode (engages search-filter mode, not the view mode).
+function _aaRentApplySearchTerm(term) {
+  if (_rgMapSrNegative) {
+    if (_aaRentTerms) {
+      _aaRentTerms = _aaRentTerms.filter(t => !_aaRentTermEq(t, term));
+      if (!_aaRentTerms.length) _aaRentTerms = null;
+    }
+  } else {
+    if (!_rgMapSrAdditive && !_rgAircraftMode) _rgClearAllSearchFilters(); // fresh intent
+    if (!_rgMapSrAdditive) _aaRentTerms = null;
+    _aaRentTypeFilter = null; _aaRentOwnerFilter = null;  // terms supersede the per-axis sets
+    _aaRentAddTerm(term);
+  }
+  if (!_rgAircraftMode) _aaRentFilterActive = !!(_aaRentTerms && _aaRentTerms.length);
+  _aaRentSyncTypeChecks();
+  if (typeof _aaRentSyncOwnerChecks === 'function') _aaRentSyncOwnerChecks();
+  _aaRentApply();
+  if (typeof _rgFitAllVisibleAirports === 'function') _rgFitAllVisibleAirports();
+  _rgMapSrClear();
+}
+
+function _rgMapSrFilterToAircraft(icao) {
+  if (!_aaRentTypeCounts.has(icao)) return;
+  _aaRentApplySearchTerm({ type: icao });
+}
+
+// Activate an aircraft + location compound ("C750 & Germany"): fresh intent —
+// clear prior search filters, then set the type filter AND the location filter
+// (which AND-combine via the rental gate).
+function _rgMapSrFilterToAircraftLoc(icao, locType, locKey, locName) {
+  if (!_aaRentTypeCounts.has(icao)) return;
+  // Location rides INSIDE the term (not the general country/region filters) so it
+  // binds to this term's aircraft type — no type×location cross-product on +add.
+  _aaRentApplySearchTerm({ type: icao, locType, locKey, locName });
+}
+
 function _rgMapSrActivateEl(el) {
   if (el.dataset.type === 'compound')       _rgMapSrFilterToCompound(el.dataset.owner, el.dataset.locType, el.dataset.locKey, el.dataset.locName);
+  else if (el.dataset.type === 'owner-aircraft')    _rgMapSrFilterToOwnerAircraft(el.dataset.owner, el.dataset.icao);
+  else if (el.dataset.type === 'aircraft-compound') _rgMapSrFilterToAircraftLoc(el.dataset.icao, el.dataset.locType, el.dataset.locKey, el.dataset.locName);
+  else if (el.dataset.type === 'aircraft')  _rgMapSrFilterToAircraft(el.dataset.icao);
   else if (el.dataset.type === 'owner')     _rgMapSrFilterToOwner(el.dataset.owner);
   else if (el.dataset.type === 'continent') _rgMapSrFilterToContinent(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'country')   _rgMapSrFilterToCountry(el.dataset.iso, el.dataset.name);
   else if (el.dataset.type === 'region')    _rgMapSrFilterToRegion(el.dataset.code, el.dataset.name);
   else if (el.dataset.type === 'developer') _rgMapSrFilterToDeveloper(el.dataset.name);
   else if (el.dataset.type === 'store')     _rgMapSrFilterToStore(el.dataset.name);
+  else if (el.dataset.type === 'notes')     _rgMapSrFilterToNotes(el.dataset.query);
   else _rgMapSrSelect(el.dataset.icao);
 }
 
@@ -38656,6 +40384,7 @@ function _rgClearAllSearchFilters() {
   _rgMapContinentFilter = null;
   _rgMapDeveloperFilter = null;
   _rgMapStoreFilter     = null;
+  _rgMapNotesFilter     = null;
   _rgMapCompoundFilter  = null;
   _rgPinnedIcaos.clear();
   _rgPinExclusiveMode   = false;
@@ -38666,6 +40395,14 @@ function _rgClearAllSearchFilters() {
   _rgExcludedIcaos.clear();
   _rgExcludedDevelopers.clear();
   _rgExcludedStores.clear();
+  // Search-driven aircraft filter is cleared by a fresh search too — but only
+  // outside the full view mode (in mode, the mode owns the type selection).
+  if (typeof _rgAircraftMode !== 'undefined' && !_rgAircraftMode) {
+    _aaRentFilterActive = false;
+    _aaRentTypeFilter = null;
+    _aaRentOwnerFilter = null;
+    _aaRentTerms = null;
+  }
   _rgBuildMapOwnerList();
   _rgUpdateMapOwnerBtn();
 }
@@ -39384,6 +41121,19 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">🛩</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Aircraft Rentals</div>
+          <div class="help-feature-desc">
+            Turn on <strong>Aircraft Rentals</strong> from the map menu (v3.50.0+) to see where SimFly&rsquo;s rentable aircraft are, refreshed automatically from a live feed. Every airport&rsquo;s dot recolors by the best <strong>pilot payout</strong> available there &mdash; the cut the renting pilot keeps, from 0% up to 60% &mdash; and a Rentals panel opens for filtering.<br/><br/>
+            <strong>On the map</strong>, each airport can show a small stack of chips listing the aircraft types available there. The badges thin out automatically when you&rsquo;re zoomed out and reveal more (up to ten chips per airport) as you zoom in; when space is tight, your own SimFly-owned airports get priority. Hover a badge for a full breakdown &mdash; type, registration, owner, payout, and live availability for every matching aircraft.<br/><br/>
+            <strong>The panel</strong> lets you filter by aircraft category (the 1&ndash;7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor), pick aircraft types and owners, and toggle &ldquo;available now only.&rdquo; Each section collapses, and the panel is draggable and resizable. The <strong>results table</strong> lists every matching aircraft &mdash; sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport. Aircraft blocked by a ground-operations timer show their countdown in red.<br/><br/>
+            Closing the panel with its ✕ leaves the rental colors and badges on the map; use the menu item or the breadcrumb pill (click it to show/hide the panel, ✕ to exit) to turn the whole view off.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">✈</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Point-to-Point Distance</div>
@@ -39949,10 +41699,26 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.50.0</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &mdash; Aircraft Rentals view.</strong> A new top-level 🛩 <em>Aircraft Rentals</em> mode (in the map menu) shows where SimFly's rentable aircraft are, refreshed automatically from a live feed. Turn it on and every airport's dot recolors by the best <strong>pilot payout</strong> available there (the cut the renting pilot keeps, 0&ndash;60%), and a Rentals panel opens for filtering and browsing. Closing the panel's ✕ leaves the rental info on the map; the menu item or the breadcrumb pill turns the whole view off.</li>
+          <li><strong>On-map aircraft badges.</strong> Each airport can show a small stack of chips listing the aircraft types available there (best payout first, alphabetical). The map stays readable on its own: badges thin out when zoomed out and reveal more detail (up to ten chips per airport) as you zoom in, and when space is tight your own SimFly-owned airports get priority. Hover a badge for a full breakdown &mdash; type, registration, owner, payout and live availability for every matching aircraft.</li>
+          <li><strong>Rich filtering panel.</strong> Filter rentals by <strong>aircraft category</strong> (the familiar 1&ndash;7 circles, with All / None / Invert), a draggable <strong>pilot-payout</strong> gradient that doubles as a minimum-payout slider (right-click to recolor it), <strong>aircraft type</strong> and <strong>aircraft owner</strong> multi-selects, and an &ldquo;available now only&rdquo; toggle. Every section collapses, the panel is draggable and resizable, and your layout preferences are remembered.</li>
+          <li><strong>Results table.</strong> A sortable, groupable list of every matching aircraft &mdash; sort by type, owner, airport, payout or availability; group by owner, airport or type; and drag the dividers between columns to resize them (double-click to auto-fit). Click any row to fly to that airport. Aircraft blocked by a ground-operations timer show their countdown in red.</li>
+          <li><strong>Search airports by their notes.</strong> The map search box now matches your Scenery Library <em>Notes</em> &mdash; type words or a &ldquo;quoted phrase&rdquo; and the airports whose notes contain them appear on the map.</li>
+          <li><strong>Direct-launch URL.</strong> Add <code>?mode=owner</code>, <code>?mode=map</code> or <code>?mode=simbrief</code> to the address to skip the start screen and open straight into that view.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.49.0</span>
-          <span class="release-date">June 25, 2026 &middot; Current</span>
+          <span class="release-date">June 25, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -52366,6 +54132,17 @@ function rgSendToFlightPlanner() {
           </div>
         </div>
 
+        <!-- 🛩 Rentals pulldown (v3.50.0) — Aircraft Rentals view mode + filters. A
+             top-level peer to Tools / Display / Live so rental options have a home. -->
+        <div class="rg-pulldown-wrap" id="rgRentalsWrap">
+          <button class="rg-btn rg-pulldown-trigger" id="rgRentalsBtn" onclick="_rgToggleRentalsMenu(event)" title="Aircraft Rentals — show where SimFly aircraft are available to rent, where they're based, when they free up, and the pilot payout %">🛩 <span class="rg-btn-label">Rentals</span> <span class="rg-pulldown-caret">▾</span></button>
+          <div class="rg-pulldown" id="rgRentalsMenu">
+            <button class="rg-btn rg-pulldown-row" id="rgAircraftModeBtn" onclick="_rgRentalsMenuToggle();_rgCloseAnyPulldown()" title="Toggle the Aircraft Rentals view — dots recolor by the best rental payout at each airport, and the Rentals panel opens for filtering by aircraft type, owner, payout, and availability"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">Aircraft Rentals</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <button class="rg-btn rg-pulldown-row" id="rgRentResetBtn" onclick="_aaRentResetFilters();_rgCloseAnyPulldown()" title="Reset the rental filters (aircraft type, owner, minimum payout, availability) without leaving the Rentals view"><span class="rg-row-icon">↺</span><span class="rg-btn-label">Reset Rental Filters</span></button>
+          </div>
+        </div>
+
         <span class="afk-btn-wrap"><button class="rg-btn" id="afkAlertsBtn" onclick="_afkOpenConfig()" title="AFK Alerts — get notified when key events happen while you're away from the keyboard">🔔 <span class="rg-btn-label">Alerts</span></button><span class="afk-btn-badge" id="afkBtnBadge">0</span></span>
         <span class="rg-phase-text" id="rgPhaseText"></span>
         <!-- v3.6.21 — #rgHdrRoute (oversized centre dep→arr readout) removed; the
@@ -52455,6 +54232,351 @@ function rgSendToFlightPlanner() {
 
     <div id="rgMapContainer">
       <div id="rgPhaseOverlay" class="rg-phase-overlay"></div>
+
+      <!-- ── Aircraft Rentals control panel (v3.50.0) — shown only in Aircraft
+           Rentals view mode. Draggable like the payout legend. Type multi-select
+           is the primary control (players hunt by aircraft type). ───────────── -->
+      <style>
+        #aaRentPanel { position:absolute; top:50px; right:8px; z-index:1003;
+          width:352px; height:600px; min-width:344px; min-height:240px;
+          display:none; flex-direction:column; overflow:hidden;
+          background:rgba(13,20,30,0.95); border:1px solid rgba(46,204,113,0.42);
+          border-radius:8px; box-shadow:0 6px 24px rgba(0,0,0,0.55); pointer-events:all;
+          user-select:none; font-family:'Rajdhani',sans-serif; box-sizing:border-box; }
+        #aaRentPanel.aar-open { display:flex; }
+        /* Resize handles — drag any edge or corner. Sit just inside the border so
+           overflow:hidden doesn't clip them; thin enough to clear the content. */
+        .aar-rz { position:absolute; z-index:5; }
+        .aar-rz-t { top:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .aar-rz-b { bottom:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .aar-rz-l { left:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .aar-rz-r { right:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .aar-rz-tl { top:0; left:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .aar-rz-tr { top:0; right:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .aar-rz-bl { bottom:0; left:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .aar-rz-br { bottom:0; right:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .aar-rz-br::after { content:''; position:absolute; right:2px; bottom:2px; width:8px; height:8px; pointer-events:none; opacity:0.55;
+          background:linear-gradient(135deg,transparent 0 45%,#2ecc71 45% 60%,transparent 60% 72%,#2ecc71 72% 85%,transparent 85%); }
+        .aar-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:10px 13px 12px; }
+        .aar-sec { font-family:'Orbitron',sans-serif; font-size:1.08rem; font-weight:700; letter-spacing:0.08em;
+          text-transform:uppercase; color:#3fe089; margin:14px 0 6px; text-shadow:0 0 8px rgba(46,204,113,0.35); }
+        .aar-sec:first-child { margin-top:2px; }
+        .aar-sec-collapse { cursor:pointer; display:flex; align-items:center; }
+        .aar-sec-collapse:hover { filter:brightness(1.18); }
+        .aar-tri { display:inline-block; width:0.85em; margin-right:6px; font-size:0.78em; line-height:1; flex-shrink:0; }
+        .aar-hint { font-size:0.96rem; color:#8b9aab; line-height:1.32; margin:-1px 0 7px; }
+        .aar-catrow { display:flex; gap:6px; flex-wrap:wrap; margin:2px 0 2px; }
+        .aar-catrow .dist-cat-btn { width:1.95rem; height:1.95rem; font-size:0.98rem; }
+        .aar-cattools { display:flex; gap:14px; margin:6px 0 2px; }
+        .aar-cattools button { background:none; border:none; color:#4fd2ff; cursor:pointer;
+          font-family:'Rajdhani',sans-serif; font-size:1.05rem; font-weight:600; padding:0; }
+        .aar-cattools button:hover { color:#8fe3ff; }
+        /* Column-resize dividers — sit on each header cell's right edge (in the gap). */
+        .aar-col-resize { position:absolute; top:0; bottom:0; right:-5px; width:11px; cursor:col-resize; z-index:5; }
+        .aar-col-resize::after { content:''; position:absolute; left:4px; top:1px; bottom:1px; width:2px; border-radius:1px;
+          background:rgba(255,255,255,0.16); transition:background 0.12s, box-shadow 0.12s; }
+        .aar-col-resize:hover::after, .aar-col-resize.aar-col-dragging::after { background:#3fe089; box-shadow:0 0 5px rgba(63,224,137,0.6); }
+        .aar-seg { display:flex; border:1px solid rgba(255,255,255,0.16); border-radius:6px; overflow:hidden; }
+        .aar-seg button { flex:1; background:none; border:none; border-left:1px solid rgba(255,255,255,0.12);
+          color:#c2cedb; font-family:'Rajdhani',sans-serif; font-size:1.18rem; padding:7px 0; cursor:pointer; }
+        .aar-seg button:first-child { border-left:none; }
+        .aar-seg button.active { background:#2ecc71; color:#06351f; font-weight:700; }
+        .aar-legend { display:flex; align-items:center; gap:7px; margin-top:8px; font-size:1.08rem; color:#b4c2d2; }
+        .aar-barwrap { position:relative; flex:1; height:15px; border-radius:4px; }
+        .aar-barwrap .aar-grad { position:absolute; inset:0; border-radius:4px;
+          background:linear-gradient(to right,#d0454a,#e8843c 33%,#e8c13a 55%,#9bd64a 75%,#2ecc71); }
+        .aar-filtzone { position:absolute; top:0; left:0; bottom:0; width:0; background:rgba(0,0,0,0.62); border-radius:4px 0 0 4px; pointer-events:none; }
+        #aaRentPayoutSlider { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; margin:0; padding:0; }
+        .aar-thumb { position:absolute; top:-2px; bottom:-2px; left:0; width:3px; background:#fff; border-radius:2px; box-shadow:0 0 6px rgba(0,0,0,0.9); pointer-events:none; display:none; }
+        .aar-reset { width:100%; margin-top:12px; background:rgba(255,140,40,0.10); border:1px solid rgba(255,140,40,0.4); color:#ffaa55;
+          border-radius:7px; padding:8px 0; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:1.13rem; font-weight:600; }
+        .aar-reset:hover { background:rgba(255,140,40,0.18); }
+        /* Sortable aircraft-type table — header + rows share one grid template. */
+        .aar-thead, #aaRentTypeList .aar-trow { display:grid; grid-template-columns:18px 56px minmax(0,0.8fr) minmax(0,1.25fr) 34px; gap:13px; align-items:center; }
+        .aar-thead { padding:3px 10px 5px; }
+        .aar-th { font-family:'Rajdhani',sans-serif; font-weight:600; font-size:1.07rem; letter-spacing:0.03em; text-transform:uppercase; color:#aab8c8; cursor:pointer; white-space:nowrap; user-select:none; }
+        .aar-th:hover { color:#eaf4ff; }
+        .aar-th.active { color:#3fe089; }
+        .aar-th-count { text-align:right; }
+        .aar-th-arr { font-size:0.95em; }
+        #aaRentTypeList .aar-trow { justify-content:initial; }
+        .aar-c-icao { font-weight:600; color:#eaf4ff; }
+        .aar-c-mfr, .aar-c-type { color:#bcc9d8; font-size:1.08rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        #aaRentTypeList .aar-trow .aar-tcount { text-align:right; }
+        .aar-zero { width:21px; height:21px; border-radius:50%; background:#83817c; border:1px solid rgba(255,255,255,0.18);
+          flex-shrink:0; cursor:pointer; transition:box-shadow 0.12s,opacity 0.12s; }
+        .aar-input { width:100%; box-sizing:border-box; background:#0a121c; border:1px solid rgba(255,255,255,0.16);
+          border-radius:6px; padding:7px 9px; color:#eef3f8; font-family:'Rajdhani',sans-serif; font-size:1.18rem; }
+        .aar-input::placeholder { color:#8b9aab; }
+        .aar-input:focus { outline:none; border-color:#2ecc71; }
+        .aar-typetools { display:flex; gap:10px; margin:6px 0 4px; }
+        .aar-typetools button { background:none; border:none; color:#4fd2ff; cursor:pointer;
+          font-family:'Rajdhani',sans-serif; font-size:1.10rem; font-weight:600; padding:0; }
+        .aar-typelist { height:150px; min-height:60px; overflow:auto; resize:vertical;
+          border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:2px 0; background:rgba(0,0,0,0.18); }
+        .aar-ownerlist { height:112px; }
+        .aar-trow { display:flex; align-items:center; justify-content:space-between; gap:8px;
+          padding:4px 9px; font-size:1.18rem; color:#eaf0f6; cursor:pointer; }
+        .aar-trow:hover { background:rgba(255,255,255,0.07); }
+        .aar-trow input { accent-color:#2ecc71; margin:0; cursor:pointer; width:15px; height:15px; }
+        .aar-trow .aar-tcount { color:#aab8c8; font-size:1.10rem; }
+        .aar-row { display:flex; align-items:center; justify-content:space-between; margin-top:9px; }
+        .aar-row label { font-size:1.2rem; color:#eaf0f6; }
+        .aar-payval { font-size:1.10rem; color:#2ecc71; }
+        .aar-toggle { width:34px; height:18px; border-radius:999px; background:#26303d; position:relative; cursor:pointer; flex-shrink:0; }
+        .aar-toggle.on { background:#2ecc71; }
+        .aar-toggle .aar-knob { position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%;
+          background:#9fb0c3; transition:left 0.12s,background 0.12s; }
+        .aar-toggle.on .aar-knob { left:18px; background:#06351f; }
+        .aar-summary { margin-top:11px; padding-top:9px; border-top:1px solid rgba(255,255,255,0.1);
+          font-size:1.18rem; color:#b4c2d2; }
+        .aar-summary b { color:#3fe089; }
+        /* ── Results matrix: one row per rentable aircraft, sortable + groupable ── */
+        /* Results grouping toggle — a real button, not a faint link. */
+        .aar-grouplink { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+          font-family:'Rajdhani',sans-serif; text-transform:none; letter-spacing:0.01em; font-size:1.0rem; font-weight:600;
+          color:#d6f3e4; background:rgba(46,204,113,0.14); border:1px solid rgba(46,204,113,0.55);
+          border-radius:7px; padding:5px 11px; line-height:1; }
+        .aar-grouplink::before { content:'⊞'; font-size:1.05em; opacity:0.9; }
+        .aar-grouplink:hover { color:#eafff4; background:rgba(46,204,113,0.26); border-color:rgba(46,204,113,0.8); }
+        .aar-grouplink:active { transform:translateY(1px); }
+        .aar-reshead, #aaRentResults .aar-prow {
+          display:grid; grid-template-columns:52px minmax(48px,0.7fr) minmax(36px,0.55fr) minmax(32px,0.45fr) minmax(88px,1.15fr); gap:9px; align-items:center; }
+        .aar-reshead { padding:3px 8px 5px; margin-top:2px; }
+        .aar-reshead .aar-th { font-size:1.0rem; }   /* "Available" is a long header — slightly tighter so it fits */
+        .aar-reshead .aar-th-r { text-align:right; }
+        .aar-results { margin-top:4px; height:196px; min-height:60px; overflow:auto; resize:vertical;
+          border:1px solid rgba(255,255,255,0.1); border-radius:6px; background:rgba(0,0,0,0.18); padding:1px 0; }
+        .aar-prow { padding:6px 10px; border-top:1px solid rgba(255,255,255,0.06); cursor:pointer; font-size:1.13rem; }
+        .aar-prow:hover { background:rgba(0,200,255,0.08); }
+        .aar-p-type { font-weight:600; color:#eaf4ff; }
+        .aar-p-owner { color:#cdd9e6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .aar-p-apt { color:#aab8c8; font-family:'Rajdhani',sans-serif; }
+        .aar-p-pay { text-align:right; font-weight:700; }
+        .aar-p-av { text-align:right; font-size:1.03rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .aar-av-now { color:#3fe089; }
+        .aar-av-soon { color:#ff5a5a; }   /* unavailable — ground-ops timer running */
+        .aar-av-no { color:#8b9aab; }
+        .aar-pgrp { padding:7px 10px 5px; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:1.10rem;
+          color:#cfe0f0; background:#13202e; border-top:1px solid rgba(255,255,255,0.09);
+          text-shadow:0 1px 2px rgba(0,0,0,0.45); position:sticky; top:0; z-index:1; }
+        .aar-pgrp:first-child { border-top:none; }
+        .aar-pgrp-y { color:#ffe14d; }       /* owner + type groups — bright accent yellow */
+        .aar-pgrp-apt { cursor:pointer; }
+        .aar-pgrp-apt:hover { background:rgba(127,220,255,0.12); }
+        .aar-pgrp-n { color:#8b9aab; font-weight:600; }
+        .aar-empty { color:#aab8c8; font-size:1.15rem; padding:10px 2px; text-align:center; }
+        /* ── Light-mode theme for the rentals panel + palette editor ──────────
+           The panel is hardcoded dark; these overrides flip it to a light surface
+           with dark text in light mode, including the inline-styled bits (close ✕,
+           legend % labels) that CSS classes can't reach without attribute targeting. */
+        body.light-mode #aaRentPanel, body.light-mode #aaRentPaletteEditor {
+          background:rgba(247,249,251,0.98); border-color:rgba(15,140,80,0.5); box-shadow:0 6px 24px rgba(20,30,50,0.22); }
+        body.light-mode #aaRentPanel .aa-chip-draghandle { border-bottom-color:rgba(0,0,0,0.1); }
+        body.light-mode #aaRentPanel .aar-sec { color:#0f9d58; text-shadow:none; }
+        body.light-mode #aaRentPanel .aar-hint { color:#54657a; }
+        body.light-mode #aaRentPanel .aar-th { color:#54657a; }
+        body.light-mode #aaRentPanel .aar-th:hover { color:#0d1b2a; }
+        body.light-mode #aaRentPanel .aar-th.active { color:#0f9d58; }
+        body.light-mode #aaRentPanel .aar-seg { border-color:rgba(0,0,0,0.18); }
+        body.light-mode #aaRentPanel .aar-seg button { color:#3f4d5c; border-left-color:rgba(0,0,0,0.12); }
+        body.light-mode #aaRentPanel .aar-seg button.active { color:#06351f; }
+        body.light-mode #aaRentPanel .aar-legend { color:#54657a; }
+        body.light-mode #aaRentPanel .aar-input { background:#ffffff; border-color:rgba(0,0,0,0.22); color:#16202c; }
+        body.light-mode #aaRentPanel .aar-input::placeholder { color:#7a8a9b; }
+        body.light-mode #aaRentPanel .aar-typetools button,
+        body.light-mode #aaRentPanel .aar-cattools button { color:#0a87c9; }
+        body.light-mode #aaRentPanel .aar-typelist { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.15); }
+        body.light-mode #aaRentPanel .aar-trow { color:#16202c; }
+        body.light-mode #aaRentPanel .aar-trow:hover { background:rgba(0,0,0,0.06); }
+        body.light-mode #aaRentPanel .aar-c-icao { color:#0d1b2a; }
+        body.light-mode #aaRentPanel .aar-c-mfr, body.light-mode #aaRentPanel .aar-c-type,
+        body.light-mode #aaRentPanel .aar-trow .aar-tcount { color:#54657a; }
+        body.light-mode #aaRentPanel .aar-row label { color:#16202c; }
+        body.light-mode #aaRentPanel .aar-toggle { background:#c2ccd6; }
+        body.light-mode #aaRentPanel .aar-toggle .aar-knob { background:#ffffff; }
+        body.light-mode #aaRentPanel .aar-summary { color:#54657a; border-top-color:rgba(0,0,0,0.12); }
+        body.light-mode #aaRentPanel .aar-summary b { color:#0f9d58; }
+        body.light-mode #aaRentPanel .aar-results { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.15); }
+        body.light-mode #aaRentPanel .aar-prow { border-top-color:rgba(0,0,0,0.08); }
+        body.light-mode #aaRentPanel .aar-prow:hover { background:rgba(0,150,200,0.10); }
+        body.light-mode #aaRentPanel .aar-p-type { color:#0d1b2a; }
+        body.light-mode #aaRentPanel .aar-p-owner { color:#2c3a49; }
+        body.light-mode #aaRentPanel .aar-p-apt { color:#54657a; }
+        body.light-mode #aaRentPanel .aar-av-now { color:#0f9d58; }
+        body.light-mode #aaRentPanel .aar-av-soon { color:#cc2b2b; }
+        body.light-mode #aaRentPanel .aar-av-no { color:#7a8a9b; }
+        body.light-mode #aaRentPanel .aar-pgrp { color:#16202c; background:#e7edf3; border-top-color:rgba(0,0,0,0.1); text-shadow:none; }
+        body.light-mode #aaRentPanel .aar-pgrp-y { color:#8a6d00; }   /* darker amber — readable on light */
+        body.light-mode #aaRentPanel .aar-pgrp-n { color:#7a8a9b; }
+        body.light-mode #aaRentPanel .aar-grouplink { color:#0c6b3f; background:rgba(15,157,88,0.12); border-color:rgba(15,157,88,0.5); }
+        body.light-mode #aaRentPanel .aar-grouplink:hover { color:#06351f; background:rgba(15,157,88,0.2); border-color:rgba(15,157,88,0.75); }
+        body.light-mode #aaRentPanel .aar-empty { color:#54657a; }
+        /* inline-styled elements (override JS-set inline color with !important) */
+        body.light-mode #aaRentPanel .aa-chip-draghandle button, body.light-mode #aaRentPaletteEditor .aa-chip-draghandle button { color:rgba(0,0,0,0.45) !important; }
+        body.light-mode #aaRentPanel .aa-chip-draghandle button:hover, body.light-mode #aaRentPaletteEditor .aa-chip-draghandle button:hover { color:#000 !important; }
+        body.light-mode #aaRentPanel span[style*="color:#7d8ea3"] { color:#54657a !important; }
+        body.light-mode #aaRentPaletteEditor, body.light-mode #aaRentPaletteEditor div[style*="color:rgba(255,255,255"] { color:#3f4d5c !important; }
+        body.light-mode #aaRentPaletteEditor #aaRentPaletteStops span { color:#54657a !important; }
+        body.light-mode #aaRentPanel .aa-chip-draghandle span[style*="color:#2ecc71"],
+        body.light-mode #aaRentPaletteEditor .aa-chip-draghandle span[style*="color:#2ecc71"] { color:#0c8a4c !important; }
+        body.light-mode #aaRentPayoutLbl { color:#a96a12 !important; }
+        body.light-mode #aaRentPanel .aar-reset { color:#b5731a; background:rgba(255,140,40,0.12); }
+        /* Rentals section inside the airport hover tooltip (.rg-dot-tip) */
+        /* font-size 1.2em — the rental availability block reads a touch larger
+           than the other dot tooltip fields (dialed back from 2em per feedback). */
+        .rg-dt-rent { display:block; margin-top:5px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.16); font-size:1.2em; }
+        .rg-dt-rent-hdr { display:block; font-weight:700; color:#2ecc71; margin-bottom:2px; }
+        .rg-dt-rent-row { display:flex; justify-content:space-between; gap:12px; line-height:1.5; }
+        .rg-dt-rent-type { color:#eaf4ff; font-weight:600; }
+        .rg-dt-rent-x { color:#7d8ea3; font-weight:400; }
+        .rg-dt-rent-meta { color:#9fb0c3; white-space:nowrap; }
+        .rg-dt-rent-now { color:#2ecc71; }
+        .rg-dt-rent-soon { color:#ff5a5a; }   /* unavailable — ground-ops timer running */
+        /* On-map rental badges — strip Leaflet's tooltip box/arrow, keep only the pill */
+        .leaflet-tooltip.aar-badge-tip { background:transparent; border:none; box-shadow:none; padding:0; margin:0; white-space:nowrap; opacity:1; }
+        .leaflet-tooltip.aar-badge-tip::before { display:none !important; border:none !important; }
+        /* Multi-chip badge stack — one chip per aircraft type, best payout first. */
+        .aar-bstack { display:inline-flex; flex-direction:column; align-items:flex-start; gap:2px; }
+        .aar-chip { display:inline-block; font-family:'Rajdhani',sans-serif; font-weight:600; font-size:15px;
+          line-height:1.25; padding:1px 7px; border-radius:7px; background:rgba(8,13,20,0.88);
+          border:1px solid rgba(255,255,255,0.15); text-shadow:0 0 3px rgba(0,0,0,0.9); white-space:nowrap; }
+        .aar-chip-more { color:#9fb0c3; font-weight:600; margin-left:5px; }
+        /* badge marker wrapper — strip Leaflet's default white divIcon box */
+        .leaflet-div-icon.aar-badge-icon { background:transparent; border:none; width:auto; height:auto; }
+        /* comprehensive badge hover tooltip */
+        /* width:max-content lets the tooltip grow to fit the columns (incl. long
+           owner names) instead of being capped by the header's width. */
+        .aar-bdetail { font-family:'Rajdhani',sans-serif; min-width:226px; width:max-content; }
+        .aar-bd-hdr { font-family:'Orbitron',sans-serif; font-size:1.12rem; font-weight:700; color:#2ecc71; }
+        .aar-bd-sub { font-size:1.07rem; color:#7d8ea3; margin-bottom:5px; }
+        /* Aligned 5-column grid: Type · Reg · Owner · Pay · Status. */
+        .aar-bd-grid { display:grid; grid-template-columns:auto auto minmax(40px,max-content) auto auto;
+          column-gap:16px; row-gap:2px; align-items:baseline; font-size:1.2rem; line-height:1.4; }
+        .aar-bd-gh { font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:700; letter-spacing:0.05em;
+          text-transform:uppercase; color:#8b9aab; border-bottom:1px solid rgba(255,255,255,0.14);
+          padding-bottom:3px; margin-bottom:2px; }
+        .aar-bd-c { white-space:nowrap; }
+        .aar-bd-type b { color:#eaf4ff; font-weight:700; }
+        .aar-bd-reg { color:#cdd9e6; }
+        .aar-bd-own { color:#7d8ea3; white-space:nowrap; }
+        .aar-bd-pay { text-align:right; font-weight:600; }
+        .aar-bd-stat { color:#9fb0c3; }
+        .aar-bd-now { color:#2ecc71; }
+        .aar-bd-soon { color:#e0a64a; }
+        .aar-bd-ground { color:#ff5a5a; }   /* unavailable — ground-ops timer running */
+        .aar-bd-more { color:#7d8ea3; font-size:1.07rem; margin-top:4px; }
+      </style>
+      <div id="aaRentPanel" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+        <div class="aar-rz aar-rz-t" onpointerdown="_aaRentResizeStart(event,'n')"></div>
+        <div class="aar-rz aar-rz-b" onpointerdown="_aaRentResizeStart(event,'s')"></div>
+        <div class="aar-rz aar-rz-l" onpointerdown="_aaRentResizeStart(event,'w')"></div>
+        <div class="aar-rz aar-rz-r" onpointerdown="_aaRentResizeStart(event,'e')"></div>
+        <div class="aar-rz aar-rz-tl" onpointerdown="_aaRentResizeStart(event,'nw')"></div>
+        <div class="aar-rz aar-rz-tr" onpointerdown="_aaRentResizeStart(event,'ne')"></div>
+        <div class="aar-rz aar-rz-bl" onpointerdown="_aaRentResizeStart(event,'sw')"></div>
+        <div class="aar-rz aar-rz-br" onpointerdown="_aaRentResizeStart(event,'se')"></div>
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,0.1);" onpointerdown="_aaChipDragFromHandle(event,'aaRentPanel')" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-family:'Orbitron',sans-serif;font-size:0.8rem;font-weight:700;color:#2ecc71;letter-spacing:0.06em;">🛩 RENTALS</span></span>
+          <button onclick="_aaRentClosePanel()" title="Close this panel — rental dots &amp; badges stay on the map. Use the 🛩 menu or breadcrumb to turn the Rentals view off." style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 12px;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+        </div>
+        <div class="aar-body">
+          <div class="aar-sec">Show badges as</div>
+          <div class="aar-seg" id="aaRentBadgeSeg">
+            <button data-mode="payout" onclick="_aaRentSetBadgeMode('payout')">Payout %</button>
+            <button data-mode="count" onclick="_aaRentSetBadgeMode('count')">Count</button>
+            <button data-mode="type" onclick="_aaRentSetBadgeMode('type')">Type</button>
+          </div>
+
+          <!-- Aircraft-category filter — same circles/colors as the map title bar,
+               but they filter rentals by aircraft category (1-7). -->
+          <div class="aar-sec aar-sec-collapse" data-key="cat" onclick="_aaRentToggleSection('cat')"><span class="aar-tri">▼</span>Aircraft category</div>
+          <div class="aar-sec-body" id="aaRentSec-cat">
+          <div class="aar-catrow" id="aaRentCatRow">
+            <button class="dist-cat-btn active" data-cat="1" style="--rg-cat-color:#FF4040" onclick="_aaRentToggleCat(1)" title="Cat 1 — Light GA (single piston)" tabindex="-1">1</button>
+            <button class="dist-cat-btn active" data-cat="2" style="--rg-cat-color:#FF8800" onclick="_aaRentToggleCat(2)" title="Cat 2 — GA Twin / Light turboprop" tabindex="-1">2</button>
+            <button class="dist-cat-btn active" data-cat="3" style="--rg-cat-color:#FFEE00" onclick="_aaRentToggleCat(3)" title="Cat 3 — Turboprop single / pressurised piston" tabindex="-1">3</button>
+            <button class="dist-cat-btn active" data-cat="4" style="--rg-cat-color:#44FF44" onclick="_aaRentToggleCat(4)" title="Cat 4 — Large turboprop / twin turboprop" tabindex="-1">4</button>
+            <button class="dist-cat-btn active" data-cat="5" style="--rg-cat-color:#00DDFF" onclick="_aaRentToggleCat(5)" title="Cat 5 — Business jet / Regional jet" tabindex="-1">5</button>
+            <button class="dist-cat-btn active" data-cat="6" style="--rg-cat-color:#4466FF" onclick="_aaRentToggleCat(6)" title="Cat 6 — Narrowbody airliner" tabindex="-1">6</button>
+            <button class="dist-cat-btn active" data-cat="7" style="--rg-cat-color:#FF44FF" onclick="_aaRentToggleCat(7)" title="Cat 7 — Widebody airliner" tabindex="-1">7</button>
+          </div>
+          <div class="aar-cattools"><button onclick="_aaRentCatAll()">All</button><button onclick="_aaRentCatNone()">None</button><button onclick="_aaRentCatInvert()">Invert</button></div>
+          </div>
+
+          <!-- Combined payout gradient + minimum-payout slider, like the airport
+               payout chip. Drag = min payout; right-click = edit colors. -->
+          <div class="aar-sec aar-sec-collapse" data-key="payout" onclick="_aaRentToggleSection('payout')"><span class="aar-tri">▼</span>Pilot payout</div>
+          <div class="aar-sec-body" id="aaRentSec-payout">
+          <div class="aar-hint">Dot &amp; badge color shows the payout to the pilot who performs the flight. Drag the bar to hide low payouts; right click bar to change color spectrum.</div>
+          <div class="aar-legend">
+            <span class="aar-zero" id="aaRentZeroDot" onclick="_aaRentToggleZero()" title="Click to hide 0% payout aircraft"></span>
+            <span style="color:#7d8ea3">0%</span>
+            <div class="aar-barwrap" id="aaRentBarWrap" title="Drag to set a minimum payout. Right-click to edit the colors." oncontextmenu="event.preventDefault();event.stopPropagation();_aaRentPaletteOpen(event);return false;">
+              <div class="aar-grad" id="aaRentBarGrad"></div>
+              <div class="aar-filtzone" id="aaRentFiltZone"></div>
+              <input type="range" id="aaRentPayoutSlider" min="0" max="60" value="0" step="1" oninput="_aaRentMinPayoutInput(this.value)" oncontextmenu="event.preventDefault();event.stopPropagation();_aaRentPaletteOpen(event);return false;" title="Drag to set a minimum payout — right-click to edit the colors." />
+              <div class="aar-thumb" id="aaRentThumb"></div>
+            </div>
+            <span style="color:#7d8ea3">60%+</span>
+          </div>
+          <div id="aaRentPayoutLbl" style="text-align:center;font-size:0.82rem;color:#e0a64a;margin-top:3px;display:none;">Hide &lt; <span id="aaRentPayoutVal">0</span>%</div>
+          </div>
+
+          <div class="aar-row" style="margin-top:9px;" title="Show/hide airplanes unavailable due to ground ops"><label>Available now only</label><span class="aar-toggle" id="aaRentAvailToggle" onclick="_aaRentToggleAvail()" title="Show/hide airplanes unavailable due to ground ops"><span class="aar-knob"></span></span></div>
+
+          <div class="aar-sec aar-sec-collapse" data-key="type" onclick="_aaRentToggleSection('type')"><span class="aar-tri">▼</span>Aircraft type</div>
+          <div class="aar-sec-body" id="aaRentSec-type">
+          <input class="aar-input" id="aaRentTypeSearch" type="text" placeholder="Search type, ICAO, manufacturer" oninput="_aaRentFilterTypeList(this.value)" />
+          <div class="aar-typetools"><button onclick="_aaRentSelectAllTypes(true)">Select all</button><button onclick="_aaRentSelectAllTypes(false)">Clear</button></div>
+          <div class="aar-thead" id="aaRentTypeHead">
+            <span></span>
+            <span class="aar-th" data-sort="icao" onclick="_aaRentHeaderSort('icao')" title="Sort by ICAO">ICAO<span class="aar-th-arr"></span></span>
+            <span class="aar-th" data-sort="mfr" onclick="_aaRentHeaderSort('mfr')" title="Sort by manufacturer">Mfr<span class="aar-th-arr"></span></span>
+            <span class="aar-th" data-sort="model" onclick="_aaRentHeaderSort('model')" title="Sort by aircraft type">Type<span class="aar-th-arr"></span></span>
+            <span class="aar-th aar-th-count" data-sort="count" onclick="_aaRentHeaderSort('count')" title="Sort by count">#<span class="aar-th-arr"></span></span>
+          </div>
+          <div class="aar-typelist" id="aaRentTypeList"></div>
+          </div>
+
+          <div class="aar-sec aar-sec-collapse" data-key="owner" onclick="_aaRentToggleSection('owner')"><span class="aar-tri">▼</span>Aircraft owner</div>
+          <div class="aar-sec-body" id="aaRentSec-owner">
+          <input class="aar-input" id="aaRentOwnerSearch" type="text" placeholder="Search owners" oninput="_aaRentFilterOwnerList(this.value)" />
+          <div class="aar-typetools"><button onclick="_aaRentSelectAllOwners(true)">Select all</button><button onclick="_aaRentSelectAllOwners(false)">Clear</button></div>
+          <div class="aar-typelist aar-ownerlist" id="aaRentOwnerList"></div>
+          </div>
+
+          <div class="aar-sec aar-sec-collapse" data-key="results" style="display:flex;justify-content:space-between;align-items:center;" onclick="_aaRentToggleSection('results')"><span style="display:flex;align-items:center;min-width:0;"><span class="aar-tri">▼</span>Results</span><span id="aaRentGroup" class="aar-grouplink" title="Group the results by aircraft owner or by airport" onclick="event.stopPropagation();_aaRentCycleGroup()">Group: none</span></div>
+          <div class="aar-sec-body" id="aaRentSec-results">
+          <div class="aar-reshead" id="aaRentResHead">
+            <span class="aar-th" data-rsort="type" onclick="_aaRentResHeaderSort('type')" title="Sort by aircraft type">Type<span class="aar-th-arr"></span></span>
+            <span class="aar-th" data-rsort="owner" onclick="_aaRentResHeaderSort('owner')" title="Sort by aircraft owner">Owner<span class="aar-th-arr"></span></span>
+            <span class="aar-th" data-rsort="apt" onclick="_aaRentResHeaderSort('apt')" title="Sort by airport">Apt<span class="aar-th-arr"></span></span>
+            <span class="aar-th aar-th-r" data-rsort="payout" onclick="_aaRentResHeaderSort('payout')" title="Sort by renter payout %">Pay<span class="aar-th-arr"></span></span>
+            <span class="aar-th aar-th-r" data-rsort="avail" onclick="_aaRentResHeaderSort('avail')" title="Sort by availability">Available<span class="aar-th-arr"></span></span>
+          </div>
+          <div class="aar-results" id="aaRentResults"></div>
+          </div>
+          <div class="aar-summary" id="aaRentSummary"></div>
+          <button class="aar-reset" onclick="_aaRentResetAll()" title="Reset all filters, sorting, badge mode, and colors to defaults (and save them as your defaults)">↺ Reset to defaults</button>
+        </div>
+      </div>
+
+      <!-- Aircraft rentals palette editor (v3.50.0) — right-click the gradient bar. -->
+      <div id="aaRentPaletteEditor" style="display:none;position:absolute;z-index:1004;background:rgba(13,20,30,0.97);border:1px solid rgba(46,204,113,0.42);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;width:416px;box-sizing:border-box;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;" onpointerdown="_aaChipDragFromHandle(event,'aaRentPaletteEditor')" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-family:'Orbitron',sans-serif;font-size:0.82rem;font-weight:700;color:#2ecc71;letter-spacing:0.06em;">RENTAL PALETTE</span></span>
+          <button onclick="_aaRentPaletteClose()" title="Close" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 12px;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+        </div>
+        <div id="aaRentPalettePreview" style="width:100%;height:26px;border-radius:4px;border:1px solid rgba(255,255,255,0.18);margin-bottom:10px;"></div>
+        <div id="aaRentPaletteStops" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <button id="aaRentPaletteAdd" onclick="_aaRentPaletteAddStop()" title="Add another color stop" style="background:rgba(46,204,113,0.10);border:1px solid rgba(46,204,113,0.5);color:#7fe6a8;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">+ Add stop</button>
+          <button onclick="_aaRentPaletteReset()" title="Restore the default rental palette" style="background:rgba(255,140,40,0.10);border:1px solid rgba(255,140,40,0.45);color:#ffaa55;padding:0.3rem 0.7rem;border-radius:4px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:0.88rem;font-weight:600;">↺ Reset</button>
+        </div>
+        <div style="margin-top:8px;font-size:0.78rem;color:rgba(255,255,255,0.55);line-height:1.4;">Set 2–10 color stops at % payout positions. Drag a tick along the bar to reposition; right-click a tick to delete. The 0% color is fixed grey. Saved automatically.</div>
+      </div>
+
       <div class="sl-map-banner" id="slMapBanner">
         <span>📍 Scenery edit mode — click any airport dot to add or remove it</span>
         <span class="sl-map-banner-hint">· Shift+click works anytime without this mode</span>
