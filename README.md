@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.51.0**
+**Current version: v3.51.1**
 
 ---
 
@@ -35,9 +35,11 @@ The panel lets you filter by aircraft category (the familiar 1–7 circles, with
 Closing the panel with its ✕ leaves the rental colors and badges on the map; the menu item or the breadcrumb pill turns the whole view off. You can also jump straight into a mode by adding `?mode=owner`, `?mode=map`, or `?mode=simbrief` to the app's address. And the map search box now matches your **Scenery Library notes** — type words or a "quoted phrase" and the airports whose notes contain them appear on the map.
 
 ### Airport Radial Menu
-New in v3.51.0 — **right-click any airport dot** on the map (or **long-press** on a touch screen) to open a labelled radial menu of everything you can do with that airport. The icons bloom outward from the dot, the rest of the map dims so the menu stays readable even in a crowded region, and the airport you clicked keeps a bright highlight ring. Click a spoke to open it; click anywhere else, press **Esc**, or zoom the map to dismiss.
+New in v3.51.0 — **right-click any airport dot** on the map (or **long-press** on a touch screen) to open a labelled radial menu of everything you can do with that airport. The icons bloom outward from the dot, the rest of the map dims so the menu stays readable even in a crowded region, and the airport you clicked is labelled with its **ICAO code right in the center** of the wheel, so you always know which one you're acting on — handy where several dots sit close together. Click a spoke to open it; click anywhere else, press **Esc**, or zoom the map to dismiss.
 
 The wheel adapts to each airport, showing only the actions that apply: **Airport info** (a full stats / weather / aircraft-suitability card) and **Scenery / rate** always appear; **SimFly details** shows for owned airports, **Airplanes** (the rentable aircraft parked there, with payouts and live availability) when there's rental data, and the **Sale page** when the airport is listed for sale. **flightsim.to** and **FS Addon Compare** round it out, each opening a search for that airport in a new tab. A plain airport shows four spokes; a fully-loaded one shows all seven.
+
+The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click. **Right-click** one instead to open it in a **background tab** and keep the wheel up — so you can open several sites at once (say flightsim.to *and* FS Addon Compare) without leaving the map, then dismiss the wheel when you're done.
 
 If you rate a lot of scenery, you don't have to go through the wheel every time — **double right-click** an airport to jump straight into the rating popover. (This replaces the old "double right-click a for-sale airport to open its sale page" shortcut; the sale page is now a labelled spoke, and double right-click is the universal rating shortcut on every airport.)
 

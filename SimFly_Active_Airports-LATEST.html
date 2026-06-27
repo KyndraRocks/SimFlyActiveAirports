@@ -4938,7 +4938,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-dot-wheel { position:absolute; inset:0; z-index:11000; pointer-events:none; }
   .rg-dot-wheel svg.rgw-lines { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .rgw-hub { position:absolute; transform:translate(-50%,-50%); z-index:11001; pointer-events:none; width:0; height:0; }
-  .rgw-hub-ring { position:absolute; left:0; top:0; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; border:2px solid var(--accent); box-shadow:0 0 8px rgba(0,200,255,0.5); }
+  .rgw-hub-icao { position:absolute; left:0; top:0; transform:translate(-50%,-50%); z-index:1; white-space:nowrap; font-family:'Courier New',monospace; font-weight:700; font-size:1.05rem; letter-spacing:0.06em; color:var(--accent); background:rgba(16,22,34,0.92); border:1px solid rgba(0,200,255,0.55); border-radius:999px; padding:2px 10px; box-shadow:0 2px 10px rgba(0,0,0,0.6); }
+  body.light-mode .rgw-hub-icao { background:rgba(245,248,252,0.96); border-color:rgba(0,120,200,0.5); }
   .rgw-ping { position:absolute; left:0; top:0; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; border:2px solid var(--accent); opacity:0; animation:rgwPing 560ms ease-out forwards; }
   .rgw-ping.p2 { animation-delay:150ms; }
   @keyframes rgwPing { 0%{transform:scale(0.5);opacity:0.85} 100%{transform:scale(3.2);opacity:0} }
@@ -8603,7 +8604,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.51.0';
+const APP_VERSION = '3.51.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31841,6 +31842,24 @@ function _rgCloseDotWheel() {
 }
 function _rgDotWheelEsc(e) { if (e.key === 'Escape') _rgCloseDotWheel(); }
 
+// Open a URL in a BACKGROUND tab by synthesising a ctrl/cmd-click on a real
+// anchor — window.open can't request background placement, but the modifier-click
+// gesture is honoured by every desktop browser. Used by the wheel's external
+// spokes on right-click so the current tab (and the wheel) stay put.
+function _rgOpenBgTab(url) {
+  const isMac = /Mac|iPhone|iPad|iPod/.test(
+    (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || '');
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.dispatchEvent(new MouseEvent('click', {
+    bubbles: true, cancelable: true, view: window, button: 0,
+    ctrlKey: !isMac, metaKey: isMac,
+  }));
+  a.remove();
+}
+
 function _rgOpenDotWheel(icao, latlng, m) {
   _rgCloseDotWheel();
   if (typeof _rgCloseRatePopover === 'function') _rgCloseRatePopover();
@@ -31864,14 +31883,17 @@ function _rgOpenDotWheel(icao, latlng, m) {
 
   // Canonical clockwise order (top → clockwise); absent spokes are skipped and
   // the rest redistribute evenly.
+  // Internal spokes carry an `act`; external spokes carry a `url` (left-click =
+  // foreground tab + close wheel; right-click = background tab + keep wheel open
+  // so several can be opened in a row).
   const defs = [
     { glyph:'ℹ️', label:'Airport info',    cond:false, ext:false, on:true,        act:() => _rgWheelOpenInfo(latlng, up) },
-    { glyph:'📋', label:'SimFly details',   cond:true,  ext:true,  on:owned,       act:() => window.open('https://simfly.io/assets/airport/' + up + '/details', '_blank', 'noopener,noreferrer') },
+    { glyph:'📋', label:'SimFly details',   cond:true,  ext:true,  on:owned,       url:'https://simfly.io/assets/airport/' + up + '/details' },
     { glyph:'⭐', label:'Scenery / rate',   cond:false, ext:false, on:true,        act:() => _rgShowRatePopover(latlng, up) },
     { glyph:'🛩', label:'Airplanes',        cond:true,  ext:false, on:!!planesHtml, act:() => _rgShowDotInfoPopover(latlng, up, planesHtml) },
-    { glyph:'🏷', label:'Sale page',        cond:true,  ext:true,  on:forSale,     act:() => window.open('https://simfly.io/marketplace/users/airports?icaos%5B%5D=' + safe, '_blank', 'noopener,noreferrer') },
-    { glyph:'🔀', label:'FS Addon Compare', cond:false, ext:true,  on:true,        act:() => window.open('https://www.fsaddoncompare.com/search/' + up, '_blank', 'noopener,noreferrer') },
-    { glyph:'🌐', label:'flightsim.to',     cond:false, ext:true,  on:true,        act:() => window.open('https://flightsim.to/search?q=' + up, '_blank', 'noopener,noreferrer') },
+    { glyph:'🏷', label:'Sale page',        cond:true,  ext:true,  on:forSale,     url:'https://simfly.io/marketplace/users/airports?icaos%5B%5D=' + safe },
+    { glyph:'🔀', label:'FS Addon Compare', cond:false, ext:true,  on:true,        url:'https://www.fsaddoncompare.com/search/' + up },
+    { glyph:'🌐', label:'flightsim.to',     cond:false, ext:true,  on:true,        url:'https://flightsim.to/search?q=' + up },
   ];
   const spokes = defs.filter(d => d.on);
   const n = spokes.length;
@@ -31909,11 +31931,13 @@ function _rgOpenDotWheel(icao, latlng, m) {
   svg += '</svg>';
   wheel.innerHTML = svg;
 
-  // Centre hub: steady highlight ring + two ping rings.
+  // Centre hub: ICAO label (the "which airport" indicator) over two ping rings
+  // that pulse outward on open.
   const hub = document.createElement('div');
   hub.className = 'rgw-hub';
   hub.style.left = cx + 'px'; hub.style.top = cy + 'px';
-  hub.innerHTML = '<div class="rgw-hub-ring"></div><div class="rgw-ping"></div><div class="rgw-ping p2"></div>';
+  hub.innerHTML = '<div class="rgw-ping"></div><div class="rgw-ping p2"></div>' +
+                  '<div class="rgw-hub-icao">' + up + '</div>';
   wheel.appendChild(hub);
 
   spokes.forEach((d, i) => {
@@ -31924,12 +31948,27 @@ function _rgOpenDotWheel(icao, latlng, m) {
     el.style.setProperty('--dx', (x - cx) + 'px');
     el.style.setProperty('--dy', (y - cy) + 'px');
     el.style.setProperty('--i', i);
-    el.innerHTML = '<div class="rgw-ic' + (d.cond ? ' rgw-cond' : '') + '">' + d.glyph +
+    const titleAttr = d.url ? ' title="Click to open · Right-click to open in a background tab"' : '';
+    el.innerHTML = '<div class="rgw-ic' + (d.cond ? ' rgw-cond' : '') + '"' + titleAttr + '>' + d.glyph +
                    (d.ext ? '<span class="rgw-ext">↗</span>' : '') + '</div>' +
-                   '<div class="rgw-lbl">' + d.label + '</div>';
-    const fire = (e) => { e.stopPropagation(); e.preventDefault(); _rgCloseDotWheel(); d.act(); };
-    el.querySelector('.rgw-ic').addEventListener('click', fire);
-    el.querySelector('.rgw-lbl').addEventListener('click', fire);
+                   '<div class="rgw-lbl"' + titleAttr + '>' + d.label + '</div>';
+    // Left-click: internal action, or external URL in a foreground tab — then close.
+    const fire = (e) => {
+      e.stopPropagation(); e.preventDefault();
+      _rgCloseDotWheel();
+      if (d.url) window.open(d.url, '_blank', 'noopener,noreferrer');
+      else d.act();
+    };
+    // Right-click on an external spoke: open in a background tab and KEEP the
+    // wheel up so several sites can be opened in a row. (No-op for internal.)
+    const ctx = (e) => {
+      e.stopPropagation(); e.preventDefault();
+      if (d.url) _rgOpenBgTab(d.url);
+    };
+    el.querySelectorAll('.rgw-ic, .rgw-lbl').forEach(t => {
+      t.addEventListener('click', fire);
+      t.addEventListener('contextmenu', ctx);
+    });
     wheel.appendChild(el);
   });
 
@@ -41603,6 +41642,7 @@ function rgSendToFlightPlanner() {
             • <strong>Airplanes</strong> — lists the rentable aircraft parked at that airport with payouts and live availability. <em>(when rental data exists)</em><br/>
             • <strong>Sale page</strong> — opens the airport&rsquo;s SimFly sale listing in a new tab. <em>(airports listed for sale)</em><br/>
             • <strong>FS Addon Compare</strong> and <strong>flightsim.to</strong> — search that ICAO on each scenery site in a new tab. <em>(always)</em><br/><br/>
+            The clicked airport&rsquo;s <strong>ICAO is shown in the centre</strong> of the wheel so you always know which airport you&rsquo;re acting on. The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click; <strong>right-click one to open it in a background tab</strong> instead &mdash; the wheel stays up so you can fire off several at once (e.g. flightsim.to <em>and</em> FS Addon Compare) before dismissing it.<br/><br/>
             <strong>Fast path for rating:</strong> if you rate a lot of scenery, <strong>double right-click</strong> an airport to jump straight into the Quick-Rate popover, skipping the wheel. (This replaces the old &ldquo;double right-click a for-sale airport to open its sale page&rdquo; shortcut — the sale page is now a spoke, and double right-click is the universal rating shortcut.)
           </div>
         </div>
@@ -41900,10 +41940,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.51.1</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The airport radial menu now shows the ICAO in its center.</strong> When you right-click an airport, the dot you clicked is labelled with its ICAO code right in the middle of the wheel, so there&rsquo;s never any doubt which airport the menu&rsquo;s actions apply to &mdash; handy in a crowded region where several dots sit close together.</li>
+          <li><strong>Right-click a website spoke to open it in a background tab.</strong> The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) still open in a normal foreground tab when you click them, but now <strong>right-clicking</strong> one opens it in a <em>background</em> tab and leaves the wheel up &mdash; so you can fire off several at once (say flightsim.to <em>and</em> FS Addon Compare) and stay on the map, then dismiss the wheel when you&rsquo;re done.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.51.0</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
