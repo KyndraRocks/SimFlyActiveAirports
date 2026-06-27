@@ -8652,7 +8652,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.59.2';
+const APP_VERSION = '3.61.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -8973,6 +8973,16 @@ function loadAirportDB() {
           if (newBtn) { newBtn.style.display = ''; newBtn.classList.add('active'); }
         }
       }
+
+      // ── Prime the live-data auto-refresh (v3.60.0) ──
+      // Record the boot snapshot's signature + time, then start the background
+      // refresh loop so airport/rental data can't go stale on a long-open tab.
+      try {
+        _aaDataFetchedAt = Date.now();
+        _aaDataSig = _aaDataSignature(payoutDataJson, rentableJson, payoutJson);
+        _aaScheduleDataRefresh(_AA_DATA_REFRESH_MS);
+        _aaUpdateFreshnessIndicator();
+      } catch (_) {}
 
       // ── Build region name map ──
       regionDB = new Map();
@@ -30093,6 +30103,15 @@ function _aaOwnacBadgeHtml(icao, acEsc, cntStr, edge) {
 // selection, draw the route, and re-run _rgHighlightDots — refreshing this overlay).
 function _aaOwnacSetDep(icao) {
   if (!icao) return;
+  // v3.61.0 — Departure chaining, scoped to THIS badge 🛫 icon ONLY (deliberately
+  // NOT the matrix row header or the radial menu, which call _rgHighlightDepRow
+  // directly): if a different departure was already selected, slide the old
+  // departure into the arrival slot before setting the new one, so tapping 🛫 on
+  // successive badges builds a route (clicked = departure, previous = arrival).
+  // _rgHighlightDepRow then draws the route because _rgDotSelArr is now set.
+  // Guarded against re-picking the current departure (would make dep == arr).
+  const _prevDep = _rgDotSelDep;
+  if (_prevDep && _prevDep !== icao) _rgDotSelArr = _prevDep;
   if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
   if (typeof _rgHighlightDepRow === 'function') _rgHighlightDepRow(icao);
 }
@@ -35740,6 +35759,12 @@ function _rgToggleAircraftMode() {
   _aaRentSetBtnActive(_rgAircraftMode);
   if (typeof _aaRentShowPanel === 'function') _aaRentShowPanel(_rgAircraftMode);
   if (typeof _rgRepositionFilterPanels === 'function') _rgRepositionFilterPanels();
+  // v3.60.0 — entering the mode: pull a fresh rentals snapshot if ours is aging,
+  // so the view the user just opened reflects current availability immediately.
+  if (_rgAircraftMode && typeof _aaRefreshLiveData === 'function' &&
+      (!_aaDataFetchedAt || (Date.now() - _aaDataFetchedAt) > _AA_DATA_ENTRY_MIN_MS)) {
+    _aaRefreshLiveData();
+  }
   _rgApplyMapFilter();
   _rgUpdateBreadcrumbs();
 }
@@ -36375,7 +36400,147 @@ function _aaRentRefreshPanel() {
   if (rows.length > _AAR_RES_CAP) html += `<div class="aar-empty">Showing first ${_AAR_RES_CAP.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} — narrow the filters to see the rest.</div>`;
   res.innerHTML = html;
   _aaRentColApply('results');   // re-apply any dragged column widths to the new rows
+  _aaUpdateFreshnessIndicator();
 }
+
+/* ===========================================================================
+   LIVE DATA AUTO-REFRESH (v3.60.0)
+   The hourly-regenerated feeds (payouts, payout-data, rentable-aircraft) are
+   fetched once at boot. Without this, an app left open for hours shows a stale
+   snapshot — most visibly in Aircraft Rentals mode, where planes get rented /
+   returned continuously. This silently re-fetches those three feeds on a timer
+   (and on tab-refocus / rentals-mode entry), re-ingests them, and re-renders
+   the dots + rentals panel IN PLACE via _rgApplyMapFilter — no page reload, no
+   lost selection / routes / regions / map view. Ownership (the KML/Gist text)
+   is intentionally NOT refreshed here: it changes rarely and re-running the KML
+   loader is heavier and more disruptive. Source regenerates hourly, so 20 min
+   is the sweet spot — never close to a full hour stale, only ~3 fetches/hour,
+   and unchanged feeds cause zero repaint (signature-gated).
+   =========================================================================== */
+const _AA_DATA_REFRESH_MS    = 20 * 60 * 1000;  // background interval
+const _AA_DATA_ENTRY_MIN_MS  =  2 * 60 * 1000;  // skip on-entry refetch if data is younger than this
+let   _aaDataFetchedAt       = 0;      // ms of last SUCCESSFUL feed contact (boot or refresh)
+let   _aaDataSig             = '';     // content signature of loaded feeds (gates re-render)
+let   _aaDataRefreshTimer    = 0;      // setTimeout handle (self-rescheduling)
+let   _aaDataRefreshInFlight = false;
+
+// Fast non-cryptographic string hash (cyrb53-lite) for change detection.
+function _aaFastHash(str) {
+  let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36));
+}
+function _aaDataSignature(payoutData, rentable, payouts) {
+  try {
+    return _aaFastHash(JSON.stringify(payoutData == null ? 0 : payoutData)) + '.' +
+           _aaFastHash(JSON.stringify(rentable   == null ? 0 : rentable))   + '.' +
+           _aaFastHash(JSON.stringify(payouts    == null ? 0 : payouts));
+  } catch (_) { return String(Date.now()); }   // unstringifiable → treat as changed
+}
+
+// Don't repaint out from under an active interaction a dot/panel re-render would
+// disrupt. Transient dot-hover tooltips are tolerated (worst case a one-frame
+// flicker); the genuinely destructive cases are guarded here. Manual clicks on
+// the freshness chip bypass this (the user asked for it explicitly).
+function _aaDataRefreshBlocked() {
+  if (document.getElementById('rgRatePopover')) return true;        // dot-anchored Quick-Rate popover
+  const pe = document.getElementById('aaRentPaletteEditor');
+  if (pe && pe.style.display !== 'none') return true;               // rental palette editor open
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
+  return false;
+}
+
+function _aaScheduleDataRefresh(ms) {
+  if (_aaDataRefreshTimer) { clearTimeout(_aaDataRefreshTimer); _aaDataRefreshTimer = 0; }
+  _aaDataRefreshTimer = setTimeout(() => { _aaRefreshLiveData(); }, ms);
+}
+
+async function _aaRefreshLiveData(opts) {
+  opts = opts || {};
+  if (_aaDataRefreshInFlight) return;
+  if (!opts.manual && _aaDataRefreshBlocked()) { _aaScheduleDataRefresh(60 * 1000); return; }  // busy → retry soon
+  _aaDataRefreshInFlight = true;
+  try {
+    const bust = '?t=' + Date.now();
+    const [pTxt, pdTxt, rTxt] = await Promise.all([
+      _fetchWithTimeout(PAYOUT_URL      + bust).then(r => r.ok ? r.text() : null).catch(() => null),
+      _fetchWithTimeout(PAYOUT_DATA_URL + bust).then(r => r.ok ? r.text() : null).catch(() => null),
+      _fetchWithTimeout(RENTABLE_URL    + bust).then(r => r.ok ? r.text() : null).catch(() => null),
+    ]);
+    if (pTxt == null && pdTxt == null && rTxt == null) return;   // total failure — keep old data + timestamp
+    let payouts = null, payoutData = null, rentable = null;
+    try { if (pTxt  != null) payouts    = JSON.parse(pTxt);  } catch (_) {}
+    try { if (pdTxt != null) payoutData = JSON.parse(pdTxt); } catch (_) {}
+    try { if (rTxt  != null) rentable   = JSON.parse(rTxt);  } catch (_) {}
+
+    _aaDataFetchedAt = Date.now();   // successful contact — stamp sync time whether or not content changed
+
+    const sig = _aaDataSignature(payoutData, rentable, payouts);
+    if (sig !== _aaDataSig) {
+      _aaDataSig = sig;
+      // Rebuild the in-memory structures — mirrors the boot ingest exactly.
+      if (payouts && typeof payouts === 'object') {
+        payoutDB = new Map(Object.entries(payouts).map(([k, v]) => [k.toUpperCase(), +v]));
+        try { localStorage.setItem('simfly_payout_db', JSON.stringify(payouts)); } catch (_) {}
+      }
+      if (payoutData && typeof payoutData === 'object') {
+        _rgPayoutDataJsonCache = payoutData;
+        const cutoff = Date.now() - _rgNewAirportSettings.pulseDays * 24 * 60 * 60 * 1000;
+        newAirportsDB = new Set();
+        for (const [icao, info] of Object.entries(payoutData)) {
+          if (_rgIsNewByAct(info, cutoff)) newAirportsDB.add(icao.toUpperCase());
+        }
+      }
+      if (rentable != null) { try { _aaRentIngest(rentable); } catch (_) {} }
+      // Re-render through the same chokepoint a filter change uses: re-renders
+      // dots, re-applies dep/arr highlight, refreshes the rentals panel + badges.
+      // No-ops safely if the region map was never opened (_rgMap null).
+      try { if (typeof _rgApplyMapFilter === 'function' && _rgMap) _rgApplyMapFilter(); } catch (_) {}
+    }
+    _aaUpdateFreshnessIndicator();
+  } finally {
+    _aaDataRefreshInFlight = false;
+    _aaScheduleDataRefresh(_AA_DATA_REFRESH_MS);
+  }
+}
+
+// ── Freshness indicator (bottom of the Aircraft Rentals panel) ──
+function _aaFreshnessText() {
+  if (!_aaDataFetchedAt) return 'syncing…';
+  const sec = Math.max(0, Math.round((Date.now() - _aaDataFetchedAt) / 1000));
+  if (sec < 45)   return 'synced just now';
+  if (sec < 90)   return 'synced 1 min ago';
+  if (sec < 3600) return 'synced ' + Math.round(sec / 60) + ' min ago';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return 'synced ' + h + 'h' + (m ? (' ' + m + 'm') : '') + ' ago';
+}
+function _aaUpdateFreshnessIndicator() {
+  const el = document.getElementById('aaRentFreshness');
+  if (!el) return;
+  el.textContent = '↻ Rental data ' + _aaFreshnessText();
+  const stale = _aaDataFetchedAt && (Date.now() - _aaDataFetchedAt > _AA_DATA_REFRESH_MS * 1.6);
+  el.classList.toggle('aar-fresh-stale', !!stale);
+  el.title = 'Auto-refreshes every ' + Math.round(_AA_DATA_REFRESH_MS / 60000) +
+             ' min while open. Click to refresh now.';
+}
+
+// Refresh promptly when the user returns to a tab idle past the interval
+// (background timers are throttled, so the scheduled fire may be late).
+function _aaDataOnVisible() {
+  if (document.visibilityState && document.visibilityState !== 'visible') return;
+  if (!_aaDataFetchedAt || (Date.now() - _aaDataFetchedAt) >= _AA_DATA_REFRESH_MS) _aaRefreshLiveData();
+}
+document.addEventListener('visibilitychange', _aaDataOnVisible);
+window.addEventListener('focus', _aaDataOnVisible);
+// Live-tick the "X min ago" label while the panel is open (cheap no-op otherwise).
+setInterval(_aaUpdateFreshnessIndicator, 30000);
 
 function _aaRentFlyTo(apt) {
   const rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((apt || '').toUpperCase()) : null;
@@ -41904,7 +42069,8 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Aircraft Rentals</div>
           <div class="help-feature-desc">
-            Turn on <strong>Aircraft Rentals</strong> from the map menu (v3.50.0+) to see where SimFly&rsquo;s rentable aircraft are, refreshed automatically from a live feed. Every airport&rsquo;s dot recolors by the best <strong>pilot payout</strong> available there &mdash; the cut the renting pilot keeps, from 0% up to 60% &mdash; and a Rentals panel opens for filtering.<br/><br/>
+            Turn on <strong>Aircraft Rentals</strong> from the map menu (v3.50.0+) to see where SimFly&rsquo;s rentable aircraft are. Every airport&rsquo;s dot recolors by the best <strong>pilot payout</strong> available there &mdash; the cut the renting pilot keeps, from 0% up to 60% &mdash; and a Rentals panel opens for filtering.<br/><br/>
+            <strong>Stays current automatically</strong> (v3.60.0+): the rental and airport feeds refresh quietly in the background every 20 minutes &mdash; and the moment you enter the mode &mdash; so a tab left open for hours won&rsquo;t show stale availability. The refresh happens in place: no page reload, and your map position, selected airports, routes, regions, and filters are all preserved. A small <em>&ldquo;↻ Rental data synced N min ago&rdquo;</em> line at the bottom of the panel shows how fresh the data is; click it to refresh on demand.<br/><br/>
             <strong>On the map</strong>, each airport can show a small stack of chips listing the aircraft types available there. The badges thin out automatically when you&rsquo;re zoomed out and reveal more (up to ten chips per airport) as you zoom in; when space is tight, your own SimFly-owned airports get priority. Hover a badge for a full breakdown &mdash; type, registration, owner, payout, and live availability for every matching aircraft.<br/><br/>
             <strong>The panel</strong> lets you filter by aircraft category (the 1&ndash;7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor), pick aircraft types and owners, and toggle &ldquo;available now only.&rdquo; Each section collapses, and the panel is draggable and resizable. The <strong>results table</strong> lists every matching aircraft &mdash; sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport. Aircraft blocked by a ground-operations timer show their countdown in red.<br/><br/>
             Closing the panel with its ✕ leaves the rental colors and badges on the map; use the menu item or the breadcrumb pill (click it to show/hide the panel, ✕ to exit) to turn the whole view off.
@@ -42157,7 +42323,8 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Departure / Arrival Info Panel</div>
           <div class="help-feature-desc">
-            As soon as a <strong>departure</strong> or <strong>arrival</strong> airport is set — by typing an ICAO, clicking a matrix row / column, or selecting a dot on the interactive map — a panel appears beneath the matrix showing the full airport details for that endpoint. Each side renders independently: the departure card shows on the left, the arrival card on the right, and either card hides on its own when its ICAO is cleared. Cards include city, owner, SimFly category, elevation, runway data, aircraft-suitability verdict, and the latest cached METAR / weather summary when available — matching the matrix header tooltips so the information is in one persistent place instead of behind a hover.
+            As soon as a <strong>departure</strong> or <strong>arrival</strong> airport is set — by typing an ICAO, clicking a matrix row / column, or selecting a dot on the interactive map — a panel appears beneath the matrix showing the full airport details for that endpoint. Each side renders independently: the departure card shows on the left, the arrival card on the right, and either card hides on its own when its ICAO is cleared. Cards include city, owner, SimFly category, elevation, runway data, aircraft-suitability verdict, and the latest cached METAR / weather summary when available — matching the matrix header tooltips so the information is in one persistent place instead of behind a hover.<br/><br/>
+            <strong>Departure chaining (v3.61.0):</strong> when you set a new departure using the <strong>🛫 icon on a rental badge</strong> while a departure is already selected, the previous departure is automatically moved into the arrival slot. So tapping 🛫 on one badge after another chains a route (the airport you just clicked becomes the departure, the one before it becomes the arrival). This applies <em>only</em> to the badge&rsquo;s 🛫 icon — matrix row headers, the radial menu, plain map-dot clicks, and typed ICAOs keep their existing behavior. Arrival selections are never moved, and re-clicking the current departure does nothing.
           </div>
         </div>
       </div>
@@ -42510,10 +42677,33 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.61.0</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>The 🛫 icon on a rental badge now slides the old departure into the arrival slot.</strong> When you tap the little departure-plane (🛫) icon on an aircraft-rental badge while a departure is already selected, the previous departure automatically becomes the arrival &mdash; so you can build a route just by tapping 🛫 on one badge after another (the airport you just picked becomes the departure, the one before it becomes the arrival). This is scoped to the badge&rsquo;s 🛫 icon only; setting a departure any other way (matrix row header, radial menu, map-dot click, typed ICAO) is unchanged, as are all arrival clicks.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.60.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport &amp; rental data now stays fresh while the app is open.</strong> Until now, owner colors, levels, rotations, for-sale flags, and especially <strong>rentable-aircraft availability</strong> were loaded once when the app started and never refreshed &mdash; so a tab left open for hours showed a stale snapshot (a plane rented out by someone else would still appear available). The app now quietly re-fetches these feeds in the background every 20 minutes, plus the moment you enter Aircraft Rentals mode and whenever you return to a tab that&rsquo;s been idle. The refresh happens <strong>in place</strong>: no page reload, no flash, and your map position, selected airports, routes, regions, filters, and SimBrief plan are all preserved. It only repaints when the data has actually changed, and it politely waits if you&rsquo;re mid-interaction (typing, an open popover) so it never interrupts you.</li>
+          <li><strong>Freshness indicator in the Rentals panel.</strong> A small &ldquo;↻ Rental data synced N min ago&rdquo; line now sits at the bottom of the Aircraft Rentals panel, just under the plane/airport totals, so you always know how current the view is. It turns amber if syncing falls behind, and you can click it to refresh on demand.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.59.2</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -55337,6 +55527,12 @@ function rgSendToFlightPlanner() {
         .aar-summary { margin-top:11px; padding-top:9px; border-top:1px solid rgba(255,255,255,0.1);
           font-size:1.18rem; color:#b4c2d2; }
         .aar-summary b { color:#3fe089; }
+        /* Auto-refresh freshness chip — sits just under the plane/airport stats. */
+        .aar-freshness { margin-top:5px; font-family:'Rajdhani',sans-serif; font-size:0.8rem;
+          letter-spacing:0.02em; color:rgba(255,255,255,0.4); cursor:pointer; user-select:none;
+          transition:color 0.15s; }
+        .aar-freshness:hover { color:rgba(255,255,255,0.72); }
+        .aar-freshness.aar-fresh-stale { color:#ffaa55; }
         /* ── Results matrix: one row per rentable aircraft, sortable + groupable ── */
         /* Results grouping toggle — a real button, not a faint link. */
         .aar-grouplink { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
@@ -55402,6 +55598,9 @@ function rgSendToFlightPlanner() {
         body.light-mode #aaRentPanel .aar-toggle { background:#c2ccd6; }
         body.light-mode #aaRentPanel .aar-toggle .aar-knob { background:#ffffff; }
         body.light-mode #aaRentPanel .aar-summary { color:#54657a; border-top-color:rgba(0,0,0,0.12); }
+        body.light-mode #aaRentPanel .aar-freshness { color:#7a8a9b; }
+        body.light-mode #aaRentPanel .aar-freshness:hover { color:#0d1b2a; }
+        body.light-mode #aaRentPanel .aar-freshness.aar-fresh-stale { color:#c47d1a; }
         body.light-mode #aaRentPanel .aar-summary b { color:#0f9d58; }
         body.light-mode #aaRentPanel .aar-results { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.15); }
         body.light-mode #aaRentPanel .aar-prow { border-top-color:rgba(0,0,0,0.08); }
@@ -55616,6 +55815,7 @@ function rgSendToFlightPlanner() {
           <div class="aar-results" id="aaRentResults"></div>
           </div>
           <div class="aar-summary" id="aaRentSummary"></div>
+          <div class="aar-freshness" id="aaRentFreshness" onclick="_aaRefreshLiveData({manual:true})" title="Auto-refreshes while open. Click to refresh now.">↻ Rental data syncing…</div>
           <button class="aar-reset" onclick="_aaRentResetAll()" title="Reset all filters, sorting, badge mode, and colors to defaults (and save them as your defaults)">↺ Reset to defaults</button>
         </div>
       </div>
