@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.61.0**
+**Current version: v3.62.0**
 
 ---
 
@@ -30,7 +30,7 @@ New in v3.50.0 — turn on **Aircraft Rentals** from the map menu to see where S
 
 On the map, each airport can show a small stack of chips listing the aircraft types available there. The badges thin out automatically when you're zoomed out and reveal more (up to ten chips per airport) as you zoom in; when space is tight, your own SimFly-owned airports get priority. Hover a badge for a full breakdown — type, registration, owner, payout, and live availability for every matching aircraft. Aircraft temporarily blocked by a ground-operations timer show their countdown in red.
 
-The panel lets you filter by aircraft category (the familiar 1–7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor the spectrum), pick aircraft types and owners from searchable multi-selects, and toggle "available now only." Every section collapses, and the panel is draggable and resizable. The results table lists every matching aircraft — sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport.
+The panel lets you filter by aircraft category (the familiar 1–7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor the spectrum), pick aircraft types and owners from searchable multi-selects, and toggle "available now only." As of v3.62.0 there's also an **"Only airports already on the map"** toggle: when on, the rentals feature considers just the SimFly-owned airports already shown (still subject to whatever map filters you have active) instead of pulling in every rental-only airport from across the world — so the dots, results, counts, and totals all stay limited to your airports. Every section collapses, and the panel is draggable and resizable. The results table lists every matching aircraft — sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport.
 
 Closing the panel with its ✕ leaves the rental colors and badges on the map; the menu item or the breadcrumb pill turns the whole view off. You can also jump straight into a mode by adding `?mode=owner`, `?mode=map`, or `?mode=simbrief` to the app's address. And the map search box now matches your **Scenery Library notes** — type words or a "quoted phrase" and the airports whose notes contain them appear on the map.
 

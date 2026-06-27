@@ -8652,7 +8652,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.61.0';
+const APP_VERSION = '3.62.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -29572,6 +29572,7 @@ let _aaRentCatFilter      = null;   // Set of selected aircraft categories (1-7)
 let _aaRentTerms          = null;   // null | Array<{type, acOwner, locType, locKey, locName}>
 let _aaRentMinPayout      = 0;      // minimum renter payout % (0..60)
 let _aaRentAvailNow       = true;   // true = only airports with a plane free right now
+let _aaRentOwnedOnly      = false;  // true = only consider SimFly-owned airports already on the map, not the worldwide rental-only additions (v3.62.0)
 let _aaRentBadgeMode      = 'payout'; // 'payout' | 'count' | 'type' — what dot badges show
 // Results matrix (one row per rentable aircraft): sortable columns + grouping.
 let _aaRentResSort        = 'payout'; // column: 'type' | 'owner' | 'apt' | 'payout' | 'avail'
@@ -29590,6 +29591,7 @@ function _aaRentLoadPrefs() {
       if (['icao', 'mfr', 'model', 'count'].includes(o.typeSort)) _aaRentTypeSort = o.typeSort;
       if (['asc', 'desc'].includes(o.typeSortDir)) _aaRentTypeSortDir = o.typeSortDir;
       if (typeof o.availNow === 'boolean') _aaRentAvailNow = o.availNow;
+      if (typeof o.ownedOnly === 'boolean') _aaRentOwnedOnly = o.ownedOnly;
       if (['type', 'owner', 'apt', 'payout', 'avail'].includes(o.resSort)) _aaRentResSort = o.resSort;
       if (['asc', 'desc'].includes(o.resSortDir)) _aaRentResSortDir = o.resSortDir;
       if (['none', 'owner', 'apt', 'type'].includes(o.resGroup)) _aaRentResGroup = o.resGroup;
@@ -29622,7 +29624,7 @@ function _aaRentToggleSection(key) {
 
 function _aaRentSavePrefs() {
   try { localStorage.setItem(_AAR_PREFS_KEY, JSON.stringify({
-    badgeMode: _aaRentBadgeMode, typeSort: _aaRentTypeSort, typeSortDir: _aaRentTypeSortDir, availNow: _aaRentAvailNow,
+    badgeMode: _aaRentBadgeMode, typeSort: _aaRentTypeSort, typeSortDir: _aaRentTypeSortDir, availNow: _aaRentAvailNow, ownedOnly: _aaRentOwnedOnly,
     resSort: _aaRentResSort, resSortDir: _aaRentResSortDir, resGroup: _aaRentResGroup
   })); } catch (_) {}
 }
@@ -31884,7 +31886,9 @@ function _rgRenderDots() {
   // airports that hold a rentable plane but aren't owned by a SimFly pilot.
   // Add them so every rental shows on the map (subject to the same filter gate),
   // and so the map matches the Rentals panel's airport count.
-  if ((_rgAircraftMode || _aaRentFilterActive) && _aaRentByApt && _aaRentByApt.size) {
+  // v3.62.0 — skipped entirely when "Only airports already on the map" is on, so
+  // the worldwide rental-only airports aren't pulled in (matches _aaRentVisibleApts).
+  if ((_rgAircraftMode || _aaRentFilterActive) && !_aaRentOwnedOnly && _aaRentByApt && _aaRentByApt.size) {
     for (const apt of _aaRentByApt.keys()) {
       if (seen.has(apt)) continue;
       seen.add(apt);
@@ -35857,6 +35861,7 @@ function _aaRentShowPanel(on) {
 function _aaRentSyncControls() {
   document.querySelectorAll('#aaRentBadgeSeg button').forEach(b => b.classList.toggle('active', b.dataset.mode === _aaRentBadgeMode));
   const t = document.getElementById('aaRentAvailToggle'); if (t) t.classList.toggle('on', _aaRentAvailNow);
+  const mv = document.getElementById('aaRentOwnedToggle'); if (mv) mv.classList.toggle('on', _aaRentOwnedOnly);
   const sl = document.getElementById('aaRentPayoutSlider'); if (sl) sl.value = _aaRentMinPayout;
   // position the slider thumb / filtered zone / label without re-applying
   const pct = (_aaRentMinPayout / 60) * 100;
@@ -35878,7 +35883,7 @@ function _aaRentSyncControls() {
 // defaults and persist those defaults — the "Reset to defaults" button.
 function _aaRentResetAll() {
   _aaRentTerms = null; _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentCatFilter = null; _aaRentFilterActive = false;
-  _aaRentMinPayout = 0; _aaRentAvailNow = true; _aaRentBadgeMode = 'payout';
+  _aaRentMinPayout = 0; _aaRentAvailNow = true; _aaRentOwnedOnly = false; _aaRentBadgeMode = 'payout';
   _aaRentTypeSort = 'icao'; _aaRentTypeSortDir = 'asc';
   _aaRentResSort = 'payout'; _aaRentResSortDir = 'desc'; _aaRentResGroup = 'none';
   _aaRentPalette = _RG_RENT_DEFAULT_PALETTE.map(s => ({ ...s }));
@@ -35897,7 +35902,7 @@ function _aaRentResetAll() {
 // Reset all rental-specific filters (menu action — kept out of the panel to
 // avoid clutter). Does not turn off the mode.
 function _aaRentResetFilters() {
-  _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentCatFilter = null; _aaRentMinPayout = 0; _aaRentAvailNow = true;
+  _aaRentTypeFilter = null; _aaRentOwnerFilter = null; _aaRentCatFilter = null; _aaRentMinPayout = 0; _aaRentAvailNow = true; _aaRentOwnedOnly = false;
   document.querySelectorAll('#aaRentTypeList input[type=checkbox]').forEach(cb => cb.checked = true);
   document.querySelectorAll('#aaRentOwnerList input[type=checkbox]').forEach(cb => cb.checked = true);
   const ts = document.getElementById('aaRentTypeSearch'); if (ts) ts.value = '';
@@ -36152,6 +36157,18 @@ function _aaRentToggleAvail() {
   _aaRentApply();
 }
 
+// v3.62.0 — "Only airports already on the map": restrict the rentals the panel
+// considers (and the dots Rentals mode draws) to SimFly-owned airports, instead
+// of pulling in every rental-only airport worldwide. Gates _aaRentVisibleApts +
+// the rental-only dot-add loop in _rgRenderDots.
+function _aaRentToggleOwnedOnly() {
+  _aaRentOwnedOnly = !_aaRentOwnedOnly;
+  const t = document.getElementById('aaRentOwnedToggle');
+  if (t) t.classList.toggle('on', _aaRentOwnedOnly);
+  _aaRentSavePrefs();
+  _aaRentApply();
+}
+
 // Aircraft-category circles (1-7) — same look as the map title-bar category
 // filter, but they filter rentals by AIRCRAFT category. null = all shown; click
 // one to drop it; clicking back to all 7 collapses to null (no filter).
@@ -36236,9 +36253,12 @@ function _aaRentAptPassesGeo(icao, rec, owner) {
   finally { _aaRentSkipGate = false; }
 }
 
-// Rental airports currently visible on the map: present in airportDB (plottable)
-// AND passing the active geo/ownership filters. This is the universe the panel
-// reflects, so "available aircraft" mirror what's at the airports in view.
+// Rental airports the panel currently considers: present in airportDB (plottable)
+// AND passing the active geo/ownership filters. When the "Only airports already
+// on the map" option (v3.62.0) is on, airports that aren't SimFly-owned are also
+// excluded — i.e. the rental-only airports Rentals mode would otherwise pull in
+// from across the world. This is the universe the panel reflects, so "available
+// aircraft" mirror what's shown.
 function _aaRentVisibleApts() {
   const out = [];
   const odb = (typeof airportDB !== 'undefined') ? airportDB : null;
@@ -36246,6 +36266,9 @@ function _aaRentVisibleApts() {
     const rec = odb && odb.get(apt);
     if (!rec) continue;
     const owner = (typeof _rgOwnerMap !== 'undefined' && _rgOwnerMap) ? _rgOwnerMap.get(apt) : '';
+    // "Only airports already on the map" — keep just SimFly-owned airports (those
+    // in the owner map); owned airports still go through the geo filters below.
+    if (_aaRentOwnedOnly && !owner) continue;
     if (!_aaRentAptPassesGeo(apt, rec, owner)) continue;
     out.push({ apt, rec, owner, planes });
   }
@@ -42072,7 +42095,7 @@ function rgSendToFlightPlanner() {
             Turn on <strong>Aircraft Rentals</strong> from the map menu (v3.50.0+) to see where SimFly&rsquo;s rentable aircraft are. Every airport&rsquo;s dot recolors by the best <strong>pilot payout</strong> available there &mdash; the cut the renting pilot keeps, from 0% up to 60% &mdash; and a Rentals panel opens for filtering.<br/><br/>
             <strong>Stays current automatically</strong> (v3.60.0+): the rental and airport feeds refresh quietly in the background every 20 minutes &mdash; and the moment you enter the mode &mdash; so a tab left open for hours won&rsquo;t show stale availability. The refresh happens in place: no page reload, and your map position, selected airports, routes, regions, and filters are all preserved. A small <em>&ldquo;↻ Rental data synced N min ago&rdquo;</em> line at the bottom of the panel shows how fresh the data is; click it to refresh on demand.<br/><br/>
             <strong>On the map</strong>, each airport can show a small stack of chips listing the aircraft types available there. The badges thin out automatically when you&rsquo;re zoomed out and reveal more (up to ten chips per airport) as you zoom in; when space is tight, your own SimFly-owned airports get priority. Hover a badge for a full breakdown &mdash; type, registration, owner, payout, and live availability for every matching aircraft.<br/><br/>
-            <strong>The panel</strong> lets you filter by aircraft category (the 1&ndash;7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor), pick aircraft types and owners, and toggle &ldquo;available now only.&rdquo; Each section collapses, and the panel is draggable and resizable. The <strong>results table</strong> lists every matching aircraft &mdash; sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport. Aircraft blocked by a ground-operations timer show their countdown in red.<br/><br/>
+            <strong>The panel</strong> lets you filter by aircraft category (the 1&ndash;7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor), pick aircraft types and owners, toggle &ldquo;available now only,&rdquo; and toggle &ldquo;<strong>Only airports already on the map</strong>&rdquo; (v3.62.0) to consider just the SimFly-owned airports already shown (still subject to any active filters) instead of pulling in every rental-only airport from across the world &mdash; the map dots, results, counts, and totals all stay limited to your airports. Each section collapses, and the panel is draggable and resizable. The <strong>results table</strong> lists every matching aircraft &mdash; sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport. Aircraft blocked by a ground-operations timer show their countdown in red.<br/><br/>
             Closing the panel with its ✕ leaves the rental colors and badges on the map; use the menu item or the breadcrumb pill (click it to show/hide the panel, ✕ to exit) to turn the whole view off.
           </div>
         </div>
@@ -42677,10 +42700,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.62.0</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &ldquo;Only airports already on the map&rdquo; toggle in the Aircraft Rentals panel.</strong> When on, the rentals feature considers only SimFly-owned airports already shown on the map (still subject to any filters you have active) instead of pulling in every rental-only airport from across the world &mdash; so the map dots, the results table, the type/owner counts, and the plane/airport totals all stay limited to your airports. Off by default; your choice is remembered.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.61.0</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -55781,6 +55815,7 @@ function rgSendToFlightPlanner() {
           </div>
 
           <div class="aar-row" style="margin-top:9px;" title="Show/hide airplanes unavailable due to ground ops"><label>Available now only</label><span class="aar-toggle" id="aaRentAvailToggle" onclick="_aaRentToggleAvail()" title="Show/hide airplanes unavailable due to ground ops"><span class="aar-knob"></span></span></div>
+          <div class="aar-row" style="margin-top:9px;" title="When on, only SimFly-owned airports already shown on the map (subject to your active filters) are considered — not the extra rental-only airports from across the world"><label>Only airports already on the map</label><span class="aar-toggle" id="aaRentOwnedToggle" onclick="_aaRentToggleOwnedOnly()" title="When on, only SimFly-owned airports already shown on the map (subject to your active filters) are considered — not the extra rental-only airports from across the world"><span class="aar-knob"></span></span></div>
 
           <div class="aar-sec aar-sec-collapse" data-key="type" onclick="_aaRentToggleSection('type')"><span class="aar-tri">▼</span>Aircraft type</div>
           <div class="aar-sec-body" id="aaRentSec-type">
