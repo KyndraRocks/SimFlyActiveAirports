@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.50.0**
+**Current version: v3.51.0**
 
 ---
 
@@ -34,6 +34,13 @@ The panel lets you filter by aircraft category (the familiar 1–7 circles, with
 
 Closing the panel with its ✕ leaves the rental colors and badges on the map; the menu item or the breadcrumb pill turns the whole view off. You can also jump straight into a mode by adding `?mode=owner`, `?mode=map`, or `?mode=simbrief` to the app's address. And the map search box now matches your **Scenery Library notes** — type words or a "quoted phrase" and the airports whose notes contain them appear on the map.
 
+### Airport Radial Menu
+New in v3.51.0 — **right-click any airport dot** on the map (or **long-press** on a touch screen) to open a labelled radial menu of everything you can do with that airport. The icons bloom outward from the dot, the rest of the map dims so the menu stays readable even in a crowded region, and the airport you clicked keeps a bright highlight ring. Click a spoke to open it; click anywhere else, press **Esc**, or zoom the map to dismiss.
+
+The wheel adapts to each airport, showing only the actions that apply: **Airport info** (a full stats / weather / aircraft-suitability card) and **Scenery / rate** always appear; **SimFly details** shows for owned airports, **Airplanes** (the rentable aircraft parked there, with payouts and live availability) when there's rental data, and the **Sale page** when the airport is listed for sale. **flightsim.to** and **FS Addon Compare** round it out, each opening a search for that airport in a new tab. A plain airport shows four spokes; a fully-loaded one shows all seven.
+
+If you rate a lot of scenery, you don't have to go through the wheel every time — **double right-click** an airport to jump straight into the rating popover. (This replaces the old "double right-click a for-sale airport to open its sale page" shortcut; the sale page is now a labelled spoke, and double right-click is the universal rating shortcut on every airport.)
+
 ### Point-to-Point Distance
 Enter departure and arrival ICAOs to instantly calculate the great-circle distance in nautical miles. An arrow between the fields lets you swap the route direction with one click. Typing a valid owned ICAO auto-selects that pilot's owner entry in the matrix dropdowns.
 
@@ -52,7 +59,7 @@ Track which airports you have add-on scenery installed for, and rate the quality
 
 **Adding airports:**
 - **Shift+click** any airport dot on the map to toggle it in or out of the library. The first add automatically enables Highlight mode.
-- **Right-click (or long-press) any airport dot** to open the **Quick-Rate popover** — set a star rating right from the map. If the airport isn't already in the library, rating it adds it.
+- **Right-click (or long-press) any airport dot** to open the **radial menu**, then choose **Scenery / rate** to set a star rating right from the map (or **double right-click** the dot to jump straight there). If the airport isn't already in the library, rating it adds it.
 - **Paint mode** — click **📍 Add from map** in the **🛠 Manage** menu in the library footer to enter a persistent paint mode: click airport dots one-by-one without holding Shift.
 - **Autocomplete add** — type an ICAO in the Add Airport field; results from the global airport database appear as you type.
 - **Paste ICAOs** — paste any block of text containing ICAOs (space-, comma-, or newline-separated). Tokens are validated against the airport database; unrecognized codes are skipped with a count shown.
