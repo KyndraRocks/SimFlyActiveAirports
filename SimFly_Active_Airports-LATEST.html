@@ -8652,7 +8652,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.59.1';
+const APP_VERSION = '3.59.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -17524,6 +17524,7 @@ const _afkAudio = (() => {
   let ctx = null;
   let activeTimer = null;
   let activeSoundId = null;
+  let activeNodes = new Set();   // oscillators scheduled ahead for the active alarm (for instant stop)
   let previewTimer = null;
   let previewStopAt = 0;
 
@@ -17535,7 +17536,7 @@ const _afkAudio = (() => {
     return ctx;
   }
 
-  function _scheduleNote(when, note) {
+  function _scheduleNote(when, note, bucket) {
     const c = _ensureCtx();
     if (!c || !note || !note.f) return;
     const osc = c.createOscillator();
@@ -17555,34 +17556,82 @@ const _afkAudio = (() => {
     osc.connect(gain).connect(c.destination);
     osc.start(when);
     osc.stop(when + note.d / 1000 + 0.02);
+    // v3.59.2 — track scheduled oscillators so an active alarm can be silenced
+    // instantly (stop()), and self-prune via onended so the set stays bounded
+    // even during a multi-minute, look-ahead-scheduled alarm.
+    if (bucket) {
+      bucket.add(osc);
+      osc.onended = () => { try { bucket.delete(osc); } catch (_) {} };
+    }
   }
 
-  function _playPatternOnce(sound) {
+  // Schedule one full pattern beginning at audio-clock time `start`; returns the
+  // audio-clock time the pattern ends so the caller can chain the next repeat.
+  function _schedulePatternAt(sound, start, bucket) {
+    let t = start;
+    sound.pattern.forEach(note => {
+      if (note.f && note.f > 0) _scheduleNote(t, note, bucket);
+      t += note.d / 1000;
+    });
+    return t;
+  }
+
+  function _playPatternOnce(sound, bucket) {
     const c = _ensureCtx();
     if (!c) return 0;
-    let t = c.currentTime + 0.01;
-    let totalMs = 0;
-    sound.pattern.forEach(note => {
-      if (note.f && note.f > 0) _scheduleNote(t, note);
-      t += note.d / 1000;
-      totalMs += note.d;
-    });
-    return totalMs;
+    const start = c.currentTime + 0.01;
+    const end = _schedulePatternAt(sound, start, bucket);
+    return Math.max(0, (end - start) * 1000);
   }
+
+  // v3.59.2 — Background-tab-proof alarm playback.
+  // The old loop scheduled ONE pattern then used setTimeout to queue the next
+  // repeat. Background tabs in Chromium/Edge clamp timers to 1 s and, after
+  // ~5 min hidden, to once-per-MINUTE ("intensive throttling") — so the next
+  // repeat could arrive up to a minute late, producing the long, irregular
+  // gaps between alarm sounds.
+  //
+  // Fix: schedule repeats AHEAD on the Web Audio hardware clock. Once a note is
+  // handed to osc.start(when) it plays at exactly `when` on the audio thread,
+  // immune to JS-timer throttling. A lightweight "pump" timer just tops the
+  // buffer back up; even if that timer is throttled to once a minute, the
+  // look-ahead buffer (well over a minute) keeps the sound rock-steady. A tab
+  // actively producing scheduled audio is also exempt from intensive
+  // throttling and tab-freezing, which reinforces the effect.
+  const _AFK_LOOKAHEAD_S = 90;    // seconds of audio scheduled ahead on the audio clock
+  const _AFK_PUMP_MS     = 20000; // normal re-pump cadence (throttled tabs fall back on the buffer)
 
   function play(soundId) {
     stop();
     const sound = _AFK_SOUNDS.find(s => s.id === soundId) || _AFK_SOUNDS[0];
     activeSoundId = sound.id;
-    function loop() {
-      const ms = _playPatternOnce(sound);
-      activeTimer = setTimeout(loop, ms || 1000);
+    const c = _ensureCtx();
+    if (!c) return;
+    let cursor = c.currentTime + 0.05;   // audio-clock time of the next pattern repeat
+    function pump() {
+      const cc = _ensureCtx();
+      if (!cc || activeSoundId !== sound.id) return;   // stopped or swapped to another alarm
+      // If the machine slept (or the tab was frozen long enough that the audio
+      // clock outran our cursor), don't try to schedule into the past.
+      if (cursor < cc.currentTime) cursor = cc.currentTime + 0.05;
+      const horizon = cc.currentTime + _AFK_LOOKAHEAD_S;
+      while (cursor < horizon) {
+        cursor = _schedulePatternAt(sound, cursor, activeNodes);
+      }
+      activeTimer = setTimeout(pump, _AFK_PUMP_MS);
     }
-    loop();
+    pump();
   }
 
   function stop() {
     if (activeTimer) { clearTimeout(activeTimer); activeTimer = null; }
+    // Silence everything already scheduled on the audio clock so dismiss /
+    // sound-swap is instant rather than letting the look-ahead buffer drain.
+    if (activeNodes.size) {
+      const now = ctx ? ctx.currentTime : 0;
+      activeNodes.forEach(o => { try { o.stop(now); } catch (_) {} try { o.disconnect(); } catch (_) {} });
+      activeNodes.clear();
+    }
     activeSoundId = null;
   }
 
@@ -21734,6 +21783,25 @@ function _afkSyncTripOverlay() {
   }).join('');
 }
 
+// v3.59.2 — Reconcile alarm AUDIO with the current tripped set. Because alarm
+// tones are now scheduled AHEAD on the audio clock (up to _AFK_LOOKAHEAD_S of
+// buffered repeats), any path that disables or deletes an alarm MUST call this
+// so a cancelled alarm's already-buffered sound can't keep playing. If nothing
+// is tripped any more it silences audio + clears the overlay/flash chrome;
+// otherwise it swaps the tone to the highest-priority still-tripped alarm
+// (mirrors the dismiss/priority-swap logic the safe paths already use).
+function _afkReconcileAlarmAudio() {
+  const tripped = _afkAlarms.tripped();
+  if (tripped.length === 0) {
+    _afkAudio.stop();
+    _afkHideTripOverlay();
+    _afkStopTabFlash();
+    return;
+  }
+  const wantId = tripped[0].sound || 'digital-clock';
+  if (_afkAudio.currentId() !== wantId) _afkAudio.play(wantId);
+}
+
 // ---------------------- TAB-TITLE FLASH -----------------------------------
 let _afkTabFlashTimer = 0;
 let _afkOrigTitle = null;
@@ -23353,6 +23421,11 @@ function _afkToggleAlarm(id, on) {
     }
     if (a.type === 'timer') _afkCancelTimerSchedule(id);
     _afkAlarms.update(id, { enabled: false, status: 'armed', trippedAt: null, state: a.state });
+    // v3.59.2 — if this alarm was the one currently sounding, silence its
+    // look-ahead-buffered audio (or hand off to the next tripped alarm) and
+    // refresh the trip overlay so its row disappears too.
+    _afkSyncTripOverlay();
+    _afkReconcileAlarmAudio();
   }
   _afkRenderAlarmList();
   _afkUpdateBadge();
@@ -23375,6 +23448,9 @@ function _afkRemoveAlarm(id) {
   _afkRenderGeofenceVisuals();
   _afkRenderWaypointVisuals();
   _afkSyncTripOverlay();
+  // v3.59.2 — deleting a sounding alarm must also kill its look-ahead-buffered
+  // audio (the buffer can otherwise outlive the alarm by up to _AFK_LOOKAHEAD_S).
+  _afkReconcileAlarmAudio();
 }
 function _afkSetAlarmSound(id, s) { _afkAlarms.update(id, { sound: s }); }
 function _afkSetGeofenceTrigger(id, t) {
@@ -42436,8 +42512,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.59.1</span>
+          <span class="release-version">v3.59.2</span>
           <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Alarm sounds no longer lag in a background tab.</strong> When the app sat in a background browser tab (common while you&rsquo;re looking at the sim), Edge/Chrome throttle page timers &mdash; eventually to just once a minute &mdash; which made repeating AFK alarm tones stutter with long, irregular gaps. Alarm audio is now scheduled ahead directly on the browser&rsquo;s audio clock, so each repeat plays on time no matter how aggressively the tab is throttled. Dismissing, disabling, or deleting an alarm silences it instantly &mdash; the scheduled-ahead sound is cancelled the moment the alarm is turned off, so a cancelled alarm can never keep ringing.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.59.1</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>

@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.59.1**
+**Current version: v3.59.2**
 
 ---
 
@@ -345,7 +345,7 @@ Each alarm has its own **enable toggle**, **sound** (5 synthesized tones — Dig
 
 **Auto-disable on dismiss** — whenever an alarm fires and you dismiss it (manually via DISMISS ALL / ✕, or via the seconds-mode auto-dismiss), its enable toggle flips off automatically. Re-arming for the next use is an explicit user action: click the toggle on the card. The Alerts toolbar badge counts only enabled alarms, so it visibly decrements as each alarm goes off.
 
-**When an alert trips** a full-screen overlay covers the map with a pulsing red **ALARM** header listing every alert currently tripped. The sound loops continuously until you click **DISMISS ALL** — or press **Enter** (v2.88.0+) or **Escape** (v2.94.0+), both of which trigger the same action. The browser tab title also flashes *⚠ ALARM — SimFly* as a cross-window cue. **Only one sound ever plays at a time** — the highest-priority tripped alert wins, so additional alerts that pile on just get added to the overlay list. If you dismiss alerts one at a time via the ✕ on each row, the audio swaps to the next-highest still-tripped alert seamlessly.
+**When an alert trips** a full-screen overlay covers the map with a pulsing red **ALARM** header listing every alert currently tripped. The sound loops continuously until you click **DISMISS ALL** — or press **Enter** (v2.88.0+) or **Escape** (v2.94.0+), both of which trigger the same action. The browser tab title also flashes *⚠ ALARM — SimFly* as a cross-window cue. **Only one sound ever plays at a time** — the highest-priority tripped alert wins, so additional alerts that pile on just get added to the overlay list. If you dismiss alerts one at a time via the ✕ on each row, the audio swaps to the next-highest still-tripped alert seamlessly. **Steady sound in a background tab** (v3.59.2+) — browsers aggressively throttle page timers when a tab sits in the background (which is normal while you're looking at the sim), which used to make the looping alarm tone stutter with long, irregular gaps. The tone is now scheduled directly on the browser's audio clock, so each repeat plays on time no matter how throttled the tab is. Turning an alert off — dismiss, disable, or delete — cancels the scheduled-ahead sound instantly, so a cancelled alert can never keep ringing.
 
 **Armed counter in the title bar** (v2.89.0+) — the modal title bar shows a live armed-count summary (e.g. *"All 3 alerts armed"*, *"2 of 5 alerts armed"*, *"1 alert armed"*) with proper singular/plural.
 
