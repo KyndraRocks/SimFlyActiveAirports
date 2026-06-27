@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.51.1**
+**Current version: v3.52.0**
 
 ---
 
@@ -39,7 +39,7 @@ New in v3.51.0 — **right-click any airport dot** on the map (or **long-press**
 
 The wheel adapts to each airport, showing only the actions that apply: **Airport info** (a full stats / weather / aircraft-suitability card) and **Scenery / rate** always appear; **SimFly details** shows for owned airports, **Airplanes** (the rentable aircraft parked there, with payouts and live availability) when there's rental data, and the **Sale page** when the airport is listed for sale. **flightsim.to** and **FS Addon Compare** round it out, each opening a search for that airport in a new tab. A plain airport shows four spokes; a fully-loaded one shows all seven.
 
-The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click. **Right-click** one instead to open it in a **background tab** and keep the wheel up — so you can open several sites at once (say flightsim.to *and* FS Addon Compare) without leaving the map, then dismiss the wheel when you're done.
+The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click. **Right-click or middle-click** one instead to open it in a **background tab** and keep the wheel up — so you can open several sites at once (say flightsim.to *and* FS Addon Compare) without leaving the map, then dismiss the wheel when you're done.
 
 If you rate a lot of scenery, you don't have to go through the wheel every time — **double right-click** an airport to jump straight into the rating popover. (This replaces the old "double right-click a for-sale airport to open its sale page" shortcut; the sale page is now a labelled spoke, and double right-click is the universal rating shortcut on every airport.)
 
@@ -89,7 +89,7 @@ The text search box also matches the full airport name in addition to ICAO and a
 
 **Row layout** — each library row uses the SimFly category color directly on the ICAO text (the old colored dot left of the ICAO was removed because it could be confused with the weather flight-category dot). For SimFly-owned airports the ICAO + name pair is a clickable link to the SimFly details page; unowned entries render as plain text. ICAO + name, the rating stars, and the ✕ delete button are all sized for comfortable scanning and clicking.
 
-**⚙ Developer Stats** — click the **⚙ Developer Stats** button in the footer to open a per-developer summary of your library. Lists every developer for whom you have at least one rated airport, with their total airport count, rated count, and **average star rating** displayed at two-decimal precision (e.g. *3.75/5*) using a proportionally-filled star widget. Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort by that column (numeric columns default to descending). Click a developer row to expand or collapse their inline airport list (ICAOs render as category-colored chips, with SimFly-detail links when owned); click the **🔍** button next to a developer's name to filter the Scenery Library to that developer.
+**⚙ Developer Stats** — click the **⚙ Developer Stats** button in the footer to open a per-developer summary of your library. Lists every developer for whom you have at least one rated airport, with their total airport count, rated count, and **average star rating** displayed at two-decimal precision (e.g. *3.75/5*) using a proportionally-filled star widget. Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort by that column (numeric columns default to descending). A **search box at the top** of the window filters the developer list as you type — handy for finding one in a long list. Click a developer row to expand or collapse their inline airport list (ICAOs render as category-colored chips, with SimFly-detail links when owned); click the **🔍** button next to a developer's name to filter the Scenery Library to *just that developer's airports* — the 🔍 drill now clears any leftover library search text and mode filter first, so you always land on a clean list rather than an unexpected intersection of filters.
 
 **🛠 Stores & Developers** — click **🛠 Stores & Developers** in the **🛠 Manage** dropdown in the footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. **Edit a value and click Save** to rename it on every affected airport — rename to the exact spelling of an existing value to merge duplicates (e.g. *Fly Tampa* → *FlyTampa* folds the two into one). The **✕** button clears the value from every airport that uses it, after a confirm prompt reporting exactly how many airports will be affected.
 

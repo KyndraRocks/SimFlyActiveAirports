@@ -4745,7 +4745,16 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      developer summary reads at a comfortable size. The contextual rule on
      .dev-c-rating .sl-star also scales the static stars in proportion. */
   .dev-intro { padding:0.85rem 1.5rem 0.7rem; color:var(--muted); font-family:'Rajdhani',sans-serif; font-size:1.33rem; line-height:1.45; border-bottom:1px solid var(--border); }
-  .dev-table { width:100%; border-collapse:collapse; flex:1; }
+  .dev-filter-wrap { padding:0.6rem 1.5rem 0.7rem; border-bottom:1px solid var(--border); }
+  .dev-filter-box { width:100%; box-sizing:border-box; padding:0.5rem 0.85rem; font-family:'Rajdhani',sans-serif; font-size:1.25rem; background:rgba(0,0,0,0.28); border:1px solid rgba(0,200,255,0.35); border-radius:6px; color:var(--text); }
+  .dev-filter-box::placeholder { color:var(--muted); }
+  .dev-filter-box:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,200,255,0.25); }
+  body.light-mode .dev-filter-box { background:rgba(0,0,0,0.04); color:var(--fg); }
+  /* No flex:1 — a <table> taller than its content distributes the extra height
+     across its rows, so a short (e.g. filtered) list would balloon each row.
+     Content-height keeps rows uniform; the modal-body (overflow-y:auto) scrolls
+     when the full list is long. */
+  .dev-table { width:100%; border-collapse:collapse; }
   .dev-table thead th { position:sticky; top:0; background:var(--panel); border-bottom:1px solid var(--border); color:var(--accent); font-family:'Rajdhani',sans-serif; font-size:1.29rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; padding:0.65rem 1rem; cursor:pointer; user-select:none; text-align:left; white-space:nowrap; }
   .dev-table thead th:hover { color:#fff; }
   .dev-table thead th.dev-c-num { text-align:right; }
@@ -4955,6 +4964,10 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rgw-lbl:hover { border-color:var(--accent); }
   .rg-dot-info-pop { position:absolute; z-index:11000; max-width:360px; min-width:240px; background:rgba(16,22,34,0.97); border:1px solid rgba(0,200,255,0.5); border-radius:9px; padding:0.7rem 0.9rem 0.8rem; box-shadow:0 6px 24px rgba(0,0,0,0.7); backdrop-filter:blur(6px); font-family:'Rajdhani',sans-serif; color:var(--text); max-height:72vh; overflow:auto; }
   body.light-mode .rg-dot-info-pop { background:rgba(245,248,252,0.98); border-color:rgba(0,120,200,0.45); }
+  /* Airplanes grid sizes to its 5 columns (like the on-map badge tooltip) rather
+     than being capped at 360px and horizontally clipped. */
+  .rg-dot-info-pop.rg-dot-info-pop-fit { width:max-content; max-width:min(640px,92vw); }
+  .rg-dot-info-pop.rg-dot-info-pop-fit .aar-bd-hdr { padding-right:1.5rem; }
   .rg-dot-info-pop .dist-map-info-card { background:transparent; border:none; padding:0; }
   .rg-dot-info-pop .rgw-pop-close { position:absolute; top:0.18rem; right:0.5rem; background:none; border:none; color:var(--muted); cursor:pointer; font-size:1.5rem; line-height:1; padding:0 0.3rem; }
   .rg-dot-info-pop .rgw-pop-close:hover { color:var(--text); }
@@ -8604,7 +8617,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.51.1';
+const APP_VERSION = '3.52.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -28776,11 +28789,20 @@ function _devSetSort(col) {
   _devRender();
 }
 
+// Live filter text for the developer list (v3.52.0). Matched case-insensitively
+// against the developer name as the user types.
+let _devFilterText = '';
+function _devSetFilter(v) {
+  _devFilterText = v || '';
+  _devRender();
+}
+
 function _devRender() {
   const body = document.getElementById('devTbody');
   const empty = document.getElementById('devEmpty');
   if (!body) return;
-  const rows = _devSort(_devAggregate());
+  const ft = _devFilterText.trim().toLowerCase();
+  const rows = _devSort(_devAggregate()).filter(r => !ft || r.name.toLowerCase().includes(ft));
   // Sort-indicator arrows on column headers
   document.querySelectorAll('#developersModal th[data-dev-col]').forEach(th => {
     const col = th.dataset.devCol;
@@ -28789,7 +28811,12 @@ function _devRender() {
   });
   if (!rows.length) {
     body.innerHTML = '';
-    if (empty) empty.classList.add('visible');
+    if (empty) {
+      empty.textContent = ft
+        ? 'No developers match “' + _devFilterText.trim() + '”.'
+        : 'No developers with rated scenery yet. Rate an airport in the Scenery Library to see it appear here.';
+      empty.classList.add('visible');
+    }
     return;
   }
   if (empty) empty.classList.remove('visible');
@@ -28852,14 +28879,24 @@ function _devToggleExpand(name) {
 
 // Apply the developer filter and close the modal. Called from the 🔍 button;
 // stopPropagation prevents the parent row's expand-toggle from also firing.
+// Drilling into a developer should land on a CLEAN view of just that developer's
+// airports, so first clear any leftover Scenery Library search text and reset the
+// mode filter (owned/rated/unrated) — otherwise they intersect with the developer
+// filter and hide the airports the user expected to see.
 function _devApplyFilter(event, name) {
   if (event && event.stopPropagation) event.stopPropagation();
-  _slSetDeveloperFilter(name);
+  const searchBox = document.getElementById('slSearch');
+  if (searchBox) searchBox.value = '';
+  _slFilterMode = 'all';
+  _slSetDeveloperFilter(name);   // sets the developer filter, saves prefs, re-renders clean
   _devCloseModal();
 }
 
 function openDevelopersModal() {
   _devExpanded = null;
+  _devFilterText = '';
+  const box = document.getElementById('devFilterBox');
+  if (box) box.value = '';
   const el = document.getElementById('developersModal');
   if (!el) return;
   el.classList.add('open');
@@ -31871,7 +31908,10 @@ function _rgOpenDotWheel(icao, latlng, m) {
             : (typeof airportDB !== 'undefined' && airportDB ? airportDB.get(up) : null);
   const pt  = _rgMap.latLngToContainerPoint(latlng);
   const W   = mapEl.clientWidth, H = mapEl.clientHeight;
-  const R   = 120;
+  // Radius of the spoke ring. 135 (not 120) gives the widest labels — e.g.
+  // "FS Addon Compare" — enough vertical clearance that they no longer overlap
+  // the icon of the spoke one position further down the circle.
+  const R   = 135;
   // Clamp the wheel centre so chips + labels never fall off the map edge.
   const cx = Math.max(R + 70, Math.min(W - R - 70, pt.x));
   const cy = Math.max(R + 58, Math.min(H - R - 58, pt.y));
@@ -31890,7 +31930,7 @@ function _rgOpenDotWheel(icao, latlng, m) {
     { glyph:'ℹ️', label:'Airport info',    cond:false, ext:false, on:true,        act:() => _rgWheelOpenInfo(latlng, up) },
     { glyph:'📋', label:'SimFly details',   cond:true,  ext:true,  on:owned,       url:'https://simfly.io/assets/airport/' + up + '/details' },
     { glyph:'⭐', label:'Scenery / rate',   cond:false, ext:false, on:true,        act:() => _rgShowRatePopover(latlng, up) },
-    { glyph:'🛩', label:'Airplanes',        cond:true,  ext:false, on:!!planesHtml, act:() => _rgShowDotInfoPopover(latlng, up, planesHtml) },
+    { glyph:'🛩', label:'Airplanes',        cond:true,  ext:false, on:!!planesHtml, act:() => _rgShowDotInfoPopover(latlng, up, planesHtml, 'rg-dot-info-pop-fit') },
     { glyph:'🏷', label:'Sale page',        cond:true,  ext:true,  on:forSale,     url:'https://simfly.io/marketplace/users/airports?icaos%5B%5D=' + safe },
     { glyph:'🔀', label:'FS Addon Compare', cond:false, ext:true,  on:true,        url:'https://www.fsaddoncompare.com/search/' + up },
     { glyph:'🌐', label:'flightsim.to',     cond:false, ext:true,  on:true,        url:'https://flightsim.to/search?q=' + up },
@@ -31948,7 +31988,7 @@ function _rgOpenDotWheel(icao, latlng, m) {
     el.style.setProperty('--dx', (x - cx) + 'px');
     el.style.setProperty('--dy', (y - cy) + 'px');
     el.style.setProperty('--i', i);
-    const titleAttr = d.url ? ' title="Click to open · Right-click to open in a background tab"' : '';
+    const titleAttr = d.url ? ' title="Click to open · Right-click or middle-click to open in a background tab"' : '';
     el.innerHTML = '<div class="rgw-ic' + (d.cond ? ' rgw-cond' : '') + '"' + titleAttr + '>' + d.glyph +
                    (d.ext ? '<span class="rgw-ext">↗</span>' : '') + '</div>' +
                    '<div class="rgw-lbl"' + titleAttr + '>' + d.label + '</div>';
@@ -31959,15 +31999,25 @@ function _rgOpenDotWheel(icao, latlng, m) {
       if (d.url) window.open(d.url, '_blank', 'noopener,noreferrer');
       else d.act();
     };
-    // Right-click on an external spoke: open in a background tab and KEEP the
-    // wheel up so several sites can be opened in a row. (No-op for internal.)
-    const ctx = (e) => {
+    // Right-click OR middle-click on an external spoke: open in a background tab
+    // and KEEP the wheel up so several sites can be opened in a row. While the
+    // wheel + scrim are up, all clicks belong to the wheel — so middle-click here
+    // intentionally overrides the dots' middle-click rotation-gauge toggle.
+    // (Both are no-ops for internal spokes.)
+    const bgOpen = (e) => {
       e.stopPropagation(); e.preventDefault();
       if (d.url) _rgOpenBgTab(d.url);
     };
     el.querySelectorAll('.rgw-ic, .rgw-lbl').forEach(t => {
       t.addEventListener('click', fire);
-      t.addEventListener('contextmenu', ctx);
+      t.addEventListener('contextmenu', bgOpen);
+      // mousedown must stopPropagation for EVERY button: a middle (button 1)
+      // mousedown otherwise bubbles to the Leaflet map container, which hit-tests
+      // the dimmed dot underneath and fires its rotation-gauge toggle. Also
+      // preventDefault the middle button to kill the autoscroll cursor; open on
+      // auxclick.
+      t.addEventListener('mousedown', (e) => { e.stopPropagation(); if (e.button === 1) e.preventDefault(); });
+      t.addEventListener('auxclick', (e) => { if (e.button === 1) bgOpen(e); });
     });
     wheel.appendChild(el);
   });
@@ -31979,13 +32029,15 @@ function _rgOpenDotWheel(icao, latlng, m) {
 }
 
 // Generic per-airport info popover (used by the Airport info + Airplanes spokes).
-function _rgShowDotInfoPopover(latlng, icao, innerHtml) {
+// extraClass lets a caller widen it — the Airplanes grid needs to size to its
+// columns (rg-dot-info-pop-fit) instead of being capped + horizontally clipped.
+function _rgShowDotInfoPopover(latlng, icao, innerHtml, extraClass) {
   _rgCloseDotInfoPop();
   if (!_rgMap || !innerHtml) return;
   const mapEl = _rgMap.getContainer(); if (!mapEl) return;
   const pt = _rgMap.latLngToContainerPoint(latlng);
   const pop = document.createElement('div');
-  pop.className = 'rg-dot-info-pop'; pop.id = 'rgDotInfoPop';
+  pop.className = 'rg-dot-info-pop' + (extraClass ? ' ' + extraClass : ''); pop.id = 'rgDotInfoPop';
   pop.style.left = '-9999px'; pop.style.top = '-9999px';
   pop.innerHTML = '<button class="rgw-pop-close" aria-label="Close">×</button>' + innerHtml;
   L.DomEvent.disableClickPropagation(pop);
@@ -41642,7 +41694,7 @@ function rgSendToFlightPlanner() {
             • <strong>Airplanes</strong> — lists the rentable aircraft parked at that airport with payouts and live availability. <em>(when rental data exists)</em><br/>
             • <strong>Sale page</strong> — opens the airport&rsquo;s SimFly sale listing in a new tab. <em>(airports listed for sale)</em><br/>
             • <strong>FS Addon Compare</strong> and <strong>flightsim.to</strong> — search that ICAO on each scenery site in a new tab. <em>(always)</em><br/><br/>
-            The clicked airport&rsquo;s <strong>ICAO is shown in the centre</strong> of the wheel so you always know which airport you&rsquo;re acting on. The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click; <strong>right-click one to open it in a background tab</strong> instead &mdash; the wheel stays up so you can fire off several at once (e.g. flightsim.to <em>and</em> FS Addon Compare) before dismissing it.<br/><br/>
+            The clicked airport&rsquo;s <strong>ICAO is shown in the centre</strong> of the wheel so you always know which airport you&rsquo;re acting on. The four spokes that open a website (SimFly details, Sale page, flightsim.to, FS Addon Compare) open in a foreground tab on a normal click; <strong>right-click or middle-click one to open it in a background tab</strong> instead &mdash; the wheel stays up so you can fire off several at once (e.g. flightsim.to <em>and</em> FS Addon Compare) before dismissing it.<br/><br/>
             <strong>Fast path for rating:</strong> if you rate a lot of scenery, <strong>double right-click</strong> an airport to jump straight into the Quick-Rate popover, skipping the wheel. (This replaces the old &ldquo;double right-click a for-sale airport to open its sale page&rdquo; shortcut — the sale page is now a spoke, and double right-click is the universal rating shortcut.)
           </div>
         </div>
@@ -41724,7 +41776,7 @@ function rgSendToFlightPlanner() {
             <strong>Notes</strong> — each library row also has a collapsible <strong>▶ Notes</strong> disclosure beneath the Store / Dev inputs (kept minimised until you click the triangle). Expand it to record a free-text note of up to 1,024 characters — install quirks, version numbers, reminders — with a live character counter. Notes are saved to local storage and round-trip through Save / Load Scenery Library. The same field appears in the right-click Quick-Rate popover.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
             <strong>🛠 Manage Values modal</strong> — click the <strong>🛠 Manage Values</strong> button in the Scenery Library footer to open a bulk-edit view of every Store and Developer value in your library. Each value shows the number of airports using it. <strong>Edit a value and click Save</strong> to rename it on every affected airport (rename to the exact spelling of an existing value to merge duplicates — handy for fixing typos like <em>iniBilds → iniBuilds</em>, or normalising spacing like <em>Fly Tampa → FlyTampa</em>). The <strong>✕</strong> button clears the value from every airport that uses it, after a confirm prompt that reports exactly how many airports will be affected.<br/><br/>
-            <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button in the Scenery Library footer to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. Click any column header to sort. Click a developer row to expand or collapse their airport list; click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer.<br/><br/>
+            <strong>⚙ Developers modal</strong> — click the <strong>⚙ Developers</strong> button in the Scenery Library footer to open a per-developer summary of your library. The modal lists every developer for whom you have at least one rated airport and shows: total airports, rated count, and the <em>average star rating</em> over rated entries (displayed at two-decimal precision, e.g. <em>3.75/5</em>, with a proportionally-filled star widget). Unrated airports are excluded from the average so they don't pull the developer's rating down. A <strong>search box at the top</strong> narrows the list to matching developers as you type &mdash; handy for finding one in a long list. Click any column header to sort. Click a developer row to expand or collapse their airport list; click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to <em>just that developer's airports</em>. The 🔍 drill clears any leftover library search text and resets the <em>rated / unrated / owned</em> mode filter first, so you always land on a clean list of that developer's airports rather than an unexpected intersection of filters.<br/><br/>
             The library is stored in your browser&rsquo;s <code>localStorage</code>. Closing the panel after making changes prompts you to <strong>💾 Download &amp; Close</strong> to save a backup. Use <strong>💾 Save Scenery Library</strong> (⋯ menu) to back up or transfer to another machine at any time; <strong>📂 Load Scenery Library</strong> reads a backup file back in (merging into your existing entries). When you open the modal with unsaved changes, airports you touched this session (added, rated, or had their store / developer edited) float to the top of the list under the current sort — so the rows you just shift-clicked or right-click-rated on the map are right where you need them to fill in store / developer metadata.
           </div>
         </div>
@@ -41940,10 +41992,23 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.52.0</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Filter the Scenery Developers list as you type.</strong> The <em>⚙ Developer Stats</em> window now has a search box at the top &mdash; start typing a developer&rsquo;s name and the list narrows live to matching developers, so you can find one in a long list without scrolling. Clearing the box restores the full list, and it resets each time you open the window.</li>
+          <li><strong>Fix &mdash; the 🔍 developer drill now shows a clean list.</strong> Clicking the 🔍 next to a developer is meant to show <em>that developer&rsquo;s airports</em> in the Scenery Library. Previously it kept whatever you&rsquo;d last typed in the library&rsquo;s search box and any active <em>rated / unrated / owned</em> mode filter, so the two combined and often hid the airports you expected. It now clears the search box and resets the mode filter first, so you land on exactly that developer&rsquo;s airports every time.</li>
+          <li><strong>Middle-click a radial-menu website spoke to open it in a background tab.</strong> The four website spokes (SimFly details, Sale page, flightsim.to, FS Addon Compare) already open in a background tab on right-click; now <strong>middle-click</strong> does the same. While the wheel is open the map is dimmed, so all clicks belong to the wheel &mdash; middle-click here intentionally takes priority over the map&rsquo;s usual middle-click &ldquo;show remaining rotations&rdquo; gesture.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.51.1</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -53690,6 +53755,9 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" style="padding:0;">
       <div class="dev-intro">
         Per-developer summary of your Scenery Library. Average rating is computed across <em>rated</em> airports only — unrated entries do not pull the average down. Click a developer row to expand or collapse their airport list. Click the <strong>🔍</strong> button next to a developer's name to filter the Scenery Library to that developer (closes this modal).
+      </div>
+      <div class="dev-filter-wrap">
+        <input type="text" id="devFilterBox" class="dev-filter-box" placeholder="Filter developers by name…" oninput="_devSetFilter(this.value)" autocomplete="off" spellcheck="false" />
       </div>
       <table class="dev-table">
         <thead>
