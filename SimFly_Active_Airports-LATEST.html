@@ -2242,20 +2242,51 @@
     white-space: nowrap;
   }
   /* Flight-time calibration — two reference flights drive en-route time estimates */
+  /* v3.59.0 — promoted from a muted footnote to a conspicuous card: this
+     calibration feeds the en-route time estimates shown across the app, so it
+     should read as important. Cyan accent when calibrated, amber when empty. */
   .ac-ft-section {
     flex: 1 1 100%;
-    border-top: 1px solid rgba(255,255,255,0.07);
-    padding-top: 9px;
-    margin-top: 9px;
+    margin-top: 14px;
+    padding: 12px 14px 13px;
+    border: 1.5px solid var(--accent);
+    border-radius: 9px;
+    background: linear-gradient(180deg, rgba(0,200,255,0.11), rgba(0,200,255,0.03));
+    box-shadow: 0 0 0 1px rgba(0,200,255,0.12), 0 3px 16px rgba(0,200,255,0.10);
+  }
+  /* Not yet calibrated for the selected aircraft — amber to invite input. */
+  .ac-ft-section.uncal {
+    border-color: #ffc04d;
+    background: linear-gradient(180deg, rgba(255,192,77,0.12), rgba(255,192,77,0.03));
+    box-shadow: 0 0 0 1px rgba(255,192,77,0.14), 0 3px 16px rgba(255,192,77,0.10);
   }
   .ac-ft-title {
     font-family: 'Orbitron', monospace;
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
+    font-size: 0.92rem;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 2px;
+    font-weight: 700;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 3px;
   }
+  .ac-ft-section.uncal .ac-ft-title { color: #ffc04d; }
+  .ac-ft-title .ac-ft-icon { font-size: 1.05em; line-height: 1; }
+  .ac-ft-caption {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.92rem;
+    line-height: 1.32;
+    color: #b9d2e4;
+    margin: 0 0 9px;
+  }
+  .ac-ft-section.uncal .ac-ft-caption::after {
+    content: ' Not yet calibrated for this aircraft.';
+    color: #ffc04d;
+    font-weight: 600;
+  }
+  body.light-mode .ac-ft-caption { color: #2a4a5e; }
   .ac-ft-row {
     display: flex;
     align-items: center;
@@ -4685,6 +4716,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* Both library + developers modals occupy ~75% of the viewport height so the
      longer rows + the per-row inputs and the developer table aren't cramped. */
   #sceneryModal .modal, #developersModal .modal { min-height:75vh; max-height:90vh; }
+  /* v3.58.1 — fixed height so filtering the developer list (fewer rows) doesn't
+     resize the modal; the list scrolls inside the .modal-body (overflow-y:auto). */
+  #developersModal .modal { height:85vh; }
   #sceneryModal .modal-body { display:flex; flex-direction:column; }
   .sl-list::-webkit-scrollbar { width:7px; } .sl-list::-webkit-scrollbar-track { background:transparent; } .sl-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:6px; }
   /* Two-line list row: header (.sl-row-hdr) holds the existing ICAO + name + stars + delete
@@ -8468,8 +8502,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
             </div>
 
             <!-- Flight-time calibration: two reference flights → estimated en-route time -->
-            <div class="ac-ft-section">
-              <div class="ac-ft-title">Flight time calibration</div>
+            <div class="ac-ft-section" id="acFtSection">
+              <div class="ac-ft-title"><span class="ac-ft-icon">⏱</span>Flight Time Calibration</div>
+              <div class="ac-ft-caption">Enter two reference flights to power en-route time estimates across the app — on route lines, the map, measurements, and airport cards.</div>
               <div class="ac-ft-row">
                 <span class="ac-ft-label">Shortest</span>
                 <input type="number" class="ac-ft-input" id="acFtShortNm" min="0" step="1" inputmode="numeric" placeholder="nm"
@@ -8617,7 +8652,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.52.0';
+const APP_VERSION = '3.59.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9873,6 +9908,9 @@ function _acFtUpdateHint() {
   const el = document.getElementById('acFtHint');
   if (!el) return;
   const cal = _acGetFlightCal(_acSelectedCode);
+  // Mirror the calibrated/empty state on the section card (cyan vs amber accent).
+  const sec = document.getElementById('acFtSection');
+  if (sec) sec.classList.toggle('uncal', !cal);
   if (!cal) {
     el.textContent = 'Enter a short and a long flight (distance + time) to show estimated en-route time on measurements, region lines, and routes.';
     el.classList.remove('ready');
@@ -10537,6 +10575,17 @@ function _acSelect(code, keepCollapsed) {
   // map (measurements, region hero line, route line) so they re-estimate for the
   // new airframe, or disappear if it has no flight-time calibration.
   _acRefreshFlightTimeLabels();
+  // v3.53.0 — the selected aircraft drives the owner-fleet rental tooltip line +
+  // the "other airports with <ac>" map badge. Refresh the Display-menu row, and
+  // if the region map is up, re-render dots so their tooltips rebuild with the new
+  // aircraft (the cache key includes it) and the badge overlay re-evaluates.
+  if (typeof _aaSyncOwnerAcBadgeBtn === 'function') _aaSyncOwnerAcBadgeBtn();
+  // Picking an aircraft completes the "Select Aircraft" flow — drop the spotlight.
+  if (code && typeof _aaClearAircraftFocus === 'function') _aaClearAircraftFocus();
+  if (typeof _rgMap !== 'undefined' && _rgMap && _rgDotLayer && (_rgPhase === 'explore' || _rgPhase === 'results')) {
+    if (typeof _rgRenderDots === 'function') _rgRenderDots();
+    if (typeof _rgHighlightDots === 'function') _rgHighlightDots();
+  }
   // Open the panel so the user can see their selection — unless caller
   // requests it stays collapsed (e.g. when auto-selected from URL params)
   if (code && !keepCollapsed) {
@@ -12561,6 +12610,14 @@ function _buildTooltipHtml(icao, rec, showSimFlyLink, sortHint, ownerName, acRol
   }
   if (typeof _rgForSale === 'function' && _rgForSale(icao)) {
     html += `<span class="tip-line tip-forsale">🏷 Listed for sale</span>`;
+  }
+  // v3.53.0 — selected aircraft availability across this owner's fleet.
+  if (typeof _aaOwnerAcSummary === 'function') {
+    const _oac = _aaOwnerAcSummary(icao, ownerName);
+    if (_oac) {
+      const _oc = _oac.found ? '#2ecc71' : '#8b9aab';
+      html += `<span class="tip-line" style="color:${_oc}">🛩 ${esc(_oac.ac)} for rent: ${esc(_oac.text)}</span>`;
+    }
   }
   html += `<span class="tip-line">Elevation: ${elevFt} ft &nbsp;/&nbsp; ${elevM} m MSL</span>`;
 
@@ -29605,6 +29662,370 @@ function _aaRentBestPayoutAt(icao) {
   for (const p of m) if (p.payout != null && (best === null || p.payout > best)) best = p.payout;
   return best;
 }
+
+// ── Owner-fleet rental finder for the SELECTED aircraft (v3.53.0) ─────────────
+// Route-planning aid: when a departure/arrival airport is chosen on the map, this
+// answers "does the OWNER of that airport have my currently-selected aircraft
+// (_acSelectedCode) sitting rentable RIGHT NOW — no ground-ops timer — at any of
+// their airports?" Powers a dot-tooltip line and an on-map badge overlay. Works
+// regardless of Rentals view mode (the feed is ingested at boot either way) and
+// ignores the Rentals panel's per-axis filters — it's a direct availability scan.
+let _aaOwnerAcBadge = (() => { try { const v = localStorage.getItem('simfly_aa_owner_ac_badge'); return v === null ? true : v === '1'; } catch (_) { return true; } })();
+let _aaOwnerAcBadgeLayer = null;   // Leaflet layerGroup holding the on-map badges
+
+// Every airport in ownerName's fleet that holds acCode rentable right now.
+// Returns [{ icao, count }] (count = how many such planes are free), sorted by
+// count desc then ICAO. [] when inputs are missing or there are no hits. Direct
+// type match (the aircraft ICAO alias map was retired once CSV codes were aligned
+// to the SimFly API), case-normalised on both sides.
+function _aaOwnerFleetRentalsFor(ownerName, acCode) {
+  if (!ownerName || !acCode || !_aaRentByApt || !_aaRentByApt.size) return [];
+  const want   = String(acCode).toUpperCase();
+  const owners = _getOwnerData();
+  const owner  = owners && owners.find(o => o.name === ownerName);
+  if (!owner) return [];
+  const hits = [];
+  for (const ap of (owner.airports || [])) {
+    const up = (ap.icao || '').toUpperCase();
+    const planes = _aaRentByApt.get(up);
+    if (!planes) continue;
+    let count = 0;
+    for (const p of planes) if ((p.icao || '').toUpperCase() === want && _aaRentIsAvailableNow(p)) count++;
+    if (count) hits.push({ icao: up, count });
+  }
+  hits.sort((a, b) => b.count - a.count || a.icao.localeCompare(b.icao));
+  return hits;
+}
+
+// Plain summary for tooltips/cards: the selected aircraft's availability across
+// ownerName's fleet. Returns null when not applicable (no aircraft selected, no
+// owner, or no feed). `icao` is the airport the surface belongs to, so a hit at
+// that same airport reads as "here".
+function _aaOwnerAcSummary(icao, ownerName) {
+  const ac = _acSelectedCode;
+  if (!ac || !ownerName || !_aaRentByApt || !_aaRentByApt.size) return null;
+  const hits = _aaOwnerFleetRentalsFor(ownerName, ac);
+  if (!hits.length) return { ac, hits, found: false, text: 'none rentable from ' + ownerName + '’s airports now' };
+  const here  = (icao || '').toUpperCase();
+  const parts = hits.slice(0, 3).map(h => (h.icao === here ? 'here' : h.icao) + (h.count > 1 ? ' ×' + h.count : ''));
+  const more  = hits.length > 3 ? ' +' + (hits.length - 3) : '';
+  return { ac, hits, found: true, text: parts.join(', ') + more };
+}
+
+// Dot-tooltip line — green "for rent" list, or a muted "none" line. Empty string
+// when the summary doesn't apply (so it adds nothing to non-owned dots).
+function _aaOwnerAcTipHtml(icao, ownerName) {
+  const s = _aaOwnerAcSummary(icao, ownerName);
+  if (!s) return '';
+  if (!s.found) return `<span class="rg-dt-ownac rg-dt-ownac-none">🛩 ${_aaEsc(s.ac)} · ${_aaEsc(s.text)}</span>`;
+  return `<span class="rg-dt-ownac"><span class="rg-dt-ownac-hdr">🛩 ${_aaEsc(s.ac)} for rent</span> <span class="rg-dt-ownac-list">${_aaEsc(s.text)}</span></span>`;
+}
+
+// Clip the segment p1→p2 (container points; p1 assumed inside) to the rectangle
+// [xmin,ymin]-[xmax,ymax], returning the exit point { x, y, edge } where edge is
+// 'L'|'R'|'T'|'B', or null if it doesn't cross. Used to anchor off-screen badges
+// to the viewport edge along the connector line. (v3.54.0)
+function _aaClipSegToRect(p1, p2, xmin, ymin, xmax, ymax) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  let tBest = Infinity, edge = null;
+  const consider = (t, e) => {
+    if (t > 1e-6 && t <= 1 && t < tBest) {
+      const x = p1.x + t * dx, y = p1.y + t * dy;
+      if (e === 'L' || e === 'R') { if (y >= ymin - 0.5 && y <= ymax + 0.5) { tBest = t; edge = e; } }
+      else                        { if (x >= xmin - 0.5 && x <= xmax + 0.5) { tBest = t; edge = e; } }
+    }
+  };
+  if (dx !== 0) { consider((xmin - p1.x) / dx, 'L'); consider((xmax - p1.x) / dx, 'R'); }
+  if (dy !== 0) { consider((ymin - p1.y) / dy, 'T'); consider((ymax - p1.y) / dy, 'B'); }
+  if (!edge) return null;
+  return { x: p1.x + tBest * dx, y: p1.y + tBest * dy, edge };
+}
+
+// Which rectangle edge a boundary point lies on. (v3.56.0)
+function _aaEdgeOf(x, y, xmin, ymin, xmax, ymax) {
+  const eps = 0.75;
+  if (Math.abs(x - xmin) <= eps) return 'L';
+  if (Math.abs(x - xmax) <= eps) return 'R';
+  if (Math.abs(y - ymin) <= eps) return 'T';
+  return 'B';
+}
+
+// General Liang-Barsky clip: where does segment p1→p2 EXIT the rectangle toward
+// p2? Works whether p1 is inside or outside (so an edge badge can be anchored on
+// the visible connector even after the source pans off-screen). Returns
+// { x, y, edge } at the target-side crossing, or null if the segment misses the
+// rect entirely or the target is inside it. (v3.56.0)
+function _aaSegViewportExit(p1, p2, xmin, ymin, xmax, ymax) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  let t0 = 0, t1 = 1;
+  const clip = (p, q) => {
+    if (p === 0) return q >= 0;          // parallel to this edge: inside iff q>=0
+    const r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else       { if (r < t0) return false; if (r < t1) t1 = r; }
+    return true;
+  };
+  if (clip(-dx, p1.x - xmin) && clip(dx, xmax - p1.x) &&
+      clip(-dy, p1.y - ymin) && clip(dy, ymax - p1.y)) {
+    if (t1 >= 1) return null;             // target is inside the rect (on-screen)
+    const x = p1.x + t1 * dx, y = p1.y + t1 * dy;
+    return { x, y, edge: _aaEdgeOf(x, y, xmin, ymin, xmax, ymax) };
+  }
+  return null;                            // segment misses the rect entirely
+}
+
+// On-map "other airports with <ac>" overlay. Gated on: toggle ON, an aircraft is
+// selected, AND a dep or arr airport is selected on the map. The selected
+// DEPARTURE and ARRIVAL are INDEPENDENT sources (v3.56.0) — each draws a faint
+// dotted connector + badge to every OTHER airport in ITS owner's fleet holding
+// the selected aircraft rentable now, so departure and arrival have full parity
+// (when both share an owner, a target gets a connector from each). The connector
+// is deliberately styled unlike a route (solid) or measurement (8 5 dashes): fine
+// green dots, low opacity, no label, on the geom canvas. Connectors are drawn
+// source→target and Leaflet clips them to the view, so an off-screen target shows
+// the line running to the edge; its badge is anchored on that connector where it
+// exits the viewport (with a viewport-center fallback) and acts as a pan button.
+// Off-screen anchors are viewport-relative, so this rebinds to moveend/zoomend
+// (bound once); the function self-gates so it's cheap when inactive. Its own
+// layer, so dot re-renders don't disturb it.
+function _aaOwnerAcRenderBadges() {
+  if (_aaOwnerAcBadgeLayer) { _aaOwnerAcBadgeLayer.remove(); _aaOwnerAcBadgeLayer = null; }
+  if (!_rgMap || !_aaOwnerAcBadge || !_acSelectedCode) return;
+  if (!_aaRentByApt || !_aaRentByApt.size) return;
+  if (!_rgMap._aaOwnacHooked) {
+    _rgMap.on('moveend zoomend', () => { try { _aaOwnerAcRenderBadges(); } catch (_) {} });
+    _rgMap._aaOwnacHooked = true;
+  }
+  const map = _rgMap;
+  // Selected endpoints → independent sources. Each carries its owner + coords.
+  const sourceList = [];
+  const pushSrc = (icao) => {
+    if (!icao) return;
+    const up = icao.toUpperCase();
+    const o = _rgOwnerMap && _rgOwnerMap.get(up);
+    if (!o) return;
+    const rec = lookupICAO(up);
+    if (!rec || rec.latitude == null || rec.longitude == null) return;
+    sourceList.push({ icao: up, owner: o, ll: L.latLng(rec.latitude, rec.longitude) });
+  };
+  pushSrc(_rgDotSelDep);
+  pushSrc(_rgDotSelArr);
+  if (!sourceList.length) return;
+  const selSet = new Set(sourceList.map(s => s.icao));
+  const size = map.getSize();
+  const W = size.x, H = size.y, PAD = 8, cx = W / 2, cy = H / 2;
+  const renderer = (typeof _rgGetGeomRenderer === 'function') ? _rgGetGeomRenderer() : undefined;
+  // Faint dotted connector — visually distinct from routes/measurements.
+  const LINE = { color: '#2ecc71', weight: 2, opacity: 0.5, dashArray: '2 8', lineCap: 'round', interactive: false, renderer };
+  const layer = L.layerGroup();
+  const acEsc = _aaEsc(_acSelectedCode);
+  // Aggregate per target airport: which sources reach it (its owner's endpoints),
+  // plus count + coords. A target is reached by >1 source only when dep+arr share
+  // its owner — then it gets a connector from each.
+  const targets = new Map();
+  for (const s of sourceList) {
+    for (const h of _aaOwnerFleetRentalsFor(s.owner, _acSelectedCode)) {
+      if (selSet.has(h.icao)) continue;   // "other airports" — skip the chosen dep/arr
+      let t = targets.get(h.icao);
+      if (!t) {
+        const rec = lookupICAO(h.icao);
+        if (!rec || rec.latitude == null || rec.longitude == null) continue;
+        const tLL = L.latLng(rec.latitude, rec.longitude);
+        t = { icao: h.icao, count: h.count, rec, tLL, tp: map.latLngToContainerPoint(tLL), sources: [] };
+        targets.set(h.icao, t);
+      }
+      t.sources.push(s);
+    }
+  }
+  if (!targets.size) return;
+  // Hover panel is the SAME standard compact tooltip a map dot shows (v3.57.0);
+  // deferred build so it only runs on hover. The 🛫/🛬 action icons are wired via
+  // inline handlers in _aaOwnacBadgeHtml.
+  const OFF = { top: [0, -10], bottom: [0, 10], left: [-10, 0], right: [10, 0] };
+  // Off-screen edge badges are collected first, then spread apart so they don't
+  // pile up where several airports exit the viewport near the same point (v3.59.1).
+  const edgeBadges = [];
+  for (const t of targets.values()) {
+    const ownerName = (_rgOwnerMap && _rgOwnerMap.get(t.icao)) || '';
+    const cnt = t.count > 1 ? ' ×' + t.count : '';
+    const onScreen = t.tp.x >= 0 && t.tp.x <= W && t.tp.y >= 0 && t.tp.y <= H;
+    if (onScreen) {
+      // One dotted connector per reaching source (Leaflet clips to the view).
+      for (const s of t.sources) L.polyline([s.ll, t.tLL], LINE).addTo(layer);
+      const html = `<div class="aa-ownac-badge">${_aaOwnacBadgeHtml(t.icao, acEsc, cnt, null)}</div>`;
+      const mk = L.marker(t.tLL, {
+        icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [-9, 9] }),
+        interactive: true, keyboard: false, pane: 'markerPane'
+      });
+      mk.bindTooltip(() => _rgDotTipHtml(t.icao, t.rec, ownerName),
+        { direction: 'top', className: 'rg-dot-tip', offset: [0, -10], opacity: 1 });
+      mk.addTo(layer);
+      continue;
+    }
+    // Off-screen: anchor on the nearest source's connector exit, with a
+    // viewport-center ray fallback so it always appears after panning even if its
+    // source scrolled off too. Defer placement until after collision separation.
+    let nearest = t.sources[0], nd = Infinity;
+    for (const s of t.sources) {
+      const p = map.latLngToContainerPoint(s.ll);
+      const d = (p.x - t.tp.x) ** 2 + (p.y - t.tp.y) ** 2;
+      if (d < nd) { nd = d; nearest = s; }
+    }
+    const sp = map.latLngToContainerPoint(nearest.ll);
+    const ep = _aaSegViewportExit(sp, t.tp, PAD, PAD, W - PAD, H - PAD)
+            || _aaClipSegToRect({ x: cx, y: cy }, t.tp, PAD, PAD, W - PAD, H - PAD);
+    if (!ep) continue;
+    edgeBadges.push({ t, ownerName, cnt, ep });
+  }
+  // Spread same-edge badges apart, then place each — connectors drawn to the FINAL
+  // (nudged) anchor so every line still meets its badge.
+  _aaSeparateEdgeBadges(edgeBadges, W, H, PAD);
+  for (const { t, ownerName, cnt, ep } of edgeBadges) {
+    const epLL = map.containerPointToLatLng(L.point(ep.x, ep.y));
+    for (const s of t.sources) L.polyline([s.ll, epLL], LINE).addTo(layer);
+    const tipDir = ({ R: 'left', L: 'right', T: 'bottom', B: 'top' })[ep.edge] || 'top';
+    const html = `<div class="aa-ownac-badge aa-ownac-badge--edge aa-ownac-edge-${ep.edge}" title="Click to pan to ${_aaEsc(t.icao)}">${_aaOwnacBadgeHtml(t.icao, acEsc, cnt, ep.edge)}</div>`;
+    const mk = L.marker(epLL, {
+      icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [0, 0] }),
+      interactive: true, keyboard: false, pane: 'markerPane'
+    });
+    mk.on('click', () => { map.panTo(t.tLL); });   // body click on an off-screen badge pans to center it
+    mk.bindTooltip(() => _rgDotTipHtml(t.icao, t.rec, ownerName),
+      { direction: tipDir, className: 'rg-dot-tip', offset: OFF[tipDir] || [0, -10], opacity: 1 });
+    mk.addTo(layer);
+  }
+  _aaOwnerAcBadgeLayer = layer.addTo(map);
+}
+
+// Spread same-edge off-screen badges so they don't overlap (v3.59.1). Vertical
+// edges (L/R) separate along Y by badge height; horizontal edges (T/B) along X by
+// an estimated badge width. Greedy forward pass (push down/right, clamped) + a
+// backward pass to pull items off the far edge when they bunch at the end.
+function _aaSeparateEdgeBadges(list, W, H, PAD) {
+  const GAP_V = 30, GAP_H = 134;
+  const groups = { L: [], R: [], T: [], B: [] };
+  for (const p of list) { if (groups[p.ep.edge]) groups[p.ep.edge].push(p); }
+  const spread = (g, axis, gap, min, max) => {
+    if (g.length < 2) return;
+    g.sort((a, b) => a.ep[axis] - b.ep[axis]);
+    let last = -Infinity;
+    for (const p of g) { const v = Math.min(Math.max(p.ep[axis], last + gap), max); p.ep[axis] = v; last = v; }
+    for (let i = g.length - 1; i > 0; i--) {
+      const need = g[i].ep[axis] - gap;
+      if (g[i - 1].ep[axis] > need) g[i - 1].ep[axis] = Math.max(min, need);
+    }
+  };
+  spread(groups.L, 'y', GAP_V, PAD, H - PAD);
+  spread(groups.R, 'y', GAP_V, PAD, H - PAD);
+  spread(groups.T, 'x', GAP_H, PAD, W - PAD);
+  spread(groups.B, 'x', GAP_H, PAD, W - PAD);
+}
+
+// Display-menu row click. The row is dual-purpose (v3.57.0): when an aircraft is
+// selected it toggles the highlight overlay; when none is selected it's an active
+// "Select Aircraft" shortcut that closes the map and opens the aircraft panel.
+function _aaToggleOwnerAcBadge() {
+  if (!_acSelectedCode) { _aaOpenAircraftSelector(); return; }
+  _aaOwnerAcBadge = !_aaOwnerAcBadge;
+  try { localStorage.setItem('simfly_aa_owner_ac_badge', _aaOwnerAcBadge ? '1' : '0'); } catch (_) {}
+  _aaSyncOwnerAcBadgeBtn();
+  _aaOwnerAcRenderBadges();
+}
+
+// "Select Aircraft" action — close the region map, open/expand the aircraft
+// selector panel in the main view, and SPOTLIGHT it so the user focuses on
+// picking an aircraft instead of being distracted by the route / matrix info that
+// may already be on screen. (v3.57.0; spotlight v3.58.0)
+function _aaOpenAircraftSelector() {
+  if (typeof _rgCloseAnyPulldown === 'function') _rgCloseAnyPulldown();
+  if (typeof closeRegionModal === 'function') closeRegionModal();   // back to the main view
+  const body = document.getElementById('acSelectorBody');
+  const chev = document.getElementById('acSelectorChevron');
+  if (body) body.classList.remove('collapsed');
+  if (chev) chev.style.transform = 'rotate(90deg)';
+  _aaFocusAircraftSelector();
+}
+
+// Spotlight the aircraft selector: dim the rest of the planner (non-destructively
+// — route/matrix state is untouched) and lift + glow the selector. Dismisses on
+// click-away, Esc, or once an aircraft is chosen. The backdrop is appended INSIDE
+// .app (id mainContent), which is the z-index:1 stacking-context root for the
+// planner: backdrop z-index 30 sits above the sticky header (z20) and all flow
+// content, and .ac-selector--focus (z40) sits above the backdrop. (v3.58.0)
+let _aaAcFocusOn = false;
+function _aaFocusAircraftSelector() {
+  const host = document.getElementById('mainContent');
+  const sel  = document.getElementById('acSelector');
+  if (!host || !sel) return;
+  _aaClearAircraftFocus();
+  host.classList.add('ac-focus-dim');
+  sel.classList.add('ac-selector--focus');
+  requestAnimationFrame(() => { try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) { try { sel.scrollIntoView(); } catch (__) {} } });
+  document.addEventListener('keydown', _aaAcFocusKey, true);
+  // Defer the click-away binding so the menu click that opened this doesn't dismiss it.
+  setTimeout(() => document.addEventListener('mousedown', _aaAcFocusOutside, true), 0);
+  _aaAcFocusOn = true;
+}
+function _aaAcFocusKey(e) { if (e.key === 'Escape') _aaClearAircraftFocus(); }
+function _aaAcFocusOutside(e) {
+  const sel = document.getElementById('acSelector');
+  if (sel && !sel.contains(e.target)) _aaClearAircraftFocus();
+}
+function _aaClearAircraftFocus() {
+  const host = document.getElementById('mainContent'); if (host) host.classList.remove('ac-focus-dim');
+  const sel = document.getElementById('acSelector'); if (sel) sel.classList.remove('ac-selector--focus');
+  document.removeEventListener('keydown', _aaAcFocusKey, true);
+  document.removeEventListener('mousedown', _aaAcFocusOutside, true);
+  _aaAcFocusOn = false;
+}
+
+// Sync the menu row to the current state. With an aircraft selected it's the
+// "Highlight other airports with <ICAO>" toggle (active tick reflects on/off).
+// With none selected it becomes an ACTIVE "Select Aircraft" shortcut (v3.57.0) —
+// not grayed — whose tooltip explains what selecting an aircraft unlocks.
+function _aaSyncOwnerAcBadgeBtn() {
+  const btn = document.getElementById('rgOwnerAcBadgeBtn');
+  if (!btn) return;
+  const has = !!_acSelectedCode;
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (lbl) lbl.textContent = has ? ('Highlight other airports with ' + _acSelectedCode) : 'Select Aircraft';
+  btn.classList.remove('rg-row-disabled');   // always active now
+  btn.classList.toggle('active', has && _aaOwnerAcBadge);
+  btn.title = has
+    ? ('Badge the other airports owned by your selected departure/arrival airport’s owner that have ' + _acSelectedCode + ' available to rent right now (no ground-ops timer). Select a departure or arrival airport on the map to use it.')
+    : 'Select an aircraft — it will be used for time estimates, airport suitability determinations, and alternate airport recommendations. Click to open the aircraft selector. Afterwards click the ⊙ Map button to return to this screen.';
+}
+
+// Inner HTML for an owner-AC badge (v3.55.0): the 🛩 type + ICAO, flanked by
+// hover-only action icons — 🛫 "set as departure" on the left, 🛬 "set as arrival"
+// on the right (always shown on touch, where there's no hover). For off-screen
+// edge badges, `edge` (L/R/T/B) adds the inboard directional arrow. icao is a
+// clean uppercase ICAO, safe to inline in the onclick handlers.
+function _aaOwnacBadgeHtml(icao, acEsc, cntStr, edge) {
+  const e = _aaEsc(icao);
+  const dep = `<span class="aa-ownac-act aa-ownac-act-dep" title="Set ${e} as departure" onclick="event.stopPropagation();event.preventDefault();_aaOwnacSetDep('${icao}')">🛫</span>`;
+  const arr = `<span class="aa-ownac-act aa-ownac-act-arr" title="Set ${e} as arrival" onclick="event.stopPropagation();event.preventDefault();_aaOwnacSetArr('${icao}')">🛬</span>`;
+  const body = `<span class="aa-ownac-badge-ac">🛩 ${acEsc}</span><span class="aa-ownac-badge-apt">${e}${cntStr}</span>`;
+  if (!edge) return dep + body + arr;
+  const arrow = `<span class="aa-ownac-edge-arrow">${({ L: '◂', R: '▸', T: '▴', B: '▾' })[edge]}</span>`;
+  const first = (edge === 'L' || edge === 'T');
+  return dep + (first ? arrow + body : body + arrow) + arr;
+}
+
+// Badge action-icon handlers — set the airport as departure / arrival via the
+// same canonical functions the dots + radial menu use (which set the dot
+// selection, draw the route, and re-run _rgHighlightDots — refreshing this overlay).
+function _aaOwnacSetDep(icao) {
+  if (!icao) return;
+  if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
+  if (typeof _rgHighlightDepRow === 'function') _rgHighlightDepRow(icao);
+}
+function _aaOwnacSetArr(icao) {
+  if (!icao) return;
+  if (typeof _wxFetchOne === 'function') _wxFetchOne(icao);
+  if (typeof _rgHighlightArrCol === 'function') _rgHighlightArrCol(icao);
+}
+
 let _rgNewAirportsVisible = true;   // false = pulse rings hidden via toolbar toggle
 // Level "corona" badges — ON by default (v3.28.1), then the user's toggle choice
 // is persisted and honoured; toggled from the Tools menu.
@@ -30928,6 +31349,91 @@ function _rgRepaintDots(marker) {
   if (r) r._redrawBounds = null;
 }
 
+// Standard airport hover-tooltip HTML — the compact .rg-dot-tip card shown when
+// hovering a map dot. Extracted from _rgBindDotTip (v3.57.0) so the owner-fleet
+// rental badges can reuse the EXACT same tooltip instead of the larger info card.
+// Pure builder — caching stays in _rgBindDotTip.
+function _rgDotTipHtml(icao, rec, ownerName) {
+  const icaoUpper = icao.toUpperCase();
+  const slEntry   = _slGet(icaoUpper);
+  const slRating  = slEntry ? (+slEntry.rating || 0) : 0;
+  const slDev     = slEntry ? (slEntry.developer || '') : '';
+  const wxEntry   = (typeof _wxCache !== 'undefined' && _wxCache) ? _wxCache.get(icaoUpper) : null;
+  const catNum = +(categoryDB && categoryDB.get(icaoUpper)) || null;
+  const catCol = _rgCatOf(icao) || '#aaaaaa';
+  let rwyHtml = '';
+  const rwys = runwayDB ? runwayDB.get(icaoUpper) : null;
+  if (rwys && rwys.length) {
+    const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
+    const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
+    const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
+    const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
+    const lit   = best.lighted  ? ' · Lighted' : '';
+    const parts = [idents, len, surf + lit].filter(Boolean);
+    rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
+  }
+  const sceneryHtml = slEntry
+    ? `<span class="rg-dt-scenery">Detailed scenery${slEntry.addon ? ' · ' + slEntry.addon : ''}</span>`
+    : '';
+  const ratingHtml = slRating > 0 ? _slStarsHtml(slRating, { interactive: false }) : '';
+  const devHtml = slDev
+    ? `<span class="rg-dt-dev"><span class="rg-dt-dev-lbl">Developer:</span> ${slDev}</span>`
+    : '';
+  let wxHtml = '';
+  if (wxEntry && wxEntry.data) {
+    const d   = wxEntry.data;
+    const cat = (d.flight_category || '').toLowerCase();
+    const nearestNote = (wxEntry.isNearest && wxEntry.nearestIcao)
+      ? ` <span class="rg-dt-wx-near">(nearest: ${wxEntry.nearestIcao}${wxEntry.nearestDistNm != null ? ' · ' + Math.round(wxEntry.nearestDistNm) + ' nm' : ''})</span>`
+      : '';
+    let wind = '';
+    if (d.wind) {
+      if (d.wind.calm) wind = 'Calm';
+      else {
+        const dir = d.wind.degrees != null ? String(d.wind.degrees).padStart(3, '0') + '°' : 'VRB';
+        const spd = d.wind.speed && d.wind.speed.kts != null ? '/' + d.wind.speed.kts + 'kt' : '';
+        const gst = d.wind.gust  && d.wind.gust.kts        ? 'G' + d.wind.gust.kts : '';
+        wind = dir + spd + gst;
+      }
+    }
+    const vis = (d.visibility && d.visibility.text) ? d.visibility.text : '';
+    const detail = [wind, vis].filter(Boolean).join(' · ');
+    wxHtml = `<span class="rg-dt-wx">` +
+               (d.flight_category ? `<span class="rg-dt-wx-cat ${cat}">${d.flight_category}</span>` : '') +
+               (detail ? ` <span class="rg-dt-wx-detail">${detail}</span>` : '') +
+               nearestNote +
+             `</span>`;
+  }
+  const payoutHtml = (() => {
+    if (!payoutDB) return '';
+    const pct = payoutDB.get(icaoUpper) ?? 0;
+    const col = pct > 50 ? 'hsl(120,100%,42%)' : pct >= 50 ? 'hsl(60,100%,50%)' : pct >= 25 ? 'hsl(45,100%,60%)' : pct > 0 ? 'hsl(18,100%,62%)' : '#888';
+    return `<span class="rg-dt-payout" style="color:${col}">Pilot Payout: ${pct}%</span>`;
+  })();
+  const newBadgeHtml = (newAirportsDB && newAirportsDB.has(icaoUpper))
+    ? `<span class="rg-dt-new">✦ New Airport</span>`
+    : '';
+  const _esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const rentHtml = (typeof _aaRentTooltipHtml === 'function') ? _aaRentTooltipHtml(icaoUpper) : '';
+  const ownerAcHtml = (typeof _aaOwnerAcTipHtml === 'function') ? _aaOwnerAcTipHtml(icaoUpper, ownerName) : '';
+  return (
+    `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
+    (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
+    ((typeof _rgRawLevelOf === 'function' && _rgRawLevelOf(icao)) ? `<span class="rg-dt-lvl">Lvl ${_rgRawLevelOf(icao)}</span>` : '') +
+    ((typeof _rgRotationsOf === 'function') ? (function(){
+      const _r = _rgRotationsOf(icao);
+      if (!_r) return '';
+      const _c = _r.rem <= 0 ? '#ff6b6b' : _r.rem < 10 ? '#ffc04d' : 'rgba(120,225,150,0.95)';
+      return `<span class="rg-dt-rot" style="color:${_c}">(${_r.rem} / ${_r.total})</span>`;
+    })() : '') +
+    (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
+    ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">🏷 For sale</span>` : '') +
+    (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
+    payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml + rentHtml + ownerAcHtml +
+    `</div>`
+  );
+}
+
 function _rgBindDotTip(marker, icao, rec, ownerName) {
   // Tooltip HTML is stable for a given ICAO within a render pass (owner, category,
   // runway data don't change mid-session). Use a per-ICAO cache so _rgHighlightDots
@@ -30947,96 +31453,14 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
   // Cache key must include any field that surfaces in the rendered HTML so an
   // edit to that field (rating, developer attribution, weather) invalidates the
   // cached string rather than serving stale markup.
-  const cacheKey   = (slEntry || wxEntry)
+  // The owner-fleet rental line (v3.53.0) varies with the selected aircraft, so
+  // the aircraft code is always part of the key — switching aircraft rebuilds it.
+  const cacheKey   = ((slEntry || wxEntry)
     ? icaoUpper + '●' + slRating + '●' + slDev + '●' + wxStamp
-    : icaoUpper;
+    : icaoUpper) + '◆' + (_acSelectedCode || '');
   let html = _rgTipHtmlCache.get(cacheKey);
   if (!html) {
-    const catNum = +(categoryDB && categoryDB.get(icaoUpper)) || null;
-    const catCol = _rgCatOf(icao) || '#aaaaaa';
-    let rwyHtml = '';
-    const rwys = runwayDB ? runwayDB.get(icaoUpper) : null;
-    if (rwys && rwys.length) {
-      const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
-      const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
-      const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
-      const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
-      const lit   = best.lighted  ? ' · Lighted' : '';
-      const parts = [idents, len, surf + lit].filter(Boolean);
-      rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
-    }
-    const sceneryHtml = slEntry
-      ? `<span class="rg-dt-scenery">Detailed scenery${slEntry.addon ? ' · ' + slEntry.addon : ''}</span>`
-      : '';
-    const ratingHtml = slRating > 0
-      ? _slStarsHtml(slRating, { interactive: false })
-      : '';
-    // Developer attribution — shown as a "Developer: X" row directly beneath
-    // the star rating. Hidden when no developer has been set on this library
-    // entry (or the airport isn't in the library at all).
-    const devHtml = slDev
-      ? `<span class="rg-dt-dev"><span class="rg-dt-dev-lbl">Developer:</span> ${slDev}</span>`
-      : '';
-    // Weather row — populated after a METAR is fetched (typically when this
-    // airport is assigned as dep/arr in the route). Shows the flight category
-    // pill plus a compact wind / visibility line, or "Nearest station: <icao>"
-    // if the fallback was used.
-    let wxHtml = '';
-    if (wxEntry && wxEntry.data) {
-      const d   = wxEntry.data;
-      const cat = (d.flight_category || '').toLowerCase();
-      const nearestNote = (wxEntry.isNearest && wxEntry.nearestIcao)
-        ? ` <span class="rg-dt-wx-near">(nearest: ${wxEntry.nearestIcao}${wxEntry.nearestDistNm != null ? ' · ' + Math.round(wxEntry.nearestDistNm) + ' nm' : ''})</span>`
-        : '';
-      // Wind summary — calm or "DDD°/KK kts"
-      let wind = '';
-      if (d.wind) {
-        if (d.wind.calm) wind = 'Calm';
-        else {
-          const dir = d.wind.degrees != null ? String(d.wind.degrees).padStart(3, '0') + '°' : 'VRB';
-          const spd = d.wind.speed && d.wind.speed.kts != null ? '/' + d.wind.speed.kts + 'kt' : '';
-          const gst = d.wind.gust  && d.wind.gust.kts        ? 'G' + d.wind.gust.kts : '';
-          wind = dir + spd + gst;
-        }
-      }
-      const vis = (d.visibility && d.visibility.text) ? d.visibility.text : '';
-      const detail = [wind, vis].filter(Boolean).join(' · ');
-      wxHtml = `<span class="rg-dt-wx">` +
-                 (d.flight_category ? `<span class="rg-dt-wx-cat ${cat}">${d.flight_category}</span>` : '') +
-                 (detail ? ` <span class="rg-dt-wx-detail">${detail}</span>` : '') +
-                 nearestNote +
-               `</span>`;
-    }
-    const payoutHtml = (() => {
-      if (!payoutDB) return '';
-      const pct = payoutDB.get(icaoUpper) ?? 0;
-      const col = pct > 50 ? 'hsl(120,100%,42%)' : pct >= 50 ? 'hsl(60,100%,50%)' : pct >= 25 ? 'hsl(45,100%,60%)' : pct > 0 ? 'hsl(18,100%,62%)' : '#888';
-      return `<span class="rg-dt-payout" style="color:${col}">Pilot Payout: ${pct}%</span>`;
-    })();
-    const newBadgeHtml = (newAirportsDB && newAirportsDB.has(icaoUpper))
-      ? `<span class="rg-dt-new">✦ New Airport</span>`
-      : '';
-    const _esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    // Aircraft Rentals — grouped-by-type breakdown, shown only in rentals mode.
-    const rentHtml = (typeof _aaRentTooltipHtml === 'function') ? _aaRentTooltipHtml(icaoUpper) : '';
-    html =
-      `<div>${newBadgeHtml}<span class="rg-dt-icao" data-cat="${_esc(String(catNum||''))}" style="color:${catCol}">${_esc(icao)}</span>` +
-      (catNum ? `<span class="rg-dt-cat">Cat ${catNum}</span>` : '') +
-      ((typeof _rgRawLevelOf === 'function' && _rgRawLevelOf(icao)) ? `<span class="rg-dt-lvl">Lvl ${_rgRawLevelOf(icao)}</span>` : '') +
-      // v3.35.0 — rotations remaining / weekly capacity, inline after Lvl.
-      ((typeof _rgRotationsOf === 'function') ? (function(){
-        const _r = _rgRotationsOf(icao);
-        if (!_r) return '';
-        const _c = _r.rem <= 0 ? '#ff6b6b' : _r.rem < 10 ? '#ffc04d' : 'rgba(120,225,150,0.95)';
-        return `<span class="rg-dt-rot" style="color:${_c}">(${_r.rem} / ${_r.total})</span>`;
-      })() : '') +
-      // v3.31.0 — airport name now precedes the optional "For sale" line so
-      // the name reads first and the sale flag sits beneath it.
-      (rec.name ? `<span class="rg-dt-name">${_esc(rec.name)}</span>` : '') +
-      ((typeof _rgForSale === 'function' && _rgForSale(icao)) ? `<span class="rg-dt-forsale">🏷 For sale</span>` : '') +
-      (ownerName ? `<span class="rg-dt-owner">${_esc(ownerName)}</span>` : '') +
-      payoutHtml + rwyHtml + sceneryHtml + ratingHtml + devHtml + wxHtml + rentHtml +
-      `</div>`;
+    html = _rgDotTipHtml(icao, rec, ownerName);
     _rgTipHtmlCache.set(cacheKey, html);
   }
   // Hover-grow geometry (v3.43.0). The dot doubles in size after a 500 ms hover
@@ -31329,6 +31753,7 @@ function _rgRenderDots() {
   _rgSyncLevelBadgeButtons();
   if (typeof _rgSyncRotationGaugeButton === 'function') _rgSyncRotationGaugeButton();
   if (typeof _rgSyncRotationFilterButton === 'function') _rgSyncRotationFilterButton();
+  if (typeof _aaSyncOwnerAcBadgeBtn === 'function') _aaSyncOwnerAcBadgeBtn();
   _rgVisibleIcaosFromDots = new Set();
   const ownerData = _getOwnerData();
   if (!ownerData || !ownerData.length) { _rgUpdateBreadcrumbs(); return; }
@@ -31842,6 +32267,10 @@ function _rgHighlightDots() {
 
   _rgRefreshSelOverlay();
   _rgUpdateBreadcrumbs();
+  // v3.53.0 — selection changed (dep/arr set, cleared, swapped, or routed), so
+  // refresh the "other airports with <ac>" badge overlay. This is the universal
+  // chokepoint: every dep/arr mutation path ends here.
+  if (typeof _aaOwnerAcRenderBadges === 'function') _aaOwnerAcRenderBadges();
 }
 
 function _rgApplySceneryState() {
@@ -41408,6 +41837,19 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">🛩</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Rent Your Aircraft from an Airport&rsquo;s Owner</div>
+          <div class="help-feature-desc">
+            A route-planning shortcut (v3.53.0): once you&rsquo;ve picked an aircraft in the <strong>Aircraft</strong> selector, every airport tooltip &mdash; and the departure/arrival cards in the distance matrix &mdash; shows a green <strong>🛩 &lt;type&gt; for rent</strong> line telling you which of that airport <em>owner&rsquo;s</em> airports have your aircraft available to rent <strong>right now</strong> (no ground-operations timer running). If the owner has none free, you&rsquo;ll see a muted &ldquo;none rentable from &lt;owner&gt; now&rdquo; instead. It scans the owner&rsquo;s entire fleet, so you know whether you can actually get your airframe before you commit to the route.<br/><br/>
+            For an at-a-glance map view, open the <strong>👁 Display</strong> menu and turn on <strong>Highlight other airports with &lt;type&gt;</strong> (the row carries your selected aircraft&rsquo;s code). After you select a departure or arrival airport on the map, it drops a badge on the <em>other</em> airports owned by that airport&rsquo;s owner where your aircraft is rentable now &mdash; pinpointing where to go pick it up. When no aircraft is selected, this row instead reads <strong>Select Aircraft</strong> and, when clicked, closes the map and opens the aircraft selector so you can choose one &mdash; the rest of the planner dims so you can focus on picking an aircraft (the dim is purely visual and clears as soon as you choose one, click outside, or press Esc).<br/><br/>
+            A faint dotted green line links your selected airport to each of those rentable airports (styled so it won&rsquo;t be confused with a route, measurement, or distance line). Departure and arrival are handled independently, so each draws its own lines and badges to its owner&rsquo;s rental airports. If a rentable airport is <strong>off-screen</strong>, the line runs to the edge of the map and the badge waits there with an arrow pointing toward it &mdash; <strong>click or tap that edge badge to pan the map and center the airport</strong>. The edge badges keep working as you pan and zoom, even once the departure or arrival itself scrolls off-screen.<br/><br/>
+            The badges act like airport dots: <strong>hover one to see the same airport tooltip a map dot shows</strong> (name, owner, payout, runways, scenery, weather, and rental availability). Hovering also reveals two quick-action icons &mdash; a <strong>take-off plane (🛫) on the left sets that airport as your departure</strong>, and a <strong>landing plane (🛬) on the right sets it as your arrival</strong>. On touch devices the two icons are always visible.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">✈</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Point-to-Point Distance</div>
@@ -41992,10 +42434,137 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.59.1</span>
+          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Off-screen rental badges no longer overlap.</strong> When several rentable airports sat off-screen near the same point, their edge badges could stack on top of each other. They&rsquo;re now spread apart along the screen edge so each stays readable, with its connector line drawn to its final position.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.59.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Flight Time Calibration is now a prominent card.</strong> Because this calibration feeds the en-route time estimates shown throughout the app (route lines, the map, measurements, and airport cards), it&rsquo;s been promoted from a small footnote to a clearly highlighted ⏱ card with a short caption explaining what it powers. When the selected aircraft hasn&rsquo;t been calibrated yet, the card turns amber and says so &mdash; an easy nudge to fill it in; once calibrated, it&rsquo;s cyan with your live estimate.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.58.1</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Select Aircraft&rdquo; focus now actually highlights the aircraft panel.</strong> The previous version&rsquo;s dimming layer ended up covering the aircraft selector too, so nothing stood out. The focus now dims everything <em>except</em> the aircraft selector, which stays fully lit with a glowing outline &mdash; so your eye goes straight to it. Dismiss by picking an aircraft, clicking anywhere outside the panel, or pressing Esc.</li>
+          <li><strong>Scenery Developers window no longer resizes while you filter.</strong> Typing in the developer filter box used to shrink or grow the window as the list got shorter or longer. The window is now a fixed size and the list scrolls inside it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.58.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Select Aircraft&rdquo; now spotlights the aircraft panel.</strong> When you use the Display menu&rsquo;s <em>Select Aircraft</em> shortcut, the planner dims and the aircraft selector is lifted and highlighted &mdash; so you focus on picking an aircraft instead of being distracted by route or matrix information that may already be on screen (handy when a route is already selected). Nothing is changed underneath: the dim is purely visual and clears the moment you pick an aircraft, click anywhere outside the panel, or press Esc.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.57.2</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Clearer guidance on the &ldquo;Select Aircraft&rdquo; menu item.</strong> Its tooltip now adds &ldquo;Afterwards click the ⊙ Map button to return to this screen,&rdquo; so it&rsquo;s obvious how to get back to the map after picking an aircraft.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.57.1</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Clearer wording for the rental availability line.</strong> When a pilot has no rentable copy of your aircraft, the airport tooltip now reads &ldquo;none rentable from &lt;pilot&gt;&rsquo;s airports now&rdquo; instead of &ldquo;none rentable from &lt;pilot&gt; now.&rdquo; The check scans that pilot&rsquo;s airports for the aircraft &mdash; it doesn&rsquo;t require the aircraft to be owned by them &mdash; so the new wording reflects what&rsquo;s actually being searched.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.57.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Rental badges now show the standard airport tooltip.</strong> Hovering a rental badge now pops up the same compact tooltip a map dot shows, instead of the larger detailed airport card &mdash; which could run off the edge of the map and get clipped. Edge badges open their tooltip pointing inward so it always stays fully on screen.</li>
+          <li><strong>&ldquo;Select Aircraft&rdquo; shortcut in the Display menu.</strong> Selecting an aircraft now unlocks meaningful functionality, so the Display-menu row is no longer greyed out when no aircraft is chosen. Instead it shows an active <strong>Select Aircraft</strong> item; its tooltip explains the aircraft drives time estimates, airport suitability, and alternate-airport recommendations. Clicking it closes the map and opens the aircraft selector panel so you can pick one. Once an aircraft is selected, the row becomes the usual <em>Highlight other airports with &lt;type&gt;</em> toggle.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.56.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Arrival airport now shows rental lines and badges too.</strong> The rental highlight treated departure and arrival together, so when both belonged to the same owner all the dashed lines attached to whichever endpoint was closer &mdash; usually the departure &mdash; and the arrival appeared to have none. Departure and arrival are now handled independently: each draws its own dashed lines and badges to its owner&rsquo;s airports where your aircraft is available, with full parity.</li>
+          <li><strong>Off-screen badges keep working as you pan.</strong> Whenever a dashed line leads to an airport outside the current view, its edge badge now reliably appears at the screen border pointing toward that airport &mdash; including after you&rsquo;ve panned the map far enough that the departure or arrival itself has scrolled off-screen.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.55.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Rental badges now behave like airport dots — hover for the full info panel.</strong> Hovering a rental badge (on the map or on the screen edge) now pops up the same airport information panel the dots and radial menu show: name, owner, payout, runways, your aircraft&rsquo;s suitability, and the rental availability line.</li>
+          <li><strong>Set departure or arrival straight from a badge.</strong> Hovering a badge now reveals two small icons: a take-off plane (🛫) on the left sets that airport as your <strong>departure</strong>, and a landing plane (🛬) on the right sets it as your <strong>arrival</strong> &mdash; the same as picking it from the map. On touch devices the two icons are always shown (no hover needed). Off-screen edge badges keep their tap-to-pan behavior on the body.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.54.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Connector lines to the airports where your aircraft is rentable.</strong> Building on the rental highlight from v3.53.0, the map now draws a faint dotted green line from your selected departure/arrival airport to each of that owner&rsquo;s other airports where your aircraft is available to rent. The line is intentionally styled so it can&rsquo;t be mistaken for a route, a measurement, or a distance line &mdash; it&rsquo;s a thin, low-opacity dotted thread with no distance label.</li>
+          <li><strong>Off-screen airports become one-tap &ldquo;pan here&rdquo; buttons.</strong> When a rentable airport is outside the current view, its line is drawn out to the edge of the map and the badge sits right there on the edge with an arrow pointing toward the airport. Click (or tap) it and the map pans to center that airport. The edge badges reposition automatically as you pan and zoom.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.53.0</span>
+          <span class="release-date">June 27, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>See where your selected aircraft is rentable from an airport&rsquo;s owner.</strong> Pick an aircraft in the main aircraft selector, then choose a departure or arrival airport on the map. Each airport&rsquo;s tooltip now shows a green <em>🛩 &lt;type&gt; for rent</em> line listing which of that owner&rsquo;s airports have your aircraft available to rent <strong>right now</strong> &mdash; meaning no ground-operations timer is running &mdash; or a muted &ldquo;none rentable from &lt;owner&gt; now&rdquo; when there are none. It checks the owner&rsquo;s whole fleet, not just the airport you&rsquo;re hovering, and works in both the map view and the distance-matrix airport cards.</li>
+          <li><strong>New map overlay &mdash; <em>Highlight other airports with &lt;type&gt;</em>.</strong> In the <strong>👁 Display</strong> menu, a new overlay drops a badge directly on the <em>other</em> airports owned by your selected departure/arrival airport&rsquo;s owner that have your aircraft rentable now &mdash; so you can see at a glance where to go pick it up. It appears once both an aircraft and a dep/arr airport are selected. The menu row shows the selected aircraft&rsquo;s code (e.g. &ldquo;Highlight other airports with C750&rdquo;) and is grayed out with a hint until you select an aircraft.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.52.0</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -54445,6 +55014,10 @@ function rgSendToFlightPlanner() {
                  the dots, so it belongs with the overlays. Right-click / long-press
                  still opens the palette editor. -->
             <button class="rg-btn rg-pulldown-row" id="rgPayoutBtn" onclick="_rgTogglePayoutMode();_rgCloseAnyPulldown()" oncontextmenu="_rgPayoutPaletteOpen(event)" title="Left-click to color airports by pilot payout · Right-click to customize the palette"><span class="rg-row-icon">💰</span><span class="rg-btn-label">Payout Colors…</span></button>
+            <!-- v3.53.0 — badge the OTHER airports of a selected dep/arr airport's
+                 owner that have the selected aircraft rentable now. Label carries
+                 the aircraft ICAO; grayed (but hover-explained) with no aircraft. -->
+            <button class="rg-btn rg-pulldown-row" id="rgOwnerAcBadgeBtn" onclick="_aaToggleOwnerAcBadge();_rgCloseAnyPulldown()" title="Select an aircraft — it will be used for time estimates, airport suitability determinations, and alternate airport recommendations. Click to open the aircraft selector. Afterwards click the ⊙ Map button to return to this screen."><span class="rg-row-icon">🛩</span><span class="rg-btn-label">Select Aircraft</span></button>
             <div class="rg-pulldown-sep"></div>
             <!-- Group 2 — Filters: hide airports that don't match. -->
             <div class="rg-pulldown-cap">Filters</div>
@@ -54779,6 +55352,58 @@ function rgSendToFlightPlanner() {
         .rg-dt-rent-meta { color:#9fb0c3; white-space:nowrap; }
         .rg-dt-rent-now { color:#2ecc71; }
         .rg-dt-rent-soon { color:#ff5a5a; }   /* unavailable — ground-ops timer running */
+        /* Owner-fleet rental line in dot tooltips (v3.53.0) — the selected aircraft's
+           availability across the airport owner's fleet. Green theme = rentals. */
+        .rg-dt-ownac { display:block; margin-top:5px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.16); font-size:1.2em; }
+        .rg-dt-ownac-hdr { font-weight:700; color:#2ecc71; }
+        .rg-dt-ownac-list { color:#eaf4ff; }
+        .rg-dt-ownac-none { color:#7d8ea3; font-style:italic; }
+        /* On-map "other airports with <ac>" badge (v3.53.0). */
+        .leaflet-div-icon.aa-ownac-badge-wrap { background:transparent; border:none; width:auto; height:auto; }
+        .aa-ownac-badge { display:inline-flex; align-items:center; gap:5px; font-family:'Rajdhani',sans-serif;
+          font-weight:700; font-size:14px; line-height:1.2; padding:2px 8px; border-radius:8px; white-space:nowrap;
+          background:rgba(8,13,20,0.9); border:1px solid #2ecc71; color:#eaf4ff;
+          box-shadow:0 0 8px rgba(46,204,113,0.5); text-shadow:0 0 3px rgba(0,0,0,0.9); }
+        .aa-ownac-badge-ac { color:#2ecc71; }
+        .aa-ownac-badge-apt { color:#fff; }
+        /* Off-screen "pan here" button anchored on the connector at the viewport
+           edge (v3.54.0). Translated off its anchor point per edge so it stays on
+           screen with the arrow pointing toward the off-screen airport. */
+        .aa-ownac-badge--edge { cursor:pointer; pointer-events:auto; }
+        .aa-ownac-badge--edge:hover { border-color:#43e08a; box-shadow:0 0 12px rgba(46,204,113,0.85); }
+        .aa-ownac-edge-arrow { color:#2ecc71; font-weight:700; }
+        .aa-ownac-edge-L { transform:translate(0, -50%); }
+        .aa-ownac-edge-R { transform:translate(-100%, -50%); }
+        .aa-ownac-edge-T { transform:translate(-50%, 0); }
+        .aa-ownac-edge-B { transform:translate(-50%, -100%); }
+        /* Hover-reveal action icons (v3.55.0): 🛫 set departure / 🛬 set arrival.
+           Hidden at rest, shown on badge hover; always shown on touch (no hover). */
+        .aa-ownac-act { display:none; align-items:center; cursor:pointer; font-size:14px; line-height:1;
+          padding:0 2px; border-radius:5px; transition:transform 0.08s ease, background 0.08s ease; }
+        .aa-ownac-act:hover { transform:scale(1.22); background:rgba(46,204,113,0.22); }
+        .aa-ownac-badge:hover .aa-ownac-act { display:inline-flex; }
+        @media (hover: none) { .aa-ownac-act { display:inline-flex !important; } }
+        /* "Select Aircraft" focus (v3.58.1) — dim everything EXCEPT the aircraft
+           selector via opacity. This is robust where a covering overlay isn't:
+           every .panel permanently carries transform:translateY(0) (from fadeUp's
+           fill:both), which forms a stacking context that trapped the selector
+           below a z-indexed backdrop and dimmed it too. Opacity dimming can't be
+           defeated by stacking contexts, so the selector reliably stays bright. */
+        /* opacity !important so the dim beats the fadeUp animation's filled
+           opacity:1 on the other .panel sections (animations outrank normal
+           author rules in the cascade, but not !important author rules). */
+        #mainContent.ac-focus-dim > *:not(.dist-panel),
+        #mainContent.ac-focus-dim .dist-sticky-hdr,
+        #mainContent.ac-focus-dim #distPanelBody > *:not(#acSelector) {
+          opacity:0.15 !important; transition:opacity 0.2s ease;
+        }
+        #mainContent.ac-focus-dim #acSelector.ac-selector--focus {
+          position:relative; z-index:1; border-radius:10px;
+          box-shadow:0 0 0 2px var(--accent), 0 0 34px 9px rgba(0,200,255,0.6);
+        }
+        /* Grayed Display-menu row — still hoverable so its title tooltip shows. */
+        .rg-pulldown-row.rg-row-disabled { opacity:0.45; cursor:not-allowed; }
+        .rg-pulldown-row.rg-row-disabled .rg-btn-label { color:#9fb0c3; }
         /* On-map rental badges — strip Leaflet's tooltip box/arrow, keep only the pill */
         .leaflet-tooltip.aar-badge-tip { background:transparent; border:none; box-shadow:none; padding:0; margin:0; white-space:nowrap; opacity:1; }
         .leaflet-tooltip.aar-badge-tip::before { display:none !important; border:none !important; }

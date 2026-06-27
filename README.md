@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.52.0**
+**Current version: v3.59.1**
 
 ---
 
@@ -33,6 +33,18 @@ On the map, each airport can show a small stack of chips listing the aircraft ty
 The panel lets you filter by aircraft category (the familiar 1–7 circles, with All / None / Invert), set a minimum payout by dragging the gradient bar (right-click it to recolor the spectrum), pick aircraft types and owners from searchable multi-selects, and toggle "available now only." Every section collapses, and the panel is draggable and resizable. The results table lists every matching aircraft — sort by any column, group by owner / airport / type, drag the dividers between columns to resize them (double-click to auto-fit), and click any row to fly to that airport.
 
 Closing the panel with its ✕ leaves the rental colors and badges on the map; the menu item or the breadcrumb pill turns the whole view off. You can also jump straight into a mode by adding `?mode=owner`, `?mode=map`, or `?mode=simbrief` to the app's address. And the map search box now matches your **Scenery Library notes** — type words or a "quoted phrase" and the airports whose notes contain them appear on the map.
+
+### Find Where to Rent Your Aircraft
+New in v3.53.0 — a route-planning aid that answers "if I fly from this airport, can I actually get my aircraft from its owner?" First pick an aircraft in the **Aircraft** selector. Then, whenever you select a **departure** or **arrival** airport on the map, the app checks that airport **owner's whole fleet** and shows where your selected aircraft is available to rent **right now** — meaning no ground-operations timer is running.
+
+Every airport tooltip (and the departure/arrival cards in the distance matrix) gains a green **🛩 \<type\> for rent** line listing where the owner has your aircraft available, or a muted "none rentable from \<owner\>'s airports now" when there are none. On the map, turn on **Highlight other airports with \<type\>** in the **👁 Display** menu (the row carries your selected aircraft's code) and a green badge drops on the owner's *other* airports where your aircraft is rentable — pinpointing where to go pick it up.
+
+A faint dotted green line links your selected airport to each of those rentable airports — styled so it can't be mistaken for a route, a measurement, or a distance line. If a rentable airport is **off-screen**, the line runs to the edge of the map and its badge waits there pointing toward it; **click or tap that edge badge to pan the map and center the airport**. Departure and arrival are handled independently, so each draws its own lines and badges; edge badges keep working as you pan and zoom, spread apart so they never overlap.
+
+The badges behave like airport dots: **hover one** for the standard airport tooltip, and use the two quick-action icons that appear — a **take-off plane (🛫) to set that airport as your departure**, a **landing plane (🛬) to set it as your arrival** (always visible on touch). When no aircraft is selected, the Display-menu row instead reads **Select Aircraft** and, when clicked, closes the map and opens the aircraft selector — dimming the rest of the planner so you can focus on choosing one (since the aircraft drives time estimates, airport suitability, and alternate-airport recommendations).
+
+### Flight Time Calibration
+Calibrate any aircraft with two reference flights — a short one and a long one, each entered as distance (nm) and elapsed time (minutes) read off the SimFly UI — and the app shows an estimated en-route time wherever distance appears: on route lines, the map, measurements, and airport cards. As of v3.59.0 this lives in a clearly highlighted ⏱ card in the aircraft panel (it turns amber until the selected aircraft is calibrated, cyan once it is) since it feeds estimates used throughout the app. Calibration is saved per aircraft in your browser.
 
 ### Airport Radial Menu
 New in v3.51.0 — **right-click any airport dot** on the map (or **long-press** on a touch screen) to open a labelled radial menu of everything you can do with that airport. The icons bloom outward from the dot, the rest of the map dims so the menu stays readable even in a crowded region, and the airport you clicked is labelled with its **ICAO code right in the center** of the wheel, so you always know which one you're acting on — handy where several dots sit close together. Click a spoke to open it; click anywhere else, press **Esc**, or zoom the map to dismiss.
