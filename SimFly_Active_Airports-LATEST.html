@@ -8688,7 +8688,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.63.0';
+const APP_VERSION = '3.64.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -28554,11 +28554,14 @@ function _slRenderList(query) {
   if (filterSel && filterSel.value !== _slFilterMode) filterSel.value = _slFilterMode;
 
   let items = all.slice();
-  // Text search (ICAO, addon, airport name)
+  // Text search (ICAO, addon, airport name, Store, Developer, Notes)
   if (q) {
     items = items.filter(e => {
       if (e.icao.toUpperCase().includes(q)) return true;
       if ((e.addon || '').toUpperCase().includes(q)) return true;
+      if ((e.store || '').toUpperCase().includes(q)) return true;
+      if ((e.developer || '').toUpperCase().includes(q)) return true;
+      if ((e.notes || '').toUpperCase().includes(q)) return true;
       const rec = typeof lookupICAO === 'function' ? lookupICAO(e.icao) : null;
       if (rec && (rec.name || '').toUpperCase().includes(q)) return true;
       return false;
@@ -42983,7 +42986,7 @@ function rgSendToFlightPlanner() {
             <strong>Keyboard entry</strong> (v3.40.0) — the popover is fully keyboard-driven for fast data entry. It opens with the rating focused, so <strong>←/→</strong> (or ↑/↓) adjust by half a star, <strong>1–5</strong> set a rating outright, and <strong>0</strong> clears it. <strong>Tab</strong> walks Rating → Store → Developer → Notes → links and cycles within the popover; on <strong>Store</strong> / <strong>Developer</strong>, type a few letters and press <strong>Tab</strong> to autocomplete to the top matching suggestion (the native ↑/↓ dropdown works too). Map pan/zoom keys are suppressed while a field is focused, and <strong>Esc</strong> closes from anywhere inside.<br/><br/>
             The popover also shows <strong>Store</strong> and <strong>Developer</strong> fields you can fill in directly — the same fields found in the Scenery Library panel, with the same autocomplete suggestions. Setting a value here is identical to editing the row inside the library. A collapsible <strong>▶ Notes</strong> field is here too — click the triangle to expand it and jot a free-text note (up to 1,024 characters); a ● beside the label marks airports that already have one. When a note already exists, the popover opens with it expanded so you see it without a click. When any scenery changes are pending (from a rating, store, developer, or anything else), a small <strong>💾</strong> icon appears in the popover header; clicking it exports the full scenery database to a JSON backup file, the same as Save inside the panel.<br/><br/>
             For SimFly-owned airports, the ICAO code and name in the popover header are a clickable link to that airport&rsquo;s SimFly details page. Two external links at the bottom of every popover — <em>View on flightsim.to</em> and <em>View on FS Addon Compare</em> — let you look up the airport&rsquo;s scenery add-ons without leaving the app.<br/><br/>
-            <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above also searches by ICAO, addon name, and full airport name.<br/><br/>
+            <strong>Sort and filter</strong> — the <strong>Show</strong> dropdown filters the list to <em>All airports</em>, <em>SimFly-owned only</em> (airports still owned by an active SimFly player), <em>Rated only</em>, or <em>Unrated only</em>. The <strong>Sort</strong> dropdown orders the list by ICAO, rating (high to low), or airport name. The text box above searches by ICAO, addon name, full airport name, and &mdash; as of v3.64.0 &mdash; the <em>Store</em>, <em>Developer</em>, and <em>Notes</em> fields too, so you can filter the list by a publisher, marketplace, or any word in a note.<br/><br/>
             <strong>Store and Developer attribution</strong> — each library row shows two values beneath the ICAO line: <em>Store</em> (the marketplace where the scenery was purchased) and <em>Dev</em> (the publisher / studio). <strong>Click a value to edit it</strong> (it turns into a text field); <strong>Enter</strong> or clicking away saves, <strong>Tab</strong> hops to the next field, and <strong>Esc</strong> cancels. Editing autocompletes from a built-in list of common marketplaces and developers <em>plus</em> any custom values you've already typed on other rows (type a few letters and press <strong>Tab</strong> to accept the top match). Both values are persisted to local storage and round-trip through Export / Import JSON. <em>(v3.49.0: these — and Notes — are shown as plain text until clicked, instead of always-on input boxes. With a large library that meant ~2,000 text fields on screen, which some browser extensions re-scan on every keystroke and made typing lag; rendering them on demand keeps editing fast regardless of your extensions.)</em><br/><br/>
             <strong>Notes</strong> — each library row also has a collapsible <strong>▶ Notes</strong> disclosure beneath the Store / Dev inputs (kept minimised until you click the triangle). Expand it to record a free-text note of up to 1,024 characters — install quirks, version numbers, reminders — with a live character counter. Notes are saved to local storage and round-trip through Save / Load Scenery Library. The same field appears in the right-click Quick-Rate popover.<br/><br/>
             <strong>Developer filter</strong> — the new <strong>Developer</strong> dropdown next to <em>Show</em> / <em>Sort</em> narrows the modal list to a single developer. Selecting a developer also filters the region map: library airports whose developer doesn't match are hidden, airports not in the library are unaffected. An active filter shows as a <em>Developer: &lt;name&gt;</em> chip in the region-map filter strip with a ✕ to clear it.<br/><br/>
@@ -43204,10 +43207,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.64.0</span>
+          <span class="release-date">June 28, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Scenery Library search now covers Store, Developer, and Notes.</strong> The search box at the top of the Scenery Library used to match only ICAO, airport name, and add-on title. It now also searches the <em>Store</em>, <em>Developer</em>, and <em>Notes</em> fields &mdash; so you can type a developer like &ldquo;Orbx&rdquo;, a store, or any word you jotted in a note and instantly filter the list to matching airports.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.63.0</span>
-          <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -55017,7 +55031,7 @@ function rgSendToFlightPlanner() {
         <button class="sl-bkp-btn sl-bkp-dismiss" onclick="_slDoClose()" title="Close window without saving">Close</button>
       </div>
       <div class="sl-search-row">
-        <input type="text" id="slSearch" class="sl-search" placeholder="Search ICAO, name, or addon…"
+        <input type="text" id="slSearch" class="sl-search" placeholder="Search ICAO, name, addon, store, developer, or notes…"
                oninput="_slRenderList(this.value)" autocomplete="off" spellcheck="false">
       </div>
       <div class="sl-controls-row">

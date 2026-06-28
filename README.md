@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.63.0**
+**Current version: v3.64.0**
 
 ---
 
@@ -95,7 +95,7 @@ Track which airports you have add-on scenery installed for, and rate the quality
 - **Sort** — *ICAO (A–Z)*, *Rating (high to low)*, or *Airport name (A–Z)*.
 - **Developer** — narrows the list AND the map to a single developer (see *Store and Developer attribution* below).
 
-The text search box also matches the full airport name in addition to ICAO and addon. The footer shows `X of Y airports` whenever a filter is active, and the empty-state message tailors itself to the chosen filter. Sort and filter selections are persisted to localStorage so your preference survives reloads and new sessions.
+The text search box matches the full airport name, the add-on title, and the **Store**, **Developer**, and **Notes** fields in addition to ICAO — so you can instantly filter the list by a publisher, a marketplace, or any word you jotted in a note. The footer shows `X of Y airports` whenever a filter is active, and the empty-state message tailors itself to the chosen filter. Sort and filter selections are persisted to localStorage so your preference survives reloads and new sessions.
 
 **Store and Developer attribution** — each library row shows two values beneath the ICAO line: **Store** (the marketplace where the scenery was purchased) and **Dev** (the publisher / studio). **Click a value to edit it** — it turns into a text field; **Enter** (or clicking away) saves, **Tab** saves and hops to the next field, and **Esc** cancels. Editing autocompletes from a built-in list of common marketplaces and developers (Orbx Direct, MSFS Marketplace, SimMarket, FlightSim.to, Just Flight, Aerosoft Shop, …; Orbx, FlyTampa, MK-Studios, FlightBeam, FSDreamTeam, iniBuilds, PMDG, …) **plus** any custom value you've already typed on another row, so your own conventions become suggestions over time. Pressing **Tab** also fills the topmost matching value (e.g. type *simm* then Tab to fill *SimMarket*). Both values are persisted to localStorage and round-trip through Save / Load Scenery Library. The developer is also shown as a labeled row beneath the star rating in the airport's map tooltip. *(v3.49.0: Store / Dev / Notes are shown as plain text until you click to edit them, rather than as always-on input boxes. With a large library that put thousands of text fields on the page, which some browser extensions re-scan on every keystroke and made typing lag — rendering them on demand keeps editing fast regardless of your extensions.)*
 
