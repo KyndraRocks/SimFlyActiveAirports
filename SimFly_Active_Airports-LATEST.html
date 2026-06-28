@@ -474,6 +474,96 @@
     border-radius: 3px;
   }
 
+  /* ── MASTER SAVE FILE (MSF) MODAL ── (v3.65.0)
+     Fixed-height modal + an inner scroll pane for the variable-height list, so
+     expanding/collapsing groups never recenters the modal (CLAUDE.md no-move). */
+  .msf-modal { height: min(78vh, 760px); max-width: clamp(560px, 42vw, 860px); }
+  .msf-modal-body { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  #msfBody { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  .msf-intro { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0 0 0.7rem; }
+  .msf-tools { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-shrink: 0; }
+  .msf-tools-count { margin-left: auto; color: var(--muted); font-size: 0.74rem; font-family: 'Rajdhani', sans-serif; }
+  .msf-mini {
+    background: rgba(0,200,255,0.08); border: 1px solid var(--border); color: var(--accent);
+    border-radius: 4px; padding: 0.2rem 0.6rem; font-size: 0.74rem; cursor: pointer; transition: all 0.15s;
+  }
+  .msf-mini:hover { border-color: var(--accent); }
+  .msf-list {
+    flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.35rem; background: rgba(0,0,0,0.12);
+  }
+  .msf-cap {
+    font-family: 'Orbitron', monospace; font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--muted); padding: 0.5rem 0.4rem 0.3rem; opacity: 0.85;
+  }
+  .msf-group { border-radius: 5px; margin-bottom: 0.15rem; }
+  .msf-group--feature { background: rgba(0,200,255,0.06); border: 1px solid rgba(0,200,255,0.25); }
+  .msf-group-hdr { display: flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.4rem; }
+  .msf-tri {
+    background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.7rem;
+    width: 18px; flex-shrink: 0; padding: 0; line-height: 1;
+  }
+  .msf-tri:hover { color: var(--accent); }
+  .msf-group-chk { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; flex: 1; min-width: 0; }
+  .msf-group-label { font-weight: 600; font-size: 0.86rem; color: var(--text); }
+  .msf-group--feature .msf-group-label { color: var(--accent); }
+  .msf-group-count { color: var(--muted); font-size: 0.72rem; font-family: 'Rajdhani', sans-serif; flex-shrink: 0; }
+  .msf-children { padding: 0.1rem 0.4rem 0.45rem 1.9rem; display: flex; flex-direction: column; gap: 0.1rem; }
+  .msf-child { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; padding: 0.12rem 0; }
+  .msf-child-label { font-size: 0.8rem; color: var(--text); }
+  .msf-child-meta { margin-left: auto; color: var(--muted); font-size: 0.72rem; font-family: 'Rajdhani', sans-serif; padding-left: 0.6rem; }
+  .msf-group input[type=checkbox], .msf-child input[type=checkbox] { accent-color: var(--accent); flex-shrink: 0; }
+
+  /* confirm — save */
+  .msf-confirm-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .msf-confirm-label { font-weight: 600; font-size: 0.86rem; color: var(--text); }
+  .msf-confirm-row.msf-group--feature { border: 1px solid rgba(0,200,255,0.25); border-radius: 5px; margin-bottom: 0.2rem; }
+  .msf-confirm-row.msf-group--feature .msf-confirm-label { color: var(--accent); }
+  .msf-confirm-meta { margin-left: auto; color: var(--muted); font-size: 0.74rem; font-family: 'Rajdhani', sans-serif; }
+  .msf-note { color: var(--muted); font-size: 0.78rem; margin: 0.6rem 0 0; flex-shrink: 0; }
+
+  /* confirm — load diff */
+  .msf-hide { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.76rem; margin-bottom: 0.5rem; cursor: pointer; flex-shrink: 0; }
+  .msf-hide input { accent-color: var(--accent); }
+  .msf-diff-hdr, .msf-diff-row {
+    display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) 14px minmax(0,1fr) 64px;
+    align-items: center; gap: 0.4rem; padding: 0.32rem 0.45rem;
+  }
+  .msf-diff-hdr {
+    font-family: 'Orbitron', monospace; font-size: 0.58rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--border); position: sticky; top: 0;
+    background: var(--panel); z-index: 1;
+  }
+  .msf-diff-row { border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.78rem; }
+  .msf-diff-label { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msf-diff-cur, .msf-diff-new { color: var(--muted); font-family: 'Rajdhani', sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msf-diff-row.msf-diff--changed .msf-diff-new, .msf-diff-row.msf-diff--new .msf-diff-new { color: var(--green); }
+  .msf-diff-arrow { color: var(--muted); text-align: center; }
+  .msf-diff-row.msf-diff--same { opacity: 0.6; }
+  .msf-badge { font-size: 0.6rem; font-weight: 700; padding: 0.1rem 0.3rem; border-radius: 3px; text-align: center; font-family: 'Rajdhani', sans-serif; letter-spacing: 0.05em; }
+  .msf-badge--new { background: rgba(0,255,157,0.15); color: var(--green); }
+  .msf-badge--chg { background: rgba(255,106,0,0.18); color: var(--accent2); }
+  .msf-badge--same { background: rgba(255,255,255,0.06); color: var(--muted); }
+  .msf-diff-empty { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 1rem; }
+
+  /* footer + buttons (shared with chooser) */
+  .msf-footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.9rem 1.5rem; border-top: 1px solid var(--border); flex-shrink: 0; }
+  .msf-btn {
+    border-radius: 5px; padding: 0.4rem 0.9rem; font-size: 0.82rem; cursor: pointer;
+    border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--text); transition: all 0.15s;
+  }
+  .msf-btn:hover { border-color: var(--accent); }
+  .msf-btn--primary { background: rgba(0,200,255,0.12); border-color: var(--accent); color: var(--accent); }
+  .msf-btn--danger { background: rgba(255,61,90,0.12); border-color: var(--danger); color: var(--danger); }
+  .msf-btn--danger:hover { border-color: var(--danger); background: rgba(255,61,90,0.2); }
+  .msf-btn--ghost { color: var(--muted); }
+
+  /* chooser (main-UI entry) */
+  .msf-chooser { max-width: 420px; }
+  .msf-chooser-intro { color: var(--muted); font-size: 0.84rem; line-height: 1.5; margin: 0 0 1rem; }
+  .msf-chooser-btns { display: flex; flex-direction: column; gap: 0.6rem; }
+  .msf-chooser-btns .msf-btn { padding: 0.7rem; font-size: 0.9rem; text-align: center; }
+
   /* ── RELEASE NOTES MODAL ── */
   .modal-overlay {
     display: none;
@@ -8419,6 +8509,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.35rem;justify-self:end;">
           <div style="display:flex;gap:0.5rem;">
             <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:var(--accent);color:var(--accent);" onclick="openRegionModal()" aria-label="Open interactive map" title="Open the interactive map — explore airports, search by owner / country / region / continent / developer, draw region circles for cross-region distance matrix planning" tabindex="-1">⊙ Map</button>
+            <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="_msfOpenChooser()" aria-label="Save or load all settings" title="Save or restore all settings — back up everything (Scenery Library, Alerts, and all preferences) to a single master save file, or load one back" tabindex="-1">⚙ Settings</button>
             <button class="btn-action btn-help" onclick="openHelp()" aria-label="Help" title="How to use this tool" tabindex="-1">? Help</button>
             <button class="btn-action btn-clear" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="clearDist()" aria-label="Reset flight planner" tabindex="-1">✕ Reset</button>
           </div>
@@ -8688,7 +8779,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.64.0';
+const APP_VERSION = '3.65.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -29330,6 +29421,484 @@ function _slExportJson() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  MASTER SAVE FILE (MSF) — save/restore ALL localStorage in one file (v3.65.0)
+//  ---------------------------------------------------------------------------
+//  Design notes (see CLAUDE.md §12 before adding a new localStorage key):
+//   • The MSF is a snapshot of localStorage stored BY RAW KEY with values kept
+//     verbatim as strings. localStorage is already a string→string store, so a
+//     key/value snapshot round-trips losslessly and needs no schema migration.
+//   • Compatibility is structural, not coded: each key is filed into a SECTION
+//     in the file ('settings' | 'alerts' | 'sceneryLibrary'). The LOADER does
+//     no per-key logic — "user ticked Alerts → write back every key under
+//     sections.alerts". So an OLD app restores keys it has never heard of (they
+//     sit in localStorage until the user upgrades), and a NEW app restores an
+//     OLD file by simply not seeing the missing sections. Any version loads any
+//     MSF regardless of whether it carries Scenery / Alerts data.
+//   • New keys are AUTO-INCLUDED in the generic snapshot — a future setting is
+//     saved even with no registry edit (it lands under "Other settings"). The
+//     registry below only (a) carves out the two optional feature buckets,
+//     (b) gives keys a friendly label + group for the dialogs, and (c) excludes
+//     caches / dead-code keys that must never be written.
+//   • Credentials (simfly_gh_pat) ARE included by request — the SimFly token is
+//     public and shared by every pilot.
+// ═══════════════════════════════════════════════════════════════════════
+const _MSF_FILE_VERSION = 1;
+const _MSF_APP          = 'SimFly Active Airports';
+
+// Section names used inside the file. Any section that is NOT alerts/scenery is
+// treated as general settings on load — so a future optional section added by a
+// newer app still restores (under settings) in an older app. Forward-compatible.
+const _MSF_SEC_SETTINGS = 'settings';
+const _MSF_SEC_ALERTS   = 'alerts';
+const _MSF_SEC_SCENERY  = 'sceneryLibrary';
+
+// NEVER written to an MSF: large network caches (re-fetched on boot), dead-code
+// keys, and live-session ephemera that is meaningless to replay later.
+const _MSF_EXCLUDE = new Set([
+  'simfly_payout_db',            // airport DB cache — re-fetched every boot
+  'simfly_payout_db_ts',         // timestamp companion to the payout DB cache
+  'simfly_category_csv',         // category CSV cache — re-fetched every boot
+  'simfly_aa_stkp_token',        // STKP is dead code — nothing reads this
+  'simfly_aa_sb_ofp_last',       // last raw OFP — session-scoped, large
+  'simfly_aa_ac_track',          // live aircraft breadcrumb trail — ephemeral
+  'simfly_aa_ac_track_fp_gen',   // trail clear-marker — ephemeral
+  'simfly_aa_afk_takeoff_at',    // wheels-up timestamp — per-flight runtime
+  'simfly_aa_afk_elapsed_state', // elapsed-timer runtime
+  'simfly_aa_afk_elapsed_frozen',// elapsed-timer runtime
+  'simfly_aa_afk_timer_last',    // alarm timer runtime
+]);
+
+// The two OPTIONAL feature buckets. Saved only when the user ticks the box; on
+// load each is offered as its own top-of-list toggle. NB: alert *defaults*
+// (simfly_aa_afk_defaults/_auto_on/etc.) are NOT here — they live in Settings
+// and are always offered, independent of the Alerts toggle.
+const _MSF_ALERTS_KEYS = [
+  'simfly_aa_afk_alarms',
+  'simfly_aa_afk_groups',
+  'simfly_aa_afk_collapsed_cards',
+  'simfly_aa_afk_alert_history',
+  'aa_mobile_alerts_v1',
+];
+const _MSF_SCENERY_KEYS = [ 'simfly_aa_scenery_library' ];
+const _MSF_ALERTS_SET   = new Set(_MSF_ALERTS_KEYS);
+const _MSF_SCENERY_SET   = new Set(_MSF_SCENERY_KEYS);
+
+// Friendly labels for the keys inside the two feature buckets (granular view).
+const _MSF_FEATURE_LABELS = {
+  'simfly_aa_afk_alarms':          'Alarms',
+  'simfly_aa_afk_groups':          'Alarm groups',
+  'simfly_aa_afk_collapsed_cards': 'Collapsed alarm cards',
+  'simfly_aa_afk_alert_history':   'Alert history',
+  'aa_mobile_alerts_v1':           'Mobile Alerts settings',
+  'simfly_aa_scenery_library':     'Scenery Library entries',
+};
+
+// Settings registry — { key: { label, group } }. Group order is defined by
+// _MSF_GROUP_ORDER. Any non-excluded key NOT found here is still saved/loaded;
+// it just shows under "Other settings" with its raw key as the label.
+const _MSF_SETTINGS_REGISTRY = {
+  // Appearance
+  'simfly_aa_theme':                  { label:'Theme (light / dark)',          group:'Appearance' },
+  'simfly_aa_map_layer':              { label:'Map base layer',                group:'Appearance' },
+  'simfly_aa_layer_order':            { label:'Map layer order',               group:'Appearance' },
+  // Map display & filters
+  'simfly_aa_level_badges':           { label:'Level badges',                  group:'Map display & filters' },
+  'simfly_aa_forsale_filter':         { label:'For-sale filter',               group:'Map display & filters' },
+  'simfly_aa_rotation_gauge':         { label:'Rotation gauge',                group:'Map display & filters' },
+  'simfly_aa_rotation_filter':        { label:'Rotations-left filter',         group:'Map display & filters' },
+  'simfly_aa_new_airports':           { label:'New-airports overlay',          group:'Map display & filters' },
+  'simfly_aa_owner_ac_badge':         { label:'Owner-aircraft badges',         group:'Map display & filters' },
+  // Color palettes
+  'simfly_aa_payout_palette':         { label:'Payout color palette',          group:'Color palettes' },
+  'simfly_aa_rent_palette':           { label:'Rentals color palette',         group:'Color palettes' },
+  // Aircraft & calibration
+  'simfly_aa_aircraft':               { label:'Aircraft data / selection',     group:'Aircraft & calibration' },
+  'simfly_aa_ac_flighttimes':         { label:'Flight-time calibration',       group:'Aircraft & calibration' },
+  'simfly_aa_ac_live_flights':        { label:'Live flight-data captures',     group:'Aircraft & calibration' },
+  'simfly_aa_ac_live_opt':            { label:'Live flight-data opt-in',       group:'Aircraft & calibration' },
+  // Aircraft rentals
+  'simfly_aa_rent_prefs':             { label:'Rental filter preferences',     group:'Aircraft rentals' },
+  'simfly_aa_rent_collapse':          { label:'Rentals panel layout',          group:'Aircraft rentals' },
+  // Live aircraft & FSUIPC
+  'simfly_aa_ac_follow':              { label:'Follow-aircraft toggle',        group:'Live aircraft & FSUIPC' },
+  'simfly_aa_ac_icon':                { label:'Aircraft marker icon',          group:'Live aircraft & FSUIPC' },
+  'simfly_aa_fsuipc_wanted':          { label:'FSUIPC auto-connect',           group:'Live aircraft & FSUIPC' },
+  // SimBrief
+  'simfly_aa_sb_pid':                 { label:'SimBrief Pilot ID',             group:'SimBrief' },
+  'simfly_aa_fp_labels':              { label:'Waypoint labels',               group:'SimBrief' },
+  'simfly_aa_fp_color':               { label:'Route color',                   group:'SimBrief' },
+  // Alert defaults & settings (NOT the optional Alerts bucket)
+  'simfly_aa_afk_defaults':           { label:'Default alert set',             group:'Alert defaults & settings' },
+  'simfly_aa_afk_auto_on':            { label:'Auto-load default alerts',      group:'Alert defaults & settings' },
+  'simfly_aa_afk_alarm_duration_sec': { label:'Alarm sound duration',         group:'Alert defaults & settings' },
+  'simfly_aa_afk_cruise_alt_text':    { label:'Last cruise altitude',          group:'Alert defaults & settings' },
+  'simfly_aa_afk_dp_config':          { label:'Data panel layout',             group:'Alert defaults & settings' },
+  'simfly_aa_afk_dp_collapsed':       { label:'Data panel collapsed state',    group:'Alert defaults & settings' },
+  // Tools & misc
+  'simfly_aa_random_opts':            { label:'Random flight options',         group:'Tools & misc' },
+  'simfly_aa_demo_bar_collapsed':     { label:'Demo control-bar state',        group:'Tools & misc' },
+  'simfly_aa_update_dismissed':       { label:'Update banner dismissed',       group:'Tools & misc' },
+  'simfly_aa_scenery_prefs':          { label:'Scenery Library view prefs',    group:'Tools & misc' },
+  'simfly_recip_inbox':               { label:'Recip Tracker inbox',           group:'Tools & misc' },
+  // Credentials (public / shared by all pilots — included by request)
+  'simfly_gh_pat':                    { label:'GitHub access token',           group:'Credentials' },
+};
+const _MSF_GROUP_ORDER = [
+  'Appearance', 'Map display & filters', 'Color palettes', 'Aircraft & calibration',
+  'Aircraft rentals', 'Live aircraft & FSUIPC', 'SimBrief', 'Alert defaults & settings',
+  'Tools & misc', 'Credentials', 'Other settings',
+];
+// Nicer plural nouns when summarising array-valued keys in the diff/confirm.
+const _MSF_COUNT_NOUN = {
+  'simfly_aa_scenery_library':   'airport',
+  'simfly_aa_afk_alarms':        'alarm',
+  'simfly_aa_afk_alert_history': 'entry',
+};
+
+// ── runtime state ──
+let _msfMode = 'save';     // 'save' | 'load'
+let _msfStep = 1;          // 1 = select, 2 = confirm
+let _msfModel = [];        // [ { id, label, special, keys:[{key,label}] } ] in display order
+let _msfSel = {};          // key -> bool
+let _msfExpanded = {};     // groupIndex -> bool
+let _msfLoadFlat = null;   // load mode: { key -> raw string value } across all sections
+let _msfHideUnchanged = false;
+
+function _msfKeyLabel(key) {
+  if (_MSF_FEATURE_LABELS[key]) return _MSF_FEATURE_LABELS[key];
+  if (_MSF_SETTINGS_REGISTRY[key]) return _MSF_SETTINGS_REGISTRY[key].label;
+  return key;  // unknown (e.g. a newer app's key seen by an older app)
+}
+function _msfKeyGroup(key) {
+  return (_MSF_SETTINGS_REGISTRY[key] && _MSF_SETTINGS_REGISTRY[key].group) || 'Other settings';
+}
+
+// Short, human summary of a stored value for the confirm/diff screens. Large
+// values (arrays/objects) are summarised by count, never dumped raw.
+function _msfSummarize(key, raw) {
+  if (raw == null) return '(none)';
+  let v;
+  try { v = JSON.parse(raw); }
+  catch (_) { const s = String(raw); return s.length > 42 ? '“' + s.slice(0, 40) + '…”' : '“' + s + '”'; }
+  if (Array.isArray(v)) {
+    const noun = _MSF_COUNT_NOUN[key] || 'item';
+    return v.length + ' ' + noun + (v.length !== 1 ? 's' : '');
+  }
+  if (v && typeof v === 'object') { const n = Object.keys(v).length; return n + ' field' + (n !== 1 ? 's' : ''); }
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  const s = String(v); return s.length > 42 ? s.slice(0, 40) + '…' : s;
+}
+
+// Order a flat {section -> {key:val}} or current-localStorage pool into the
+// shared display model: Scenery + Alerts specials first, then settings groups.
+function _msfAssembleGroups(sceneryKeys, alertsKeys, settingsKeys) {
+  const groups = [];
+  if (sceneryKeys.length) groups.push({ id:'__scenery', label:'Scenery Library', special:true,
+    keys: sceneryKeys.map(k => ({ key:k, label:_msfKeyLabel(k) })) });
+  if (alertsKeys.length)  groups.push({ id:'__alerts', label:'Alerts', special:true,
+    keys: alertsKeys.map(k => ({ key:k, label:_msfKeyLabel(k) })) });
+  // bucket settings keys by group, preserve registry group order
+  const byGroup = {};
+  settingsKeys.forEach(k => { const g = _msfKeyGroup(k); (byGroup[g] = byGroup[g] || []).push(k); });
+  _MSF_GROUP_ORDER.forEach(g => {
+    if (!byGroup[g]) return;
+    groups.push({ id:'g_' + g, label:g, special:false,
+      keys: byGroup[g].map(k => ({ key:k, label:_msfKeyLabel(k) })) });
+    delete byGroup[g];
+  });
+  // any group not in the ordered list (defensive) — append
+  Object.keys(byGroup).forEach(g => groups.push({ id:'g_' + g, label:g, special:false,
+    keys: byGroup[g].map(k => ({ key:k, label:_msfKeyLabel(k) })) }));
+  return groups;
+}
+
+// SAVE model — from the CURRENT localStorage contents.
+function _msfBuildSaveModel() {
+  const scenery = [], alerts = [], settings = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || _MSF_EXCLUDE.has(k)) continue;
+    // Capture the SimFly key family only — every AA key is simfly_* or aa_*, so
+    // any future AA key is still auto-included, but unrelated third-party keys
+    // that may share the page's origin are left out of the master save file.
+    if (!/^(simfly_|aa_)/.test(k)) continue;
+    if (_MSF_SCENERY_SET.has(k)) scenery.push(k);
+    else if (_MSF_ALERTS_SET.has(k)) alerts.push(k);
+    else settings.push(k);
+  }
+  return _msfAssembleGroups(scenery, alerts, settings);
+}
+
+// LOAD model — from a parsed MSF file. Returns { groups, flat } or null if the
+// file is not a recognisable MSF.
+function _msfBuildLoadModel(data) {
+  if (!data || typeof data !== 'object' || !data.sections || typeof data.sections !== 'object') return null;
+  const sec = data.sections;
+  const flat = {};
+  const scenery = [], alerts = [], settings = [];
+  Object.keys(sec).forEach(secName => {
+    const bag = sec[secName];
+    if (!bag || typeof bag !== 'object') return;
+    Object.keys(bag).forEach(k => {
+      const val = bag[k];
+      // values are stored as raw strings; tolerate a non-string by re-stringifying
+      flat[k] = (typeof val === 'string') ? val : JSON.stringify(val);
+      if (secName === _MSF_SEC_SCENERY) scenery.push(k);
+      else if (secName === _MSF_SEC_ALERTS) alerts.push(k);
+      else settings.push(k);  // settings + any unknown/future section → general
+    });
+  });
+  const groups = _msfAssembleGroups(scenery, alerts, settings);
+  return { groups, flat };
+}
+
+// ── open / close ──
+function _msfShow()  { document.getElementById('msfModal').classList.add('open'); }
+function _msfClose() {
+  document.getElementById('msfModal').classList.remove('open');
+  _msfModel = []; _msfSel = {}; _msfExpanded = {}; _msfLoadFlat = null;
+}
+function _msfOpenChooser() { document.getElementById('msfChooserModal').classList.add('open'); }
+function _msfChooserClose() { document.getElementById('msfChooserModal').classList.remove('open'); }
+
+function openMsfSave() {
+  _msfMode = 'save'; _msfStep = 1; _msfHideUnchanged = false;
+  _msfModel = _msfBuildSaveModel();
+  if (!_msfModel.length) { _aaRtToast('Nothing to save — no settings are stored yet.', 'warn'); return; }
+  _msfSel = {}; _msfExpanded = {};
+  _msfModel.forEach(g => g.keys.forEach(k => { _msfSel[k.key] = true; }));
+  _msfShow(); _msfRender();
+}
+function openMsfLoad() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json,application/json';
+  input.onchange = () => { const f = input.files && input.files[0]; if (f) _msfReadFile(f); };
+  input.click();
+}
+function _msfReadFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    let data;
+    try { data = JSON.parse(ev.target.result); }
+    catch (_) { _aaRtToast('✕ Could not read file — not valid JSON.', 'err'); return; }
+    const model = _msfBuildLoadModel(data);
+    if (!model) { _aaRtToast('✕ Not a SimFly master save file.', 'err'); return; }
+    if (!model.groups.length) { _aaRtToast('✕ This master save file contains no settings.', 'err'); return; }
+    _msfMode = 'load'; _msfStep = 1; _msfHideUnchanged = false;
+    _msfModel = model.groups; _msfLoadFlat = model.flat;
+    _msfSel = {}; _msfExpanded = {};
+    _msfModel.forEach(g => g.keys.forEach(k => { _msfSel[k.key] = true; }));
+    _msfShow(); _msfRender();
+  };
+  reader.readAsText(file);
+}
+
+// ── selection helpers ──
+function _msfSelectedCount() {
+  let n = 0; _msfModel.forEach(g => g.keys.forEach(k => { if (_msfSel[k.key]) n++; })); return n;
+}
+function _msfToggleKey(key, on) { _msfSel[key] = on; _msfRender(); }
+function _msfToggleGroup(gi, on) { _msfModel[gi].keys.forEach(k => { _msfSel[k.key] = on; }); _msfRender(); }
+function _msfToggleExpand(gi) { _msfExpanded[gi] = !_msfExpanded[gi]; _msfRender(); }
+function _msfSelectAll(on) { _msfModel.forEach(g => g.keys.forEach(k => { _msfSel[k.key] = on; })); _msfRender(); }
+function _msfToggleHideUnchanged(on) { _msfHideUnchanged = on; _msfRender(); }
+
+function _msfNext() {
+  if (_msfSelectedCount() === 0) { _aaRtToast('Select at least one item first.', 'warn'); return; }
+  _msfStep = 2; _msfRender();
+}
+function _msfBack() { _msfStep = 1; _msfRender(); }
+
+// ── status for load diff ──
+function _msfStatus(key) {
+  const cur = localStorage.getItem(key);
+  const inc = _msfLoadFlat ? _msfLoadFlat[key] : null;
+  if (cur == null) return 'new';
+  if (cur === inc) return 'same';
+  return 'changed';
+}
+
+// ── render ──
+function _msfRender() {
+  const title = document.getElementById('msfTitle');
+  const body  = document.getElementById('msfBody');
+  const foot  = document.getElementById('msfFooter');
+  if (!title || !body || !foot) return;
+  const verb = _msfMode === 'save' ? 'Save' : 'Load';
+  if (_msfStep === 1) {
+    title.textContent = (_msfMode === 'save' ? '💾 Save All Settings' : '📂 Load All Settings');
+    body.innerHTML = _msfRenderSelect();
+    foot.innerHTML =
+      '<button class="msf-btn msf-btn--ghost" onclick="_msfClose()">Cancel</button>' +
+      '<button class="msf-btn msf-btn--primary" onclick="_msfNext()">Next →</button>';
+    // indeterminate group checkboxes can only be set via JS
+    _msfModel.forEach((g, gi) => {
+      const cb = document.getElementById('msfg_' + gi);
+      if (!cb) return;
+      const sel = g.keys.filter(k => _msfSel[k.key]).length;
+      cb.checked = sel === g.keys.length && sel > 0;
+      cb.indeterminate = sel > 0 && sel < g.keys.length;
+    });
+  } else {
+    title.textContent = (_msfMode === 'save' ? '💾 Confirm Save' : '📂 Confirm Restore');
+    body.innerHTML = _msfMode === 'save' ? _msfRenderConfirmSave() : _msfRenderConfirmLoad();
+    foot.innerHTML =
+      '<button class="msf-btn msf-btn--ghost" onclick="_msfClose()">Cancel</button>' +
+      '<button class="msf-btn msf-btn--ghost" onclick="_msfBack()">← Back</button>' +
+      (_msfMode === 'save'
+        ? '<button class="msf-btn msf-btn--primary" onclick="_msfApply()">💾 Save File</button>'
+        : '<button class="msf-btn msf-btn--danger" onclick="_msfApply()">♻ Restore</button>');
+  }
+}
+
+function _msfRenderSelect() {
+  const intro = _msfMode === 'save'
+    ? 'Choose what to include in the master save file. Expand any group to pick individual settings.'
+    : 'Choose what to restore from this file. Expand any group to pick individual settings.';
+  let html = '<p class="msf-intro">' + intro + '</p>' +
+    '<div class="msf-tools">' +
+      '<button class="msf-mini" onclick="_msfSelectAll(true)">Select All</button>' +
+      '<button class="msf-mini" onclick="_msfSelectAll(false)">Clear All</button>' +
+      '<span class="msf-tools-count">' + _msfSelectedCount() + ' selected</span>' +
+    '</div>' +
+    '<div class="msf-list">';
+  let lastSpecial = true, capDrawn = false;
+  _msfModel.forEach((g, gi) => {
+    // a one-time caption separating the feature buckets from ordinary settings
+    if (g.special && !capDrawn) { html += '<div class="msf-cap">Feature data — optional</div>'; capDrawn = true; }
+    if (!g.special && lastSpecial) html += '<div class="msf-cap">Settings</div>';
+    lastSpecial = g.special;
+    const sel = g.keys.filter(k => _msfSel[k.key]).length;
+    const exp = !!_msfExpanded[gi];
+    html += '<div class="msf-group' + (g.special ? ' msf-group--feature' : '') + '">' +
+      '<div class="msf-group-hdr">' +
+        '<button class="msf-tri" onclick="_msfToggleExpand(' + gi + ')" aria-label="Expand">' + (exp ? '▼' : '▶') + '</button>' +
+        '<label class="msf-group-chk">' +
+          '<input type="checkbox" id="msfg_' + gi + '" onchange="_msfToggleGroup(' + gi + ', this.checked)">' +
+          '<span class="msf-group-label">' + g.label + '</span>' +
+        '</label>' +
+        '<span class="msf-group-count">' + sel + '/' + g.keys.length + '</span>' +
+      '</div>';
+    if (exp) {
+      html += '<div class="msf-children">';
+      g.keys.forEach(k => {
+        const meta = _msfMode === 'load'
+          ? _msfSummarize(k.key, _msfLoadFlat[k.key])
+          : _msfSummarize(k.key, localStorage.getItem(k.key));
+        html += '<label class="msf-child">' +
+          '<input type="checkbox"' + (_msfSel[k.key] ? ' checked' : '') +
+            ' onchange="_msfToggleKey(\'' + k.key + '\', this.checked)">' +
+          '<span class="msf-child-label">' + k.label + '</span>' +
+          '<span class="msf-child-meta">' + meta + '</span>' +
+        '</label>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function _msfRenderConfirmSave() {
+  let html = '<p class="msf-intro">These will be written to your master save file:</p><div class="msf-list">';
+  let total = 0, groups = 0;
+  _msfModel.forEach(g => {
+    const sel = g.keys.filter(k => _msfSel[k.key]).length;
+    if (!sel) return;
+    total += sel; groups++;
+    html += '<div class="msf-confirm-row' + (g.special ? ' msf-group--feature' : '') + '">' +
+      '<span class="msf-confirm-label">' + g.label + '</span>' +
+      '<span class="msf-confirm-meta">' + (g.special ? '' : sel + ' item' + (sel !== 1 ? 's' : '')) + '</span>' +
+    '</div>';
+  });
+  html += '</div><p class="msf-note">' + total + ' setting' + (total !== 1 ? 's' : '') +
+    ' across ' + groups + ' group' + (groups !== 1 ? 's' : '') + ' will be saved.</p>';
+  return html;
+}
+
+function _msfRenderConfirmLoad() {
+  let html = '<p class="msf-intro">Restoring overwrites the current values below. Settings not in this file are left unchanged. The app reloads to apply.</p>' +
+    '<label class="msf-hide"><input type="checkbox"' + (_msfHideUnchanged ? ' checked' : '') +
+      ' onchange="_msfToggleHideUnchanged(this.checked)"> Hide unchanged</label>' +
+    '<div class="msf-list"><div class="msf-diff-hdr"><span>Setting</span><span>Current</span><span></span><span>Incoming</span><span></span></div>';
+  let shown = 0, changed = 0;
+  _msfModel.forEach(g => g.keys.forEach(k => {
+    if (!_msfSel[k.key]) return;
+    const st = _msfStatus(k.key);
+    if (st !== 'same') changed++;
+    if (_msfHideUnchanged && st === 'same') return;
+    shown++;
+    const badge = st === 'new' ? '<span class="msf-badge msf-badge--new">NEW</span>'
+               : st === 'changed' ? '<span class="msf-badge msf-badge--chg">CHANGED</span>'
+               : '<span class="msf-badge msf-badge--same">same</span>';
+    html += '<div class="msf-diff-row msf-diff--' + st + '">' +
+      '<span class="msf-diff-label">' + k.label + '</span>' +
+      '<span class="msf-diff-cur">' + _msfSummarize(k.key, localStorage.getItem(k.key)) + '</span>' +
+      '<span class="msf-diff-arrow">→</span>' +
+      '<span class="msf-diff-new">' + _msfSummarize(k.key, _msfLoadFlat[k.key]) + '</span>' +
+      badge +
+    '</div>';
+  }));
+  if (!shown) html += '<div class="msf-diff-empty">No changes to show.</div>';
+  html += '</div><p class="msf-note">' + _msfSelectedCount() + ' setting(s) selected · ' +
+    changed + ' will change.</p>';
+  return html;
+}
+
+// ── apply ──
+function _msfApply() {
+  if (_msfMode === 'save') {
+    const sections = {};
+    sections[_MSF_SEC_SETTINGS] = {};
+    _msfModel.forEach(g => {
+      const sec = g.id === '__scenery' ? _MSF_SEC_SCENERY : g.id === '__alerts' ? _MSF_SEC_ALERTS : _MSF_SEC_SETTINGS;
+      g.keys.forEach(k => {
+        if (!_msfSel[k.key]) return;
+        const raw = localStorage.getItem(k.key);
+        if (raw == null) return;
+        if (!sections[sec]) sections[sec] = {};
+        sections[sec][k.key] = raw;
+      });
+    });
+    if (sections[_MSF_SEC_SETTINGS] && !Object.keys(sections[_MSF_SEC_SETTINGS]).length) delete sections[_MSF_SEC_SETTINGS];
+    const payload = {
+      app:        _MSF_APP,
+      kind:       'master-save',
+      msfVersion: _MSF_FILE_VERSION,
+      appVersion: APP_VERSION,
+      exportedAt: new Date().toISOString(),
+      sections:   sections,
+    };
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.href = url; a.download = 'SimFly_Active_Airports-MasterSave-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      _msfClose();
+      _aaRtToast('💾 Master save file written to disk.', 'ok');
+    } catch (err) {
+      _aaRtToast('✕ Save failed: ' + (err && err.message ? err.message : err), 'err');
+    }
+  } else {
+    let n = 0;
+    _msfModel.forEach(g => g.keys.forEach(k => {
+      if (!_msfSel[k.key]) return;
+      const raw = _msfLoadFlat[k.key];
+      if (raw == null) localStorage.removeItem(k.key);
+      else             localStorage.setItem(k.key, raw);
+      n++;
+    }));
+    _msfClose();
+    _aaRtToast('♻ Restored ' + n + ' setting' + (n !== 1 ? 's' : '') + ' — reloading…', 'ok');
+    setTimeout(() => location.reload(), 750);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  DEVELOPERS MODAL — per-developer scenery aggregation
 // ═══════════════════════════════════════════════════════════════════════
 // Read-only view derived from _slLoad(). Aggregates the library by Developer
@@ -43187,7 +43756,52 @@ function rgSendToFlightPlanner() {
         </div>
       </div>
 
+      <div class="help-feature">
+        <div class="help-feature-icon">💾</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Save &amp; Load All Settings (Master Save File)</div>
+          <div class="help-feature-desc">
+            Back up <strong>everything</strong> Active Airports remembers on this device into a single file, and restore it whenever you like (v3.65.0+). It captures your <strong>Scenery Library</strong>, <strong>Alerts</strong>, aircraft and flight-time calibration, color palettes, map filters and overlays, SimBrief and FSUIPC preferences, alert defaults, and the rest &mdash; useful for moving to a new browser or computer, or just keeping a safety copy. Open it from the <strong>⚙ Settings</strong> button at the top of the Flight Planner, or from <strong>🛠 Tools → Save All Settings / Load All Settings</strong> on the map.<br/><br/>
+            <strong>Saving</strong> &mdash; a dialog lists your settings grouped into tidy categories, each with a checkbox; expand any group with its ▶ triangle to tick individual settings. <strong>Scenery Library</strong> and <strong>Alerts</strong> appear at the top as their own optional toggles, so you choose per-backup whether to bundle that feature&rsquo;s data. Use <em>Select All</em> / <em>Clear All</em> to flip everything at once. A confirmation screen summarises what will be written before the file is saved to disk.<br/><br/>
+            <strong>Loading</strong> &mdash; pick a master save file and the same grouped, expandable checklist appears (everything ticked by default), showing only what the file actually contains. The confirmation screen is a <strong>before-and-after table</strong>: every setting to be restored is shown with its <em>current</em> value next to the <em>incoming</em> one, flagged <strong>NEW</strong>, <strong>CHANGED</strong>, or <em>same</em> (with a &ldquo;hide unchanged&rdquo; toggle). Nothing is altered until you confirm, and any setting not present in the file is left untouched. After restoring, the app reloads so every change takes effect. Every screen in both flows has a <em>Cancel</em> button.<br/><br/>
+            <strong>Version-proof</strong> &mdash; the file stores settings in a version-agnostic way, so a save written by a newer build of the app can be loaded by an older one and vice-versa, and any version can open any master save file whether or not it includes Scenery Library or Alerts data.
+          </div>
+        </div>
+      </div>
+
     </div>
+  </div>
+</div>
+
+<!-- Master Save File (MSF) — Save/Load All Settings (v3.65.0) -->
+<div class="modal-overlay" id="msfChooserModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _msfChooserClose)">
+  <div class="modal msf-chooser">
+    <div class="modal-header">
+      <span class="modal-title">💾 &nbsp;Settings</span>
+      <button class="modal-close" onclick="_msfChooserClose()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="msf-chooser-intro">Save every setting on this device to a single master save file, or restore everything from one you saved earlier.</p>
+      <div class="msf-chooser-btns">
+        <button class="msf-btn msf-btn--primary" onclick="_msfChooserClose();openMsfSave()">💾 Save All Settings</button>
+        <button class="msf-btn msf-btn--primary" onclick="_msfChooserClose();openMsfLoad()">📂 Load All Settings</button>
+      </div>
+    </div>
+    <div class="msf-footer">
+      <button class="msf-btn msf-btn--ghost" onclick="_msfChooserClose()">Cancel</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="msfModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _msfClose)">
+  <div class="modal msf-modal">
+    <div class="modal-header">
+      <span class="modal-title" id="msfTitle">Settings</span>
+      <button class="modal-close" onclick="_msfClose()">&times;</button>
+    </div>
+    <div class="modal-body msf-modal-body">
+      <div id="msfBody"></div>
+    </div>
+    <div class="msf-footer" id="msfFooter"></div>
   </div>
 </div>
 
@@ -43207,10 +43821,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.65.0</span>
+          <span class="release-date">June 28, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &ldquo;Save All Settings&rdquo; / &ldquo;Load All Settings&rdquo; master save file.</strong> Back up <em>everything</em> the app remembers on this device &mdash; your Scenery Library, Alerts, aircraft calibration, palettes, filters, SimBrief and FSUIPC preferences, and the rest &mdash; into a single file on disk, then restore it any time. Reach it from the new <strong>⚙ Settings</strong> button on the main planner, or from <strong>🛠 Tools → Save / Load All Settings</strong> on the map.</li>
+          <li><strong>Pick exactly what to include.</strong> Both the save and load screens group settings into tidy categories with a checkbox each; expand any group to tick individual settings. <strong>Scenery Library</strong> and <strong>Alerts</strong> sit at the top as their own optional toggles, so you decide per-backup whether to bundle them. <em>Select All</em> / <em>Clear All</em> are one click, and every screen has a <em>Cancel</em>.</li>
+          <li><strong>See what a restore will overwrite before it happens.</strong> The load confirmation lists each setting side-by-side &mdash; your current value next to the incoming one &mdash; flagged <em>NEW</em>, <em>CHANGED</em>, or <em>same</em>, with a &ldquo;hide unchanged&rdquo; toggle. Nothing is touched until you confirm, and settings not in the file are left exactly as they are.</li>
+          <li><strong>Works across app versions, both directions.</strong> The file stores settings in a version-agnostic way, so a master save written by a newer build loads in an older one (and vice-versa), and any version can open a file whether or not it carries Scenery Library or Alerts data.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.64.0</span>
-          <span class="release-date">June 28, 2026 &middot; Current</span>
+          <span class="release-date">June 28, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -55838,6 +56466,10 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgRulerBtn" onclick="_rgToggleMeasure();_rgCloseAnyPulldown()" title="Measure distance and bearing between two points"><span class="rg-row-icon">📐</span><span class="rg-btn-label">Measurement</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgSelectMenuBtn" onclick="_rgSelectMenuClick();_rgCloseAnyPulldown()" title="Draw departure and arrival circles on the map to define the route matrix"><span class="rg-row-icon">⊙</span><span class="rg-btn-label" id="rgSelectMenuLbl">Select Regions</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgRandomBtn" onclick="_rgRandMenuClick()" oncontextmenu="_rgRandContext(event)" ontouchstart="_rgRandTouchStart()" ontouchend="_rgRandTouchEnd()" ontouchmove="_rgRandTouchEnd()" title="Left-click / tap to generate a random flight to another pilot's airport · Right-click / long-press to set filters (distance, flight time, country)"><span class="rg-row-icon">🎲</span><span class="rg-btn-label" id="rgRandomLbl">Create Random Route…</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <!-- v3.65.0 — Master Save File: back up / restore ALL settings at once -->
+            <button class="rg-btn rg-pulldown-row" onclick="openMsfSave();_rgCloseAnyPulldown()" title="Save every setting on this device — including the Scenery Library and Alerts — to a single master save file on disk"><span class="rg-row-icon">💾</span><span class="rg-btn-label">Save All Settings…</span></button>
+            <button class="rg-btn rg-pulldown-row" onclick="openMsfLoad();_rgCloseAnyPulldown()" title="Restore settings from a master save file — choose exactly what to load, and review what each setting will overwrite first"><span class="rg-row-icon">📂</span><span class="rg-btn-label">Load All Settings…</span></button>
           </div>
         </div>
 
