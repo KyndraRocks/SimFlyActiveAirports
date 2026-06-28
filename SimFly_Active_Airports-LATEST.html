@@ -2332,6 +2332,35 @@
   .ac-ft-hint.ready { color: var(--green); }
   body.light-mode .ac-ft-section { border-color: rgba(0,0,0,0.1); }
   body.light-mode .ac-ft-input { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.18); }
+  /* Live flight-data calibration (v3.63.0) — opt-in row inside the calibration section */
+  .ac-ft-live-row { display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-top:8px; flex-wrap:wrap; }
+  .ac-ft-live-toggle { display:flex; align-items:center; gap:0.45rem; font-size:0.82rem; color:var(--text); cursor:pointer; user-select:none; line-height:1.25; }
+  .ac-ft-live-toggle input { width:15px; height:15px; accent-color:var(--accent); cursor:pointer; flex:none; }
+  .ac-ft-live-toggle input:disabled { cursor:not-allowed; }
+  .ac-ft-live-toggle.disabled { opacity:0.45; cursor:not-allowed; }
+  .ac-ft-live-btn { background:rgba(0,200,255,0.08); border:1px solid rgba(0,200,255,0.3); color:var(--accent); border-radius:6px; padding:0.28rem 0.6rem; font-size:0.76rem; cursor:pointer; white-space:nowrap; transition:background 0.12s,border-color 0.12s; }
+  .ac-ft-live-btn:hover:not(:disabled) { background:rgba(0,200,255,0.16); border-color:rgba(0,200,255,0.5); }
+  .ac-ft-live-btn:disabled { opacity:0.4; cursor:not-allowed; }
+  /* Live Flight Data modal — scatter graph + dated table */
+  .acft-data-summary { font-size:0.86rem; line-height:1.5; margin-bottom:0.8rem; color:var(--text); }
+  .acft-sum-sub { font-size:0.78rem; color:var(--muted); margin-top:0.25rem; }
+  .acft-data-graph { width:100%; height:240px; display:block; background:rgba(0,0,0,0.14); border:1px solid var(--border); border-radius:8px; margin-bottom:0.4rem; }
+  body.light-mode .acft-data-graph { background:rgba(0,0,0,0.03); }
+  .acft-data-legend { display:flex; gap:1rem; font-size:0.74rem; color:var(--muted); margin-bottom:0.9rem; flex-wrap:wrap; }
+  .acft-data-legend .lg-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:0.3rem; vertical-align:middle; }
+  .acft-data-table-wrap { max-height:230px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+  .acft-data-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+  .acft-data-table th { position:sticky; top:0; background:var(--panel); text-align:left; padding:0.4rem 0.6rem; color:var(--muted); font-weight:600; border-bottom:1px solid var(--border); }
+  .acft-data-table td { padding:0.35rem 0.6rem; border-bottom:1px solid rgba(255,255,255,0.05); color:var(--text); }
+  body.light-mode .acft-data-table td { border-bottom-color:rgba(0,0,0,0.06); }
+  .acft-data-table tr:last-child td { border-bottom:none; }
+  .acft-data-table td.acft-num { text-align:right; font-variant-numeric:tabular-nums; }
+  .acft-empty { text-align:center; color:var(--muted); padding:1rem; }
+  .acft-del { background:none; border:none; color:var(--danger); font-size:1.1rem; line-height:1; cursor:pointer; padding:0 0.3rem; border-radius:4px; }
+  .acft-del:hover { background:rgba(170,0,34,0.12); }
+  .acft-data-actions { display:flex; justify-content:flex-end; margin-top:0.8rem; }
+  #acftResetBtn { background:rgba(170,0,34,0.08); border:1px solid rgba(170,0,34,0.3); color:var(--danger); border-radius:6px; padding:0.35rem 0.7rem; font-size:0.8rem; cursor:pointer; transition:background 0.12s; }
+  #acftResetBtn.confirm { background:var(--danger); color:#fff; }
   /* Random flight filter modal */
   .rgrand-intro { font-family:'Rajdhani',sans-serif; font-size:0.92rem; color:var(--muted); line-height:1.35; margin:0 0 16px; }
   .rgrand-section { margin:0 0 16px; }
@@ -8523,6 +8552,13 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
                   oninput="_acFtOnInput()" title="Elapsed time of that same flight, in minutes">
                 <span class="ac-ft-unit">min</span>
               </div>
+              <div class="ac-ft-live-row">
+                <label class="ac-ft-live-toggle" id="acFtLiveToggle" title="When on, real flights flown with FSUIPC connected are captured (airborne time + actual distance flown) and blended with your reference flights to sharpen estimates for this aircraft.">
+                  <input type="checkbox" id="acFtLiveChk" onchange="_acftToggleOptIn()">
+                  <span>Improve accuracy with live flight data</span>
+                </label>
+                <button type="button" class="ac-ft-live-btn" id="acFtLiveViewBtn" onclick="_acftOpenDataModal()" title="View captured live flights, the calculated calibration, and a graph">View data</button>
+              </div>
               <div class="ac-ft-hint" id="acFtHint"></div>
             </div>
 
@@ -8652,7 +8688,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.62.0';
+const APP_VERSION = '3.63.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9850,10 +9886,15 @@ function _acGetFlightCal(code) {
 // selected, the aircraft has no complete calibration, or the distance is bad.
 function _acEstFlightMinutes(distanceNm, code) {
   code = code || _acSelectedCode;
-  const cal = _acGetFlightCal(code);
-  if (!cal || !isFinite(distanceNm) || distanceNm < 0) return null;
-  const slope = (cal.lMin - cal.sMin) / (cal.lNm - cal.sNm);
-  const min = cal.sMin + (distanceNm - cal.sNm) * slope;
+  if (!isFinite(distanceNm) || distanceNm < 0) return null;
+  // v3.63.0 — unified path. _acftBuildModel folds the two manual reference
+  // flights AND (when the aircraft has opted in) the binned live-flight data
+  // into a single weighted least-squares line. With no live data it reduces to
+  // exactly the old 2-point line through the manual entries, so behaviour is
+  // unchanged for anyone who never turns the feature on.
+  const m = _acftBuildModel(code);
+  if (!m) return null;
+  const min = m.intercept + distanceNm * m.slope;
   if (!isFinite(min)) return null;
   return Math.max(0, min);
 }
@@ -9911,26 +9952,53 @@ function _acFtPopulate() {
   };
   set('acFtShortNm', c && c.sNm); set('acFtShortMin', c && c.sMin);
   set('acFtLongNm',  c && c.lNm); set('acFtLongMin',  c && c.lMin);
+  // v3.63.0 — sync the live-data opt-in checkbox + View-data button to this aircraft.
+  const has = !!_acSelectedCode;
+  const chk = document.getElementById('acFtLiveChk');
+  if (chk) { chk.checked = has && _acftIsOptedIn(_acSelectedCode); chk.disabled = !has; }
+  const tgl = document.getElementById('acFtLiveToggle');
+  if (tgl) tgl.classList.toggle('disabled', !has);
+  const vb = document.getElementById('acFtLiveViewBtn');
+  if (vb) vb.disabled = !has;
   _acFtUpdateHint();
 }
 
 function _acFtUpdateHint() {
   const el = document.getElementById('acFtHint');
   if (!el) return;
-  const cal = _acGetFlightCal(_acSelectedCode);
+  const code      = _acSelectedCode;
+  const model     = code ? _acftBuildModel(code) : null;
+  const optedIn   = _acftIsOptedIn(code);
+  const liveCount = (code && _acftLiveFlights[code]) ? _acftLiveFlights[code].length : 0;
   // Mirror the calibrated/empty state on the section card (cyan vs amber accent).
   const sec = document.getElementById('acFtSection');
-  if (sec) sec.classList.toggle('uncal', !cal);
-  if (!cal) {
-    el.textContent = 'Enter a short and a long flight (distance + time) to show estimated en-route time on measurements, region lines, and routes.';
+  if (sec) sec.classList.toggle('uncal', !model);
+
+  if (!model) {
     el.classList.remove('ready');
+    el.textContent = optedIn
+      ? (liveCount
+          ? 'Collecting live flights — ' + liveCount + ' logged so far. Fly a few more at different distances, or enter two reference flights above, to start estimating.'
+          : 'Live flight data is on. Fly with FSUIPC connected, or enter two reference flights above, to start estimating.')
+      : 'Enter a short and a long flight (distance + time) to show estimated en-route time on measurements, region lines, and routes.';
     return;
   }
-  // Preview at a round distance near the middle of the calibration span.
-  const span = (cal.sNm + cal.lNm) / 2;
-  const sample = Math.max(50, Math.round(span / 50) * 50);
-  el.textContent = 'Estimates on · ' + sample.toLocaleString() + ' nm → ' + _fmtHhMm(_acEstFlightMinutes(sample, _acSelectedCode)) + ' est.';
+  // Model exists — preview at a representative leg near the data centroid.
+  const sample = _acftSampleNm(code);
+  const est    = _fmtHhMm(model.intercept + sample * model.slope);
+  let src;
+  if (optedIn && model.nBands >= 2) {
+    src = 'Calibrated from ' + model.nLive + ' live flight' + (model.nLive === 1 ? '' : 's') +
+          ' across ' + model.nBands + ' distance band' + (model.nBands === 1 ? '' : 's') +
+          (model.nManual ? ' + your reference flights' : '') + '.';
+  } else if (optedIn && liveCount) {
+    src = 'Using your reference flights for now · ' + liveCount + ' live flight' + (liveCount === 1 ? '' : 's') +
+          ' logged — needs flights at one more distance before live data leads.';
+  } else {
+    src = 'Calibrated from your two reference flights.';
+  }
   el.classList.add('ready');
+  el.textContent = src + ' · ' + sample.toLocaleString() + ' nm → ' + est + ' est.';
 }
 
 // Redraw any estimate-bearing labels currently on the map so an edit to the
@@ -9956,6 +10024,395 @@ function _acRefreshFlightTimeLabels() {
       }
     }
   } catch(e) { /* never let a label refresh break the UI */ }
+}
+
+// ── Live flight-data calibration (v3.63.0) ───────────────────────────────────
+// Opt-in, per aircraft. When enabled for an aircraft, real flights flown with
+// FSUIPC connected are captured (airborne time + actual distance flown, taxi
+// excluded via the on-ground flag) and blended with the two manual reference
+// flights to produce a better-calibrated en-route-time line.
+//
+// Design (agreed before build):
+//  • Airborne gate — FSUIPC offset 0x0366 (sim on ground). Wheels-up (1→0)
+//    starts the clock + distance accumulators; debounced wheels-down (0→1)
+//    finalises. Taxi is excluded because it happens outside that window.
+//  • Distance is the ACTUAL flown path (great-circle integrated between
+//    consecutive airborne fixes), not planned/track miles.
+//  • Telemetry dropouts (SimFly in-sim menu) pause BOTH accumulators over the
+//    same windows so minutes-per-mile stays honest; a single gap over 5 min
+//    invalidates the flight. (SimFly disallows time-accel, so wall-clock deltas
+//    between fixes equal sim time.)
+//  • Attribution — SimBrief plan aircraft type if a plan is loaded, else the
+//    aircraft currently selected in AA. Skipped if that aircraft isn't opted in.
+//  • Storage — raw flights per aircraft, FIFO-capped per ~100 nm distance band
+//    (newest 10/band) so heavy traffic at one distance can never evict another
+//    band: spread is structurally protected.
+//  • Estimate — weighted least-squares (slope + intercept) over the per-band
+//    means PLUS the two manual reference flights as low-weight permanent seeds,
+//    so it degrades exactly to the old 2-point line when there's no live data.
+const _ACFT_LIVE_LS_KEY  = 'simfly_aa_ac_live_flights';  // { CODE: [ {d,nm,min}, ... ] }
+const _ACFT_LIVE_OPT_KEY = 'simfly_aa_ac_live_opt';      // { CODE: true }
+const _ACFT_BIN_NM             = 100;     // distance-band width (nm)
+const _ACFT_PER_BIN_CAP        = 10;      // newest flights kept per band
+const _ACFT_MANUAL_SEED_WEIGHT = 1;       // weight of each manual reference point in the fit
+const _ACFT_DROPOUT_PAUSE_MS   = 5000;    // gap beyond this = paused (no accrual across it)
+const _ACFT_DROPOUT_VOID_MS    = 300000;  // one continuous 5-min gap = invalidate flight
+const _ACFT_LANDING_DEBOUNCE_MS = 8000;   // sustained on-ground before finalising
+const _ACFT_TELEPORT_NM        = 80;      // single-tick jump above this = teleport/new flight
+const _ACFT_MIN_FLIGHT_MIN     = 3;       // ignore implausibly tiny captures
+const _ACFT_MIN_FLIGHT_NM      = 5;
+
+let _acftLiveFlights = {};
+let _acftOptIn       = {};
+let _acftCap         = null;   // active in-progress capture, or null
+let _acftModalCode   = null;
+let _acftResetConfirm = false;
+
+function _acftLoadLive() {
+  try { const o = JSON.parse(localStorage.getItem(_ACFT_LIVE_LS_KEY)); _acftLiveFlights = (o && typeof o === 'object') ? o : {}; }
+  catch (e) { _acftLiveFlights = {}; }
+}
+function _acftSaveLive() { try { localStorage.setItem(_ACFT_LIVE_LS_KEY, JSON.stringify(_acftLiveFlights)); } catch (e) {} }
+function _acftLoadOpt() {
+  try { const o = JSON.parse(localStorage.getItem(_ACFT_LIVE_OPT_KEY)); _acftOptIn = (o && typeof o === 'object') ? o : {}; }
+  catch (e) { _acftOptIn = {}; }
+}
+function _acftSaveOpt() { try { localStorage.setItem(_ACFT_LIVE_OPT_KEY, JSON.stringify(_acftOptIn)); } catch (e) {} }
+function _acftIsOptedIn(code) { return !!(code && _acftOptIn[code]); }
+_acftLoadLive();
+_acftLoadOpt();
+
+function _acftBinIndex(nm) { return Math.round(nm / _ACFT_BIN_NM); }
+
+// Keep only the newest _ACFT_PER_BIN_CAP flights within each distance band.
+// FIFO operates inside each band, never across bands, so spread is preserved.
+function _acftPrunePerBin(arr) {
+  const byBin = {};
+  for (const r of arr) { (byBin[_acftBinIndex(r.nm)] = byBin[_acftBinIndex(r.nm)] || []).push(r); }
+  for (const k in byBin) {
+    const b = byBin[k];
+    if (b.length > _ACFT_PER_BIN_CAP) {
+      b.sort((x, y) => x.d - y.d);                 // oldest first
+      const drop = b.slice(0, b.length - _ACFT_PER_BIN_CAP);
+      for (const dr of drop) { const i = arr.indexOf(dr); if (i >= 0) arr.splice(i, 1); }
+    }
+  }
+}
+
+function _acftAddFlight(code, rec) {
+  const arr = _acftLiveFlights[code] || (_acftLiveFlights[code] = []);
+  arr.push(rec);
+  _acftPrunePerBin(arr);
+  _acftSaveLive();
+}
+
+// A representative leg near the data centroid, rounded to 50 nm, for hint previews.
+function _acftSampleNm(code) {
+  const live = (_acftIsOptedIn(code) && _acftLiveFlights[code]) || [];
+  if (live.length) { let s = 0; for (const r of live) s += r.nm; return Math.max(50, Math.round((s / live.length) / 50) * 50); }
+  const cal = _acGetFlightCal(code);
+  if (cal) return Math.max(50, Math.round(((cal.sNm + cal.lNm) / 2) / 50) * 50);
+  return 500;
+}
+
+// Build the weighted least-squares model for a code, folding in live-flight band
+// means (when opted in) and the two manual reference flights as low-weight seeds.
+// Returns {slope, intercept, nLive, nBands, nManual} or null when there aren't two
+// points at distinct distances to fit a line.
+function _acftBuildModel(code) {
+  if (!code) return null;
+  const pts = [];                              // { x:nm, y:min, w:weight }
+  const live = (_acftIsOptedIn(code) && _acftLiveFlights[code]) || [];
+  let nBands = 0;
+  if (live.length) {
+    const bins = {};
+    for (const r of live) { const k = _acftBinIndex(r.nm); (bins[k] = bins[k] || []).push(r); }
+    for (const k in bins) {
+      const b = bins[k]; let sx = 0, sy = 0;
+      for (const r of b) { sx += r.nm; sy += r.min; }
+      pts.push({ x: sx / b.length, y: sy / b.length, w: b.length });
+      nBands++;
+    }
+  }
+  const cal = _acGetFlightCal(code);
+  if (cal) {
+    pts.push({ x: cal.sNm, y: cal.sMin, w: _ACFT_MANUAL_SEED_WEIGHT });
+    pts.push({ x: cal.lNm, y: cal.lMin, w: _ACFT_MANUAL_SEED_WEIGHT });
+  }
+  if (pts.length < 2) return null;
+  let W = 0, X = 0, Y = 0, XX = 0, XY = 0;
+  for (const p of pts) { W += p.w; X += p.w * p.x; Y += p.w * p.y; XX += p.w * p.x * p.x; XY += p.w * p.x * p.y; }
+  const denom = W * XX - X * X;
+  if (!isFinite(denom) || Math.abs(denom) < 1e-6) return null;   // no distance spread → no slope
+  const slope = (W * XY - X * Y) / denom;
+  const intercept = (Y - slope * X) / W;
+  if (!isFinite(slope) || !isFinite(intercept)) return null;
+  return { slope, intercept, nLive: live.length, nBands, nManual: cal ? 2 : 0 };
+}
+
+// Resolve which aircraft code a finished live flight belongs to: SimBrief plan
+// aircraft type first, else the aircraft selected in AA. null if neither resolves.
+function _acftResolveFlightCode() {
+  try {
+    const a = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData) ? _sbOfpLastData.aircraft : null;
+    if (a) {
+      const cands = [a.icaocode, a.icao_code, a.icao, a.base_type, a.name];
+      for (const c of cands) {
+        if (!c) continue;
+        const u = String(c).toUpperCase().trim();
+        if (u && typeof aircraftDB !== 'undefined' && aircraftDB.has(u)) return u;
+      }
+    }
+  } catch (e) {}
+  if (_acSelectedCode && typeof aircraftDB !== 'undefined' && aircraftDB.has(_acSelectedCode)) return _acSelectedCode;
+  return null;
+}
+
+// ── Capture state machine ────────────────────────────────────────────────────
+// Called once per FSUIPC fix from _liveAcRenderMarker. Ignores STKP/demo sources
+// and any build that doesn't return the on-ground flag.
+function _acftResetCapture() { _acftCap = null; }
+
+function _acftCaptureTick(d) {
+  if (!d || d.source !== 'fsuipc') return;
+  if (typeof _demoActive !== 'undefined' && _demoActive) return;
+  if (d.gnd == null) return;                          // build lacks 0x0366 → can't gate airborne
+  const lat = +d.lat, lng = +d.lng;
+  if (!isFinite(lat) || !isFinite(lng)) return;
+  const onGnd = (d.gnd === true);
+  const now   = performance.now();
+  const gsKt  = isFinite(+d.gs) ? +d.gs : 999;
+
+  if (!_acftCap) {
+    // Begin a capture only at wheels-up (first airborne fix after being on ground).
+    if (!onGnd) {
+      _acftCap = { accMs: 0, accNm: 0, lastLat: lat, lastLng: lng, lastTick: now, startWall: Date.now(), pendLand: 0 };
+    }
+    return;
+  }
+
+  const gap = now - _acftCap.lastTick;
+  if (gap > _ACFT_DROPOUT_VOID_MS) { _acftCap = null; return; }   // 5-min continuous gap → discard
+  const paused = gap > _ACFT_DROPOUT_PAUSE_MS;                    // in-sim menu etc. → don't accrue across it
+
+  if (!paused && !onGnd) {
+    const segNm = _haversineNm(_acftCap.lastLat, _acftCap.lastLng, lat, lng);
+    if (segNm > _ACFT_TELEPORT_NM) { _acftCap = null; return; }   // teleport / new flight → restart fresh
+    _acftCap.accMs += gap;
+    _acftCap.accNm += segNm;
+  }
+  // Advance the anchor on every processed fix (including paused ones) so the
+  // post-gap straight-line jump is never counted into distance.
+  _acftCap.lastLat = lat; _acftCap.lastLng = lng; _acftCap.lastTick = now;
+
+  // Debounced landing detection — a brief on-ground blip (touch-and-go/bounce)
+  // resets the timer and won't finalise.
+  if (onGnd) {
+    if (!_acftCap.pendLand) _acftCap.pendLand = now;
+    else if (now - _acftCap.pendLand >= _ACFT_LANDING_DEBOUNCE_MS && gsKt < 50) _acftFinalizeFlight();
+  } else {
+    _acftCap.pendLand = 0;
+  }
+}
+
+function _acftFinalizeFlight() {
+  const cap = _acftCap; _acftCap = null;
+  if (!cap) return;
+  const min = cap.accMs / 60000;
+  const nm  = cap.accNm;
+  if (!(min >= _ACFT_MIN_FLIGHT_MIN) || !(nm >= _ACFT_MIN_FLIGHT_NM)) return;
+  const code = _acftResolveFlightCode();
+  if (!code || !_acftIsOptedIn(code)) return;
+  _acftAddFlight(code, { d: cap.startWall, nm: Math.round(nm), min: Math.round(min) });
+  if (typeof _aaRtToast === 'function') {
+    _aaRtToast('📈 Live flight logged for ' + code + ' — ' + Math.round(nm).toLocaleString() + ' nm in ' + _fmtHhMm(min) + '. Estimates refined.', 'ok');
+  }
+  _acftRefreshIfShowing(code);
+  if (typeof _acFtUpdateHint === 'function') { try { if (code === _acSelectedCode) _acFtUpdateHint(); } catch (e) {} }
+  if (typeof _acRefreshFlightTimeLabels === 'function') { try { _acRefreshFlightTimeLabels(); } catch (e) {} }
+}
+
+// ── Opt-in checkbox ──────────────────────────────────────────────────────────
+function _acftToggleOptIn() {
+  const chk = document.getElementById('acFtLiveChk');
+  if (!chk || !_acSelectedCode) return;
+  if (chk.checked) _acftOptIn[_acSelectedCode] = true;
+  else delete _acftOptIn[_acSelectedCode];
+  _acftSaveOpt();
+  _acFtUpdateHint();
+  if (typeof _acRefreshFlightTimeLabels === 'function') _acRefreshFlightTimeLabels();
+  if (typeof _aaRtToast === 'function') {
+    _aaRtToast(chk.checked
+      ? '📈 Live flight data ON for ' + _acSelectedCode + ' — captured flights will refine its estimates.'
+      : '📈 Live flight data OFF for ' + _acSelectedCode + ' — manual calibration only. Logged flights are kept.', 'ok');
+  }
+}
+
+// ── Data modal (graph + dated table) ─────────────────────────────────────────
+function _acftOpenDataModal() {
+  if (!_acSelectedCode) return;
+  _acftModalCode = _acSelectedCode;
+  _acftResetConfirm = false;
+  const m = document.getElementById('acftDataModal');
+  if (m) m.classList.add('open');
+  _acftRenderDataModal();
+}
+function _acftCloseDataModal(e) {
+  const m = document.getElementById('acftDataModal');
+  if (!m) return;
+  if (!e || e.target === m || (e.target.closest && e.target.closest('.modal-close'))) {
+    m.classList.remove('open');
+    _acftResetConfirm = false;
+  }
+}
+function _acftRefreshIfShowing(code) {
+  const m = document.getElementById('acftDataModal');
+  if (m && m.classList.contains('open') && _acftModalCode === code) _acftRenderDataModal();
+}
+
+function _acftRenderDataModal() {
+  const code = _acftModalCode; if (!code) return;
+  const ac = (typeof aircraftDB !== 'undefined') ? aircraftDB.get(code) : null;
+  const lbl = document.getElementById('acftDataAcLabel');
+  if (lbl) lbl.textContent = ac ? (ac.label || code) : code;
+  const flights = (_acftLiveFlights[code] || []).slice().sort((a, b) => b.d - a.d);
+  const model = _acftBuildModel(code);
+  const cal   = _acGetFlightCal(code);
+
+  const sum = document.getElementById('acftDataSummary');
+  if (sum) {
+    if (model) {
+      const kt = model.slope > 0 ? Math.round(60 / model.slope) : null;
+      sum.innerHTML =
+        '<div><strong>' + flights.length + '</strong> live flight' + (flights.length === 1 ? '' : 's') +
+        (cal ? ' + 2 reference flights' : '') + ' &rarr; ' +
+        '<strong>' + (kt ? kt.toLocaleString() + ' kt</strong> effective cruise' : '&mdash;</strong>') +
+        ', <strong>' + Math.round(model.intercept) + ' min</strong> fixed overhead.</div>' +
+        '<div class="acft-sum-sub">Sample estimates: 300 nm &rarr; ' + _fmtHhMm(model.intercept + 300 * model.slope) +
+        ' &middot; 800 nm &rarr; ' + _fmtHhMm(model.intercept + 800 * model.slope) +
+        ' &middot; 1,500 nm &rarr; ' + _fmtHhMm(model.intercept + 1500 * model.slope) + '</div>';
+    } else {
+      sum.innerHTML = '<div>Not enough data to calculate a line yet. Fly at two or more different distances ' +
+        '(or enter reference flights in the aircraft panel) to begin.</div>';
+    }
+  }
+  _acftDrawGraph(code, model, flights, cal);
+
+  const tb = document.querySelector('#acftDataTable tbody');
+  if (tb) {
+    if (!flights.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="acft-empty">No live flights captured yet.' +
+        (_acftIsOptedIn(code) ? ' Fly with FSUIPC connected to start banking flights.' : ' Turn on “Improve accuracy with live flight data” first.') + '</td></tr>';
+    } else {
+      tb.innerHTML = flights.map(f => {
+        const ds = new Date(f.d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        return '<tr><td>' + ds + '</td>' +
+               '<td class="acft-num">' + f.nm.toLocaleString() + ' nm</td>' +
+               '<td class="acft-num">' + _fmtHhMm(f.min) + '</td>' +
+               '<td class="acft-num"><button class="acft-del" title="Remove this flight" onclick="_acftDeleteFlight(\'' + code + '\',' + f.d + ')">&times;</button></td></tr>';
+      }).join('');
+    }
+  }
+  const rb = document.getElementById('acftResetBtn');
+  if (rb) { rb.disabled = !flights.length; rb.classList.remove('confirm'); rb.textContent = 'Reset live data'; }
+  _acftResetConfirm = false;
+}
+
+function _acftDrawGraph(code, model, flights, cal) {
+  const cv = document.getElementById('acftDataGraph'); if (!cv) return;
+  const ctx = cv.getContext('2d'); if (!ctx) return;
+  const cssW = cv.clientWidth || 560, cssH = cv.clientHeight || 240;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  const light = document.body.classList.contains('light-mode');
+  const axisCol = light ? '#b9b09a' : '#3a4a55';
+  const txtCol  = light ? '#5a6470' : '#8aa0ad';
+
+  const liveOpt = _acftIsOptedIn(code);
+  const pts = [];
+  if (liveOpt) for (const f of flights) pts.push({ x: f.nm, y: f.min, live: true });
+  if (cal) { pts.push({ x: cal.sNm, y: cal.sMin, live: false }); pts.push({ x: cal.lNm, y: cal.lMin, live: false }); }
+
+  let maxX = 100, maxY = 30;
+  for (const p of pts) { maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  if (model) maxY = Math.max(maxY, model.intercept + maxX * model.slope);
+  maxX *= 1.08; maxY *= 1.14;
+
+  const padL = 46, padR = 12, padT = 12, padB = 28;
+  const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+  const sx = v => padL + (v / maxX) * plotW;
+  const sy = v => padT + plotH - (v / maxY) * plotH;
+
+  // Axes
+  ctx.strokeStyle = axisCol; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + plotH); ctx.lineTo(padL + plotW, padT + plotH); ctx.stroke();
+
+  // Ticks + gridlines
+  ctx.fillStyle = txtCol; ctx.font = '10px system-ui, sans-serif';
+  const xticks = 4, yticks = 4;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let i = 1; i <= xticks; i++) {
+    const vx = (maxX / xticks) * i, px = sx(vx);
+    ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, padT + plotH); ctx.strokeStyle = axisCol; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillText(Math.round(vx).toLocaleString(), px, padT + plotH + 5);
+  }
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 1; i <= yticks; i++) {
+    const vy = (maxY / yticks) * i, py = sy(vy);
+    ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(padL + plotW, py); ctx.strokeStyle = axisCol; ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillText(_fmtHhMm(vy), padL - 5, py);
+  }
+
+  // Axis labels
+  ctx.fillStyle = txtCol; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('distance (nm)', padL + plotW / 2, cssH - 1);
+
+  // Regression line
+  if (model) {
+    ctx.strokeStyle = '#00c8ff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx(0), sy(Math.max(0, model.intercept)));
+    ctx.lineTo(sx(maxX), sy(Math.max(0, model.intercept + maxX * model.slope)));
+    ctx.stroke();
+  }
+  // Points — green = live flights, orange = manual reference flights
+  for (const p of pts) {
+    ctx.beginPath();
+    ctx.arc(sx(p.x), sy(p.y), p.live ? 3.6 : 4.4, 0, Math.PI * 2);
+    ctx.fillStyle = p.live ? '#00e676' : '#ff8800';
+    ctx.fill();
+    if (!p.live) { ctx.lineWidth = 1.4; ctx.strokeStyle = light ? '#fff' : '#0a0f14'; ctx.stroke(); }
+  }
+}
+
+function _acftDeleteFlight(code, dMs) {
+  const arr = _acftLiveFlights[code]; if (!arr) return;
+  const i = arr.findIndex(r => r.d === dMs);
+  if (i >= 0) { arr.splice(i, 1); if (!arr.length) delete _acftLiveFlights[code]; _acftSaveLive(); }
+  _acftRenderDataModal();
+  if (code === _acSelectedCode) _acFtUpdateHint();
+  if (typeof _acRefreshFlightTimeLabels === 'function') _acRefreshFlightTimeLabels();
+  if (typeof _aaRtToast === 'function') _aaRtToast('Removed 1 live flight from ' + code + '.', 'ok');
+}
+
+function _acftResetData() {
+  const btn = document.getElementById('acftResetBtn');
+  const code = _acftModalCode; if (!code) return;
+  if (!_acftResetConfirm) {
+    _acftResetConfirm = true;
+    if (btn) { btn.textContent = 'Click again to confirm'; btn.classList.add('confirm'); }
+    setTimeout(() => { _acftResetConfirm = false; if (btn && btn.classList.contains('confirm')) { btn.textContent = 'Reset live data'; btn.classList.remove('confirm'); } }, 3500);
+    return;
+  }
+  _acftResetConfirm = false;
+  delete _acftLiveFlights[code];
+  _acftSaveLive();
+  _acftRenderDataModal();
+  if (code === _acSelectedCode) _acFtUpdateHint();
+  if (typeof _acRefreshFlightTimeLabels === 'function') _acRefreshFlightTimeLabels();
+  if (typeof _aaRtToast === 'function') _aaRtToast('Live flight data cleared for ' + code + '.', 'ok');
 }
 
 // Apply persisted selection after aircraftDB finishes loading. Skipped if the
@@ -13810,6 +14267,10 @@ function _liveAcRenderMarker(d) {
   // single "I stopped here" point instead of accumulating thousands of
   // identical samples while the aircraft sits parked.
   _liveAcUpdateTrail(lat, lng, d.gs);
+  // v3.63.0 — live flight-time capture (airborne time + actual distance flown).
+  // Source-gated to FSUIPC inside the function; defensive so a capture failure
+  // never breaks live-aircraft rendering.
+  if (typeof _acftCaptureTick === 'function') { try { _acftCaptureTick(d); } catch (e) { console.warn('[acft] capture error', e); } }
   // AFK Alerts + Aircraft Data Panel tick — defensive guard so a tick failure
   // never breaks live-aircraft rendering.
   if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
@@ -14059,6 +14520,9 @@ function _liveAcMaybeClearForNewFlight(fpData) {
   }
   if (trackEmpty || onGround) {
     _liveAcClearTrail();
+    // v3.63.0 — a new flight plan = a new flight; discard any in-progress
+    // live-time capture so the previous leg's accumulators can't bleed in.
+    if (typeof _acftResetCapture === 'function') { try { _acftResetCapture(); } catch (_) {} }
     // v2.97.20 — Soft reset: clears takeoff-tracking state but preserves
     // the ELAPSED display when the field is in armed (just-landed) /
     // paused / stopped — so loading the next leg's SimBrief plan after
@@ -14400,6 +14864,12 @@ function _fsuipcOpenWs() {
         { name: 'hdg', address: 0x0580, type: 'uint', size: 4 },
         { name: 'gs',     address: 0x02B4, type: 'uint', size: 4 },
         { name: 'ias',    address: 0x02BC, type: 'uint', size: 4 },
+        // v3.63.0 — sim "on ground" flag (1 = on ground, 0 = airborne). The
+        // aircraft's own weight-on-wheels state, NOT terrain-relative, so it
+        // sidesteps the AGL/IND-ALT offset problems noted above. Gates the live
+        // flight-time capture: wheels-up/down transitions bound the airborne
+        // window, and taxi (on-ground) is excluded from the captured distance.
+        { name: 'gnd',    address: 0x0366, type: 'uint', size: 2 },
         // IND ALT was attempted via FSUIPC offset 0x6020 in v2.79.1
         // (type:'double') and v2.80.1 (type:'bytearray' + DataView
         // decode). Neither produced a usable reading from Paul Henty's
@@ -14467,12 +14937,17 @@ function _fsuipcOpenWs() {
     // IAS offset 0x02BC (uint, knots × 128) → kt
     const iasRaw = parseFloat(d.ias);
     const iasKts = isFinite(iasRaw) ? iasRaw / 128 : null;
+    // On-ground flag 0x0366 (uint16): 1 = on ground, 0 = airborne. null when the
+    // build doesn't return it, so the live capture simply stays inactive.
+    const gndRaw = parseFloat(d.gnd);
+    const onGnd  = isFinite(gndRaw) ? (gndRaw !== 0) : null;
     _liveAcRenderMarker({
       lat, lng,
       hdg:    hdgDeg,
       alt:    altFt,
       gs:     gsKts,
       ias:    iasKts,
+      gnd:    onGnd,
       ident:  'My Aircraft',
       af:     null,
       phase:  null,
@@ -42048,6 +42523,34 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- Live Flight Data (v3.63.0) — captured flights, calculated calibration, graph -->
+<div class="modal-overlay" id="acftDataModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _acftCloseDataModal)">
+  <div class="modal" style="max-width:clamp(560px,44vw,820px);">
+    <div class="modal-header">
+      <span class="modal-title">📈 &nbsp;Live Flight Data &mdash; <span id="acftDataAcLabel"></span></span>
+      <button class="modal-close" onclick="_acftCloseDataModal(event)">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="acft-data-summary" id="acftDataSummary"></div>
+      <canvas class="acft-data-graph" id="acftDataGraph"></canvas>
+      <div class="acft-data-legend">
+        <span><span class="lg-dot" style="background:#00e676;"></span>Live flight</span>
+        <span><span class="lg-dot" style="background:#ff8800;"></span>Reference flight</span>
+        <span><span class="lg-dot" style="background:#00c8ff;"></span>Calculated line</span>
+      </div>
+      <div class="acft-data-table-wrap">
+        <table class="acft-data-table" id="acftDataTable">
+          <thead><tr><th>Date</th><th style="text-align:right;">Distance</th><th style="text-align:right;">Time</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="acft-data-actions">
+        <button id="acftResetBtn" onclick="_acftResetData()">Reset live data</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="helpModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, closeHelp)">
   <div class="modal" style="max-width:clamp(680px,35vw,1400px);">
     <div class="modal-header">
@@ -42266,6 +42769,7 @@ function rgSendToFlightPlanner() {
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
             Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
             <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate is simply omitted.<br/><br/>
+            <strong>Improve accuracy with live flight data</strong> (v3.63.0) — turn on the checkbox in the calibration panel and the app learns each aircraft&rsquo;s real performance from the flights you actually fly with <strong>FSUIPC connected</strong>. On every flight it captures the <strong>airborne time</strong> (wheels-up to wheels-down, so taxi is excluded) and the <strong>actual distance flown</strong>, then blends those with your two reference flights to sharpen all the estimates above. If telemetry drops mid-flight (e.g. you open the in-sim menu) the time and distance both pause; a gap longer than five minutes discards that flight. Captured flights are grouped into ~100 nm distance bands &mdash; each band keeps your most recent flights &mdash; so repeated flights at one distance refine that point instead of skewing the line, and your spread of short and long legs is preserved. A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type, or to the selected aircraft when no plan is loaded. The setting is <strong>per aircraft and off by default</strong>; the <strong>View data</strong> button opens a graph of your captured flights with the calculated line drawn through them and a dated table where you can remove an individual flight or reset the aircraft&rsquo;s live data. This feature requires a PC sim with FSUIPC, so it&rsquo;s desktop-only.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
         </div>
@@ -42702,8 +43206,23 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.62.0</span>
+          <span class="release-version">v3.63.0</span>
           <span class="release-date">June 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &ldquo;Improve accuracy with live flight data&rdquo; option for flight-time estimates.</strong> Each aircraft&rsquo;s Flight Time Calibration panel now has an opt-in checkbox. When it&rsquo;s on, real flights you fly with FSUIPC connected are captured automatically &mdash; the airborne time (wheels-up to wheels-down, taxi excluded) and the <em>actual distance flown</em> &mdash; and blended with your two reference flights to sharpen the en-route time estimates shown across the app. It&rsquo;s per-aircraft and off by default; nothing changes unless you turn it on.</li>
+          <li><strong>Captures only the airborne leg, and only clean data.</strong> A new telemetry reading (the sim&rsquo;s on-ground flag) marks exactly when you leave and touch the ground, so taxi never pollutes the numbers. If telemetry drops (for example when you open the in-sim menu) the timer and distance both pause; if it&rsquo;s gone for more than five minutes the flight is discarded rather than logged with a gap.</li>
+          <li><strong>Gets smarter the more you fly &mdash; without one distance drowning out the others.</strong> Flights are grouped into ~100 nm distance bands, each keeping your most recent flights, and the estimate is fitted across all your bands plus your reference flights. So ten flights at the same distance sharpen that point instead of skewing the whole line, and your spread of short and long flights is always preserved.</li>
+          <li><strong>&ldquo;View data&rdquo; button &mdash; see every captured flight and the resulting calculation.</strong> Opens a panel with a graph of your flights (and reference points) with the calculated line drawn through them, plus a dated table of each flight&rsquo;s distance and time. Remove any individual flight, or reset an aircraft&rsquo;s live data entirely.</li>
+          <li><strong>Live flights are matched to the right aircraft automatically.</strong> A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type when there is one, otherwise to the aircraft selected in the panel.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.62.0</span>
+          <span class="release-date">June 27, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>

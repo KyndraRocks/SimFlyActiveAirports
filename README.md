@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.62.0**
+**Current version: v3.63.0**
 
 ---
 
@@ -47,6 +47,8 @@ The badges behave like airport dots: **hover one** for the standard airport tool
 
 ### Flight Time Calibration
 Calibrate any aircraft with two reference flights — a short one and a long one, each entered as distance (nm) and elapsed time (minutes) read off the SimFly UI — and the app shows an estimated en-route time wherever distance appears: on route lines, the map, measurements, and airport cards. As of v3.59.0 this lives in a clearly highlighted ⏱ card in the aircraft panel (it turns amber until the selected aircraft is calibrated, cyan once it is) since it feeds estimates used throughout the app. Calibration is saved per aircraft in your browser.
+
+**Improve accuracy with live flight data (v3.63.0).** Turn on the checkbox in the calibration card and the app learns each aircraft's real performance from the flights you actually fly with **FSUIPC connected** — no extra data entry. On every flight it captures the **airborne time** (wheels-up to wheels-down, so taxiing never counts) and the **actual distance flown**, then blends those with your two reference flights to sharpen all the estimates above. If your telemetry drops mid-flight — for example when you open the in-sim menu — the time and distance both pause until it resumes, and a gap longer than five minutes simply discards that flight rather than logging a bad one. Captured flights are grouped into distance bands so flying the same route ten times sharpens that point instead of skewing the whole calibration, while your spread of short and long legs is always kept. A finished flight is matched to your loaded SimBrief plan's aircraft, or to the aircraft you have selected when no plan is loaded. The setting is **per aircraft and off by default**, and a **View data** button opens a graph of your captured flights with the calculated line drawn through them, plus a dated table where you can remove any single flight or reset the aircraft's data. Because it needs a PC simulator with FSUIPC, this feature is desktop-only.
 
 ### Airport Radial Menu
 New in v3.51.0 — **right-click any airport dot** on the map (or **long-press** on a touch screen) to open a labelled radial menu of everything you can do with that airport. The icons bloom outward from the dot, the rest of the map dims so the menu stays readable even in a crowded region, and the airport you clicked is labelled with its **ICAO code right in the center** of the wheel, so you always know which one you're acting on — handy where several dots sit close together. Click a spoke to open it; click anywhere else, press **Esc**, or zoom the map to dismiss.
