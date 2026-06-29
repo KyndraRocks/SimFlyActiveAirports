@@ -8786,7 +8786,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.65.1';
+const APP_VERSION = '3.67.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9092,6 +9092,7 @@ function loadAirportDB() {
       _aaRentLoadPrefs();
       _aaRentLoadCollapse();
       _aaRentPaletteLoad();
+      try { _aaListLoadPrefs(); } catch (_) {}   // Aircraft Listing prefs (v3.66.0)
 
       // ── Build new-airports set (airports activated within the configured window) ──
       if (payoutDataJson && typeof payoutDataJson === 'object') {
@@ -29526,6 +29527,7 @@ const _MSF_SETTINGS_REGISTRY = {
   // Aircraft rentals
   'simfly_aa_rent_prefs':             { label:'Rental filter preferences',     group:'Aircraft rentals' },
   'simfly_aa_rent_collapse':          { label:'Rentals panel layout',          group:'Aircraft rentals' },
+  'simfly_aa_listing_prefs':          { label:'Aircraft Listing preferences',  group:'Aircraft rentals' },
   // Live aircraft & FSUIPC
   'simfly_aa_ac_follow':              { label:'Follow-aircraft toggle',        group:'Live aircraft & FSUIPC' },
   'simfly_aa_ac_icon':                { label:'Aircraft marker icon',          group:'Live aircraft & FSUIPC' },
@@ -30634,6 +30636,7 @@ let _aaRentResSortDir     = 'desc';   // 'asc' | 'desc'
 let _aaRentResGroup       = 'none';   // 'none' | 'owner' | 'apt'
 let _aaRentTypeSort       = 'icao';  // type list sort field: 'icao' | 'mfr' | 'model' | 'count'
 let _aaRentTypeSortDir    = 'asc';   // 'asc' (A→Z / low→high) | 'desc'
+let _aaRentOpacity        = 1;       // panel opacity 0.1–1 (title-bar slider, v3.66.0)
 const _AAR_PREFS_KEY      = 'simfly_aa_rent_prefs';
 // Persisted user preferences (NOT the session filters): badge mode, type sort
 // field + direction, and the available-now default. Loaded at boot.
@@ -30649,6 +30652,7 @@ function _aaRentLoadPrefs() {
       if (['type', 'owner', 'apt', 'payout', 'avail'].includes(o.resSort)) _aaRentResSort = o.resSort;
       if (['asc', 'desc'].includes(o.resSortDir)) _aaRentResSortDir = o.resSortDir;
       if (['none', 'owner', 'apt', 'type'].includes(o.resGroup)) _aaRentResGroup = o.resGroup;
+      if (typeof o.opacity === 'number') _aaRentOpacity = Math.max(0.1, Math.min(1, o.opacity));
     }
   } catch (_) {}
 }
@@ -30679,7 +30683,7 @@ function _aaRentToggleSection(key) {
 function _aaRentSavePrefs() {
   try { localStorage.setItem(_AAR_PREFS_KEY, JSON.stringify({
     badgeMode: _aaRentBadgeMode, typeSort: _aaRentTypeSort, typeSortDir: _aaRentTypeSortDir, availNow: _aaRentAvailNow, ownedOnly: _aaRentOwnedOnly,
-    resSort: _aaRentResSort, resSortDir: _aaRentResSortDir, resGroup: _aaRentResGroup
+    resSort: _aaRentResSort, resSortDir: _aaRentResSortDir, resGroup: _aaRentResGroup, opacity: _aaRentOpacity
   })); } catch (_) {}
 }
 let _aaRentSkipGate       = false;  // internal: when true, _rgDotPassesMapFilters skips the rental gate
@@ -30693,6 +30697,71 @@ let _aaRentFilterActive   = false;
 let _aaRentBadgeLayer     = null;   // Leaflet layer holding the on-map badge labels
 const _AAR_BADGE_CAP      = 70;     // max labels at once — when more dots are in view, show the
                                     // standouts (highest payout) so badges stay readable, never absent
+
+// ── Aircraft Listing (v3.66.0) ───────────────────────────────────────────────
+// A full, sortable, multi-filterable table over the SAME rentable-aircraft feed,
+// shown in a resizable / draggable panel sized to ~60% of the map. It is wholly
+// independent of Rentals view mode: its currently-visible rows drive a dedicated
+// map gate (_aaListIcaoFilter) so that filtering the table filters the map dots
+// to exactly the airports still in the table. Declared up here (before
+// _rgDotPassesMapFilters) so the gate's reference is always initialised.
+let _aaListIcaoFilter = null;   // Set<ICAO(upper)> | null — null = listing imposes no map filter
+let _aaListSort       = 'apt';  // active sort column key (see _AAL_COLS)
+let _aaListSortDir    = 'asc';  // 'asc' (A→Z / low→high) | 'desc'
+let _aaListColFilters = {};     // colKey -> Set<value>  (multi-select); absent/empty = no filter
+let _aaListMinPayout  = 0;      // Payout column header: minimum pilot payout % (0 = off)
+let _aaListMinCat     = 0;      // Airport column header: minimum SimFly airport category (0 = off)
+let _aaListColW       = null;   // array of px column widths, or null = default template
+let _aaListGeom       = null;   // {left,top,width,height} px (within #rgMapContainer) | null
+let _aaListOpacity    = 1;      // panel opacity 0.1–1 (title-bar slider)
+let _aaListUserSized  = false;  // true once the user drags a column / resizes the panel — until then,
+                                // every open auto-fits columns to content + fits the panel width to them
+const _AAL_PREFS_KEY  = 'simfly_aa_listing_prefs';
+// Text/enum columns that get a generic multi-select value filter.
+const _AAL_FILT_COLS  = ['apt', 'aptOwner', 'acIcao', 'mfr', 'type', 'acOwner', 'avail'];
+// Column model — order is the on-screen order. type drives header controls + sort.
+// aptOwner = the SimFly pilot who owns the AIRPORT (_rgOwnerMap); acOwner = the
+// pilot who owns the AIRCRAFT (feed `p.owner`) — two distinct people (v3.67.2).
+const _AAL_COLS = [
+  { key:'apt',      label:'Airport',          align:'left'  },
+  { key:'aptOwner', label:'Airport Owner',    align:'left'  },
+  { key:'acIcao',   label:'Aircraft',         align:'left'  },
+  { key:'mfr',      label:'Manufacturer',     align:'left'  },
+  { key:'type',     label:'Type',             align:'left'  },
+  { key:'acOwner',  label:'Aircraft Owner',   align:'left'  },
+  { key:'payout',   label:'Payout %',         align:'right' },
+  { key:'avail',    label:'Available',        align:'left'  },
+  { key:'availTime',label:'Avail Time (Local)', align:'left' },
+];
+const _AAL_DEFAULT_W = [76, 150, 84, 132, 176, 150, 86, 104, 134];
+function _aaListLoadPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_AAL_PREFS_KEY) || 'null');
+    if (!o || typeof o !== 'object') return;
+    if (_AAL_COLS.some(c => c.key === o.sort)) _aaListSort = o.sort;
+    if (o.sortDir === 'asc' || o.sortDir === 'desc') _aaListSortDir = o.sortDir;
+    if (Array.isArray(o.colW) && o.colW.length === _AAL_COLS.length) _aaListColW = o.colW.map(Number);
+    if (typeof o.minPayout === 'number') _aaListMinPayout = Math.max(0, Math.min(60, o.minPayout));
+    if (typeof o.minCat === 'number') _aaListMinCat = Math.max(0, Math.min(7, o.minCat));
+    if (o.colFilters && typeof o.colFilters === 'object') {
+      _aaListColFilters = {};
+      for (const k of _AAL_FILT_COLS) if (Array.isArray(o.colFilters[k]) && o.colFilters[k].length) _aaListColFilters[k] = new Set(o.colFilters[k]);
+    }
+    if (o.geom && typeof o.geom === 'object') _aaListGeom = o.geom;
+    if (typeof o.opacity === 'number') _aaListOpacity = Math.max(0.1, Math.min(1, o.opacity));
+    if (typeof o.userSized === 'boolean') _aaListUserSized = o.userSized;
+  } catch (_) {}
+}
+function _aaListSavePrefs() {
+  try {
+    const cf = {};
+    for (const k of _AAL_FILT_COLS) if (_aaListColFilters[k] && _aaListColFilters[k].size) cf[k] = [..._aaListColFilters[k]];
+    localStorage.setItem(_AAL_PREFS_KEY, JSON.stringify({
+      sort:_aaListSort, sortDir:_aaListSortDir, colW:_aaListColW, minPayout:_aaListMinPayout, minCat:_aaListMinCat,
+      colFilters:cf, geom:_aaListGeom, opacity:_aaListOpacity, userSized:_aaListUserSized,
+    }));
+  } catch (_) {}
+}
 
 // Ingest the feed JSON into the in-memory model. Null/!ok feed = empty model
 // (mode still works, just shows nothing). Called once at boot.
@@ -30831,9 +30900,12 @@ function _aaOwnerFleetRentalsFor(ownerName, acCode) {
     const up = (ap.icao || '').toUpperCase();
     const planes = _aaRentByApt.get(up);
     if (!planes) continue;
-    let count = 0;
-    for (const p of planes) if ((p.icao || '').toUpperCase() === want && _aaRentIsAvailableNow(p)) count++;
-    if (count) hits.push({ icao: up, count });
+    let count = 0, payout = null;
+    for (const p of planes) if ((p.icao || '').toUpperCase() === want && _aaRentIsAvailableNow(p)) {
+      count++;
+      if (p.payout != null && (payout === null || p.payout > payout)) payout = p.payout;   // highest available (not ground-ops) payout
+    }
+    if (count) hits.push({ icao: up, count, payout: payout == null ? 0 : payout });
   }
   hits.sort((a, b) => b.count - a.count || a.icao.localeCompare(b.icao));
   return hits;
@@ -30941,17 +31013,17 @@ function _aaOwnerAcRenderBadges() {
   const map = _rgMap;
   // Selected endpoints → independent sources. Each carries its owner + coords.
   const sourceList = [];
-  const pushSrc = (icao) => {
+  const pushSrc = (icao, role) => {
     if (!icao) return;
     const up = icao.toUpperCase();
     const o = _rgOwnerMap && _rgOwnerMap.get(up);
     if (!o) return;
     const rec = lookupICAO(up);
     if (!rec || rec.latitude == null || rec.longitude == null) return;
-    sourceList.push({ icao: up, owner: o, ll: L.latLng(rec.latitude, rec.longitude) });
+    sourceList.push({ icao: up, role, owner: o, ll: L.latLng(rec.latitude, rec.longitude) });
   };
-  pushSrc(_rgDotSelDep);
-  pushSrc(_rgDotSelArr);
+  pushSrc(_rgDotSelDep, 'dep');
+  pushSrc(_rgDotSelArr, 'arr');
   if (!sourceList.length) return;
   const selSet = new Set(sourceList.map(s => s.icao));
   const size = map.getSize();
@@ -30973,7 +31045,7 @@ function _aaOwnerAcRenderBadges() {
         const rec = lookupICAO(h.icao);
         if (!rec || rec.latitude == null || rec.longitude == null) continue;
         const tLL = L.latLng(rec.latitude, rec.longitude);
-        t = { icao: h.icao, count: h.count, rec, tLL, tp: map.latLngToContainerPoint(tLL), sources: [] };
+        t = { icao: h.icao, count: h.count, payout: h.payout, rec, tLL, tp: map.latLngToContainerPoint(tLL), sources: [] };
         targets.set(h.icao, t);
       }
       t.sources.push(s);
@@ -30983,9 +31055,16 @@ function _aaOwnerAcRenderBadges() {
   // Hover panel is the SAME standard compact tooltip a map dot shows (v3.57.0);
   // deferred build so it only runs on hover. The 🛫/🛬 action icons are wired via
   // inline handlers in _aaOwnacBadgeHtml.
+  // On-screen badges open their card just above the dot; EDGE badges sit flush
+  // against the viewport edge and the pill extends INWARD, so the (large) hover
+  // card must open well past it or it covers the badge (v3.67.1). These offsets
+  // clear the pill's inward extent in the tooltip's own direction.
   const OFF = { top: [0, -10], bottom: [0, 10], left: [-10, 0], right: [10, 0] };
-  // Off-screen edge badges are collected first, then spread apart so they don't
-  // pile up where several airports exit the viewport near the same point (v3.59.1).
+  const OFF_EDGE = { top: [0, -46], bottom: [0, 46], left: [-190, 0], right: [190, 0] };
+  // Collect every OFF-screen edge badge — targets AND off-screen selected
+  // dep/arr (sources) — into one list, so they are spread apart together and can
+  // never overlap each other (v3.67.1; previously sources were spread separately
+  // and could land on top of a target badge, hiding it).
   const edgeBadges = [];
   for (const t of targets.values()) {
     const ownerName = (_rgOwnerMap && _rgOwnerMap.get(t.icao)) || '';
@@ -30994,7 +31073,7 @@ function _aaOwnerAcRenderBadges() {
     if (onScreen) {
       // One dotted connector per reaching source (Leaflet clips to the view).
       for (const s of t.sources) L.polyline([s.ll, t.tLL], LINE).addTo(layer);
-      const html = `<div class="aa-ownac-badge">${_aaOwnacBadgeHtml(t.icao, acEsc, cnt, null)}</div>`;
+      const html = `<div class="aa-ownac-badge">${_aaOwnacBadgeHtml(t.icao, acEsc, cnt, null, t.payout)}</div>`;
       const mk = L.marker(t.tLL, {
         icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [-9, 9] }),
         interactive: true, keyboard: false, pane: 'markerPane'
@@ -31004,9 +31083,8 @@ function _aaOwnerAcRenderBadges() {
       mk.addTo(layer);
       continue;
     }
-    // Off-screen: anchor on the nearest source's connector exit, with a
-    // viewport-center ray fallback so it always appears after panning even if its
-    // source scrolled off too. Defer placement until after collision separation.
+    // Off-screen target: anchor on the nearest source's connector exit, with a
+    // viewport-center ray fallback. Placement deferred until after separation.
     let nearest = t.sources[0], nd = Infinity;
     for (const s of t.sources) {
       const p = map.latLngToContainerPoint(s.ll);
@@ -31017,26 +31095,86 @@ function _aaOwnerAcRenderBadges() {
     const ep = _aaSegViewportExit(sp, t.tp, PAD, PAD, W - PAD, H - PAD)
             || _aaClipSegToRect({ x: cx, y: cy }, t.tp, PAD, PAD, W - PAD, H - PAD);
     if (!ep) continue;
-    edgeBadges.push({ t, ownerName, cnt, ep });
+    edgeBadges.push({ kind: 'tgt', t, ownerName, cnt, ep });
   }
-  // Spread same-edge badges apart, then place each — connectors drawn to the FINAL
-  // (nudged) anchor so every line still meets its badge.
+  // Off-screen SELECTED dep/arr (sources): when one is panned out of view, label
+  // the dashed line that runs back to it so it isn't a mystery — anchored on a
+  // connector this source reaches (prefer an ON-screen target's exit, else a
+  // viewport-center ray toward the source). Shown whenever the source reaches any
+  // target (so there's a line to explain) (v3.67.1).
+  for (const s of sourceList) {
+    const sp = map.latLngToContainerPoint(s.ll);
+    if (sp.x >= 0 && sp.x <= W && sp.y >= 0 && sp.y <= H) continue;   // source on-screen → nothing to do
+    let onAnchor = null, nd = Infinity, hasAny = false;
+    for (const t of targets.values()) {
+      if (!t.sources.includes(s)) continue;
+      hasAny = true;
+      if (!(t.tp.x >= 0 && t.tp.x <= W && t.tp.y >= 0 && t.tp.y <= H)) continue;
+      const d = (t.tp.x - sp.x) ** 2 + (t.tp.y - sp.y) ** 2;
+      if (d < nd) { nd = d; onAnchor = t; }
+    }
+    if (!hasAny) continue;   // no connector to label
+    const ep = (onAnchor && _aaSegViewportExit(onAnchor.tp, sp, PAD, PAD, W - PAD, H - PAD))
+            || _aaClipSegToRect({ x: cx, y: cy }, sp, PAD, PAD, W - PAD, H - PAD);
+    if (!ep) continue;
+    edgeBadges.push({ kind: 'src', s, ep, role: s.role });
+  }
+  // Spread same-edge badges apart (targets + sources together), then place each.
   _aaSeparateEdgeBadges(edgeBadges, W, H, PAD);
-  for (const { t, ownerName, cnt, ep } of edgeBadges) {
-    const epLL = map.containerPointToLatLng(L.point(ep.x, ep.y));
-    for (const s of t.sources) L.polyline([s.ll, epLL], LINE).addTo(layer);
-    const tipDir = ({ R: 'left', L: 'right', T: 'bottom', B: 'top' })[ep.edge] || 'top';
-    const html = `<div class="aa-ownac-badge aa-ownac-badge--edge aa-ownac-edge-${ep.edge}" title="Click to pan to ${_aaEsc(t.icao)}">${_aaOwnacBadgeHtml(t.icao, acEsc, cnt, ep.edge)}</div>`;
-    const mk = L.marker(epLL, {
-      icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [0, 0] }),
-      interactive: true, keyboard: false, pane: 'markerPane'
-    });
-    mk.on('click', () => { map.panTo(t.tLL); });   // body click on an off-screen badge pans to center it
-    mk.bindTooltip(() => _rgDotTipHtml(t.icao, t.rec, ownerName),
-      { direction: tipDir, className: 'rg-dot-tip', offset: OFF[tipDir] || [0, -10], opacity: 1 });
-    mk.addTo(layer);
+  const edgeMk = [];   // {mk, tipDir} — tooltip offsets are sized to each badge AFTER render
+  for (const b of edgeBadges) {
+    const epLL = map.containerPointToLatLng(L.point(b.ep.x, b.ep.y));
+    const tipDir = ({ R: 'left', L: 'right', T: 'bottom', B: 'top' })[b.ep.edge] || 'top';
+    const tipOff = OFF_EDGE[tipDir] || [0, -46];   // provisional; refined post-render below
+    if (b.kind === 'tgt') {
+      for (const s of b.t.sources) L.polyline([s.ll, epLL], LINE).addTo(layer);
+      const html = `<div class="aa-ownac-badge aa-ownac-badge--edge aa-ownac-edge-${b.ep.edge}">${_aaOwnacBadgeHtml(b.t.icao, acEsc, b.cnt, b.ep.edge, b.t.payout)}</div>`;
+      const mk = L.marker(epLL, {
+        icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [0, 0] }),
+        interactive: true, keyboard: false, pane: 'markerPane'
+      });
+      mk.on('click', () => { map.panTo(b.t.tLL); });
+      mk.bindTooltip(() => _rgDotTipHtml(b.t.icao, b.t.rec, b.ownerName),
+        { direction: tipDir, className: 'rg-dot-tip', offset: tipOff, opacity: 1 });
+      mk.addTo(layer);
+      edgeMk.push({ mk, tipDir });
+    } else {
+      const html = `<div class="aa-ownac-badge aa-ownac-badge--edge aa-ownac-badge--src aa-ownac-src-${b.role} aa-ownac-edge-${b.ep.edge}">${_aaOwnacSrcBadgeHtml(b.s.icao, b.role, b.ep.edge)}</div>`;
+      const srec = lookupICAO(b.s.icao);
+      const mk = L.marker(epLL, {
+        icon: L.divIcon({ className: 'aa-ownac-badge-wrap', html, iconSize: null, iconAnchor: [0, 0] }),
+        interactive: true, keyboard: false, pane: 'markerPane'
+      });
+      mk.on('click', () => { map.panTo(b.s.ll); });
+      mk.bindTooltip(() => _rgDotTipHtml(b.s.icao, srec, b.s.owner),
+        { direction: tipDir, className: 'rg-dot-tip', offset: tipOff, opacity: 1 });
+      mk.addTo(layer);
+      edgeMk.push({ mk, tipDir });
+    }
   }
   _aaOwnerAcBadgeLayer = layer.addTo(map);
+  // Now the badges are in the DOM: size each edge badge's hover-card offset to the
+  // badge's MEASURED width/height so the card clears it exactly, regardless of the
+  // badge's content width (a fixed offset grazed the wider badges). The pill is
+  // CSS-translated inward from the edge anchor, so the offset must clear its full
+  // inward extent in the tooltip's own direction (v3.67.2).
+  for (const { mk, tipDir } of edgeMk) {
+    const el = mk._icon; if (!el || !mk._tooltip) continue;
+    // Hovering a badge reveals its 🛫/🛬 action icons, which WIDENS it. Measure the
+    // EXPANDED width (force the icons visible just for the measurement) so the card
+    // clears the badge in its hovered state, not only at rest — the resting-width
+    // offset let the now-wider hovered badge slide back under the card (v3.67.3).
+    const acts = el.querySelectorAll('.aa-ownac-act');
+    acts.forEach(a => { a.style.display = 'inline-flex'; });
+    const bw = el.offsetWidth || 150, bh = el.offsetHeight || 24, GAP = 14;
+    acts.forEach(a => { a.style.display = ''; });
+    let off;
+    if (tipDir === 'right')      off = [bw + GAP, 0];     // badge extends right (L edge) → card further right
+    else if (tipDir === 'left')  off = [-(bw + GAP), 0];  // badge extends left  (R edge) → card further left
+    else if (tipDir === 'bottom')off = [0, bh + GAP];     // badge extends down  (T edge) → card below
+    else                         off = [0, -(bh + GAP)];  // badge extends up    (B edge) → card above
+    mk._tooltip.options.offset = L.point(off[0], off[1]);
+  }
 }
 
 // Spread same-edge off-screen badges so they don't overlap (v3.59.1). Vertical
@@ -31143,15 +31281,31 @@ function _aaSyncOwnerAcBadgeBtn() {
 // on the right (always shown on touch, where there's no hover). For off-screen
 // edge badges, `edge` (L/R/T/B) adds the inboard directional arrow. icao is a
 // clean uppercase ICAO, safe to inline in the onclick handlers.
-function _aaOwnacBadgeHtml(icao, acEsc, cntStr, edge) {
+function _aaOwnacBadgeHtml(icao, acEsc, cntStr, edge, payout) {
   const e = _aaEsc(icao);
   const dep = `<span class="aa-ownac-act aa-ownac-act-dep" title="Set ${e} as departure" onclick="event.stopPropagation();event.preventDefault();_aaOwnacSetDep('${icao}')">🛫</span>`;
   const arr = `<span class="aa-ownac-act aa-ownac-act-arr" title="Set ${e} as arrival" onclick="event.stopPropagation();event.preventDefault();_aaOwnacSetArr('${icao}')">🛬</span>`;
-  const body = `<span class="aa-ownac-badge-ac">🛩 ${acEsc}</span><span class="aa-ownac-badge-apt">${e}${cntStr}</span>`;
+  // Highest available (not ground-ops) pilot payout %, colored on the rental spectrum.
+  const payCol = (payout != null && typeof _rgRentColorAtPct === 'function') ? _rgRentColorAtPct(payout) : '#ffd24a';
+  const pay = (payout != null) ? `<span class="aa-ownac-badge-pay" style="color:${payCol}" title="Highest available pilot payout">${payout}%</span>` : '';
+  const body = `<span class="aa-ownac-badge-ac">🛩 ${acEsc}</span><span class="aa-ownac-badge-apt">${e}${cntStr}</span>${pay}`;
   if (!edge) return dep + body + arr;
   const arrow = `<span class="aa-ownac-edge-arrow">${({ L: '◂', R: '▸', T: '▴', B: '▾' })[edge]}</span>`;
   const first = (edge === 'L' || edge === 'T');
   return dep + (first ? arrow + body : body + arrow) + arr;
+}
+
+// Inner HTML for an OFF-SCREEN SOURCE edge badge (v3.66.0): labels the dashed
+// connector running to a selected departure/arrival that has been panned out of
+// view, so the user knows where the line leads (and can click to pan back). Role
+// glyph (🛫 dep / 🛬 arr) + airport ICAO + the inboard directional arrow.
+function _aaOwnacSrcBadgeHtml(icao, role, edge) {
+  const e = _aaEsc(icao);
+  const glyph = role === 'dep' ? '🛫' : '🛬';
+  const body = `<span class="aa-ownac-src-role">${glyph}</span><span class="aa-ownac-badge-apt">${e}</span>`;
+  const arrow = `<span class="aa-ownac-edge-arrow">${({ L: '◂', R: '▸', T: '▴', B: '▾' })[edge]}</span>`;
+  const first = (edge === 'L' || edge === 'T');
+  return first ? arrow + body : body + arrow;
 }
 
 // Badge action-icon handlers — set the airport as departure / arrival via the
@@ -36191,6 +36345,10 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   // un-categorized airports still render.
   const catNum = +(categoryDB && categoryDB.get(icaoUp)) || 0;
   if (catNum >= 1 && catNum <= 7 && !_globalCatFilter.has(catNum)) return false;
+  // Aircraft Listing (v3.66.0) — when the listing table is filtered, the map shows
+  // ONLY the airports still present in the table (intersected with every other
+  // active filter). An explicit, user-driven set, so even pinned airports obey it.
+  if (_aaListIcaoFilter && !_aaListIcaoFilter.has(icaoUp)) return false;
   // Aircraft Rentals (v3.50.0) — the rental pool includes airports that aren't
   // SimFly-categorized (catNum 0). In normal mode those still render, but when a
   // category filter is narrowed the user expects ONLY airports of those
@@ -36907,9 +37065,22 @@ function _aaRentShowPanel(on) {
       }
     }
     if (!p._aarBuilt) { _aaRentBuildTypeList(); _aaRentBuildOwnerList(); p._aarBuilt = true; }
+    _aaRentApplyOpacity();
     _aaRentSyncControls();
     _aaRentRefreshPanel();
   }
+}
+// Panel-opacity (title-bar slider) — fade the whole Rentals panel so the map shows
+// through. Persisted with the other rental prefs. v3.66.0.
+function _aaRentApplyOpacity() {
+  const o = (_aaRentOpacity == null ? 1 : _aaRentOpacity);
+  const p = document.getElementById('aaRentPanel'); if (p) p.style.opacity = o;
+  const sl = document.getElementById('aaRentOpacity'); if (sl) sl.value = Math.round(o * 100);
+}
+function _aaRentSetOpacity(v) {
+  _aaRentOpacity = Math.max(0.1, Math.min(1, (+v || 100) / 100));
+  const p = document.getElementById('aaRentPanel'); if (p) p.style.opacity = _aaRentOpacity;
+  _aaRentSavePrefs();
 }
 
 function _aaRentSyncControls() {
@@ -37576,6 +37747,7 @@ async function _aaRefreshLiveData(opts) {
         }
       }
       if (rentable != null) { try { _aaRentIngest(rentable); } catch (_) {} }
+      try { if (typeof _aaListRefreshIfOpen === 'function') _aaListRefreshIfOpen(); } catch (_) {}  // keep Aircraft Listing fresh
       // Re-render through the same chokepoint a filter change uses: re-renders
       // dots, re-applies dep/arr highlight, refreshes the rentals panel + badges.
       // No-ops safely if the region map was never opened (_rgMap null).
@@ -37685,6 +37857,449 @@ function _aaRentColDown(e, key, leftIdx) {
   };
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up, { once: true });
+}
+
+/* ===========================================================================
+   AIRCRAFT LISTING (v3.66.0)
+   A full, sortable, multi-filterable table over the rentable-aircraft feed in a
+   resizable / draggable ~60%-screen panel. Filtering the table filters the map
+   (via the _aaListIcaoFilter gate added to _rgDotPassesMapFilters). State lives
+   in the globals declared near _aaRentIngest; this block is the engine + UI.
+   =========================================================================== */
+const _AAL_CAP = 2000;                  // max rendered rows (DOM guard)
+let _aaListTmpl = '';                   // current grid-template-columns string
+let _aaListSumW = 0;                    // sum of column widths (px) — table content width
+let _aaListAllRowsCache = null;         // last full row set (for popover distincts + map filter)
+let _aaListVisibleRowsCache = null;     // last filtered+sorted rows (for auto-fit)
+let _aaListFiltCol = null;              // column whose filter popover is open, or null
+
+function _aaListPanelOpen() { const p = document.getElementById('aaListPanel'); return !!(p && p.classList.contains('aal-open')); }
+function _aaListLocalTime(t) { try { return new Date(t).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); } catch (_) { return '—'; } }
+
+// One row per plane positioned at a plottable (airportDB) airport — so every row
+// can pan + filter the map. Independent of the Rentals panel's own filters.
+function _aaListBuildRows() {
+  const odb = (typeof airportDB !== 'undefined') ? airportDB : null;
+  const out = [];
+  if (!odb) return out;
+  for (const p of _aaRentPlanes) {
+    const apt = p._apt; if (!apt) continue;
+    const rec = odb.get(apt); if (!rec) continue;
+    const ic = p.icao || '';
+    const now = _aaRentIsAvailableNow(p);
+    let availTs, availTime;
+    if (now) { availTs = 0; availTime = 'Now'; }
+    else if (p.until) { const t = Date.parse(p.until); if (isFinite(t) && t > Date.now()) { availTs = t; availTime = _aaListLocalTime(t); } else { availTs = 0; availTime = 'Now'; } }
+    else if (p.renter) { availTs = Infinity; availTime = 'Rented'; }
+    else { availTs = Infinity; availTime = '—'; }
+    out.push({
+      apt, aptName: (rec.name || ''),
+      cat: (+(categoryDB && categoryDB.get(apt)) || 0),
+      aptOwner: ((typeof _rgOwnerMap !== 'undefined' && _rgOwnerMap && _rgOwnerMap.get(apt)) || '—'),   // airport's SimFly owner
+      acOwner: (p.owner || '—'),                                                                        // aircraft's owner (feed)
+      acIcao: (ic || '—'),
+      mfr: (_aaRentBrandOf(ic) || '—'),
+      type: (_aaRentTypeLabel(ic) || (p.name || '—')),
+      payout: (p.payout == null ? 0 : p.payout),
+      avail: now ? 'Yes' : 'No',
+      availTime, availTs,
+    });
+  }
+  return out;
+}
+
+function _aaListRowPasses(r) {
+  for (const k of _AAL_FILT_COLS) { const s = _aaListColFilters[k]; if (s && s.size && !s.has(r[k])) return false; }
+  if (_aaListMinPayout > 0 && r.payout < _aaListMinPayout) return false;
+  if (_aaListMinCat > 0 && (r.cat === 0 || r.cat < _aaListMinCat)) return false;
+  return true;
+}
+function _aaListAnyFilterActive() {
+  if (_aaListMinPayout > 0 || _aaListMinCat > 0) return true;
+  for (const k of _AAL_FILT_COLS) { const s = _aaListColFilters[k]; if (s && s.size) return true; }
+  return false;
+}
+function _aaListColFilterActive(key) {
+  if (key === 'payout') return _aaListMinPayout > 0;
+  if (key === 'availTime') return false;
+  if (key === 'apt') return _aaListMinCat > 0 || !!(_aaListColFilters.apt && _aaListColFilters.apt.size);
+  const s = _aaListColFilters[key]; return !!(s && s.size);
+}
+
+function _aaListSortRows(rows) {
+  const dir = _aaListSortDir === 'desc' ? -1 : 1, k = _aaListSort;
+  rows.sort((a, b) => {
+    let r;
+    if (k === 'payout') r = a.payout - b.payout;
+    else if (k === 'availTime') r = a.availTs - b.availTs;
+    else if (k === 'apt') r = a.apt.localeCompare(b.apt);
+    else r = String(a[k]).toLowerCase().localeCompare(String(b[k]).toLowerCase());
+    if (r === 0) r = a.apt.localeCompare(b.apt) || a.acIcao.localeCompare(b.acIcao);
+    return dir * r;
+  });
+}
+
+function _aaListComputeTmpl() {
+  const w = (_aaListColW && _aaListColW.length === _AAL_COLS.length) ? _aaListColW : _AAL_DEFAULT_W;
+  _aaListSumW = w.reduce((a, b) => a + b, 0);
+  _aaListTmpl = w.map(x => x + 'px').join(' ');
+}
+function _aaListApplyTmpl() {
+  _aaListComputeTmpl();
+  const head = document.getElementById('aaListHead');
+  if (head) { head.style.gridTemplateColumns = _aaListTmpl; head.style.width = _aaListSumW + 'px'; }
+  const grid = document.getElementById('aaListGrid'); if (grid) grid.style.minWidth = _aaListSumW + 'px';
+  document.querySelectorAll('#aaListRows .aal-row').forEach(r => { r.style.gridTemplateColumns = _aaListTmpl; r.style.width = _aaListSumW + 'px'; });
+}
+
+// "2h 14m 03s" / "14m 03s" / "47s" countdown until a future ms timestamp.
+function _aaListCountdown(ts) {
+  let s = Math.max(0, Math.round((ts - Date.now()) / 1000));
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60); s -= m * 60;
+  const pad = n => (n < 10 ? '0' + n : '' + n);
+  if (h > 0) return h + 'h ' + pad(m) + 'm ' + pad(s) + 's';
+  if (m > 0) return m + 'm ' + pad(s) + 's';
+  return s + 's';
+}
+// Text shown in the Available column: "Yes", a live H/M/S countdown for aircraft
+// in ground ops, or "No" when there's no known free-up time (rented / unknown).
+function _aaListAvailText(r) {
+  if (r.avail === 'No' && isFinite(r.availTs) && r.availTs > Date.now()) return _aaListCountdown(r.availTs);
+  return r.avail;
+}
+function _aaListRowHtml(r) {
+  const FILT_HINT = ' · click again to remove the filter';
+  let s = `<div class="aal-row" style="grid-template-columns:${_aaListTmpl};width:${_aaListSumW}px">`;
+  for (const c of _AAL_COLS) {
+    const k = c.key; let txt, cls = 'aal-cell aal-c-' + k, clk = false, title = '', dv = '', extra = '';
+    if (k === 'apt') { txt = r.apt; clk = true; title = 'Pan the map to ' + r.apt + (r.aptName ? ' — ' + r.aptName : ''); dv = r.apt; }
+    else if (k === 'aptOwner') { txt = r.aptOwner; clk = true; dv = r.aptOwner;
+      title = (r.aptOwner === '—') ? ('Click to see aircraft at airports with no listed owner' + FILT_HINT)
+                                   : ('Click to see aircraft at ' + r.aptOwner + "'s airports" + FILT_HINT); }
+    else if (k === 'acOwner') { txt = r.acOwner; clk = true; dv = r.acOwner;
+      title = (r.acOwner === '—') ? ('Click to see aircraft with no listed owner' + FILT_HINT)
+                                  : ('Click to see ' + r.acOwner + "'s aircraft" + FILT_HINT); }
+    else if (k === 'acIcao') { txt = r.acIcao; clk = true; title = 'Filter to aircraft ' + r.acIcao + FILT_HINT; dv = r.acIcao; }
+    else if (k === 'mfr') { txt = r.mfr; clk = true; title = 'Filter to ' + r.mfr + ' aircraft' + FILT_HINT; dv = r.mfr; }
+    else if (k === 'type') { txt = r.type; clk = true; title = 'Filter to type ' + r.type + FILT_HINT; dv = r.type; }
+    else if (k === 'payout') { txt = r.payout + '%'; cls += ' aal-c-right'; }
+    else if (k === 'avail') {
+      clk = true; dv = r.avail;
+      const counting = r.avail === 'No' && isFinite(r.availTs) && r.availTs > Date.now();
+      if (counting) { txt = _aaListCountdown(r.availTs); cls += ' aal-av-soon aal-countdown'; extra = ` data-availts="${r.availTs}"`; title = 'Free in ' + txt + ' · filter to Available = No' + FILT_HINT; }
+      else { txt = r.avail; cls += (r.avail === 'Yes' ? ' aal-av-yes' : ' aal-av-no'); title = 'Filter to Available = ' + r.avail + FILT_HINT; }
+    }
+    else { txt = r.availTime; }
+    if (clk) cls += ' aal-clk';
+    s += `<span class="${cls}" data-col="${k}"${clk ? ` data-val="${_aaEsc(dv)}"` : ''}${extra}${title ? ` title="${_aaEsc(title)}"` : ''}>${_aaEsc(txt)}</span>`;
+  }
+  return s + '</div>';
+}
+// Per-second refresh of the Available-column countdowns while the panel is open.
+// Text-only updates (no re-render) so scroll/sort/selection are undisturbed; a
+// full re-render fires only when a plane's timer expires (it flips to Yes).
+let _aaListTicker = null;
+function _aaListStartTicker() { if (!_aaListTicker) _aaListTicker = setInterval(_aaListTick, 1000); }
+function _aaListStopTicker() { if (_aaListTicker) { clearInterval(_aaListTicker); _aaListTicker = null; } }
+function _aaListTick() {
+  if (!_aaListPanelOpen()) { _aaListStopTicker(); return; }
+  let expired = false;
+  document.querySelectorAll('#aaListRows .aal-countdown').forEach(el => {
+    const ts = +el.dataset.availts;
+    if (!isFinite(ts)) return;
+    if (ts <= Date.now()) { expired = true; return; }
+    el.textContent = _aaListCountdown(ts);
+  });
+  if (expired) { _aaListRender(); _aaListApplyMapFilter(); }
+}
+
+function _aaListRender() {
+  if (!_aaListPanelOpen()) return;
+  const all = _aaListBuildRows();
+  _aaListAllRowsCache = all;
+  const rows = all.filter(_aaListRowPasses);
+  _aaListSortRows(rows);
+  _aaListVisibleRowsCache = rows;
+  _aaListComputeTmpl();
+  const body = document.getElementById('aaListRows');
+  if (body) {
+    if (!rows.length) body.innerHTML = '<div class="aal-empty">No aircraft match these filters.</div>';
+    else {
+      let html = rows.slice(0, _AAL_CAP).map(_aaListRowHtml).join('');
+      if (rows.length > _AAL_CAP) html += `<div class="aal-empty">Showing first ${_AAL_CAP.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} — narrow the filters to see the rest.</div>`;
+      body.innerHTML = html;
+    }
+  }
+  _aaListApplyTmpl();
+  _aaListSyncHeader();
+  const aptSet = new Set(rows.map(r => r.apt));
+  const sum = document.getElementById('aaListSummary');
+  if (sum) sum.innerHTML = `<b>${rows.length.toLocaleString('en-US')}</b> aircraft · <b>${aptSet.size.toLocaleString('en-US')}</b> airport${aptSet.size !== 1 ? 's' : ''}`;
+  const fr = document.getElementById('aaListFreshness'); if (fr) fr.textContent = '↻ Aircraft data ' + _aaFreshnessText();
+}
+
+function _aaListSyncHeader() {
+  document.querySelectorAll('#aaListHead .aal-th').forEach(th => {
+    const key = th.dataset.col, sorted = key === _aaListSort;
+    th.classList.toggle('aal-sorted', sorted);
+    const arr = th.querySelector('.aal-th-arr'); if (arr) arr.textContent = sorted ? (_aaListSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+    const fb = th.querySelector('.aal-th-filt'); if (fb) fb.classList.toggle('aal-filt-on', _aaListColFilterActive(key));
+  });
+}
+
+// Map sync — the listing's currently-visible airports become the map gate set.
+function _aaListApplyMapFilter() {
+  if (_aaListPanelOpen() && _aaListAnyFilterActive()) {
+    const rows = (_aaListAllRowsCache || _aaListBuildRows()).filter(_aaListRowPasses);
+    _aaListIcaoFilter = new Set(rows.map(r => r.apt));
+  } else _aaListIcaoFilter = null;
+  try { if (typeof _rgApplyMapFilter === 'function' && _rgMap) _rgApplyMapFilter(); } catch (_) {}
+}
+function _aaListRefreshIfOpen() { if (_aaListPanelOpen()) { _aaListRender(); _aaListApplyMapFilter(); } }
+
+// ── Sorting + click-to-filter (cell delegation avoids escaping values inline) ──
+function _aaListHeaderSort(key) {
+  if (_aaListSort === key) _aaListSortDir = _aaListSortDir === 'asc' ? 'desc' : 'asc';
+  else { _aaListSort = key; _aaListSortDir = 'asc'; }
+  _aaListSavePrefs(); _aaListRender();
+}
+function _aaListRowsClick(ev) {
+  const cell = ev.target.closest('.aal-cell'); if (!cell) return;
+  const col = cell.dataset.col, val = cell.dataset.val;
+  if (col === 'apt') { _aaListPanTo(val); return; }
+  if (_AAL_FILT_COLS.includes(col) && val != null) {
+    const cur = _aaListColFilters[col];
+    if (cur && cur.size === 1 && cur.has(val)) delete _aaListColFilters[col];   // second click on the same value clears the filter
+    else _aaListColFilters[col] = new Set([val]);
+    _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter();
+  }
+}
+function _aaListPanTo(apt) {
+  const rec = (typeof airportDB !== 'undefined' && airportDB) ? airportDB.get((apt || '').toUpperCase()) : null;
+  if (!rec || !_rgMap) return;
+  try { _rgMap.flyTo([rec.latitude, rec.longitude], Math.max(_rgMap.getZoom(), 6), { animate:true, duration:0.6 }); } catch (_) {}
+}
+
+// ── Column resize + auto-fit (double-click a divider sizes every column to its
+//    widest value, measured with a canvas) ──
+function _aaListColInit() {
+  const head = document.getElementById('aaListHead'); if (!head || head._aalInit) return;
+  head._aalInit = true;
+  const cells = [...head.children];
+  for (let i = 0; i < cells.length; i++) {   // every column, including the last (Avail Time)
+    cells[i].style.position = 'relative';
+    const h = document.createElement('div');
+    h.className = 'aal-col-resize';
+    h.title = 'Drag to resize · double-click to reset all columns to fit their titles';
+    cells[i].appendChild(h);
+    h.addEventListener('mousedown', e => _aaListColDown(e, i));
+    h.addEventListener('click', e => e.stopPropagation());
+    h.addEventListener('dblclick', e => { e.preventDefault(); e.stopPropagation(); _aaListUserSized = false; _aaListAutoFit(); _aaListFitPanelWidth(); });
+  }
+}
+function _aaListColDown(e, idx) {
+  e.preventDefault(); e.stopPropagation();
+  if (!_aaListColW || _aaListColW.length !== _AAL_COLS.length) _aaListColW = _AAL_DEFAULT_W.slice();
+  const startX = e.clientX, startW = _aaListColW[idx];
+  const handle = e.currentTarget; handle.classList.add('aal-col-dragging'); document.body.style.cursor = 'col-resize';
+  const move = ev => { _aaListColW[idx] = Math.max(40, Math.round(startW + (ev.clientX - startX))); _aaListApplyTmpl(); };
+  const up = () => { document.removeEventListener('mousemove', move); handle.classList.remove('aal-col-dragging'); document.body.style.cursor = ''; _aaListUserSized = true; _aaListSavePrefs(); };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up, { once: true });
+}
+// Size each column just wide enough for its (uppercase) HEADING — plus the sort
+// arrow, the ▾ filter button, and cell padding. Longer cell VALUES ellipsize; their
+// full text still shows in the cell's hover tooltip, so the panel stays compact
+// instead of stretching to the widest aircraft-type / owner name. (v3.67.4)
+function _aaListAutoFit() {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = "600 17px 'Rajdhani', sans-serif";
+  // buffer = cell padding (18) + sort arrow (~16) + ▾ filter button (~16) + safety;
+  // availTime has no filter button so it needs less.
+  _aaListColW = _AAL_COLS.map(c => Math.round(Math.max(70, ctx.measureText(c.label.toUpperCase()).width + (c.key === 'availTime' ? 40 : 58))));
+  _aaListSavePrefs(); _aaListRender();
+}
+// Size the panel WIDTH to exactly fit all columns (sum of column widths + the
+// table chrome: vertical scrollbar + right inset + borders), so nothing is
+// truncated and there's no wasted space. Keeps the panel centered on its current
+// center; clamps to the viewport. (v3.67.4)
+function _aaListFitPanelWidth() {
+  const p = document.getElementById('aaListPanel'); if (!p || !p._aalPosInit) return;
+  _aaListComputeTmpl();   // refresh _aaListSumW from the current column widths
+  const mc = document.getElementById('rgMapContainer');
+  const cw = mc ? mc.clientWidth : window.innerWidth;
+  const CHROME = 30;      // 15 scrollbar + 10 tablewrap right margin + 2 border + buffer
+  const w = Math.max(380, Math.min(_aaListSumW + CHROME, cw - 12));
+  const center = p.offsetLeft + p.offsetWidth / 2;
+  p.style.width = w + 'px';
+  p.style.left = Math.max(0, Math.min(Math.round(center - w / 2), cw - w)) + 'px';
+  _aaListSaveGeom();
+}
+
+// ── Filter popover ──
+function _aaListDistinct(key) {
+  const rows = _aaListAllRowsCache || _aaListBuildRows();
+  if (key === 'avail') return [['Yes', rows.filter(r => r.avail === 'Yes').length], ['No', rows.filter(r => r.avail === 'No').length]];
+  const m = new Map();
+  for (const r of rows) { const v = r[key]; if (v == null || v === '') continue; m.set(v, (m.get(v) || 0) + 1); }
+  return [...m.entries()].sort((a, b) => key === 'apt' ? a[0].localeCompare(b[0]) : String(a[0]).toLowerCase().localeCompare(String(b[0]).toLowerCase()));
+}
+function _aaListOpenFilter(ev, key) {
+  ev.stopPropagation(); ev.preventDefault();
+  const pop = document.getElementById('aaListFilterPop'); if (!pop) return;
+  if (_aaListFiltCol === key && pop.classList.contains('aal-pop-open')) { _aaListCloseFilter(); return; }
+  _aaListFiltCol = key;
+  _aaListPopRender(key);
+  pop.classList.add('aal-pop-open');
+  const mc = document.getElementById('rgMapContainer');
+  const btn = ev.currentTarget.getBoundingClientRect(), mcr = mc.getBoundingClientRect();
+  pop.style.left = '0px'; pop.style.top = '0px';
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  const left = Math.max(4, Math.min(btn.left - mcr.left, mc.clientWidth - pw - 4));
+  const top  = Math.max(4, Math.min(btn.bottom - mcr.top + 4, mc.clientHeight - ph - 4));
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+  // Capture phase: the panel stops mousedown propagation, so a bubble listener
+  // would never see clicks landing elsewhere inside the panel. Capture runs first.
+  setTimeout(() => document.addEventListener('mousedown', _aaListFilterOutside, true), 0);
+}
+function _aaListCloseFilter() { const pop = document.getElementById('aaListFilterPop'); if (pop) pop.classList.remove('aal-pop-open'); _aaListFiltCol = null; document.removeEventListener('mousedown', _aaListFilterOutside, true); }
+function _aaListFilterOutside(e) { const pop = document.getElementById('aaListFilterPop'); if (pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('.aal-th-filt'))) _aaListCloseFilter(); }
+function _aaListPopRender(key) {
+  const pop = document.getElementById('aaListFilterPop'); if (!pop) return;
+  const col = _AAL_COLS.find(c => c.key === key);
+  let html = `<div class="aal-pop-hd">${_aaEsc(col ? col.label : key)}</div>`;
+  if (key === 'payout') {
+    html += `<div class="aal-pop-hint">Hide aircraft below this pilot payout %.</div>` +
+            `<div style="display:flex;align-items:center;gap:8px;">` +
+            `<input type="range" min="0" max="60" step="1" value="${_aaListMinPayout}" style="flex:1;" oninput="_aaListSetMinPayout(this.value)">` +
+            `<span id="aaListMinPayoutVal" style="min-width:46px;text-align:right;color:#3fe089;font-weight:600;">${_aaListMinPayout > 0 ? ('≥' + _aaListMinPayout + '%') : 'off'}</span></div>`;
+    pop.innerHTML = html; return;
+  }
+  if (key === 'apt') {
+    html += `<div class="aal-pop-hint">Minimum airport category.</div><div class="aal-pop-cat" id="aaListCatRow">`;
+    for (let c = 0; c <= 7; c++) html += `<button class="aal-catbtn${_aaListMinCat === c ? ' on' : ''}" onclick="_aaListSetMinCat(${c})" title="${c === 0 ? 'No minimum' : 'Category ' + c + ' and higher'}">${c === 0 ? 'Any' : c}</button>`;
+    html += `</div>`;
+  }
+  if (key !== 'avail') html += `<input class="aal-pop-search" type="text" placeholder="Search…" oninput="_aaListPopFilterList(this.value)">`;
+  html += `<div class="aal-pop-tools"><button onclick="_aaListPopSelectAll(true)">Select all</button><button onclick="_aaListPopSelectAll(false)">Clear</button></div>`;
+  const sel = _aaListColFilters[key];
+  html += `<div class="aal-pop-list" id="aaListPopList">`;
+  for (const [v, cnt] of _aaListDistinct(key)) html += `<label class="aal-pop-item" data-v="${_aaEsc(v)}"><input type="checkbox" ${sel && sel.has(v) ? 'checked' : ''}><span class="aal-pop-vtxt">${_aaEsc(v)}</span><span class="aal-pop-cnt">${cnt}</span></label>`;
+  html += `</div>`;
+  pop.innerHTML = html;
+  const list = document.getElementById('aaListPopList');
+  if (list) list.addEventListener('change', e => { const lab = e.target.closest('.aal-pop-item'); if (lab) _aaListPopToggleVal(key, lab.dataset.v, e.target.checked); });
+}
+function _aaListPopToggleVal(key, val, on) {
+  let s = _aaListColFilters[key]; if (!s) { s = new Set(); _aaListColFilters[key] = s; }
+  if (on) s.add(val); else s.delete(val);
+  if (!s.size) delete _aaListColFilters[key];
+  _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter();
+}
+function _aaListPopSelectAll(on) {
+  const key = _aaListFiltCol; if (!key) return;
+  if (on) { const s = new Set(); for (const [v] of _aaListDistinct(key)) s.add(v); _aaListColFilters[key] = s; }
+  else delete _aaListColFilters[key];
+  _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter(); _aaListPopRender(key);
+}
+function _aaListPopFilterList(q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('#aaListPopList .aal-pop-item').forEach(it => { it.style.display = it.dataset.v.toLowerCase().includes(q) ? '' : 'none'; });
+}
+function _aaListSetMinPayout(v) {
+  _aaListMinPayout = Math.max(0, Math.min(60, +v || 0));
+  const lb = document.getElementById('aaListMinPayoutVal'); if (lb) lb.textContent = _aaListMinPayout > 0 ? ('≥' + _aaListMinPayout + '%') : 'off';
+  _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter();
+}
+function _aaListSetMinCat(c) {
+  _aaListMinCat = Math.max(0, Math.min(7, c | 0));
+  document.querySelectorAll('#aaListCatRow .aal-catbtn').forEach((b, i) => b.classList.toggle('on', i === _aaListMinCat));
+  _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter();
+}
+function _aaListReset() {
+  _aaListColFilters = {}; _aaListMinPayout = 0; _aaListMinCat = 0;
+  _aaListCloseFilter();
+  _aaListSavePrefs(); _aaListRender(); _aaListApplyMapFilter();
+}
+
+// ── Panel show / hide / geometry / resize / drag ──
+function _aaListTogglePanel() { _aaListShowPanel(!_aaListPanelOpen()); }
+function _aaListClosePanel() { _aaListShowPanel(false); }
+function _aaListShowPanel(on) {
+  const p = document.getElementById('aaListPanel'); if (!p) return;
+  p.classList.toggle('aal-open', !!on);
+  if (on) {
+    if (!p._aalPosInit) {
+      _aaListApplyGeom(p);
+      p._aalPosInit = true;
+      if (typeof L !== 'undefined' && L.DomEvent) { L.DomEvent.disableScrollPropagation(p); L.DomEvent.disableClickPropagation(p); }
+      const rowsEl = document.getElementById('aaListRows'); if (rowsEl) rowsEl.addEventListener('click', _aaListRowsClick);
+    }
+    _aaListApplyOpacity();
+    _aaListColInit();
+    _aaListRender();
+    // Until the user manually sizes a column or the panel, keep columns auto-fit to
+    // their content (header label or widest value) and the panel just wide enough to
+    // show them all — no truncation, no wasted width. (v3.67.4)
+    if (!_aaListUserSized) { _aaListAutoFit(); _aaListFitPanelWidth(); }
+    _aaListApplyMapFilter();
+    _aaListStartTicker();
+  } else {
+    _aaListStopTicker();
+    _aaListCloseFilter();
+    _aaListSaveGeom();
+    _aaListApplyMapFilter();   // panel closed → listing no longer constrains the map
+  }
+}
+function _aaListApplyOpacity() {
+  const o = (_aaListOpacity == null ? 1 : _aaListOpacity);
+  const p = document.getElementById('aaListPanel'); if (p) p.style.opacity = o;
+  const sl = document.getElementById('aaListOpacity'); if (sl) sl.value = Math.round(o * 100);
+}
+function _aaListSetOpacity(v) {
+  _aaListOpacity = Math.max(0.1, Math.min(1, (+v || 100) / 100));
+  const p = document.getElementById('aaListPanel'); if (p) p.style.opacity = _aaListOpacity;
+  _aaListSavePrefs();
+}
+function _aaListApplyGeom(p) {
+  const mc = document.getElementById('rgMapContainer');
+  const cw = mc ? mc.clientWidth : window.innerWidth, ch = mc ? mc.clientHeight : window.innerHeight;
+  let g = _aaListGeom;
+  if (!g || !g.width) { const W = Math.round(cw * 0.6), H = Math.round(ch * 0.6); g = { width:W, height:H, left:Math.round((cw - W) / 2), top:Math.round((ch - H) / 2) }; _aaListGeom = g; }
+  const W = Math.max(380, Math.min(g.width, cw - 12)), H = Math.max(260, Math.min(g.height, ch - 12));
+  const left = Math.max(0, Math.min(g.left, cw - W)), top = Math.max(0, Math.min(g.top, ch - H));
+  p.style.left = left + 'px'; p.style.top = top + 'px'; p.style.right = 'auto'; p.style.width = W + 'px'; p.style.height = H + 'px';
+}
+function _aaListSaveGeom() {
+  const p = document.getElementById('aaListPanel'); if (!p || !p._aalPosInit) return;
+  _aaListGeom = { left:p.offsetLeft, top:p.offsetTop, width:p.offsetWidth, height:p.offsetHeight };
+  _aaListSavePrefs();
+}
+function _aaListResizeStart(ev, dir) {
+  ev.preventDefault(); ev.stopPropagation();
+  const p = document.getElementById('aaListPanel'); if (!p) return;
+  if (p.style.right && p.style.right !== 'auto') { p.style.left = p.offsetLeft + 'px'; p.style.right = 'auto'; }
+  const mc = document.getElementById('rgMapContainer');
+  const cw = mc ? mc.clientWidth : window.innerWidth, ch = mc ? mc.clientHeight : window.innerHeight;
+  const s = { x:ev.clientX, y:ev.clientY, w:p.offsetWidth, h:p.offsetHeight, left:p.offsetLeft, top:p.offsetTop };
+  const minW = 380, minH = 260, maxW = cw - 8, maxH = ch - 8;
+  const move = e => {
+    const dx = e.clientX - s.x, dy = e.clientY - s.y; let w = s.w, h = s.h, left = s.left, top = s.top;
+    if (dir.indexOf('e') >= 0) w = Math.max(minW, Math.min(maxW, s.w + dx));
+    if (dir.indexOf('w') >= 0) { const nw = Math.max(minW, Math.min(maxW, s.w - dx)); left = s.left + (s.w - nw); w = nw; }
+    if (dir.indexOf('s') >= 0) h = Math.max(minH, Math.min(maxH, s.h + dy));
+    if (dir.indexOf('n') >= 0) { const nh = Math.max(minH, Math.min(maxH, s.h - dy)); top = s.top + (s.h - nh); h = nh; }
+    p.style.width = w + 'px'; p.style.height = h + 'px'; p.style.left = left + 'px'; p.style.top = top + 'px';
+  };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.body.style.userSelect = ''; _aaListUserSized = true; _aaListSaveGeom(); };
+  document.body.style.userSelect = 'none';
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+function _aaListDragFromHandle(ev) {
+  if (typeof _aaChipDragFromHandle === 'function') _aaChipDragFromHandle(ev, 'aaListPanel');
+  window.addEventListener('pointerup', _aaListSaveGeom, { once: true });
 }
 
 // "2h 14m" / "47m" countdown from a future ms timestamp.
@@ -43184,6 +43799,30 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">📋</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Aircraft Listing</div>
+          <div class="help-feature-desc">
+            <strong>Aircraft Listing</strong> (in the 🛩 Rentals menu, v3.66.0+) opens a large, resizable, draggable panel with a full table of every rentable aircraft &mdash; one row each &mdash; showing its <strong>airport</strong>, <strong>airport owner</strong>, <strong>aircraft ICAO</strong>, <strong>manufacturer</strong>, <strong>type</strong>, <strong>aircraft owner</strong>, <strong>pilot payout %</strong>, and <strong>availability</strong> (airport owner and aircraft owner are often different &mdash; a plane can be parked at another pilot&rsquo;s airport). For aircraft in ground operations the <strong>Available</strong> column shows a live hours / minutes / seconds countdown until it frees up, and <strong>Avail Time (Local)</strong> shows the local clock time it becomes available.<br/><br/>
+            Click any column heading to sort A&ndash;Z, then again for Z&ndash;A. Each heading&rsquo;s ▾ opens a filter: a multi-select list for most columns, a <strong>minimum payout %</strong> for Payout, a <strong>minimum airport category</strong> for Airport, and a Yes / No choice for Available. Filters combine across columns.<br/><br/>
+            The table drives the map &mdash; whenever it&rsquo;s filtered, the map shows only the airport dots still in the table. Click an <strong>airport</strong> to pan to it; click an <strong>owner</strong>, <strong>aircraft</strong>, <strong>manufacturer</strong>, or <strong>type</strong> to narrow to just those (click the same value again to clear it). By default the panel opens just wide enough to fit every column heading, with longer values trimmed (hover a cell to read the full text). Drag a column divider to widen a column, or double-click a divider to reset all columns back to fitting their titles. A slider in the title bar sets the panel&rsquo;s opacity so you can see the map underneath (the Aircraft Rentals panel has the same control). <strong>↺ Reset</strong> clears all filters; your sort, widths, filters, opacity, and panel size are remembered between sessions.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">🛩</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Find Your Aircraft Across an Owner&rsquo;s Fleet</div>
+          <div class="help-feature-desc">
+            Pick an aircraft (<strong>👁 Display &rarr; Select Aircraft</strong>), then select a departure or arrival airport on the map. AA badges every <em>other</em> airport owned by that airport&rsquo;s owner that has your aircraft <strong>rentable right now</strong> (no ground-ops timer), each linked back to your selected airport by a faint dotted green line.<br/><br/>
+            Each green badge shows the <strong>aircraft</strong>, the <strong>airport</strong>, and the <strong>highest available pilot payout %</strong> there, color-coded on the rental spectrum. Hover a badge for the airport&rsquo;s full info card and the 🛫 / 🛬 icons to set it as your departure or arrival in one click.<br/><br/>
+            Airports that are off-screen get a badge pinned to the map edge with an arrow pointing their way &mdash; click it to pan there. And when your selected departure or arrival scrolls off-screen, its dashed line gets a badge at the edge too (<strong>cyan</strong> for the departure, <strong>orange</strong> for the arrival) so you always know where the line leads back to; click it to pan back.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">🛩</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Rent Your Aircraft from an Airport&rsquo;s Owner</div>
@@ -43828,10 +44467,84 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.67.4</span>
+          <span class="release-date">June 28, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft Listing opens compact and right-sized.</strong> The panel now opens just wide enough to fit every column heading &mdash; and no wider &mdash; so there&rsquo;s no truncated headings and no wasted, empty window space (a big improvement on wide / ultrawide monitors). Longer cell values (full aircraft type names, owner ids) are trimmed with &ldquo;…&rdquo;; hover a cell to read the full text, or drag a column wider.</li>
+          <li><strong>Auto-fits until you take over.</strong> Every open re-fits the columns and panel width to the headings. Once you drag a column or resize the panel, your sizing sticks; double-click a column divider any time to snap everything back to the compact title fit.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.67.3</span>
+          <span class="release-date">June 28, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Edge-badge hover card no longer slides under the badge.</strong> Hovering an aircraft-availability badge reveals its 🛫 / 🛬 set-departure / set-arrival icons, which widens the badge by about 56&nbsp;px. The card&rsquo;s position was based on the badge&rsquo;s resting (narrower) width, so once it grew on hover it reached back under the card. The card is now placed using the badge&rsquo;s full hovered width, so it stays clear on every edge.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.67.2</span>
+          <span class="release-date">June 28, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft Listing now separates Airport Owner from Aircraft Owner.</strong> The old &ldquo;Owner&rdquo; column is now <strong>Airport Owner</strong> (the SimFly pilot who owns the airport), and a new <strong>Aircraft Owner</strong> column (the pilot who owns the aircraft) sits to the right of Type. They&rsquo;re often different &mdash; an aircraft can be parked at someone else&rsquo;s airport. Both sort and multi-filter like every other column.</li>
+          <li><strong>Clearer owner tooltips.</strong> Clicking an <strong>Airport Owner</strong> reads &ldquo;Click to see aircraft at <em>[owner]</em>&rsquo;s airports,&rdquo; and clicking an <strong>Aircraft Owner</strong> reads &ldquo;Click to see <em>[owner]</em>&rsquo;s aircraft&rdquo; &mdash; each noting that a second click removes the filter.</li>
+          <li><strong>Edge badges no longer covered by their hover card.</strong> For aircraft-availability badges pinned to the left or right screen edge, the info card is now sized to the exact badge width so it always opens clear of it &mdash; the wider badges (with payout and a four-letter ICAO) are no longer obscured.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.67.1</span>
+          <span class="release-date">June 28, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Edge badges no longer hidden by their own pop-up.</strong> For aircraft-availability badges pinned to the screen edge, the hover info card opened right on top of the badge (and a small &ldquo;Click to pan&rdquo; box covered it too). The card now opens clear of the badge, and that extra box is gone &mdash; the badge stays fully readable.</li>
+          <li><strong>Off-screen departure/arrival badge now shows reliably.</strong> When a selected departure or arrival was panned off-screen, its edge label could land directly under another badge and disappear. All edge badges are now spread apart together so they never cover each other, and the departure/arrival label appears whenever there&rsquo;s a line leading back to it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.67.0</span>
+          <span class="release-date">June 28, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft-availability badges now show the payout %.</strong> When you select an aircraft and a departure/arrival airport, the green badges over the owner&rsquo;s other airports that have that aircraft rentable now also display the <strong>highest available pilot payout %</strong> there (color-coded on the rental spectrum). At rest the badge reads <em>aircraft · airport · payout%</em>; on hover the 🛫 / 🛬 set-as-departure / set-as-arrival icons appear on either side.</li>
+          <li><strong>Off-screen departure/arrival now labels its own line.</strong> When you pan to one of those other airports, the selected departure or arrival often scrolls off-screen, leaving its dashed connector running to the edge with no label. There&rsquo;s now a badge on that edge &mdash; cyan for the departure, orange for the arrival &mdash; showing which airport the line leads back to. Click it to pan straight back.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.66.0</span>
+          <span class="release-date">June 28, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &ldquo;Aircraft Listing&rdquo; in the 🛩 Rentals menu.</strong> Opens a big, resizable, draggable panel (about 60% of the map) with a full table of every rentable aircraft &mdash; one row each, showing its airport, owner, aircraft ICAO, manufacturer, type, pilot payout %, and availability. For aircraft in ground operations the <strong>Available</strong> column shows a live <strong>hours / minutes / seconds countdown</strong> until it frees up, and the <strong>Avail Time (Local)</strong> column shows the local clock time it becomes available.</li>
+          <li><strong>Sort and filter any column.</strong> Click a column heading to sort A&ndash;Z, click again for Z&ndash;A. Each heading&rsquo;s ▾ opens a multi-select filter; the <strong>Payout %</strong> heading sets a minimum payout, the <strong>Airport</strong> heading sets a minimum airport category, and <strong>Available</strong> filters by Yes / No.</li>
+          <li><strong>The table drives the map.</strong> Whenever you filter the table, the map updates to show only the airport dots still in the table. Click an airport to pan to it; click an owner, aircraft ICAO, manufacturer, or type to instantly narrow to just those &mdash; click the same value again to clear it.</li>
+          <li><strong>Adjustable columns and opacity.</strong> Drag any column divider to resize it, or double-click a divider to auto-fit every column to the wider of its heading or its widest value. A slider in the title bar fades the whole panel between 10% and 100% opacity so you can see the map underneath &mdash; the Aircraft Rentals panel gains the same opacity slider. A <strong>↺ Reset</strong> button clears all filters and shows every aircraft again. Your sort, column widths, filters, opacity, and panel size are remembered between sessions.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.65.1</span>
-          <span class="release-date">June 28, 2026 &middot; Current</span>
+          <span class="release-date">June 28, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
@@ -56551,6 +57264,7 @@ function rgSendToFlightPlanner() {
           <button class="rg-btn rg-pulldown-trigger" id="rgRentalsBtn" onclick="_rgToggleRentalsMenu(event)" title="Aircraft Rentals — show where SimFly aircraft are available to rent, where they're based, when they free up, and the pilot payout %">🛩 <span class="rg-btn-label">Rentals</span> <span class="rg-pulldown-caret">▾</span></button>
           <div class="rg-pulldown" id="rgRentalsMenu">
             <button class="rg-btn rg-pulldown-row" id="rgAircraftModeBtn" onclick="_rgRentalsMenuToggle();_rgCloseAnyPulldown()" title="Toggle the Aircraft Rentals view — dots recolor by the best rental payout at each airport, and the Rentals panel opens for filtering by aircraft type, owner, payout, and availability"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">Aircraft Rentals</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgAircraftListingBtn" onclick="_aaListTogglePanel();_rgCloseAnyPulldown()" title="Open the Aircraft Listing — a sortable, multi-filterable table of every rentable aircraft (airport, owner, ICAO, manufacturer, type, pilot payout %, availability, ground-ops free time). Filtering the table filters the map dots to the airports still shown."><span class="rg-row-icon">📋</span><span class="rg-btn-label">Aircraft Listing</span></button>
             <div class="rg-pulldown-sep"></div>
             <button class="rg-btn rg-pulldown-row" id="rgRentResetBtn" onclick="_aaRentResetFilters();_rgCloseAnyPulldown()" title="Reset the rental filters (aircraft type, owner, minimum payout, availability) without leaving the Rentals view"><span class="rg-row-icon">↺</span><span class="rg-btn-label">Reset Rental Filters</span></button>
           </div>
@@ -56869,6 +57583,19 @@ function rgSendToFlightPlanner() {
           box-shadow:0 0 8px rgba(46,204,113,0.5); text-shadow:0 0 3px rgba(0,0,0,0.9); }
         .aa-ownac-badge-ac { color:#2ecc71; }
         .aa-ownac-badge-apt { color:#fff; }
+        /* Highest available pilot payout % (v3.66.0) — colored inline on the rental
+           spectrum; a thin divider sets it off from the airport ICAO. */
+        .aa-ownac-badge-pay { font-weight:800; padding-left:5px; border-left:1px solid rgba(255,255,255,0.22); }
+        /* Off-screen SOURCE (selected dep/arr) edge badge (v3.66.0): cyan = departure,
+           orange = arrival, matching the app-wide dep/arr color convention. */
+        .aa-ownac-badge--src { cursor:pointer; pointer-events:auto; }
+        .aa-ownac-src-role { font-size:14px; line-height:1; }
+        .aa-ownac-src-dep { border-color:#00c8ff; box-shadow:0 0 8px rgba(0,200,255,0.5); }
+        .aa-ownac-src-dep .aa-ownac-edge-arrow, .aa-ownac-src-dep .aa-ownac-src-role { color:#00c8ff; }
+        .aa-ownac-src-dep:hover { border-color:#5bd8ff; box-shadow:0 0 12px rgba(0,200,255,0.85); }
+        .aa-ownac-src-arr { border-color:#ff6a00; box-shadow:0 0 8px rgba(255,106,0,0.5); }
+        .aa-ownac-src-arr .aa-ownac-edge-arrow, .aa-ownac-src-arr .aa-ownac-src-role { color:#ff6a00; }
+        .aa-ownac-src-arr:hover { border-color:#ff8c3a; box-shadow:0 0 12px rgba(255,106,0,0.85); }
         /* Off-screen "pan here" button anchored on the connector at the viewport
            edge (v3.54.0). Translated off its anchor point per edge so it stays on
            screen with the arrow pointing toward the off-screen airport. */
@@ -56952,7 +57679,10 @@ function rgSendToFlightPlanner() {
         <div class="aar-rz aar-rz-br" onpointerdown="_aaRentResizeStart(event,'se')"></div>
         <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,0.1);" onpointerdown="_aaChipDragFromHandle(event,'aaRentPanel')" title="Drag to move this panel">
           <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span style="font-family:'Orbitron',sans-serif;font-size:0.8rem;font-weight:700;color:#2ecc71;letter-spacing:0.06em;">🛩 RENTALS</span></span>
-          <button onclick="_aaRentClosePanel()" title="Close this panel — rental dots &amp; badges stay on the map. Use the 🛩 menu or breadcrumb to turn the Rentals view off." style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 12px;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          <span style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+            <span style="display:flex;align-items:center;gap:5px;" title="Panel opacity"><span aria-hidden="true" style="color:#7d8ea3;font-size:1.0rem;line-height:1;">◐</span><input type="range" id="aaRentOpacity" min="10" max="100" step="5" value="100" style="width:74px;accent-color:#2ecc71;cursor:pointer;margin:0;" oninput="_aaRentSetOpacity(this.value)" title="Drag to set panel opacity (10–100%)"></span>
+            <button onclick="_aaRentClosePanel()" title="Close this panel — rental dots &amp; badges stay on the map. Use the 🛩 menu or breadcrumb to turn the Rentals view off." style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          </span>
         </div>
         <div class="aar-body">
           <div class="aar-sec">Show badges as</div>
@@ -57037,6 +57767,133 @@ function rgSendToFlightPlanner() {
           <button class="aar-reset" onclick="_aaRentResetAll()" title="Reset all filters, sorting, badge mode, and colors to defaults (and save them as your defaults)">↺ Reset to defaults</button>
         </div>
       </div>
+
+      <!-- ── Aircraft Listing panel (v3.66.0) — full sortable/filterable table of
+           every rentable aircraft. Resizable + draggable; filtering it filters the
+           map dots to the airports still in the table. ──────────────────────── -->
+      <style>
+        #aaListPanel { position:absolute; z-index:1004; display:none; flex-direction:column; overflow:hidden;
+          min-width:380px; min-height:260px; background:rgba(13,20,30,0.96); border:1px solid rgba(46,204,113,0.42);
+          border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.6); pointer-events:all; user-select:none;
+          font-family:'Rajdhani',sans-serif; box-sizing:border-box; }
+        #aaListPanel.aal-open { display:flex; }
+        .aal-rz { position:absolute; z-index:5; }
+        .aal-rz-t { top:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .aal-rz-b { bottom:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .aal-rz-l { left:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .aal-rz-r { right:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .aal-rz-tl { top:0; left:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .aal-rz-tr { top:0; right:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .aal-rz-bl { bottom:0; left:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .aal-rz-br { bottom:0; right:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .aal-rz-br::after { content:''; position:absolute; right:2px; bottom:2px; width:8px; height:8px; pointer-events:none; opacity:0.55;
+          background:linear-gradient(135deg,transparent 0 45%,#2ecc71 45% 60%,transparent 60% 72%,#2ecc71 72% 85%,transparent 85%); }
+        .aal-title { font-family:'Orbitron',sans-serif; font-size:0.8rem; font-weight:700; color:#2ecc71; letter-spacing:0.06em; }
+        .aal-toolbar { display:flex; align-items:center; gap:10px; padding:7px 11px; border-bottom:1px solid rgba(255,255,255,0.1); flex-shrink:0; }
+        .aal-summary { font-size:1.04rem; color:#b4c2d2; flex:1; min-width:0; } .aal-summary b { color:#3fe089; }
+        .aal-opac { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+        .aal-opac-ico { color:#7d8ea3; font-size:1.0rem; line-height:1; }
+        .aal-opac input { width:74px; accent-color:#2ecc71; cursor:pointer; }
+        .aal-reset { background:rgba(255,140,40,0.10); border:1px solid rgba(255,140,40,0.4); color:#ffaa55; border-radius:7px;
+          padding:6px 15px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:1.06rem; font-weight:600; flex-shrink:0; }
+        .aal-reset:hover { background:rgba(255,140,40,0.18); }
+        /* Inset from the panel's right edge so the (fatter) vertical scrollbar clears
+           the right resize handle; horizontal scrollbar is already above the footer. */
+        .aal-tablewrap { flex:1 1 auto; min-height:0; overflow:auto; margin:0 10px 0 0;
+          scrollbar-width:auto; scrollbar-color:rgba(140,160,185,0.6) rgba(255,255,255,0.05); }
+        .aal-tablewrap::-webkit-scrollbar { width:15px; height:15px; }
+        .aal-tablewrap::-webkit-scrollbar-track { background:rgba(255,255,255,0.05); border-radius:8px; }
+        .aal-tablewrap::-webkit-scrollbar-thumb { background:rgba(140,160,185,0.6); border-radius:8px; border:3px solid transparent; background-clip:content-box; }
+        .aal-tablewrap::-webkit-scrollbar-thumb:hover { background:rgba(170,195,225,0.85); border:3px solid transparent; background-clip:content-box; }
+        .aal-tablewrap::-webkit-scrollbar-corner { background:transparent; }
+        .aal-head { position:sticky; top:0; z-index:3; display:grid; background:rgba(10,16,24,0.99);
+          border-bottom:1px solid rgba(255,255,255,0.16); }
+        .aal-th { position:relative; display:flex; align-items:center; justify-content:space-between; gap:4px; padding:7px 9px;
+          font-family:'Rajdhani',sans-serif; font-weight:600; font-size:1.0rem; text-transform:uppercase; letter-spacing:0.03em;
+          color:#aab8c8; white-space:nowrap; box-sizing:border-box; }
+        .aal-th-lbl { cursor:pointer; display:inline-flex; align-items:center; gap:2px; overflow:hidden; text-overflow:ellipsis; }
+        .aal-th-lbl:hover { color:#eaf4ff; }
+        .aal-th.aal-sorted { color:#3fe089; }
+        .aal-th-arr { font-size:0.9em; }
+        .aal-th-filt { cursor:pointer; color:#7d8ea3; font-size:0.95rem; flex-shrink:0; padding:0 1px; }
+        .aal-th-filt:hover { color:#4fd2ff; }
+        .aal-th-filt.aal-filt-on { color:#3fe089; }
+        .aal-col-resize { position:absolute; top:0; bottom:0; right:-5px; width:11px; cursor:col-resize; z-index:5; }
+        .aal-col-resize::after { content:''; position:absolute; left:4px; top:2px; bottom:2px; width:2px; border-radius:1px; background:rgba(255,255,255,0.16); transition:background 0.12s, box-shadow 0.12s; }
+        .aal-col-resize:hover::after, .aal-col-resize.aal-col-dragging::after { background:#3fe089; box-shadow:0 0 5px rgba(63,224,137,0.6); }
+        .aal-row { display:grid; border-bottom:1px solid rgba(255,255,255,0.05); }
+        .aal-row:hover { background:rgba(0,200,255,0.07); }
+        .aal-cell { padding:5px 9px; font-size:1.05rem; color:#dce6f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+        .aal-cell.aal-clk { cursor:pointer; }
+        .aal-cell.aal-clk:hover { color:#4fd2ff; text-decoration:underline; }
+        .aal-c-apt { color:#eaf4ff; font-weight:600; }
+        .aal-c-right { text-align:right; }
+        .aal-av-yes { color:#3fe089; } .aal-av-no { color:#e58c8c; } .aal-av-soon { color:#e0a64a; }
+        .aal-empty { padding:18px; text-align:center; color:#7d8ea3; font-size:1.08rem; }
+        .aal-foot { padding:5px 11px 7px; border-top:1px solid rgba(255,255,255,0.1); font-size:0.8rem; letter-spacing:0.02em;
+          color:rgba(255,255,255,0.4); flex-shrink:0; }
+        /* Filter popover */
+        #aaListFilterPop { position:absolute; z-index:1100; display:none; background:rgba(13,20,30,0.98);
+          border:1px solid rgba(46,204,113,0.5); border-radius:8px; box-shadow:0 6px 22px rgba(0,0,0,0.6);
+          padding:9px; width:236px; box-sizing:border-box; font-family:'Rajdhani',sans-serif; pointer-events:all; }
+        #aaListFilterPop.aal-pop-open { display:block; }
+        .aal-pop-hd { font-family:'Orbitron',sans-serif; font-size:0.86rem; font-weight:700; color:#3fe089; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:6px; }
+        .aal-pop-hint { font-size:0.96rem; color:#8b9aab; margin-bottom:6px; line-height:1.3; }
+        .aal-pop-search { width:100%; box-sizing:border-box; background:#0a121c; border:1px solid rgba(255,255,255,0.16); border-radius:6px; padding:6px 8px; color:#eef3f8; font-family:'Rajdhani',sans-serif; font-size:1.05rem; margin-bottom:6px; }
+        .aal-pop-search:focus { outline:none; border-color:#2ecc71; }
+        .aal-pop-tools { display:flex; gap:12px; margin-bottom:5px; }
+        .aal-pop-tools button { background:none; border:none; color:#4fd2ff; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600; padding:0; }
+        .aal-pop-tools button:hover { color:#8fe3ff; }
+        .aal-pop-list { max-height:248px; overflow:auto; border:1px solid rgba(255,255,255,0.1); border-radius:6px; background:rgba(0,0,0,0.18); }
+        .aal-pop-item { display:flex; align-items:center; gap:7px; padding:4px 8px; font-size:1.05rem; color:#eaf0f6; cursor:pointer; }
+        .aal-pop-item:hover { background:rgba(255,255,255,0.07); }
+        .aal-pop-item input { accent-color:#2ecc71; width:14px; height:14px; margin:0; cursor:pointer; flex-shrink:0; }
+        .aal-pop-vtxt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .aal-pop-cnt { margin-left:auto; color:#8b9aab; font-size:0.95rem; flex-shrink:0; }
+        .aal-pop-cat { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+        .aal-catbtn { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); color:#c2cedb; border-radius:5px;
+          padding:3px 9px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:1.0rem; font-weight:600; }
+        .aal-catbtn.on { background:#2ecc71; color:#06351f; border-color:#2ecc71; }
+      </style>
+      <div id="aaListPanel" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+        <div class="aal-rz aal-rz-t" onpointerdown="_aaListResizeStart(event,'n')"></div>
+        <div class="aal-rz aal-rz-b" onpointerdown="_aaListResizeStart(event,'s')"></div>
+        <div class="aal-rz aal-rz-l" onpointerdown="_aaListResizeStart(event,'w')"></div>
+        <div class="aal-rz aal-rz-r" onpointerdown="_aaListResizeStart(event,'e')"></div>
+        <div class="aal-rz aal-rz-tl" onpointerdown="_aaListResizeStart(event,'nw')"></div>
+        <div class="aal-rz aal-rz-tr" onpointerdown="_aaListResizeStart(event,'ne')"></div>
+        <div class="aal-rz aal-rz-bl" onpointerdown="_aaListResizeStart(event,'sw')"></div>
+        <div class="aal-rz aal-rz-br" onpointerdown="_aaListResizeStart(event,'se')"></div>
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;" onpointerdown="_aaListDragFromHandle(event)" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span class="aal-title">📋 AIRCRAFT LISTING</span></span>
+          <span style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+            <span class="aal-opac" title="Panel opacity"><span class="aal-opac-ico" aria-hidden="true">◐</span><input type="range" id="aaListOpacity" min="10" max="100" step="5" value="100" oninput="_aaListSetOpacity(this.value)" title="Drag to set panel opacity (10–100%)"></span>
+            <button onclick="_aaListClosePanel()" title="Close the Aircraft Listing — the map filter clears" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          </span>
+        </div>
+        <div class="aal-toolbar">
+          <span class="aal-summary" id="aaListSummary"></span>
+          <button class="aal-reset" onclick="_aaListReset()" title="Clear all column filters and show every aircraft again">↺ Reset</button>
+        </div>
+        <div class="aal-tablewrap" id="aaListTableWrap">
+          <div class="aal-grid" id="aaListGrid">
+            <div class="aal-head" id="aaListHead">
+              <div class="aal-th" data-col="apt"><span class="aal-th-lbl" onclick="_aaListHeaderSort('apt')" title="Sort A–Z / Z–A">Airport<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'apt')" title="Filter: minimum airport category + choose airports">▾</span></div>
+              <div class="aal-th" data-col="aptOwner"><span class="aal-th-lbl" onclick="_aaListHeaderSort('aptOwner')" title="Sort A–Z / Z–A">Airport Owner<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'aptOwner')" title="Filter by airport owner">▾</span></div>
+              <div class="aal-th" data-col="acIcao"><span class="aal-th-lbl" onclick="_aaListHeaderSort('acIcao')" title="Sort A–Z / Z–A">Aircraft<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'acIcao')" title="Filter by aircraft ICAO">▾</span></div>
+              <div class="aal-th" data-col="mfr"><span class="aal-th-lbl" onclick="_aaListHeaderSort('mfr')" title="Sort A–Z / Z–A">Manufacturer<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'mfr')" title="Filter by manufacturer">▾</span></div>
+              <div class="aal-th" data-col="type"><span class="aal-th-lbl" onclick="_aaListHeaderSort('type')" title="Sort A–Z / Z–A">Type<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'type')" title="Filter by aircraft type">▾</span></div>
+              <div class="aal-th" data-col="acOwner"><span class="aal-th-lbl" onclick="_aaListHeaderSort('acOwner')" title="Sort A–Z / Z–A">Aircraft Owner<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'acOwner')" title="Filter by aircraft owner">▾</span></div>
+              <div class="aal-th" data-col="payout"><span class="aal-th-lbl" onclick="_aaListHeaderSort('payout')" title="Sort low–high / high–low">Payout %<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'payout')" title="Set a minimum pilot payout %">▾</span></div>
+              <div class="aal-th" data-col="avail"><span class="aal-th-lbl" onclick="_aaListHeaderSort('avail')" title="Sort by availability">Available<span class="aal-th-arr"></span></span><span class="aal-th-filt" onclick="_aaListOpenFilter(event,'avail')" title="Filter by Yes / No">▾</span></div>
+              <div class="aal-th" data-col="availTime"><span class="aal-th-lbl" onclick="_aaListHeaderSort('availTime')" title="Sort by time available">Avail Time (Local)<span class="aal-th-arr"></span></span></div>
+            </div>
+            <div class="aal-rows" id="aaListRows"></div>
+          </div>
+        </div>
+        <div class="aal-foot" id="aaListFreshness">↻ Aircraft data syncing…</div>
+      </div>
+      <div id="aaListFilterPop" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"></div>
 
       <!-- Aircraft rentals palette editor (v3.50.0) — right-click the gradient bar. -->
       <div id="aaRentPaletteEditor" style="display:none;position:absolute;z-index:1004;background:rgba(13,20,30,0.97);border:1px solid rgba(46,204,113,0.42);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;width:416px;box-sizing:border-box;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
