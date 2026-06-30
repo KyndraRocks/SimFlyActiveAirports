@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.67.4**
+**Current version: v3.68.0**
 
 ---
 
@@ -49,6 +49,16 @@ Every airport tooltip (and the departure/arrival cards in the distance matrix) g
 A faint dotted green line links your selected airport to each of those rentable airports — styled so it can't be mistaken for a route, a measurement, or a distance line. If a rentable airport is **off-screen**, the line runs to the edge of the map and its badge waits there pointing toward it; **click or tap that edge badge to pan the map and center the airport**. And when you pan to one of those airports so your selected **departure or arrival** scrolls off-screen, its line gets a badge at the edge too — **cyan for the departure, orange for the arrival** — so you always know where the line leads back to; click it to pan straight back. Departure and arrival are handled independently, so each draws its own lines and badges; edge badges keep working as you pan and zoom, spread apart so they never overlap, and a badge's hover card always opens clear of the badge.
 
 The badges behave like airport dots: **hover one** for the standard airport tooltip, and use the two quick-action icons that appear — a **take-off plane (🛫) to set that airport as your departure**, a **landing plane (🛬) to set it as your arrival** (always visible on touch). As of v3.61.0, the **🛫 icon also chains a route**: if a departure is already selected when you tap 🛫 on another badge, the previous departure automatically slides into the arrival slot — so tapping 🛫 on one badge after another builds a route (the airport you just tapped becomes the departure, the one before it the arrival). This applies only to the badge's 🛫 icon; the 🛬 icon and every other way of setting a departure are unchanged. When no aircraft is selected, the Display-menu row instead reads **Select Aircraft** and, when clicked, closes the map and opens the aircraft selector — dimming the rest of the planner so you can focus on choosing one (since the aircraft drives time estimates, airport suitability, and alternate-airport recommendations).
+
+### File on SimBrief — Go / No-Go Button
+New in v3.68.0 — both **File on SimBrief** buttons (the one on the main planner and the floating route pill on the map) are now a live "stop-sign" that fills with a high-contrast color showing the health of your current departure → arrival route for the selected aircraft, so you can read the go/no-go at a glance before filing:
+
+- **Green** — good to go: the aircraft clears suitability at both ends (runway length, range, category), the weather is VFR, rotations are available, and the aircraft isn't stranded elsewhere in the owner's fleet.
+- **Blue (glowing)** — everything green *and* your selected aircraft is rentable right now at the departure airport; the button pulses and the tooltip tells you it's waiting there.
+- **Amber** — caution: 3 or fewer rotations left at an endpoint, non-VFR (MVFR/IFR) weather, strong or gusting surface wind, or a thin range margin (the route uses most of the aircraft's range).
+- **Red** — not recommended: the aircraft is unsuitable for the departure or arrival, or an endpoint has zero weekly rotations left.
+
+Hover the button for the details. An amber tooltip separates genuine **Cautions** (weather, wind, low rotations, thin range — each spelled out with the actual numbers, e.g. *route 540 nm exceeds C750 range 150 nm* or *IFR — ceiling 600 ft, vis 2 SM*) from informational **Notes** — handy opportunities like "your aircraft is available at the arrival, consider swapping" or "the arrival airport owner has a C750 at LIRQ." If departure and arrival are the same airport the button simply disables (a zero-distance route can't be filed).
 
 ### Flight Time Calibration
 Calibrate any aircraft with two reference flights — a short one and a long one, each entered as distance (nm) and elapsed time (minutes) read off the SimFly UI — and the app shows an estimated en-route time wherever distance appears: on route lines, the map, measurements, and airport cards. As of v3.59.0 this lives in a clearly highlighted ⏱ card in the aircraft panel (it turns amber until the selected aircraft is calibrated, cyan once it is) since it feeds estimates used throughout the app. Calibration is saved per aircraft in your browser.
