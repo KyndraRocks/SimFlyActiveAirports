@@ -5108,9 +5108,14 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   body.light-mode .sl-map-banner-done:hover { background:rgba(200,160,0,0.25); }
   #rgSceneryBtn.sl-paint-active { background:rgba(0,200,255,0.14); border-color:rgba(0,200,255,0.6); color:var(--accent); }
   /* Toast */
-  #slToast { position:fixed; bottom:2.2rem; left:50%; transform:translateX(-50%) translateY(0.8rem); background:rgba(16,22,34,0.93); color:#fff; font-family:'Rajdhani',sans-serif; font-size:0.97rem; font-weight:600; padding:0.42rem 1.15rem; border-radius:20px; border:1px solid rgba(0,200,255,0.38); pointer-events:none; opacity:0; transition:opacity 0.18s, transform 0.18s; z-index:30000; white-space:nowrap; }
+  #slToast { position:fixed; bottom:2.2rem; left:50%; transform:translateX(-50%) translateY(0.8rem); background:rgba(16,22,34,0.93); color:#fff; font-family:'Rajdhani',sans-serif; font-size:0.97rem; font-weight:600; padding:0.42rem 0.6rem 0.42rem 1.15rem; border-radius:20px; border:1px solid rgba(0,200,255,0.38); pointer-events:none; opacity:0; transition:opacity 0.18s, transform 0.18s; z-index:30000; white-space:nowrap; display:inline-flex; align-items:center; gap:0.6rem; }
   body.light-mode #slToast { background:rgba(235,240,250,0.96); color:#111; border-color:rgba(0,120,200,0.4); }
   #slToast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  /* Shared toast close (✕) button — used by #slToast and #aaRtToast. Only
+     clickable while the toast is shown so a faded-out toast never eats clicks. */
+  .toast-close { display:inline-flex; align-items:center; justify-content:center; width:1.25rem; height:1.25rem; flex:0 0 auto; border-radius:50%; border:1px solid currentColor; background:transparent; color:inherit; font-family:'Rajdhani',sans-serif; font-size:0.85rem; line-height:1; cursor:pointer; opacity:0.7; pointer-events:none; transition:opacity 0.12s, background 0.12s; }
+  .toast-close:hover { opacity:1; background:rgba(255,255,255,0.16); }
+  #slToast.show .toast-close, #aaRtToast.show .toast-close { pointer-events:auto; }
   .sl-autocomplete { position:fixed; z-index:11000; background:var(--surface); border:1px solid var(--border); border-radius:4px; box-shadow:0 4px 18px rgba(0,0,0,0.7); max-height:170px; overflow-y:auto; min-width:10rem; }
   .sl-ac-item { padding:0.28rem 0.65rem; cursor:pointer; font-family:'Courier New',Courier,monospace; font-size:0.87rem; color:var(--text); white-space:nowrap; }
   .sl-ac-item:hover, .sl-ac-item.sl-ac-hi { background:rgba(0,200,255,0.15); color:var(--accent); }
@@ -8843,7 +8848,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.68.0';
+const APP_VERSION = '3.69.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12566,6 +12571,7 @@ function _aaRtToastDismiss() {
   const el = document.getElementById('aaRtToast');
   if (el) {
     el.style.opacity = '0';
+    el.classList.remove('show');   // disables the ✕ button's pointer-events
     // v3.13.1 — the toast was created with pointer-events:auto (so it
     // accepts the click-to-dismiss gesture). Resetting it here is what
     // keeps an invisible faded-out toast from eating clicks meant for the
@@ -12582,14 +12588,30 @@ function _aaRtToast(msg, kind) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'aaRtToast';
-    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;pointer-events:none;cursor:pointer;';
+    el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483646;padding:10px 12px 10px 14px;border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.88rem;color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.45);opacity:0;transition:opacity 0.18s;max-width:340px;pointer-events:none;cursor:pointer;display:flex;align-items:center;gap:10px;';
     el.addEventListener('click', _aaRtToastDismiss);
+    // Message span (textContent only) + ✕ close button.
+    const span = document.createElement('span');
+    span.className = 'toast-msg';
+    span.style.flex = '1 1 auto';
+    const x = document.createElement('button');
+    x.className = 'toast-close';
+    x.type = 'button';
+    x.textContent = '✕';
+    x.title = 'Dismiss';
+    x.setAttribute('aria-label', 'Dismiss notification');
+    // The whole pill is click-to-dismiss; the ✕ does the same. stopPropagation
+    // keeps it a single dismiss, not a double-fire.
+    x.addEventListener('click', (ev) => { ev.stopPropagation(); _aaRtToastDismiss(); });
+    el.appendChild(span);
+    el.appendChild(x);
     document.body.appendChild(el);
   }
   const bg = kind === 'err' ? 'rgba(180,40,60,0.95)' : kind === 'warn' ? 'rgba(180,120,20,0.95)' : 'rgba(20,120,80,0.95)';
   el.style.background = bg;
-  el.textContent = msg;
+  el.querySelector('.toast-msg').textContent = msg;
   el.style.pointerEvents = 'auto';
+  el.classList.add('show');   // enables the ✕ button's pointer-events
   requestAnimationFrame(() => { el.style.opacity = '1'; });
   if (_aaRtToastTmr) clearTimeout(_aaRtToastTmr);
   _aaRtToastDeadline = Date.now() + 4000;
@@ -29135,13 +29157,35 @@ function _slToggleFromMap(icao) {
   setTimeout(_rgApplySceneryState, 0);
 }
 
+function _slDismissToast() {
+  const t = document.getElementById('slToast');
+  if (t) t.classList.remove('show');
+  if (_slToastTmr) { clearTimeout(_slToastTmr); _slToastTmr = null; }
+}
 function _slShowToast(msg) {
   const t = document.getElementById('slToast');
   if (!t) return;
-  t.textContent = msg;
+  // Build message span + ✕ close button once, then reuse. Message goes through
+  // textContent (never innerHTML) so toast text can't inject markup.
+  let span = t.querySelector('.toast-msg');
+  if (!span) {
+    t.textContent = '';
+    span = document.createElement('span');
+    span.className = 'toast-msg';
+    const x = document.createElement('button');
+    x.className = 'toast-close';
+    x.type = 'button';
+    x.textContent = '✕';
+    x.title = 'Dismiss';
+    x.setAttribute('aria-label', 'Dismiss notification');
+    x.addEventListener('click', _slDismissToast);
+    t.appendChild(span);
+    t.appendChild(x);
+  }
+  span.textContent = msg;
   t.classList.add('show');
   if (_slToastTmr) clearTimeout(_slToastTmr);
-  _slToastTmr = setTimeout(() => { t.classList.remove('show'); _slToastTmr = null; }, 2300);
+  _slToastTmr = setTimeout(_slDismissToast, 2300);
 }
 
 function _slEnterMapMode() {
@@ -29636,6 +29680,7 @@ const _MSF_SETTINGS_REGISTRY = {
   'simfly_aa_afk_dp_collapsed':       { label:'Data panel collapsed state',    group:'Alert defaults & settings' },
   // Tools & misc
   'simfly_aa_random_opts':            { label:'Random flight options',         group:'Tools & misc' },
+  'simfly_aa_meas_lockdist':          { label:'Measurement lock-distance mode', group:'Tools & misc' },
   'simfly_aa_demo_bar_collapsed':     { label:'Demo control-bar state',        group:'Tools & misc' },
   'simfly_aa_update_dismissed':       { label:'Update banner dismissed',       group:'Tools & misc' },
   'simfly_aa_scenery_prefs':          { label:'Scenery Library view prefs',    group:'Tools & misc' },
@@ -31693,6 +31738,18 @@ let _rgMeasureLabel  = null;
 let _rgMeasureDraw   = false;
 let _rgMeasureSaved  = [];     // [{line,circle,label}] frozen measurements
 let _rgMeasureLinesOnly = false; // true = hide every measurement ring, show only the connecting lines
+// v3.69.0 — "Lock Distance" mode. When ON, dragging a standalone measurement to
+// a new location slides it as a constant-heading RHUMB LINE: it keeps its true
+// heading and (loxodromic) length instead of rigidly translating its lat/lng
+// degree offset. The legacy rigid move silently changes both the reported
+// distance AND the on-screen heading with latitude (a fixed °-longitude offset
+// spans fewer nm toward the poles); an early great-circle-only attempt fixed the
+// distance but let the line swing up to ~60° because a long geodesic re-aimed at
+// high latitude curves over a pole. A rhumb line draws straight on Mercator, so
+// it never rotates at any latitude, and its length matches the great-circle
+// distance to within <0.15% for realistic measurements. Persisted across
+// reloads. See _rgRhumbBearing/_rgRhumbDistanceNm/_rgRhumbDest + m.rhumb.
+let _rgMeasureLockDist = (() => { try { return localStorage.getItem('simfly_aa_meas_lockdist') === '1'; } catch (_) { return false; } })();
 let _rgMeasureDecl   = null;   // null=loading | {decl,approx} once resolved
 let _rgMeasureLastLL = null;   // last toLL — used to refresh label after async fetch
 // Cached reference to the live label's outer wrap div (the `<div
@@ -31972,6 +32029,7 @@ function _rgToggleMeasure() {
   const linesBtn = document.getElementById('rgRulerLinesBtn');
   if (linesBtn) linesBtn.style.display = _rgMeasureActive ? '' : 'none';
   _rgUpdateMeasureLinesBtn();
+  _rgUpdateMeasureLockDistBtn();
   if (!_rgMeasureActive) {
     _rgClearMeasureLive(); // keep saved measurements visible; just stop in-progress
     _rgChainAnchor = null; _rgChainPrevSeg = null; // toggling off ends any open route
@@ -32015,6 +32073,32 @@ function _rgUpdateMeasureLinesBtn() {
 function _rgApplyMeasureCircleVisibility() {
   if (_rgMeasureCircle && _rgMeasureOrigin && _rgMeasureLastLL) _rgUpdateMeasure(_rgMeasureLastLL);
   for (let i = 0; i < _rgMeasureSaved.length; i++) _rgRedrawMeasureEntry(i);
+}
+
+// Toggle "Lock Distance" mode (v3.69.0). On = relocating a standalone
+// measurement keeps its measured great-circle distance; off = legacy rigid
+// lat/lng translation (distance drifts with latitude). Persisted so the choice
+// sticks across reloads. Saved measurements are NOT re-shaped on toggle — the
+// mode only governs how the NEXT center-drag behaves.
+function _rgToggleMeasureLockDist() {
+  _rgMeasureLockDist = !_rgMeasureLockDist;
+  try { localStorage.setItem('simfly_aa_meas_lockdist', _rgMeasureLockDist ? '1' : '0'); } catch (_) {}
+  _rgUpdateMeasureLockDistBtn();
+}
+
+// The Lock Distance button is an on/off toggle (unlike the Distance Ring / Line
+// state-indicator): the lock glyph and `.active` class reflect the current mode.
+function _rgUpdateMeasureLockDistBtn() {
+  const btn = document.getElementById('rgRulerLockDistBtn');
+  if (!btn) return;
+  btn.classList.toggle('active', _rgMeasureLockDist);
+  if (_rgMeasureLockDist) {
+    btn.innerHTML = '🔒 <span class="rg-btn-label">Lock Distance</span>';
+    btn.title = 'Moving a measurement keeps a constant true heading and its measured distance — click to let them change with map scale';
+  } else {
+    btn.innerHTML = '🔓 <span class="rg-btn-label">Lock Distance</span>';
+    btn.title = 'Moving a measurement lets its heading and distance shift with map scale — click to lock a constant heading and the measured distance';
+  }
 }
 
 function _rgClearMeasureLive() {
@@ -35213,6 +35297,55 @@ function _rgDestLL(lat, lng, bearingDeg, nm) {
   return L.latLng(φ2 * 180 / Math.PI, lngDeg);
 }
 
+// ── Rhumb-line (loxodrome) helpers — used by the measurement "Lock Distance"
+// mode (v3.69.1). A rhumb line holds a single constant true bearing along its
+// whole length and plots as a straight segment on the Web-Mercator map, so a
+// measurement re-laid from a new origin at the same rhumb bearing never rotates
+// on screen — unlike a great circle, whose initial bearing is preserved but
+// whose drawn chord can swing dramatically (up to ~60°) when a long line is
+// moved to high latitude and curves over a pole. Formulae per Ed Williams /
+// Movable-Type; R in nautical miles to match _haversineNm / _rgDestLL.
+const _RG_EARTH_NM = 3440.065;
+
+// Constant true bearing (deg, 0–360) of the rhumb line from 1 → 2.
+function _rgRhumbBearing(lat1, lng1, lat2, lng2) {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  let Δλ = (lng2 - lng1) * Math.PI / 180;
+  const Δψ = Math.log(Math.tan(Math.PI / 4 + φ2 / 2) / Math.tan(Math.PI / 4 + φ1 / 2));
+  // Take the shorter way round the globe (e.g. across the antimeridian).
+  if (Math.abs(Δλ) > Math.PI) Δλ = Δλ > 0 ? -(2 * Math.PI - Δλ) : (2 * Math.PI + Δλ);
+  return (Math.atan2(Δλ, Δψ) * 180 / Math.PI + 360) % 360;
+}
+
+// Loxodromic (rhumb) distance in nm from 1 → 2.
+function _rgRhumbDistanceNm(lat1, lng1, lat2, lng2) {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = φ2 - φ1;
+  let Δλ = Math.abs((lng2 - lng1) * Math.PI / 180);
+  if (Δλ > Math.PI) Δλ = 2 * Math.PI - Δλ;
+  const Δψ = Math.log(Math.tan(Math.PI / 4 + φ2 / 2) / Math.tan(Math.PI / 4 + φ1 / 2));
+  // q is the relation Δφ/Δψ; near an E–W line Δψ→0 so fall back to cos φ.
+  const q = Math.abs(Δψ) > 1e-12 ? Δφ / Δψ : Math.cos(φ1);
+  return Math.sqrt(Δφ * Δφ + q * q * Δλ * Δλ) * _RG_EARTH_NM;
+}
+
+// Destination reached by following a constant true bearing `brgDeg` for `nm`
+// nautical miles from (lat,lng). Returns an L.latLng with longitude normalised
+// to [-180,180), matching _rgDestLL so handles / hit-tests stay in sync.
+function _rgRhumbDest(lat, lng, brgDeg, nm) {
+  const δ = nm / _RG_EARTH_NM, θ = brgDeg * Math.PI / 180, φ1 = lat * Math.PI / 180;
+  const Δφ = δ * Math.cos(θ);
+  let φ2 = φ1 + Δφ;
+  // Clamp at the poles — a constant-heading line can't continue past 90°.
+  if (Math.abs(φ2) > Math.PI / 2) φ2 = φ2 > 0 ? (Math.PI / 2 - 1e-9) : -(Math.PI / 2 - 1e-9);
+  const Δψ = Math.log(Math.tan(Math.PI / 4 + φ2 / 2) / Math.tan(Math.PI / 4 + φ1 / 2));
+  const q  = Math.abs(Δψ) > 1e-12 ? Δφ / Δψ : Math.cos(φ1);
+  const Δλ = δ * Math.sin(θ) / q;
+  const λ2 = lng * Math.PI / 180 + Δλ;
+  const lngDeg = ((((λ2 * 180 / Math.PI) % 360) + 540) % 360) - 180;
+  return L.latLng(φ2 * 180 / Math.PI, lngDeg);
+}
+
 // True geodesic circle of radius `nm` around (lat,lng), returned as one or
 // more polyline point-arrays — split wherever consecutive samples cross the
 // ±180° antimeridian so Leaflet never draws a wrap-around segment. Leaflet's
@@ -35371,8 +35504,11 @@ function _rgRedrawMeasureEntry(i) {
   const m = _rgMeasureSaved[i];
   if (!m) return;
   const { origin, toLL } = m;
-  const nm      = _haversineNm(origin.lat, origin.lng, toLL.lat, toLL.lng);
-  const trueBrg = _rgTrueBearing(origin.lat, origin.lng, toLL.lat, toLL.lng);
+  // A Lock-Distance-moved measurement (m.rhumb set) is a rhumb line: show its
+  // constant true heading + rhumb length rather than recomputing a great-circle
+  // bearing/distance from the moved endpoints (which would drift as it moves).
+  const nm      = m.rhumb ? m.rhumb.distNm : _haversineNm(origin.lat, origin.lng, toLL.lat, toLL.lng);
+  const trueBrg = m.rhumb ? m.rhumb.brg    : _rgTrueBearing(origin.lat, origin.lng, toLL.lat, toLL.lng);
   const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
   let mbPart;
   if (!m.decl) {
@@ -35408,7 +35544,9 @@ function _rgRedrawMeasureEntry(i) {
     ? toLL
     : (crossesAM
         ? L.latLng((origin.lat + toLL.lat) / 2, (origin.lng + toLL.lng) / 2)
-        : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.5));
+        : (m.rhumb
+            ? _rgRhumbDest(origin.lat, origin.lng, trueBrg, nm * 0.5)   // on the straight rhumb segment
+            : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.5)));
   const wrapTransform = dragging ? 'translate(-50%,18px)' : 'translate(-50%,-50%)';
   // ✕ close badge — anchored to the distance label so it tracks the tooltip
   // and never conflicts with the ring, line, pin or edge handle.
@@ -35631,12 +35769,36 @@ function _rgApplyDrag(e) {
       }
       _rgUpdateRouteTotals();
     } else {
-      // Standalone measurement: translate the whole circle rigidly —
-      // direction and distance are preserved.
-      const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
-      const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
+      // Standalone measurement: relocate the whole circle.
       m.origin = newOrigin;
-      m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
+      if (_rgMeasureLockDist) {
+        // Lock Distance: slide the measurement as a rigid RHUMB LINE — keep the
+        // original constant true heading (rhumb bearing) and the rhumb length.
+        // A rhumb line plots as a straight Mercator segment whose on-screen
+        // angle IS its constant true bearing, so re-laying it from any origin at
+        // the same bearing never rotates the drawn line. (The earlier attempt —
+        // preserving the great-circle initial bearing — let the line swing up to
+        // ~60° because a long geodesic re-aimed at high latitude curves over the
+        // pole and its endpoint lands on the far side of the map.) The rhumb
+        // length differs from the great-circle distance by <0.15% for any
+        // realistic measurement, so the locked distance is effectively held while
+        // the heading stays exactly constant. `m.rhumb` flags the entry so the
+        // redraw shows the constant heading + rhumb length instead of recomputing
+        // a (drifting) great-circle bearing from the moved endpoints.
+        const s  = _rgDragMeasSnap;
+        const B0 = _rgRhumbBearing(s.origin.lat, s.origin.lng, s.toLL.lat, s.toLL.lng);
+        const D0 = _rgRhumbDistanceNm(s.origin.lat, s.origin.lng, s.toLL.lat, s.toLL.lng);
+        const dest = _rgRhumbDest(newOrigin.lat, newOrigin.lng, B0, D0);
+        m.toLL  = { lat: dest.lat, lng: dest.lng };
+        m.rhumb = { brg: B0, distNm: D0 };
+      } else {
+        // Legacy rigid translation — holds the lat/lng degree offset constant;
+        // both distance and heading drift with latitude.
+        const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
+        const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
+        m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
+        m.rhumb  = null;  // reverts to great-circle readout
+      }
       _rgRedrawMeasureEntry(idx);
     }
 
@@ -35659,6 +35821,7 @@ function _rgApplyDrag(e) {
     } else {
       m.toLL = { lat: e.latlng.lat, lng: e.latlng.lng };
     }
+    m.rhumb = null;  // explicit resize/rotate redefines the line → great-circle readout
     _rgRedrawMeasureEntry(idx);
     // Route circle: the edge handle is the shared waypoint with the next
     // leg — drag that leg's origin along so the route stays conjoined.
@@ -44487,7 +44650,7 @@ function rgSendToFlightPlanner() {
             <strong>METAR on route assignment</strong> — clicking an airport dot to set the route departure or arrival automatically fetches that airport's current METAR (via the CheckWX API, with the same nearest-station fallback as the bulk <em>⛅ Get Weather</em> button). When the data arrives, the airport's dot tooltip on the region map gains a compact weather row beneath the existing scenery / developer rows: a colored VFR / MVFR / IFR / LIFR pill, wind in <em>DDD°/KKkt</em> form, and visibility. Cached METARs (30-minute TTL) are reused, so re-selecting the same airport doesn't repeat the API call.<br/><br/>
             <strong>Route ICAO chips</strong> — when a departure and arrival airport are selected via dot-click routing, their ICAOs are shown in the header. <strong>Hover either chip</strong> to see the full airport tooltip: name, owner, category, elevation, runway details, and weather (if fetched). When an aircraft is selected, each chip&rsquo;s tooltip also shows that airport&rsquo;s suitability verdict for its role &mdash; takeoff for the departure, landing for the arrival, with the arrival adding an in-range / out-of-range check against the aircraft&rsquo;s range &mdash; matching the main-screen matrix tooltips. Owned airports remain clickable SimFly detail links; non-owned airports show the tooltip but no link. The <strong>⇄</strong> button between the two chips swaps departure and arrival in one click — same handler updates the route line, matrix highlight, and main-screen ICAO inputs.<br/><br/>
             <strong>Adjust a drawn region</strong> — after both circles are down, drag a region&rsquo;s <strong>center pin</strong> to move it, or drag its <strong>edge handle</strong> to resize it. While resizing, the live radius (&ldquo;N nm&rdquo;) floats next to the cursor (v3.6.3), the same readout shown during the initial draw.<br/><br/>
-            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle still translates the whole circle, preserving its direction and distance. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle, a resize arrow over an edge handle, and a pointer over the close ✕ badge. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map. A plain <strong>right-click on an empty part of the map</strong> also exits measurement mode (right-click drag still pans; right-clicking a dot still opens its radial menu).<br/><br/>
+            <strong>Measurement</strong> — click <strong>📐 Measurement</strong> in the header to activate the ruler. Click and drag anywhere on the map to draw a radius spoke (with tick marks at its 25%, 50% and 75% points) and range circle; the label shows distance, true bearing, and magnetic bearing (sourced from the NOAA WMM API). Distance units adapt to scale: at 20,000 ft and under the label shows feet and meters; above that threshold it shows nm and km (2 decimal places up to 100 nm, whole numbers above). If the drag reaches the edge of the map, the view auto-scrolls in that direction so the circle's radius can grow beyond the visible area. Release to freeze the measurement — it stays visible until explicitly cleared. Draw additional measurements; all stack simultaneously. A header toggle (shown whenever measurement mode is active) switches the display between <strong>◯ Distance Ring</strong> — the full radius circle — and <strong>╱ Distance Line</strong> — just the connecting lines, origin pins and labels; the button label always shows the current mode. Hiding the rings keeps a busy multi-segment route readable, and the setting applies to measurements drawn afterwards. <strong>Continuous-path routes</strong> — to measure a multi-stop path, finish a circle, then release the mouse and <em>immediately click again</em>: the new circle starts exactly where the last one ended, building a conjoined route leg by leg. The quick re-click is what continues the route; pause for a moment before clicking and the just-drawn circle behaves normally instead (its handles become available for resizing). Once a route has two or more legs, a distinct accent-bordered <strong>route total chip</strong> appears at its end showing the cumulative distance (<em>Σ total</em>, in both nm and km), the leg count, and the straight-line <em>direct</em> distance from start to end — so you can see how far the path deviates from a direct great-circle line. Saved measurements are <strong>movable and resizable</strong>: grab the <strong>origin pin</strong> (center handle) or the <strong>edge handle</strong> (the grip at the line's endpoint) to drag that point — the edge handle <em>both resizes and rotates</em>, distance and bearing following the cursor together. For a circle that belongs to a route, both handles act as <em>waypoint movers</em>: dragging one shifts the shared point so the adjacent legs follow and the route stays conjoined, with the total chip updating live. A standalone (non-route) measurement's center handle moves the whole circle. By default the circle drags rigidly, which means both its reported distance and its on-screen heading shift as you move it &mdash; that's map scale at work, and it gets pronounced for long lines (a long measurement moved toward higher latitudes can visibly swing by tens of degrees). Turn on the <strong>🔓 Lock Distance</strong> toggle in the measurement toolbar and a relocated standalone measurement holds a <em>constant true heading and its measured distance</em>: it slides as a constant-heading line (a rhumb line &mdash; the straight line a navigator plots on a chart), so it never rotates no matter where you move it, at any latitude, and the distance label stays within a fraction of a percent of your original measurement. The Lock Distance setting is remembered across reloads and saved in your Master Save File; it applies to standalone measurements only (route legs always pivot around their shared waypoints). Resizing a locked measurement by its edge handle returns it to normal great-circle behaviour. Each measurement also has a <strong>✕ close badge</strong> on the corner of its distance label — clicking it removes that circle. The badge rides the label, so it stays reachable even when the ring is hidden and never overlaps the line or handles. A standalone measurement simply disappears; deleting a circle from the <em>middle</em> of a route closes the gap automatically — the following leg re-anchors onto the previous leg's endpoint so the route stays one continuous chain with one fewer leg. Deleting the first or last leg of a route just trims that end. In measurement mode the cursor stays a crosshair, changing to a grab hand over an origin / move handle, a resize arrow over an edge handle, and a pointer over the close ✕ badge. The ✕ badge on each distance label is the per-measurement removal control; <strong>✕ Clear All</strong> appears in the header whenever one or more measurements are on the map and wipes them all in one click. The distance / bearing label sits centered on the line for normal-length measurements, but auto-shifts below the line for short ones so the origin pin and edge handle stay fully visible. Starting a new region selection (<em>⊙ Select Regions</em>) automatically toggles measurement mode off so the two workflows don't compete for left-click — saved measurements stay on the map. A plain <strong>right-click on an empty part of the map</strong> also exits measurement mode (right-click drag still pans; right-clicking a dot still opens its radial menu).<br/><br/>
             <strong>Right-mouse drag the map</strong> to pan, in any phase or mode. Left-click is always owned by whatever workflow is active (region draw, measurement draw, dot click, handle drag); right-mouse drag is the universal pan affordance so you can navigate the map without exiting what you're doing. A pure right-click without dragging preserves its pre-existing meaning &mdash; <em>opens the airport radial menu</em> over an airport dot in explore / results phases (double right-click jumps straight to the Quick-Rate popover), <em>cancels the in-progress region selection</em> during region drawing, and <em>exits measurement mode</em> when made on an empty area of the map while measuring.<br/><br/>
             Use <strong>↩ Undo</strong> to step back one phase (removes the last region drawn). Click <strong>⊙ DONE</strong> (results phase only) to collapse the distance matrix and return to free map exploration — region circles stay on the map so you can still reference them. Click <strong>⊙ Select Regions</strong> to start a fresh selection (this clears any previous circles). Use <strong>✕ Close</strong> to exit Region Mode entirely. The main-screen <strong>✕ Reset</strong> button also closes Region Mode and clears all region state.
           </div>
@@ -44850,10 +45013,35 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.69.1</span>
+          <span class="release-date">June 29, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Toast notifications now have an ✕ close button.</strong> The little pop-up messages (Recip Tracker saves, FSUIPC status, live-flight logging, Scenery Library actions, and the rest) used to only fade out on their own &mdash; and could occasionally linger on screen if the browser throttled the timer while AA was in the background. Each toast now carries an <strong>✕</strong> you can click to dismiss it instantly.</li>
+          <li><strong>Lingering toasts can no longer block clicks.</strong> The close button is only active while the toast is actually visible, so a faded-out toast never sits invisibly on top of the buttons behind it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.69.0</span>
+          <span class="release-date">June 29, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New &ldquo;Lock Distance&rdquo; option for measurements.</strong> The floating Measurement toolbar now has a <strong>🔓 Lock Distance</strong> toggle. When you drag a measurement to a new spot, both its reported distance <em>and</em> its on-screen heading could previously shift &mdash; that&rsquo;s map scale at work, and it got dramatic for long lines (the line could visibly swing by tens of degrees as you moved it toward higher latitudes). Turn Lock Distance on and a relocated measurement keeps a <em>constant true heading and its measured distance</em>: the line slides without rotating and the nm/km and bearing labels stay put.</li>
+          <li><strong>How it works.</strong> A locked measurement moves as a <strong>constant-heading line</strong> (a rhumb line) &mdash; the same straight line a navigator plots on a chart. Because a constant-heading line draws straight on the map, it never rotates no matter where you move it, at any latitude. The distance shown is held to within a fraction of a percent of your original measurement.</li>
+          <li><strong>Off by default, and it sticks.</strong> Leave it off for the classic behaviour (the measurement drags rigidly and its distance and heading follow the map scale). Flip it on and the choice is remembered across reloads and rides along in your Master Save File. It applies to standalone measurements; conjoined route legs still pivot around their shared waypoints as before, and resizing a locked measurement by its edge handle returns it to normal great-circle behaviour.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.68.0</span>
-          <span class="release-date">June 29, 2026 &middot; Current</span>
+          <span class="release-date">June 29, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -58402,6 +58590,7 @@ function rgSendToFlightPlanner() {
       <div class="rg-meas-floating" id="rgMeasFloating">
         <span class="rg-meas-floating-label">📐 Measurement</span>
         <button class="rg-btn" id="rgRulerLinesBtn" onclick="_rgToggleMeasureLines()" title="Measurements show distance rings — click to show lines only">◯ <span class="rg-btn-label">Distance Ring</span></button>
+        <button class="rg-btn" id="rgRulerLockDistBtn" onclick="_rgToggleMeasureLockDist()" title="Moving a measurement lets its heading and distance shift with map scale — click to lock a constant heading and the measured distance">🔓 <span class="rg-btn-label">Lock Distance</span></button>
         <button class="rg-btn" id="rgRulerClearAllBtn" onclick="_rgClearMeasure()" style="display:none" title="Remove all measurements">✕ Clear All</button>
         <button class="rg-btn" id="rgRulerExitBtn" onclick="_rgToggleMeasure()" title="Exit measurement mode">✕ Exit</button>
       </div>
