@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.69.1**
+**Current version: v3.71.0**
 
 ---
 
@@ -215,6 +215,14 @@ All settings persist in browser storage. The ring disappears automatically once 
 Open the **👁 Display** menu and click **🗂 Layers** to control which map elements draw on top of which. The window lists every overlay — *airport dots, airport tooltips, waypoint labels, the aircraft icon and trail, route line and labels, alert labels,* and *measurement/region overlays* — each shown with a little graphic of the real element and its stacking value. **Drag a layer up** (grab the **⋮⋮** handle) or use the **▲▼** buttons to lift it above the others; the top of the list draws on top of everything. Changes apply to the map instantly and are saved in your browser, so your chosen order is remembered between sessions.
 
 This is the permanent way to settle any "which label covers which" question — for example, if you'd rather a geofence alert tag sit above airport tooltips, just drag *Alert labels* above *Airport tooltip*. Layers can only be reordered among themselves: nothing can ever drop below the base map or rise above the menus and pop-up windows. A **↺ Reset to Default** button restores the original sensible order in one click, so you can experiment freely.
+
+### 🎨 Appearance
+Open the **👁 Display** menu and click **🎨 Appearance** to customize how the map's airport dots look. It's a draggable floating panel (with its own opacity slider, like the Aircraft panels), and a live preview shows your choices over real street and satellite imagery. Everything applies instantly, saves in your browser, and travels in Save / Load All Settings — and the defaults reproduce the classic look exactly, so nothing changes unless you choose it.
+
+The settings are grouped into collapsible sections. **Airport dots** picks the dot style — *Flat* (the classic solid dot), *Water droplet*, or *Glass* (translucent, glossy beads that let the map show through) — plus sliders for dot opacity and dot size, while the rotation gauge and level badges keep working as before. **Basemap** has a *Map dim* slider that darkens the basemap behind the dots so they pop, especially on bright satellite imagery. **Scenery marker** controls how airports in your Scenery Library are flagged — a center *Dot*, a *Ring*, an off-center *Corner pip*, or a *Star* — with sliders for the marker's size and its color (any color you like, or *Auto* for the classic black dot / gold ring). The map's scenery legend updates to match whichever marker you pick.
+
+### Map Scale Ruler
+A live scale bar sits in the bottom-right corner of the map, just above the credit line, and updates as you pan and zoom. It shows the current scale in both **nautical miles and kilometers**, and automatically switches to **feet and meters** when you zoom in tighter than about 5 nm across — so you always have a sense of real-world distance.
 
 ### Airport Level Badges
 
