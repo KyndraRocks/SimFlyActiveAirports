@@ -8955,7 +8955,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.72.1';
+const APP_VERSION = '3.73.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11320,6 +11320,7 @@ function _acSelect(code, keepCollapsed) {
   // clear it if the aircraft was deselected).
   if (typeof _aaAcFilterSyncBtn === 'function') _aaAcFilterSyncBtn();
   if (typeof _aaAcFilterRecompute === 'function' && (_aaAcFilterOn || _aaAcFilterSet)) _aaAcFilterRecompute();
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
   // Picking an aircraft completes the "Select Aircraft" flow — drop the spotlight.
   if (code && typeof _aaClearAircraftFocus === 'function') _aaClearAircraftFocus();
   if (typeof _rgMap !== 'undefined' && _rgMap && _rgDotLayer && (_rgPhase === 'explore' || _rgPhase === 'results')) {
@@ -32143,6 +32144,15 @@ function _rgUpdateMeasFloating() {
   const el = document.getElementById('rgMeasFloating');
   if (!el) return;
   el.classList.toggle('show', !!_rgMeasureActive);
+  // v3.72.2 — Block map click/drag bleed-through so interacting with the
+  // floating toolbar doesn't also start a new measurement underneath it.
+  if (typeof L !== 'undefined' && L.DomEvent && !window._rgMeasPanGuardApplied) {
+    try {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    } catch (_) {}
+    window._rgMeasPanGuardApplied = true;
+  }
 }
 
 function _rgToggleMeasure() {
@@ -38658,6 +38668,7 @@ function _aaAcFilterToggle() {
   _aaAcFilterOn = !_aaAcFilterOn;
   _aaAcFilterRecompute();
   _aaAcFilterSyncBtn();
+  if (typeof _rgUpdateBreadcrumbs === 'function') _rgUpdateBreadcrumbs();
   if (_aaAcFilterOn && _aaAcFilterSet && _aaAcFilterSet.size === 0 && typeof _aaRtToast === 'function') {
     _aaRtToast('No on-map airports currently have ' + _acSelectedCode + (_aaRentAvailNow ? ' available to rent' : ' rentable') + '.', 'info');
   }
@@ -41898,6 +41909,7 @@ function _rgAnyFilterActive() {
   if (_rgAircraftMode || _aaRentFilterActive || (_aaRentTerms && _aaRentTerms.length) ||
       _aaRentTypeFilter !== null || _aaRentOwnerFilter !== null || _aaRentMinPayout > 0) return true;
   if (_rgPayoutFilter > 0) return true;
+  if (_aaAcFilterOn) return true;
   if (_rgStarFilterMode && _rgStarFilter > 0) return true;
   if (_slDeveloperFilter) return true;
   if (_globalCatFilter && _globalCatFilter.size < 7) return true;
@@ -41935,9 +41947,16 @@ function _rgAcTrackLoaded() {
          (typeof _liveAcTrailFresh   !== 'undefined' && _liveAcTrailFresh.length   > 0) ||
          (typeof _liveAcTrailArchive !== 'undefined' && _liveAcTrailArchive.length > 0);
 }
-// Anything the ⊗ chip can remove: filters, a plotted flight plan, or a track.
+// Selected departure/arrival route (the ✈ dep → arr breadcrumb pill). Mirrors
+// the same presence check used to render that chip, so the ⊗ chip surfaces
+// for — and wipes — a lone route selection too.
+function _rgRouteSelected() {
+  return !!(typeof _rgDotSelDep !== 'undefined' && (_rgDotSelDep || _rgDotSelArr));
+}
+// Anything the ⊗ chip can remove: filters, a plotted flight plan, a track, or
+// a selected route.
 function _rgAnyClearable() {
-  return _rgAnyFilterActive() || _rgFlightPlanLoaded() || _rgAcTrackLoaded();
+  return _rgAnyFilterActive() || _rgFlightPlanLoaded() || _rgAcTrackLoaded() || _rgRouteSelected();
 }
 
 // v2.98.0 — Wipe every applied filter in one shot. Mirrors each individual
@@ -41950,6 +41969,7 @@ function _rgClearAllFilters() {
   const hadFilters = _rgAnyFilterActive();
   const hadPlan    = _rgFlightPlanLoaded();
   const hadTrack   = _rgAcTrackLoaded();
+  const hadRoute   = _rgRouteSelected();
   // Aircraft Rentals — exit the view mode if on, and clear every rental filter so
   // no rental breadcrumb survives the ⊗ clear-all.
   if (_rgAircraftMode && typeof _rgToggleAircraftMode === 'function') _rgToggleAircraftMode();
@@ -41959,6 +41979,8 @@ function _rgClearAllFilters() {
     const _pv = document.getElementById('aaRentPayoutVal'); if (_pv) _pv.textContent = '≥ 0%'; }
   // Pilot Payout threshold
   if (_rgPayoutFilter > 0 && typeof _rgPayoutSliderInput === 'function') _rgPayoutSliderInput(0);
+  // Selected-aircraft map filter
+  if (_aaAcFilterOn) { _aaAcFilterOn = false; _aaAcFilterRecompute(); _aaAcFilterSyncBtn(); }
   // Scenery Rating threshold
   if (_rgStarFilterMode && typeof _rgToggleStarFilter === 'function') _rgToggleStarFilter();
   // Scenery Developer
@@ -42008,20 +42030,23 @@ function _rgClearAllFilters() {
   // _rgUpdateBreadcrumbs internally; the call below is the final authoritative one.
   if (hadPlan  && typeof _sbOfpClear      === 'function') { try { _sbOfpClear();      } catch (_) {} }
   if (hadTrack && typeof _liveAcClearTrail === 'function') { try { _liveAcClearTrail(); } catch (_) {} }
+  if (hadRoute && typeof _rgClearDotSel    === 'function') { try { _rgClearDotSel();    } catch (_) {} }
   _rgUpdateBreadcrumbs();
   if (typeof _aaRtToast === 'function') {
     const cleared = [];
     if (hadFilters) cleared.push('filters');
     if (hadPlan)    cleared.push('flight plan');
     if (hadTrack)   cleared.push('aircraft track');
+    if (hadRoute)   cleared.push('route');
     let msg;
-    if (cleared.length <= 1) {
-      const one = cleared[0] || 'filters';
-      msg = one.charAt(0).toUpperCase() + one.slice(1) + ' cleared';
-    } else if (cleared.length === 2) {
-      msg = 'Cleared ' + cleared[0] + ' and ' + cleared[1];
+    if (cleared.length === 0) {
+      msg = 'Filters cleared';
+    } else if (cleared.length === 1) {
+      msg = cleared[0].charAt(0).toUpperCase() + cleared[0].slice(1) + ' cleared';
     } else {
-      msg = 'Cleared ' + cleared[0] + ', ' + cleared[1] + ', and ' + cleared[2];
+      const last = cleared[cleared.length - 1];
+      const rest = cleared.slice(0, -1);
+      msg = 'Cleared ' + rest.join(', ') + (rest.length > 1 ? ',' : '') + ' and ' + last;
     }
     _aaRtToast(msg, 'ok');
   }
@@ -42070,7 +42095,7 @@ function _rgUpdateBreadcrumbs() {
   if (_rgAnyClearable()) {
     const clearChip = document.createElement('span');
     clearChip.className = 'rg-bc rg-bc-clear';
-    clearChip.title = 'Clear everything — every applied filter, plus any plotted flight plan and aircraft track — and return to default display';
+    clearChip.title = 'Clear everything — every applied filter, plus any plotted flight plan, aircraft track, and selected route — and return to default display';
     // v3.7.2 — sizing handled entirely by CSS (.rg-bc.rg-bc-clear) so the chip
     // renders as a perfect circle the same height as the sibling pills.
     // v3.7.3 — glyph wrapped in an inner span so CSS can nudge it 1px left + 2px
@@ -42156,6 +42181,17 @@ function _rgUpdateBreadcrumbs() {
       container.appendChild(mkChip(`Rent Payout >= ${_aaRentMinPayout}%`, null,
         () => { _aaRentMinPayout = 0; const sl = document.getElementById('aaRentPayoutSlider'); if (sl) sl.value = 0; const pv = document.getElementById('aaRentPayoutVal'); if (pv) pv.textContent = '≥ 0%'; _aaRentReassessFilterActive(); _aaRentApply(); }));
     }
+  }
+
+  // 2c. Selected-aircraft map filter — only when engaged. ✕ turns it off via
+  // the same toggle the top-bar button uses.
+  if (_aaAcFilterOn && typeof _acSelectedCode !== 'undefined' && _acSelectedCode) {
+    container.appendChild(mkChip(
+      `✈ ${_acSelectedCode} Only`,
+      null,
+      () => _aaAcFilterToggle(),
+      { xTitle: 'Turn off the aircraft filter' }
+    ));
   }
 
   // 3. Scenery mode — always shown
@@ -45229,6 +45265,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter the Map to Your Aircraft</div>
           <div class="help-feature-desc">
             The rounded <strong>aircraft filter button</strong> on the map&rsquo;s top bar (v3.72.0), centered between the menu buttons and the category filter, is a one-click way to show <strong>only the airports where your selected aircraft can be rented</strong>. Once you&rsquo;ve picked an aircraft it reads <em>&ldquo;Filter to &lt;type&gt;&rdquo;</em>; click it to switch the filter on (the button fills in and glows) and again to switch it off. The filter <strong>stacks on top of everything else</strong> you&rsquo;re filtering &mdash; category, owner, payout, and so on &mdash; and always limits the results to airports already on the map. It honors the <strong>Available Now Only</strong> setting, so with that on you&rsquo;ll only see airports where the aircraft is free to rent right now.<br/><br/>
+            While it&rsquo;s on, a matching <strong>&ldquo;✈ &lt;ICAO&gt; Only&rdquo;</strong> chip appears in the filter breadcrumb strip at the top of the map, right alongside your other active filters. Click the chip&rsquo;s <strong>✕</strong> to turn the filter off &mdash; a quick alternative to finding the original button again &mdash; and it&rsquo;s also swept away by the breadcrumb strip&rsquo;s &ldquo;⊗ clear everything&rdquo; chip.<br/><br/>
             With <strong>no aircraft selected</strong> the button reads <strong>Select Aircraft</strong>; clicking it closes the map and opens the aircraft selector (the same as the Display menu&rsquo;s Select Aircraft), so you can choose one and come back.<br/><br/>
             Two related switches also live in the <strong>🛩 Rentals menu</strong> for quick access without opening the Rentals panel: <strong>Available Now Only</strong> and <strong>On-Map Airports Only</strong>, each showing a green check when it&rsquo;s on.
           </div>
@@ -45716,7 +45753,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Filter Status Strip</div>
           <div class="help-feature-desc">
             The row of chips between the <strong>📐 Measurement</strong> button and the category circles gives you an at-a-glance summary of every active filter on the region map.<br/><br/>
-            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied <em>or</em> a SimBrief flight plan / aircraft track is on the map (v3.25.0). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer / store includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan and recorded aircraft track &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
+            <strong>&#8855; Clear All</strong> (v2.98.0) &mdash; appears at the front of the strip whenever any filter is applied, a SimBrief flight plan / aircraft track is on the map (v3.25.0), or a departure/arrival route is selected (v3.73.1). One click removes every applied filter at once (payout threshold, scenery rating, category filter, level filter, <strong>For Sale</strong> filter, owner / country / region / continent / developer / store includes, exclusion sets, pinned ICAOs) <strong>and</strong> wipes any plotted flight plan, recorded aircraft track, and selected route &mdash; a single "reset the map" control. It returns the strip to its two-default-chip state: color mode + scenery indicator. The two display-mode chips stay because they're not filters. The confirmation toast names exactly what was cleared.<br/><br/>
             <strong>Display Mode</strong> — always visible; shows <em>Category Colors</em> or <em>Payout Colors</em> depending on the current color mode. Click the chip to toggle between the two modes.<br/><br/>
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
             <strong>🔄 Rotation Gauge</strong> — appears whenever the rotation gauge is being shown on airport dots. Click <strong>&times;</strong> to hide the gauge (you can also middle-click the map to toggle it).<br/><br/>
@@ -45926,8 +45963,41 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.72.1</span>
+          <span class="release-version">v3.73.1</span>
           <span class="release-date">July 1, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: "⊗ Clear All" now always removes the selected route too.</strong> The breadcrumb strip's "⊗ clear everything" chip cleared filters, a plotted SimBrief flight plan, and a recorded aircraft track — but a selected departure → arrival route (the "✈ DEP → ARR" pill) was never part of that sweep, so it could survive a Clear All and linger on the map. The ⊗ chip now also detects and clears a selected route, and shows up even when a route is the <em>only</em> thing active. The confirmation toast reflects it too (e.g. <em>"Cleared aircraft track and route"</em>).</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.73.0</span>
+          <span class="release-date">July 1, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Aircraft filter now shows a breadcrumb chip — with its own "X" to turn it off.</strong> When the top-bar "Filter to &lt;aircraft&gt;" button is engaged, a matching <strong>"✈ &lt;ICAO&gt; Only"</strong> chip now appears in the filter breadcrumb strip alongside every other active filter, so it's visible at a glance and consistent with the rest of the map's filtering UI. Click the chip's ✕ to turn the filter off without hunting for the original button, and the "⊗ clear everything" chip now sweeps it too.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.72.2</span>
+          <span class="release-date">July 1, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: the measurement toolbar no longer draws through itself.</strong> Clicking or dragging on the floating measurement toolbar (Distance Ring, Lock Distance, Clear All, Exit) was bleeding through to the map underneath, starting a stray new measurement line at the same time. The toolbar now fully captures its own clicks and scroll, so interacting with it never touches the map.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.72.1</span>
+          <span class="release-date">July 1, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
