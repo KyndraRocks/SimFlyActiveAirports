@@ -832,12 +832,32 @@
   .aa-appr-sub { font-family:'Rajdhani',sans-serif; font-weight:500; font-size:0.6em; text-transform:none; color:var(--muted); letter-spacing:0; margin-left:8px; text-shadow:none; }
   body.light-mode #rgAppearancePanel .aa-appr-sec-title { text-shadow:none; }
 
-  /* Map scale ruler (v3.71.0) — nm/km (or ft/m) bars above the attribution. */
-  .rg-scale-ruler { pointer-events:none; display:flex; flex-direction:column; align-items:flex-end; margin:0 8px 2px 0 !important; }
-  .rg-scale-line { box-sizing:border-box; pointer-events:none; min-width:26px; padding:0 5px 1px; font-family:'Rajdhani',sans-serif; font-size:12px; font-weight:600; line-height:1.25; text-align:center; white-space:nowrap; overflow:hidden; color:#eaf6ff; text-shadow:0 0 3px #000,0 0 2px #000; background:rgba(10,16,26,0.45); border:2px solid rgba(140,210,255,0.9); }
+  /* Map scale ruler (v3.71.0) — nm/km (or ft/m) bars above the attribution.
+     v3.72.0 — interactive: click toggles measurement mode, hover shows the
+     center crosshair reticle. Container catches the events (lines stay inert). */
+  .rg-scale-ruler { pointer-events:auto; cursor:pointer; display:flex; flex-direction:column; align-items:flex-end; margin:0 8px 2px 0 !important; }
+  .rg-scale-ruler:hover .rg-scale-line { border-color:rgba(0,200,255,1); box-shadow:0 0 7px rgba(0,200,255,0.55); }
+  .rg-scale-line { box-sizing:border-box; pointer-events:none; min-width:26px; padding:0 5px 1px; font-family:'Rajdhani',sans-serif; font-size:12px; font-weight:600; line-height:1.25; text-align:center; white-space:nowrap; overflow:hidden; color:#eaf6ff; text-shadow:0 0 3px #000,0 0 2px #000; background:rgba(10,16,26,0.45); border:2px solid rgba(140,210,255,0.9); transition:border-color 0.12s, box-shadow 0.12s; }
   .rg-scale-top { border-top:none; border-radius:0 0 3px 3px; }
   .rg-scale-bot { border-bottom:none; margin-top:-2px; border-radius:3px 3px 0 0; }
   body.light-mode .rg-scale-line { color:#0a1a28; background:rgba(255,255,255,0.62); border-color:rgba(0,120,180,0.85); text-shadow:0 0 2px #fff; }
+
+  /* Scale crosshair reticle (v3.72.0) — full-viewport guide lines + distance
+     ticks centered on the map, shown while hovering the scale ruler. */
+  #rgScaleReticle { position:absolute; inset:0; z-index:645; pointer-events:none; opacity:0; transition:opacity 0.12s ease; }
+  #rgScaleReticle.show { opacity:1; }
+  #rgScaleReticle .rgx-axis { stroke:rgba(0,200,255,0.55); stroke-width:1; stroke-dasharray:5 4; }
+  #rgScaleReticle .rgx-tick { stroke:rgba(0,200,255,0.9); stroke-width:1.4; }
+  #rgScaleReticle .rgx-tick.rgx-minor { stroke:rgba(0,200,255,0.5); stroke-width:1; }
+  #rgScaleReticle .rgx-center { fill:rgba(0,200,255,0.9); stroke:#0a141e; stroke-width:1; }
+  #rgScaleReticle .rgx-lbl { fill:#dff4ff; font-family:'Rajdhani',sans-serif; font-size:11px; font-weight:600; text-anchor:middle; paint-order:stroke; stroke:#0a141e; stroke-width:2.6px; }
+  #rgScaleReticle .rgx-lbl-v { text-anchor:start; }   /* vertical-axis labels sit to the right of the crosshair */
+  body.light-mode #rgScaleReticle .rgx-axis { stroke:rgba(0,120,180,0.6); }
+  body.light-mode #rgScaleReticle .rgx-tick { stroke:rgba(0,110,170,0.95); }
+  body.light-mode #rgScaleReticle .rgx-lbl { fill:#06283a; stroke:#ffffff; }
+
+  /* Aircraft Listing header funnel (v3.72.0) — shown when a column is filtered. */
+  .aal-funnel { width:0.82em; height:0.82em; vertical-align:-1px; }
   .aa-appr-opts { display:flex; flex-wrap:wrap; gap:0.52rem; margin-bottom:0.39rem; }
   .aa-appr-opt { cursor:pointer; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--muted); font-family:'Rajdhani',sans-serif; font-weight:600; font-size:1.12rem; padding:0.52rem 0.91rem; transition:border-color 0.15s, background 0.15s, color 0.15s; }
   .aa-appr-opt:hover { border-color:var(--accent); color:var(--text); }
@@ -3522,6 +3542,35 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-right { display:flex; align-items:center; gap:0.45rem; justify-self:stretch; flex-shrink:0; }
   .rg-hdr-flex-spacer { flex:1; }
   .rg-hdr-sep   { width:1px; height:1.2rem; background:var(--border); margin:0 0.15rem; flex-shrink:0; }
+
+  /* Selected-aircraft map filter button (v3.72.0) — set apart from the 5 menu
+     buttons and centered in the left column's free space by two flex spacers,
+     balancing the Airport Owners menu on the far side of the category filter. A
+     rounded accent pill (distinct from the flat pulldown buttons); when the filter
+     is on it fills with the accent and pulses so the active state is unmistakable. */
+  /* The button lives in a flex slot that grows to fill the free space between the
+     menu group and the category filter, centering the button within that space
+     (justify-content:center) without adding extra flex gaps that could push it into
+     the filter. On ultra-wide screens the free space is large and the labeled button
+     centers cleanly; on tighter screens the compact funnel pill stays clear. */
+  .rg-acf-slot { flex:1 1 0; min-width:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .rg-acf-btn { display:inline-flex; align-items:center; white-space:nowrap; border:1.5px solid var(--accent); color:var(--accent); background:transparent; border-radius:999px; font-weight:600; flex-shrink:0; transition:background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s; }
+  .rg-acf-btn:hover { background:rgba(0,200,255,0.14); }
+  .rg-acf-btn .rg-acf-ico { display:inline-flex; align-items:center; line-height:1; }
+  .rg-acf-btn .rg-acf-funnel { width:1.05em; height:1.05em; }
+  /* Compact funnel pill by default (label hidden) — the pulldown menu buttons and
+     the category filter fill the top bar at every common width, so a labeled pill
+     would crowd or overlap the filter. The tooltip carries the detail and the
+     accent glow shows the on/off state. The full label returns only on ultra-wide
+     monitors where there's real free space to center it in (see below). */
+  .rg-acf-btn .rg-btn-label { display:none; }
+  .rg-acf-btn.rg-acf-on { color:#04141e; background:linear-gradient(135deg,#00d4ff,#009fe3); border-color:#8fecff; box-shadow:0 0 0 2px rgba(0,200,255,0.35), 0 0 14px rgba(0,200,255,0.6); animation:rgAcfPulse 2.1s ease-in-out infinite; }
+  @keyframes rgAcfPulse { 0%,100% { box-shadow:0 0 0 2px rgba(0,200,255,0.30), 0 0 9px rgba(0,200,255,0.45); } 50% { box-shadow:0 0 0 2px rgba(0,200,255,0.5), 0 0 18px rgba(0,200,255,0.85); } }
+  @media (prefers-reduced-motion: reduce) { .rg-acf-btn.rg-acf-on, #rgMapOwnerBtn.filtered { animation:none; } }
+  body.light-mode .rg-acf-btn.rg-acf-on { color:#f2fbff; }
+  /* Ultra-wide monitors — enough free space between the menu group and the category
+     filter to show the full "Filter to <type>" label, centered by the flex spacers. */
+  @media (min-width: 2001px) { .rg-acf-btn .rg-btn-label { display:inline; margin-left:0.3rem; } }
   .rg-hdr-center .dist-cat-btn { width:2.0rem; height:2.0rem; font-size:1.05rem; }
   .rg-hdr-center .dist-cat-invert-btn { font-size:1.17rem; padding:0.2rem 0.6rem; }
   .rg-hdr-center .dist-cat-filter-label { font-size:1.17rem; }
@@ -4642,6 +4691,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-hdr-right .rg-owner-color-btn { display:inline-flex; align-items:center; justify-content:center; }
   .rg-owner-btn { font-family:'Rajdhani',sans-serif; font-size:1.1rem; font-weight:600; padding:0.2rem 0.6rem; border:1px solid var(--border); background:var(--surface); color:var(--muted); border-radius:4px; cursor:pointer; white-space:nowrap; }
   .rg-owner-btn:hover, .rg-owner-btn.filtered { border-color:var(--accent); color:var(--accent); }
+  /* v3.72.1 — when the map-wide Airport Owners filter is actually narrowing the
+     map, give the top-menu Owners button the same conspicuous accent-glow pill as
+     the "Filter to <aircraft>" button, so both filter cues read the same. Scoped to
+     #rgMapOwnerBtn so the matrix-bar Dep/Arr owner buttons keep their cyan/orange. */
+  #rgMapOwnerBtn.filtered { color:#04141e; background:linear-gradient(135deg,#00d4ff,#009fe3); border-color:#8fecff; box-shadow:0 0 0 2px rgba(0,200,255,0.35), 0 0 14px rgba(0,200,255,0.6); animation:rgAcfPulse 2.1s ease-in-out infinite; }
+  body.light-mode #rgMapOwnerBtn.filtered { color:#f2fbff; }
   /* 🎨 owner-color toggle button sits immediately to the right of the Airport
      Owners dropdown. Inherits the dropdown's height, picks up a rainbow border
      in active state, dims when no filter is set. */
@@ -8900,7 +8955,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.71.0';
+const APP_VERSION = '3.72.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11260,6 +11315,11 @@ function _acSelect(code, keepCollapsed) {
   // if the region map is up, re-render dots so their tooltips rebuild with the new
   // aircraft (the cache key includes it) and the badge overlay re-evaluates.
   if (typeof _aaSyncOwnerAcBadgeBtn === 'function') _aaSyncOwnerAcBadgeBtn();
+  // v3.72.0 — keep the top-bar selected-aircraft filter button + gate in sync with
+  // the new aircraft (relabel; rebuild the gate set if the filter is engaged, or
+  // clear it if the aircraft was deselected).
+  if (typeof _aaAcFilterSyncBtn === 'function') _aaAcFilterSyncBtn();
+  if (typeof _aaAcFilterRecompute === 'function' && (_aaAcFilterOn || _aaAcFilterSet)) _aaAcFilterRecompute();
   // Picking an aircraft completes the "Select Aircraft" flow — drop the spotlight.
   if (code && typeof _aaClearAircraftFocus === 'function') _aaClearAircraftFocus();
   if (typeof _rgMap !== 'undefined' && _rgMap && _rgDotLayer && (_rgPhase === 'explore' || _rgPhase === 'results')) {
@@ -30903,6 +30963,14 @@ const _AAR_BADGE_CAP      = 70;     // max labels at once — when more dots are
 // to exactly the airports still in the table. Declared up here (before
 // _rgDotPassesMapFilters) so the gate's reference is always initialised.
 let _aaListIcaoFilter = null;   // Set<ICAO(upper)> | null — null = listing imposes no map filter
+// Selected-aircraft map filter (v3.72.0) — the top-bar 🛩 button gates the map to
+// on-map airports where the currently-selected aircraft is rentable (honoring the
+// "Available now only" setting). Session-only (never persisted): a hidden map
+// filter that survived a reload would blank the map confusingly. Always behaves as
+// if "Only airports already on the map" is ON (the set is built from owned airports),
+// and stacks with every other gate in _rgDotPassesMapFilters.
+let _aaAcFilterOn  = false;     // true = the selected-aircraft map filter is engaged
+let _aaAcFilterSet = null;      // Set<ICAO(upper)> | null — airports that pass; null = no gate
 let _aaListSort       = 'apt';  // active sort column key (see _AAL_COLS)
 let _aaListSortDir    = 'asc';  // 'asc' (A→Z / low→high) | 'desc'
 let _aaListColFilters = {};     // colKey -> Set<value>  (multi-select); absent/empty = no filter
@@ -32289,7 +32357,11 @@ function _rgUpdateMeasure(toLL) {
   if (!_rgMeasureOrigin || !_rgMap) return;
   _rgMeasureLastLL = toLL;
   const nm      = _haversineNm(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
-  const trueBrg = _rgTrueBearing(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
+  // The measurement line is a straight Mercator segment, i.e. a RHUMB line whose
+  // on-screen angle IS its constant true bearing — so label it with the rhumb
+  // bearing, not the great-circle initial bearing (which diverges from the drawn
+  // line by tens of degrees on long lines and looked plainly wrong). v3.72.1.
+  const trueBrg = _rgRhumbBearing(_rgMeasureOrigin.lat, _rgMeasureOrigin.lng, toLL.lat, toLL.lng);
   const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
   let mbPart;
   if (_rgMeasureDecl === null) {
@@ -32803,6 +32875,14 @@ function _rgInitScaleRuler() {
       this._bot = L.DomUtil.create('div', 'rg-scale-line rg-scale-bot', c);   // km / m
       map.on('move zoom zoomend moveend', this._rgUpd, this);
       this._rgUpd();
+      // v3.72.0 — the ruler is now interactive: a click toggles measurement mode,
+      // and hovering it overlays a center crosshair showing what the scale measures.
+      // Stop the click/gestures from reaching the map (no stray measurement point).
+      c.title = 'Click to toggle measurement mode · hover to see the map-center scale crosshair';
+      L.DomEvent.disableClickPropagation(c);
+      L.DomEvent.on(c, 'click', function (e) { L.DomEvent.stop(e); if (typeof _rgToggleMeasure === 'function') _rgToggleMeasure(); });
+      c.addEventListener('mouseenter', _rgScaleReticleShow);
+      c.addEventListener('mouseleave', _rgScaleReticleHide);
       return c;
     },
     onRemove: function (map) { map.off('move zoom zoomend moveend', this._rgUpd, this); },
@@ -32814,9 +32894,11 @@ function _rgInitScaleRuler() {
     _rgUpd: function () {
       const map = this._map, size = map.getSize();
       if (!size.x || !size.y) return;
-      const maxW = this.options.maxWidth, y = size.y / 2;
+      // v3.72.0 — sample the scale across the exact MAP CENTER (not the left edge),
+      // matching the hover crosshair reticle which measures from the center.
+      const maxW = this.options.maxWidth, cy = size.y / 2, cx = size.x / 2, half = maxW / 2;
       let maxMeters;
-      try { maxMeters = map.distance(map.containerPointToLatLng([0, y]), map.containerPointToLatLng([maxW, y])); }
+      try { maxMeters = map.distance(map.containerPointToLatLng([cx - half, cy]), map.containerPointToLatLng([cx + half, cy])); }
       catch (_) { return; }
       if (!isFinite(maxMeters) || maxMeters <= 0) return;
       const mPerPx = maxMeters / maxW;
@@ -32841,6 +32923,70 @@ function _rgInitScaleRuler() {
   } catch (_) {}
 }
 
+// ── Scale crosshair reticle (v3.72.0) ──────────────────────────────────────
+// While the pointer is over the scale ruler, overlay full-viewport horizontal +
+// vertical guide lines with distance ticks, centered on the map center — a visual
+// cue that the scale is measured FROM THE CENTER of the map. Hidden on mouse-out.
+function _rgScaleReticleShow() {
+  if (!_rgMap) return;
+  const cont = document.getElementById('rgMapContainer'); if (!cont) return;
+  let ov = document.getElementById('rgScaleReticle');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'rgScaleReticle'; cont.appendChild(ov); }
+  _rgScaleReticleDraw();
+  ov.classList.add('show');
+  if (!_rgMap._rgReticleHooked) { _rgMap.on('move zoom', _rgScaleReticleDraw); _rgMap._rgReticleHooked = true; }
+}
+function _rgScaleReticleHide() {
+  const ov = document.getElementById('rgScaleReticle'); if (ov) ov.classList.remove('show');
+  if (_rgMap && _rgMap._rgReticleHooked) { _rgMap.off('move zoom', _rgScaleReticleDraw); _rgMap._rgReticleHooked = false; }
+}
+function _rgScaleReticleDraw() {
+  const ov = document.getElementById('rgScaleReticle'); if (!ov || !_rgMap) return;
+  const size = _rgMap.getSize(); const W = size.x, H = size.y;
+  if (!W || !H) return;
+  const cx = Math.round(W / 2), cy = Math.round(H / 2);
+  // Metres-per-pixel across the exact map center (same basis as the ruler).
+  let mAcross;
+  try { mAcross = _rgMap.distance(_rgMap.containerPointToLatLng([cx - 100, cy]), _rgMap.containerPointToLatLng([cx + 100, cy])); }
+  catch (_) { return; }
+  if (!isFinite(mAcross) || mAcross <= 0) return;
+  const mPerPx = mAcross / 200;
+  // Pick a "nice" tick unit targeting ~80px between major ticks (ft when zoomed in).
+  const widthNm = (W * mPerPx) / 1852;
+  const unitM = widthNm < 5 ? 0.3048 : 1852, suffix = widthNm < 5 ? ' ft' : ' nm';
+  const nice = _rgScaleRound((80 * mPerPx) / unitM) || ((80 * mPerPx) / unitM);
+  const stepPx = (nice * unitM) / mPerPx;
+  if (!isFinite(stepPx) || stepPx < 8) { ov.innerHTML = ''; return; }
+  const parts = [];
+  parts.push(`<line x1="0" y1="${cy}" x2="${W}" y2="${cy}" class="rgx-axis"/>`);
+  parts.push(`<line x1="${cx}" y1="0" x2="${cx}" y2="${H}" class="rgx-axis"/>`);
+  const majLen = 9, minLen = 5, minorPer = 5, minorPx = stepPx / minorPer;
+  for (let dir = -1; dir <= 1; dir += 2) {
+    for (let k = 1; ; k++) {                      // horizontal-axis major ticks + labels
+      const x = cx + dir * k * stepPx; if (x < 12 || x > W - 12) break;
+      parts.push(`<line x1="${x}" y1="${cy - majLen}" x2="${x}" y2="${cy + majLen}" class="rgx-tick"/>`);
+      parts.push(`<text x="${x}" y="${cy - majLen - 4}" class="rgx-lbl">${_rgScaleFmt(k * nice)}${suffix}</text>`);
+    }
+    for (let k = 1; ; k++) {                      // horizontal-axis minor ticks
+      const x = cx + dir * k * minorPx; if (x < 0 || x > W) break;
+      if (k % minorPer === 0) continue;
+      parts.push(`<line x1="${x}" y1="${cy - minLen}" x2="${x}" y2="${cy + minLen}" class="rgx-tick rgx-minor"/>`);
+    }
+    for (let k = 1; ; k++) {                      // vertical-axis major ticks + labels
+      const y = cy + dir * k * stepPx; if (y < 12 || y > H - 12) break;
+      parts.push(`<line x1="${cx - majLen}" y1="${y}" x2="${cx + majLen}" y2="${y}" class="rgx-tick"/>`);
+      parts.push(`<text x="${cx + majLen + 5}" y="${y + 4}" class="rgx-lbl rgx-lbl-v">${_rgScaleFmt(k * nice)}${suffix}</text>`);
+    }
+    for (let k = 1; ; k++) {                      // vertical-axis minor ticks
+      const y = cy + dir * k * minorPx; if (y < 0 || y > H) break;
+      if (k % minorPer === 0) continue;
+      parts.push(`<line x1="${cx - minLen}" y1="${y}" x2="${cx + minLen}" y2="${y}" class="rgx-tick rgx-minor"/>`);
+    }
+  }
+  parts.push(`<circle cx="${cx}" cy="${cy}" r="4" class="rgx-center"/>`);
+  ov.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${parts.join('')}</svg>`;
+}
+
 async function _rgInitMap() {
   await _dmLoadLeaflet();   // safe to call multiple times — checks window.L
   _rgMapReady = true;
@@ -32848,6 +32994,8 @@ async function _rgInitMap() {
   if (_rgMap) {
     setTimeout(() => _rgMap.invalidateSize(), 60);
     _rgUpdatePhaseText();
+    if (typeof _aaAcFilterSyncBtn === 'function') _aaAcFilterSyncBtn();   // v3.72.0 — label reflects current aircraft
+    setTimeout(_aaAcFilterFit, 120);   // re-check the button's fit once the header has settled
     if (_rgDotSelDep && _rgDotSelArr) {
       _rgRouteFromDots(_rgDotSelDep, _rgDotSelArr);
       _rgHighlightDots();
@@ -32931,6 +33079,11 @@ async function _rgInitMap() {
   _rgApplyAppearanceGlobals();
   // v3.71.0 — live nm/km scale ruler above the Leaflet attribution (bottom-right).
   _rgInitScaleRuler();
+  // v3.72.0 — set the selected-aircraft filter button's label to the current aircraft,
+  // then keep its show/hide (space-contention) decision fresh as the window resizes.
+  if (typeof _aaAcFilterSyncBtn === 'function') _aaAcFilterSyncBtn();
+  window.addEventListener('resize', _aaAcFilterFitSoon);
+  setTimeout(_aaAcFilterFit, 120);   // re-check once the header has settled
 
   // Attach map event handlers
   _rgMap.on('mousedown',   _rgMapMouseDown);
@@ -36026,7 +36179,11 @@ function _rgRedrawMeasureEntry(i) {
   // constant true heading + rhumb length rather than recomputing a great-circle
   // bearing/distance from the moved endpoints (which would drift as it moves).
   const nm      = m.rhumb ? m.rhumb.distNm : _haversineNm(origin.lat, origin.lng, toLL.lat, toLL.lng);
-  const trueBrg = m.rhumb ? m.rhumb.brg    : _rgTrueBearing(origin.lat, origin.lng, toLL.lat, toLL.lng);
+  // Straight Mercator line = rhumb line, so its true heading is the rhumb bearing
+  // (matches the on-screen angle and the Lock-Distance readout). Using the
+  // great-circle initial bearing here made the initial-draw label disagree with
+  // the drawn line by tens of degrees on long lines. v3.72.1.
+  const trueBrg = m.rhumb ? m.rhumb.brg    : _rgRhumbBearing(origin.lat, origin.lng, toLL.lat, toLL.lng);
   const tbStr   = Math.round(trueBrg).toString().padStart(3, '0');
   let mbPart;
   if (!m.decl) {
@@ -36062,9 +36219,9 @@ function _rgRedrawMeasureEntry(i) {
     ? toLL
     : (crossesAM
         ? L.latLng((origin.lat + toLL.lat) / 2, (origin.lng + toLL.lng) / 2)
-        : (m.rhumb
-            ? _rgRhumbDest(origin.lat, origin.lng, trueBrg, nm * 0.5)   // on the straight rhumb segment
-            : _rgDestLL(origin.lat, origin.lng, trueBrg, nm * 0.5)));
+        // The line is a straight rhumb segment and trueBrg is its rhumb bearing, so
+        // walk the rhumb half-way to land the label ON the drawn line (v3.72.1).
+        : _rgRhumbDest(origin.lat, origin.lng, trueBrg, nm * 0.5));
   const wrapTransform = dragging ? 'translate(-50%,18px)' : 'translate(-50%,-50%)';
   // ✕ close badge — anchored to the distance label so it tracks the tooltip
   // and never conflicts with the ring, line, pin or edge handle.
@@ -36315,7 +36472,7 @@ function _rgApplyDrag(e) {
         const offLat = _rgDragMeasSnap.toLL.lat - _rgDragMeasSnap.origin.lat;
         const offLng = _rgDragMeasSnap.toLL.lng - _rgDragMeasSnap.origin.lng;
         m.toLL   = { lat: newOrigin.lat + offLat, lng: newOrigin.lng + offLng };
-        m.rhumb  = null;  // reverts to great-circle readout
+        m.rhumb  = null;  // readout recomputes rhumb bearing + distance from the moved endpoints
       }
       _rgRedrawMeasureEntry(idx);
     }
@@ -36339,7 +36496,7 @@ function _rgApplyDrag(e) {
     } else {
       m.toLL = { lat: e.latlng.lat, lng: e.latlng.lng };
     }
-    m.rhumb = null;  // explicit resize/rotate redefines the line → great-circle readout
+    m.rhumb = null;  // explicit resize/rotate redefines the line → rhumb bearing recomputed from endpoints
     _rgRedrawMeasureEntry(idx);
     // Route circle: the edge handle is the shared waypoint with the next
     // leg — drag that leg's origin along so the route stays conjoined.
@@ -37406,6 +37563,11 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   // ONLY the airports still present in the table (intersected with every other
   // active filter). An explicit, user-driven set, so even pinned airports obey it.
   if (_aaListIcaoFilter && !_aaListIcaoFilter.has(icaoUp)) return false;
+  // Selected-aircraft filter (v3.72.0) — the top-bar 🛩 button restricts the map to
+  // airports where the chosen aircraft is rentable. Skipped while the rentals panel
+  // is computing its own geo universe (_aaRentSkipGate) so it never narrows the
+  // panel's internal reasoning — it's purely a map-dot gate.
+  if (!_aaRentSkipGate && _aaAcFilterOn && _aaAcFilterSet && !_aaAcFilterSet.has(icaoUp)) return false;
   // Aircraft Rentals (v3.50.0) — the rental pool includes airports that aren't
   // SimFly-categorized (catNum 0). In normal mode those still render, but when a
   // category filter is narrowed the user expects ONLY airports of those
@@ -38045,7 +38207,7 @@ function _aaRentSetBtnActive(on) {
   const b = document.getElementById('rgAircraftModeBtn');
   if (b) b.classList.toggle('active', !!on);
 }
-function _aaRentSyncMenuBtn() { _aaRentSetBtnActive(_rgAircraftMode); }
+function _aaRentSyncMenuBtn() { _aaRentSetBtnActive(_rgAircraftMode); if (typeof _aaRentSyncMenuToggleRows === 'function') _aaRentSyncMenuToggleRows(); }
 
 // Close ONLY the Rentals panel — the rental info (recolored dots + on-map badges)
 // stays on the map and the mode stays active. The ✕ on the panel uses this so
@@ -38451,6 +38613,115 @@ function _aaRentToggleOwnedOnly() {
   _aaRentApply();
 }
 
+/* ===========================================================================
+   SELECTED-AIRCRAFT MAP FILTER (v3.72.0)
+   The top-bar 🛩 button (centered between the menu group and the category
+   filter) gates the map to on-map airports where the currently-selected
+   aircraft is rentable. With no aircraft selected it becomes a "Select
+   Aircraft" shortcut mirroring the Display-menu action. See _aaAcFilterOn /
+   _aaAcFilterSet near _aaListIcaoFilter.
+   =========================================================================== */
+// Build the set of on-map ICAOs whose airport has the selected aircraft rentable.
+// Always restricted to SimFly-owned airports (so it behaves as if "Only airports
+// already on the map" is on) and honors the "Available now only" setting.
+function _aaAcFilterBuildSet() {
+  const code = (typeof _acSelectedCode !== 'undefined' && _acSelectedCode) ? String(_acSelectedCode).toUpperCase() : '';
+  if (!code) return null;
+  const set = new Set();
+  if (typeof _aaRentByApt === 'undefined' || !_aaRentByApt) return set;
+  const odb = (typeof airportDB !== 'undefined') ? airportDB : null;
+  const own = (typeof _rgOwnerMap !== 'undefined') ? _rgOwnerMap : null;
+  for (const [apt, planes] of _aaRentByApt) {
+    if (odb && !odb.get(apt)) continue;                 // must be plottable on the map
+    if (own && !own.get(apt)) continue;                 // on-map / SimFly-owned only
+    for (const p of planes) {
+      if (!p.icao || String(p.icao).toUpperCase() !== code) continue;
+      if (_aaRentAvailNow && !_aaRentIsAvailableNow(p)) continue;
+      set.add(String(apt).toUpperCase());
+      break;
+    }
+  }
+  return set;
+}
+// Recompute the gate set (when on) and repaint the map through the shared applier.
+function _aaAcFilterRecompute() {
+  _aaAcFilterSet = _aaAcFilterOn ? _aaAcFilterBuildSet() : null;
+  try { if (typeof _rgApplyMapFilter === 'function' && _rgMap) _rgApplyMapFilter(); } catch (_) {}
+}
+// Top-bar button click. No aircraft selected → open the aircraft selector (mirrors
+// the Display-menu "Select Aircraft" action). Otherwise flip the filter on/off.
+function _aaAcFilterToggle() {
+  if (!(typeof _acSelectedCode !== 'undefined' && _acSelectedCode)) {
+    if (typeof _aaOpenAircraftSelector === 'function') _aaOpenAircraftSelector();
+    return;
+  }
+  _aaAcFilterOn = !_aaAcFilterOn;
+  _aaAcFilterRecompute();
+  _aaAcFilterSyncBtn();
+  if (_aaAcFilterOn && _aaAcFilterSet && _aaAcFilterSet.size === 0 && typeof _aaRtToast === 'function') {
+    _aaRtToast('No on-map airports currently have ' + _acSelectedCode + (_aaRentAvailNow ? ' available to rent' : ' rentable') + '.', 'info');
+  }
+}
+// Sync the button's label / icon / active glow to the current aircraft + filter state.
+function _aaAcFilterSyncBtn() {
+  const btn = document.getElementById('rgAcFilterBtn');
+  if (!btn) return;
+  const has = !!(typeof _acSelectedCode !== 'undefined' && _acSelectedCode);
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (!has) {
+    _aaAcFilterOn = false; _aaAcFilterSet = null;
+    if (lbl) lbl.textContent = 'Select Aircraft';
+    btn.classList.remove('rg-acf-on');
+    btn.title = 'Select an aircraft to filter the map to airports where it can be rented. Click to open the aircraft selector.';
+  } else {
+    if (lbl) lbl.textContent = _aaAcFilterOn ? (_acSelectedCode + ' airports') : ('Filter to ' + _acSelectedCode);
+    btn.classList.toggle('rg-acf-on', _aaAcFilterOn);
+    const now = _aaRentAvailNow ? ' right now' : '';
+    btn.title = _aaAcFilterOn
+      ? ('Showing only on-map airports where ' + _acSelectedCode + ' is rentable' + now + '. Click to turn this filter off.')
+      : ('Filter the map to on-map airports where ' + _acSelectedCode + ' is rentable' + now + '. Stacks with your other filters. Click to turn it on.');
+  }
+  _aaAcFilterFit();   // drop the button if the top bar is too crowded at this width
+}
+
+// ── Rentals-menu mirrors of the two panel toggles (v3.72.0) ────────────────
+// Quick access to "Available now only" and "Only airports already on the map"
+// without opening the Rentals filter panel. They drive the same globals + prefs
+// as the panel toggles, then re-sync the menu checkmarks. Changing availability
+// also refreshes the selected-aircraft filter (which honors it).
+function _aaRentMenuToggleAvail() {
+  _aaRentToggleAvail();
+  _aaRentSyncMenuToggleRows();
+  if (_aaAcFilterOn) { _aaAcFilterRecompute(); _aaAcFilterSyncBtn(); }
+}
+function _aaRentMenuToggleOwned() {
+  _aaRentToggleOwnedOnly();
+  _aaRentSyncMenuToggleRows();
+}
+function _aaRentSyncMenuToggleRows() {
+  const a = document.getElementById('rgRentAvailMenuBtn'); if (a) a.classList.toggle('active', !!_aaRentAvailNow);
+  const o = document.getElementById('rgRentOwnedMenuBtn'); if (o) o.classList.toggle('active', !!_aaRentOwnedOnly);
+}
+
+// Show the top-bar aircraft-filter button ONLY when there's room for it between the
+// menu-button cluster and the centered category filter — otherwise hide it entirely
+// (v3.72.0). The top bar is genuinely crowded at some widths; rather than fight to
+// squeeze the button in everywhere, we drop it when it would collide. The free gap
+// is a property of the layout (the button, in its own flex slot, doesn't move the
+// cluster or the filter), so this measures cleanly regardless of display size.
+let _aaAcFitRaf = null;
+function _aaAcFilterFit() {
+  const slot   = document.querySelector('.rg-acf-slot');
+  const btn    = document.getElementById('rgAcFilterBtn');
+  const alerts = document.getElementById('afkAlertsBtn');
+  const cat    = document.getElementById('rgGlobalCatFilter');
+  if (!slot || !btn || !alerts || !cat) return;
+  const gap  = cat.getBoundingClientRect().left - alerts.getBoundingClientRect().right;
+  const need = Math.max(btn.getBoundingClientRect().width, 48) + 14;   // button + clearance
+  slot.style.display = (gap >= need) ? '' : 'none';
+}
+function _aaAcFilterFitSoon() { if (_aaAcFitRaf) cancelAnimationFrame(_aaAcFitRaf); _aaAcFitRaf = requestAnimationFrame(_aaAcFilterFit); }
+
 // Aircraft-category circles (1-7) — same look as the map title-bar category
 // filter, but they filter rentals by AIRCRAFT category. null = all shown; click
 // one to drop it; clicking back to all 7 collapses to null (no filter).
@@ -38805,6 +39076,7 @@ async function _aaRefreshLiveData(opts) {
       }
       if (rentable != null) { try { _aaRentIngest(rentable); } catch (_) {} }
       try { if (typeof _aaListRefreshIfOpen === 'function') _aaListRefreshIfOpen(); } catch (_) {}  // keep Aircraft Listing fresh
+      try { if (typeof _aaAcFilterRecompute === 'function' && _aaAcFilterOn) _aaAcFilterRecompute(); } catch (_) {}  // v3.72.0 — refresh the selected-aircraft gate set
       // Re-render through the same chokepoint a filter change uses: re-renders
       // dots, re-applies dep/arr highlight, refreshes the rentals panel + badges.
       // No-ops safely if the region map was never opened (_rgMap null).
@@ -39096,12 +39368,21 @@ function _aaListRender() {
   const fr = document.getElementById('aaListFreshness'); if (fr) fr.textContent = '↻ Aircraft data ' + _aaFreshnessText();
 }
 
+// Funnel glyph shown in a column header when that column is filtered (v3.72.0) —
+// a clear "filtering is active here" cue. Inactive columns keep the ▾ caret that
+// signals "click to open the filter". currentColor picks up the green .aal-filt-on.
+const _AAL_FUNNEL_SVG = '<svg class="aal-funnel" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12L9.4 8.6V13l-2.8 1.6V8.6z" fill="currentColor"/></svg>';
 function _aaListSyncHeader() {
   document.querySelectorAll('#aaListHead .aal-th').forEach(th => {
     const key = th.dataset.col, sorted = key === _aaListSort;
     th.classList.toggle('aal-sorted', sorted);
     const arr = th.querySelector('.aal-th-arr'); if (arr) arr.textContent = sorted ? (_aaListSortDir === 'desc' ? ' ▼' : ' ▲') : '';
-    const fb = th.querySelector('.aal-th-filt'); if (fb) fb.classList.toggle('aal-filt-on', _aaListColFilterActive(key));
+    const fb = th.querySelector('.aal-th-filt');
+    if (fb) {
+      const on = _aaListColFilterActive(key);
+      fb.classList.toggle('aal-filt-on', on);
+      fb.innerHTML = on ? _AAL_FUNNEL_SVG : '▾';   // funnel = filtering active; caret = click to filter
+    }
   });
 }
 
@@ -44936,8 +45217,20 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Aircraft Listing</div>
           <div class="help-feature-desc">
             <strong>Aircraft Listing</strong> (in the 🛩 Rentals menu, v3.66.0+) opens a large, resizable, draggable panel with a full table of every rentable aircraft &mdash; one row each &mdash; showing its <strong>airport</strong>, <strong>airport owner</strong>, <strong>aircraft ICAO</strong>, <strong>manufacturer</strong>, <strong>type</strong>, <strong>aircraft owner</strong>, <strong>pilot payout %</strong>, and <strong>availability</strong> (airport owner and aircraft owner are often different &mdash; a plane can be parked at another pilot&rsquo;s airport). For aircraft in ground operations the <strong>Available</strong> column shows a live hours / minutes / seconds countdown until it frees up, and <strong>Avail Time (Local)</strong> shows the local clock time it becomes available.<br/><br/>
-            Click any column heading to sort A&ndash;Z, then again for Z&ndash;A. Each heading&rsquo;s ▾ opens a filter: a multi-select list for most columns, a <strong>minimum payout %</strong> for Payout, a <strong>minimum airport category</strong> for Airport, and a Yes / No choice for Available. Filters combine across columns.<br/><br/>
+            Click any column heading to sort A&ndash;Z, then again for Z&ndash;A. Each heading&rsquo;s ▾ opens a filter: a multi-select list for most columns, a <strong>minimum payout %</strong> for Payout, a <strong>minimum airport category</strong> for Airport, and a Yes / No choice for Available. Filters combine across columns, and any column you&rsquo;ve filtered shows a green <strong>funnel</strong> icon in its heading so it&rsquo;s easy to see which columns are active.<br/><br/>
             The table drives the map &mdash; whenever it&rsquo;s filtered, the map shows only the airport dots still in the table. Click an <strong>airport</strong> to pan to it; click an <strong>owner</strong>, <strong>aircraft</strong>, <strong>manufacturer</strong>, or <strong>type</strong> to narrow to just those (click the same value again to clear it). By default the panel opens just wide enough to fit every column heading, with longer values trimmed (hover a cell to read the full text). Drag a column divider to widen a column, or double-click a divider to reset all columns back to fitting their titles. A slider in the title bar sets the panel&rsquo;s opacity so you can see the map underneath (the Aircraft Rentals panel has the same control). <strong>↺ Reset</strong> clears all filters; your sort, widths, filters, opacity, and panel size are remembered between sessions.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">🛩</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Filter the Map to Your Aircraft</div>
+          <div class="help-feature-desc">
+            The rounded <strong>aircraft filter button</strong> on the map&rsquo;s top bar (v3.72.0), centered between the menu buttons and the category filter, is a one-click way to show <strong>only the airports where your selected aircraft can be rented</strong>. Once you&rsquo;ve picked an aircraft it reads <em>&ldquo;Filter to &lt;type&gt;&rdquo;</em>; click it to switch the filter on (the button fills in and glows) and again to switch it off. The filter <strong>stacks on top of everything else</strong> you&rsquo;re filtering &mdash; category, owner, payout, and so on &mdash; and always limits the results to airports already on the map. It honors the <strong>Available Now Only</strong> setting, so with that on you&rsquo;ll only see airports where the aircraft is free to rent right now.<br/><br/>
+            With <strong>no aircraft selected</strong> the button reads <strong>Select Aircraft</strong>; clicking it closes the map and opens the aircraft selector (the same as the Display menu&rsquo;s Select Aircraft), so you can choose one and come back.<br/><br/>
+            Two related switches also live in the <strong>🛩 Rentals menu</strong> for quick access without opening the Rentals panel: <strong>Available Now Only</strong> and <strong>On-Map Airports Only</strong>, each showing a green check when it&rsquo;s on.
           </div>
         </div>
       </div>
@@ -44963,6 +45256,17 @@ function rgSendToFlightPlanner() {
             For an at-a-glance map view, open the <strong>👁 Display</strong> menu and turn on <strong>Highlight other airports with &lt;type&gt;</strong> (the row carries your selected aircraft&rsquo;s code). After you select a departure or arrival airport on the map, it drops a badge on the <em>other</em> airports owned by that airport&rsquo;s owner where your aircraft is rentable now &mdash; pinpointing where to go pick it up. When no aircraft is selected, this row instead reads <strong>Select Aircraft</strong> and, when clicked, closes the map and opens the aircraft selector so you can choose one &mdash; the rest of the planner dims so you can focus on picking an aircraft (the dim is purely visual and clears as soon as you choose one, click outside, or press Esc).<br/><br/>
             A faint dotted green line links your selected airport to each of those rentable airports (styled so it won&rsquo;t be confused with a route, measurement, or distance line). Departure and arrival are handled independently, so each draws its own lines and badges to its owner&rsquo;s rental airports. If a rentable airport is <strong>off-screen</strong>, the line runs to the edge of the map and the badge waits there with an arrow pointing toward it &mdash; <strong>click or tap that edge badge to pan the map and center the airport</strong>. The edge badges keep working as you pan and zoom, even once the departure or arrival itself scrolls off-screen.<br/><br/>
             The badges act like airport dots: <strong>hover one to see the same airport tooltip a map dot shows</strong> (name, owner, payout, runways, scenery, weather, and rental availability). Hovering also reveals two quick-action icons &mdash; a <strong>take-off plane (🛫) on the left sets that airport as your departure</strong>, and a <strong>landing plane (🛬) on the right sets it as your arrival</strong>. On touch devices the two icons are always visible.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
+        <div class="help-feature-icon">📏</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Map Scale Bar</div>
+          <div class="help-feature-desc">
+            The <strong>scale bar</strong> in the bottom-right of the map (v3.71.0) updates as you pan and zoom, showing <strong>nautical miles</strong> and <strong>kilometers</strong> at once &mdash; switching to <strong>feet</strong> and <strong>meters</strong> when zoomed in tighter than about 5&nbsp;nm across.<br/><br/>
+            <strong>Click the scale bar</strong> (v3.72.0) to toggle <strong>measurement mode</strong> on and off &mdash; the same as Tools&nbsp;&rarr;&nbsp;Measurement. <strong>Hover it</strong> to overlay full-screen horizontal and vertical guide lines with distance ticks, centered on the map, as a reminder that the scale is measured <strong>from the center of the map</strong>. The crosshair disappears as soon as you move off the bar.
           </div>
         </div>
       </div>
@@ -45620,10 +45924,37 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.72.1</span>
+          <span class="release-date">July 1, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: measurement bearing now matches the drawn line.</strong> A freshly-drawn measurement showed the <em>great-circle initial</em> bearing, which on long lines can differ from the straight line you actually see by tens of degrees (a coast-to-coast line reading "270° T" when it clearly ran southwest). The measurement line is a straight map segment — a constant-heading <strong>rhumb line</strong> — so it's now labeled with that constant true heading, matching both the line on screen and the reading you'd get after dragging it. Distance and magnetic conversion are unchanged.</li>
+          <li><strong>Scale crosshair: distances on both axes.</strong> The hover crosshair reticle now labels the <strong>vertical</strong> guide line with distances too, not just the horizontal one.</li>
+          <li><strong>Airport Owners button now lights up when it's filtering.</strong> When the map-wide Airport Owners filter is actually narrowing what's shown, the Owners button glows with the same conspicuous accent style as the "Filter to &lt;aircraft&gt;" button — so both filter cues read the same at a glance.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.72.0</span>
+          <span class="release-date">July 1, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New: one-click "filter the map to my aircraft" button.</strong> A distinct rounded button now sits on the map's top bar, centered between the menu buttons and the category filter. Pick an aircraft and it reads <em>"Filter to &lt;type&gt;"</em>; click it to show <strong>only the airports where that aircraft can be rented</strong>. It stacks on top of whatever else you're filtering and always limits to airports already on the map. When it's on, the button fills in and glows so the active state is obvious. With no aircraft chosen it reads <strong>"Select Aircraft"</strong> and opens the aircraft selector &mdash; the same as the Display menu's Select Aircraft.</li>
+          <li><strong>Quick toggles in the 🛩 Rentals menu.</strong> <strong>Available Now Only</strong> and <strong>On-Map Airports Only</strong> &mdash; previously only in the Rentals filter panel &mdash; are now also rows in the Rentals menu, each with a green check when on, so you can flip them without opening the panel. "Available Now Only" also governs the new aircraft-filter button.</li>
+          <li><strong>Aircraft Listing: a funnel marks filtered columns.</strong> Any column you've filtered now shows a green <strong>funnel</strong> icon in its header instead of the plain ▾, so it's easy to see at a glance which columns are narrowing the list.</li>
+          <li><strong>Click the map scale to measure; hover it for a center crosshair.</strong> Clicking the scale bar in the bottom-right now toggles <strong>measurement mode</strong> on and off. Hovering it overlays full-screen horizontal and vertical guide lines with distance ticks, centered on the map &mdash; a reminder that the scale is measured <strong>from the center of the map</strong> (the scale now samples from the center to match).</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.71.0</span>
-          <span class="release-date">June 30, 2026 &middot; Current</span>
+          <span class="release-date">June 30, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -58489,6 +58820,12 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgAircraftModeBtn" onclick="_rgRentalsMenuToggle();_rgCloseAnyPulldown()" title="Toggle the Aircraft Rentals view — dots recolor by the best rental payout at each airport, and the Rentals panel opens for filtering by aircraft type, owner, payout, and availability"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">Aircraft Rentals</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgAircraftListingBtn" onclick="_aaListTogglePanel();_rgCloseAnyPulldown()" title="Open the Aircraft Listing — a sortable, multi-filterable table of every rentable aircraft (airport, owner, ICAO, manufacturer, type, pilot payout %, availability, ground-ops free time). Filtering the table filters the map dots to the airports still shown."><span class="rg-row-icon">📋</span><span class="rg-btn-label">Aircraft Listing</span></button>
             <div class="rg-pulldown-sep"></div>
+            <!-- v3.72.0 — quick access to the two filter-panel switches; a green
+                 tick shows when each is on. Menu stays open so both can be flipped
+                 in one visit. They drive the same globals + prefs as the panel. -->
+            <button class="rg-btn rg-pulldown-row" id="rgRentAvailMenuBtn" onclick="_aaRentMenuToggleAvail()" title="Show only aircraft available to rent right now (not in ground ops or already rented). Also governs the top-bar aircraft filter."><span class="rg-row-icon">⏱</span><span class="rg-btn-label">Available Now Only</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgRentOwnedMenuBtn" onclick="_aaRentMenuToggleOwned()" title="Consider only SimFly-owned airports already shown on the map — not the extra rental-only airports from across the world."><span class="rg-row-icon">🗺</span><span class="rg-btn-label">On-Map Airports Only</span></button>
+            <div class="rg-pulldown-sep"></div>
             <button class="rg-btn rg-pulldown-row" id="rgRentResetBtn" onclick="_aaRentResetFilters();_rgCloseAnyPulldown()" title="Reset the rental filters (aircraft type, owner, minimum payout, availability) without leaving the Rentals view"><span class="rg-row-icon">↺</span><span class="rg-btn-label">Reset Rental Filters</span></button>
           </div>
         </div>
@@ -58498,6 +58835,11 @@ function rgSendToFlightPlanner() {
         <!-- v3.6.21 — #rgHdrRoute (oversized centre dep→arr readout) removed; the
              selected route now shows as a compact breadcrumb pill instead, so it
              no longer collides with the category filter on narrow screens. -->
+        <!-- v3.72.0 — Selected-aircraft map filter. Set apart from the 5 menu
+             buttons and centered in the left column's free space (flanking flex
+             spacers), balancing the Airport Owners menu across the category filter.
+             "Select Aircraft" when none is chosen; glows when the filter is on. -->
+        <span class="rg-acf-slot"><button class="rg-btn rg-acf-btn" id="rgAcFilterBtn" onclick="_aaAcFilterToggle()" title="Select an aircraft to filter the map to airports where it can be rented."><span class="rg-acf-ico"><svg class="rg-acf-funnel" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12L9.4 8.6V13l-2.8 1.6V8.6z" fill="currentColor"/></svg></span><span class="rg-btn-label">Select Aircraft</span></button></span>
       </div>
       <div class="rg-hdr-center" id="rgGlobalCatFilter">
         <span class="dist-cat-filter-label" style="position:relative;top:-2px" title="Filter all map airports by category — region filters take precedence within region rings">Map</span>
