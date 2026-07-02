@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.73.1**
+**Current version: v3.73.2**
 
 ---
 
@@ -51,7 +51,7 @@ Two related switches also live in the **🛩 Rentals menu** for quick access wit
 ### Find Where to Rent Your Aircraft
 New in v3.53.0 — a route-planning aid that answers "if I fly from this airport, can I actually get my aircraft from its owner?" First pick an aircraft in the **Aircraft** selector. Then, whenever you select a **departure** or **arrival** airport on the map, the app checks that airport **owner's whole fleet** and shows where your selected aircraft is available to rent **right now** — meaning no ground-operations timer is running.
 
-Every airport tooltip (and the departure/arrival cards in the distance matrix) gains a green **🛩 \<type\> for rent** line listing where the owner has your aircraft available, or a muted "none rentable from \<owner\>'s airports now" when there are none. On the map, turn on **Highlight other airports with \<type\>** in the **👁 Display** menu (the row carries your selected aircraft's code) and a green badge drops on the owner's *other* airports where your aircraft is rentable — pinpointing where to go pick it up. As of v3.67.0 each badge also shows the **highest available pilot payout %** there, color-coded on the rental spectrum.
+Every airport tooltip (and the departure/arrival cards in the distance matrix) gains a green **🛩 \<type\> for rent** line listing where the owner has your aircraft available, or a muted "none rentable from \<owner\>'s airports now" when there are none. On the map, turn on **Highlight other airports with \<type\>** in the **🛩 Rentals** menu (the row carries your selected aircraft's code) and a green badge drops on the owner's *other* airports where your aircraft is rentable — pinpointing where to go pick it up. As of v3.67.0 each badge also shows the **highest available pilot payout %** there, color-coded on the rental spectrum.
 
 A faint dotted green line links your selected airport to each of those rentable airports — styled so it can't be mistaken for a route, a measurement, or a distance line. If a rentable airport is **off-screen**, the line runs to the edge of the map and its badge waits there pointing toward it; **click or tap that edge badge to pan the map and center the airport**. And when you pan to one of those airports so your selected **departure or arrival** scrolls off-screen, its line gets a badge at the edge too — **cyan for the departure, orange for the arrival** — so you always know where the line leads back to; click it to pan straight back. Departure and arrival are handled independently, so each draws its own lines and badges; edge badges keep working as you pan and zoom, spread apart so they never overlap, and a badge's hover card always opens clear of the badge.
 
