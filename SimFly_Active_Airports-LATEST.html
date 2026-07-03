@@ -4535,6 +4535,20 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .rg-btn-close { border-color:rgba(255,61,90,0.35); color:var(--danger); }
   .rg-btn-close:hover { background:rgba(255,61,90,0.1) !important; border-color:var(--danger) !important; color:var(--danger) !important; }
   .rg-btn.active { background:rgba(0,200,255,0.18); border-color:var(--accent); color:var(--accent); }
+  /* v3.73.3 — lock every top-menu-bar button (desktop only — this row is
+     hidden on phone/touch, see .rg-hdr-left{display:none}) to 🛠 Tools' box
+     height, regardless of font-size, padding, or icon-only collapsed label
+     state. Without this, .rg-acf-btn's icon-only state (label hidden below
+     2001px) collapses shorter via its own line-height:1, and the owner /
+     scenery buttons (different classes entirely, smaller font+padding) both
+     render taller than Tools — so the row read visually uneven. */
+  @media (min-width: 769px) and (hover: hover) {
+    #rgToolsBtn, #rgDisplayBtn, #rgLiveBtn, #rgRentalsBtn, #afkAlertsBtn,
+    .rg-acf-btn, #rgMapOwnerBtn, #rgOwnerColorBtn, #rgSceneryBtn, .rg-btn-close {
+      height: 2.54rem;
+      box-sizing: border-box;
+    }
+  }
   /* Dismiss ✕ on the 🎲 Re-roll header button (v3.36.1). A span inside the
      button with its own click handler (stopPropagation prevents a re-roll);
      hides the whole Re-roll button for the rest of the session. */
@@ -8955,7 +8969,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.73.2';
+const APP_VERSION = '3.74.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11573,12 +11587,18 @@ window._aaChoiceShowIfNeeded = function _aaChoiceShowIfNeeded(){
     if (goneToMatrix || goneToMap) return;
     // Direct-mode entry (?mode=…) — considered LAST so it never overrides an
     // RT/RM handoff (owner/route/pilots). Accepts e.g. mapmode/map, ownermode/
-    // owner/matrix, simbriefmode/simbrief/sb. Clicks the matching choice card.
+    // owner/matrix, simbriefmode/simbrief/sb, rentalsmode/rentals/rental.
+    // Clicks the matching choice card.
     const _m = (_urlParams.mode || '').replace(/[\s_-]+/g, '').replace(/mode$/, '');
     if (_m) {
+      const _wantRentals = (_m === 'rentals' || _m === 'rental');
       const _id = (_m === 'owner' || _m === 'matrix') ? 'aaChoiceOwner'
-                : (_m === 'map' || _m === 'explore') ? 'aaChoiceMap'
+                : (_m === 'map' || _m === 'explore' || _wantRentals) ? 'aaChoiceMap'
                 : (_m === 'simbrief' || _m === 'sb') ? 'aaChoiceSimbrief' : null;
+      // v3.74.0 — ?mode=rentals opens the map (same as ?mode=map) then, once
+      // the map + rental feed are both ready, engages Aircraft Rentals mode.
+      // See the "Aircraft Rentals" flag consumed in the aaChoiceMap handler below.
+      if (_wantRentals) window._aaPendingRentalsMode = true;
       const _btn = _id && document.getElementById(_id);
       if (_btn) { _btn.click(); return; }
     }
@@ -11606,7 +11626,33 @@ function _aaChoiceHide(){
   });
   if (mapBtn) mapBtn.addEventListener('click', () => {
     _aaChoiceHide();
-    setTimeout(() => { try { openRegionModal(); } catch(e) { console.warn('openRegionModal failed:', e); } }, 360);
+    // v3.74.0 — ?mode=rentals sets this flag (see _aaChoiceShowIfNeeded) before
+    // clicking this same button. Captured now so a later manual map open
+    // doesn't accidentally replay a stale flag.
+    const wantRentals = !!window._aaPendingRentalsMode;
+    window._aaPendingRentalsMode = false;
+    setTimeout(() => {
+      try { openRegionModal(); } catch(e) { console.warn('openRegionModal failed:', e); }
+      if (wantRentals) {
+        // Rental feed is ingested inside loadAirportDB()'s boot chain — chaining
+        // onto the same memoized promise guarantees ingestion has already run
+        // (success or failure) by the time this fires. _rgMap itself lags behind
+        // (it waits on a separately-loaded Leaflet script), so poll for it with
+        // a ~5s bailout — if it never appears the map is still open and Aircraft
+        // Rentals can be opened manually from the 🛩 Rentals menu.
+        loadAirportDB().then(() => {
+          (function _waitForMapThenRentals(tries) {
+            tries = tries || 0;
+            if (!_rgMap) {
+              if (tries > 100) return;
+              setTimeout(() => _waitForMapThenRentals(tries + 1), 50);
+              return;
+            }
+            if (typeof _rgRentalsMenuToggle === 'function') _rgRentalsMenuToggle();
+          })();
+        }).catch(() => {});
+      }
+    }, 360);
   });
   const simbriefChoiceBtn = document.getElementById('aaChoiceSimbrief');
   if (simbriefChoiceBtn) simbriefChoiceBtn.addEventListener('click', () => {
@@ -45962,10 +46008,32 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.74.0</span>
+          <span class="release-date">July 2, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New URL parameter: <code>?mode=rentals</code>.</strong> Launches straight to the interactive map with the <strong>🛩 Aircraft Rentals</strong> view already active and its control panel open — skipping the startup choice screen and the Tools → Rentals menu, so a bookmarked or shared link can drop a pilot directly into rental-hunting mode. Works the same way the existing <code>?mode=map</code> / <code>?mode=owner</code> / <code>?mode=simbrief</code> shortcuts do.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.73.3</span>
+          <span class="release-date">July 2, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: uneven map header button heights.</strong> Tools, Display, Live, Rentals, Alerts, the aircraft filter pill, Airport Owners, Owner Colors, the Scenery/Highlight split button, and Close now all render at the exact same height, so the top toolbar reads as one aligned row instead of a mix of taller and shorter buttons.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.73.2</span>
-          <span class="release-date">July 1, 2026 &middot; Current</span>
+          <span class="release-date">July 1, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -58901,7 +58969,7 @@ function rgSendToFlightPlanner() {
             <!-- v3.53.0 — badge the OTHER airports of a selected dep/arr airport's
                  owner that have the selected aircraft rentable now. Label carries
                  the aircraft ICAO; grayed (but hover-explained) with no aircraft.
-                 Moved here from the Display menu in v3.74.0 — it's rental data. -->
+                 Moved here from the Display menu in v3.73.2 — it's rental data. -->
             <button class="rg-btn rg-pulldown-row" id="rgOwnerAcBadgeBtn" onclick="_aaToggleOwnerAcBadge();_rgCloseAnyPulldown()" title="Select an aircraft — it will be used for time estimates, airport suitability determinations, and alternate airport recommendations. Click to open the aircraft selector. Afterwards click the ⊙ Map button to return to this screen."><span class="rg-row-icon">🛩</span><span class="rg-btn-label">Select Aircraft</span></button>
             <div class="rg-pulldown-sep"></div>
             <!-- v3.72.0 — quick access to the two filter-panel switches; a green
