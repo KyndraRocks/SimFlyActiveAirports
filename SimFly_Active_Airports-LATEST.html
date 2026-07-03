@@ -8969,7 +8969,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.74.2';
+const APP_VERSION = '3.76.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -19715,6 +19715,43 @@ const _afkETA = (() => {
     return null;
   }
 
+  // Raw nm distance until a geofence/waypoint alarm's trigger condition is
+  // met — ground-speed independent (v3.75.0). Shared by compute() (which
+  // divides by gs for the ETA) and nextDistance() (the ALERT DISTANCE
+  // data-panel metric). Returns NaN for alarm types with no fixed
+  // distance-to-trigger, or when the geometry can't currently be
+  // evaluated (already inside/outside for enter/exit, no live waypoint
+  // match yet, no live position, etc).
+  function distToTrigger(alarm, ac) {
+    if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
+    if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
+    if (alarm.type === 'geofence') {
+      const p = alarm.params;
+      const c = (typeof _afkGeofenceCenter === 'function') ? _afkGeofenceCenter(p) : { lat: p.lat, lng: p.lng };
+      if (!c) return NaN;
+      const d = _afkDistNm(ac.lat, ac.lng, c.lat, c.lng);
+      if (!isFinite(d)) return NaN;
+      const inside = d < p.radiusNm;
+      if (p.trigger === 'enter') {
+        if (inside) return NaN; // already inside; can't predict exit
+        return d - p.radiusNm;
+      } else if (p.trigger === 'exit') {
+        if (!inside) return NaN;
+        return p.radiusNm - d;
+      } else { // both
+        return Math.abs(d - p.radiusNm);
+      }
+    }
+    if (alarm.type === 'waypoint') {
+      const wp = _wpForAlarm(alarm);
+      if (!wp) return NaN;
+      const d = _afkDistNm(ac.lat, ac.lng, parseFloat(wp.fix.pos_lat), parseFloat(wp.fix.pos_long));
+      if (!isFinite(d)) return NaN;
+      return d;
+    }
+    return NaN;
+  }
+
   function compute(alarm, ac) {
     if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
     // Timer alarms are independent of aircraft state — compute first so
@@ -19757,32 +19794,10 @@ const _afkETA = (() => {
     }
     if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
     const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
-    if (alarm.type === 'geofence') {
-      const p = alarm.params;
-      // v2.84.0 — resolve the live centre (handles dep/arr anchors).
-      const c = (typeof _afkGeofenceCenter === 'function') ? _afkGeofenceCenter(p) : { lat: p.lat, lng: p.lng };
-      if (!c) return NaN;
-      const d = _afkDistNm(ac.lat, ac.lng, c.lat, c.lng);
-      if (!isFinite(d)) return NaN;
-      const inside = d < p.radiusNm;
-      if (p.trigger === 'enter') {
-        if (inside) return NaN; // already inside; can't predict exit
-        if (gs < 5) return Infinity;
-        return ((d - p.radiusNm) / gs) * 3600;
-      } else if (p.trigger === 'exit') {
-        if (!inside) return NaN;
-        if (gs < 5) return Infinity;
-        // Rough estimate: assume straight-line crossing in current heading direction
-        return ((p.radiusNm - d) / gs) * 3600;
-      } else { // both
-        if (gs < 5) return Infinity;
-        return (Math.abs(d - p.radiusNm) / gs) * 3600;
-      }
-    }
-    if (alarm.type === 'waypoint') {
-      const wp = _wpForAlarm(alarm);
-      if (!wp) return NaN;
-      const d = _afkDistNm(ac.lat, ac.lng, parseFloat(wp.fix.pos_lat), parseFloat(wp.fix.pos_long));
+    // v3.75.0 — geofence/waypoint distance math extracted into distToTrigger()
+    // above, shared with nextDistance() (ALERT DISTANCE data-panel metric).
+    if (alarm.type === 'geofence' || alarm.type === 'waypoint') {
+      const d = distToTrigger(alarm, ac);
       if (!isFinite(d)) return NaN;
       if (gs < 5) return Infinity;
       return (d / gs) * 3600;
@@ -19862,6 +19877,24 @@ const _afkETA = (() => {
     return { alarm: bestAlarm, etaSec: bestEta, location: locationOf(bestAlarm) };
   }
 
+  // v3.75.0 — Closest geo-bound (geofence/waypoint) alarm by raw distance,
+  // powering the ALERT DISTANCE data-panel metric. Deliberately a SEPARATE
+  // scan from next(), which ranks by soonest ETA across every alarm type
+  // (timer, altitude, descent, etc. included) — a fast-approaching timer
+  // can beat a far-off geofence on ETA, but ALERT DISTANCE only has a
+  // meaning for geo-bound alarms, so it ranks within that subset alone.
+  function nextDistance(ac) {
+    let bestDist = Infinity, bestAlarm = null;
+    _afkAlarms.list().forEach(a => {
+      if (!a.enabled || a.status === 'tripped') return;
+      if (a.type !== 'geofence' && a.type !== 'waypoint') return;
+      const d = distToTrigger(a, ac);
+      if (isFinite(d) && d < bestDist) { bestDist = d; bestAlarm = a; }
+    });
+    if (!bestAlarm) return null;
+    return { alarm: bestAlarm, distNm: bestDist, location: locationOf(bestAlarm) };
+  }
+
   // Resolve a map location for an alarm so the data panel can offer a
   // "click to recentre" link. Returns null for alarm types with no fixed
   // map location (timer, altitude, phase-change).
@@ -19888,7 +19921,7 @@ const _afkETA = (() => {
     return null;
   }
 
-  return { compute, next, fmt, locationOf };
+  return { compute, next, nextDistance, fmt, locationOf };
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
@@ -21034,6 +21067,13 @@ const _AFK_COND_PARAMS = [
   { id: 'etaNext',   label: 'ETA to next waypoint',    unit: 'sec', defaultVal: 5,    isTime: true, defaultUnit: 'minutes', defaultValSec: 300,  evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); if (!nx || !ac.gs || ac.gs <= 5) return null; return (nx.distNm / ac.gs) * 3600; } },
   { id: 'elapsed',   label: 'Elapsed time',            unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'minutes', defaultValSec: 3600, evalFn: () => { const d = (typeof _afkDemoElapsedSec === 'function') ? _afkDemoElapsedSec() : null; if (d != null) return d; return (typeof _afkTakeoffAt !== 'undefined' && _afkTakeoffAt > 0) ? (Date.now() - _afkTakeoffAt) / 1000 : null; } },
   { id: 'alertEta',  label: 'Alert ETA',               unit: 'sec', defaultVal: 60,   isTime: true, defaultUnit: 'seconds', defaultValSec: 60,   evalFn: (ac) => { try { const nx = _afkETA.next(ac); return (nx && isFinite(nx.etaSec)) ? nx.etaSec : null; } catch (_) { return null; } } },
+  // v3.76.0 — Alert distance mirrors Alert ETA above, but sourced from
+  // _afkETA.nextDistance() (geofence/waypoint only, see the ALERT DISTANCE
+  // data-panel field, v3.75.0) rather than _afkETA.next() (every alarm
+  // type). Only alerts with a fixed map location have a distance to
+  // measure, so this yields null (awaiting-data) whenever no geofence or
+  // waypoint alert is armed, even if a timer/altitude alert is next overall.
+  { id: 'alertDist', label: 'Alert distance',          unit: 'nm',  defaultVal: 5,    evalFn: (ac) => { try { const nd = _afkETA.nextDistance(ac); return (nd && isFinite(nd.distNm)) ? nd.distNm : null; } catch (_) { return null; } } },
 ];
 // v2.94.2 — Seconds-per-unit for the time-unit pulldown.
 const _AFK_TIME_UNIT_SEC = { seconds: 1, minutes: 60, hours: 3600 };
@@ -25743,6 +25783,12 @@ const _AFK_DP_ELEMENTS = {
                title:'Track deviation — perpendicular distance abeam the loaded SimBrief route (nm). Requires a SimBrief flight plan.' },
   nextAlarm: { label:'NEXT ALERT',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
   nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
+  // v3.75.0 — nm to the closest geofence/waypoint alarm's trigger point.
+  // Hidden by default; toggle on via the ⚙ menu. Lives in Alerts (not
+  // Distance) since it tracks a specific armed alarm, same as NEXT ALERT /
+  // ALERT ETA, rather than a fixed point like DIST TO DEST.
+  alertDist: { label:'ALERT DISTANCE', group:'Alerts',  valueId:'afkDpAlertDist', minWidth:'5.5em',
+               title:'Nautical miles to the trigger point of the closest armed geofence or waypoint alert. Only alerts with a fixed map location have a distance to show — timer, altitude, and other non-geographic alerts are excluded.' },
 };
 
 const _AFK_DP_DEFAULT_CONFIG = [
@@ -26425,6 +26471,33 @@ function _afkUpdateDataPanel(ac) {
     _afkDpSetTitle('afkDpNextAlarm', null);
     if (nextEtaEl) { nextEtaEl.textContent = '—'; nextEtaEl.className = 'afk-dp-value muted'; }
     _afkDpSetTitle('afkDpNextEta', null);
+  }
+
+  // v3.75.0 — ALERT DISTANCE. A separate scan from nx/NEXT ALERT above (which
+  // ranks by soonest ETA across every alarm type) — this ranks by raw nm
+  // among geofence/waypoint alarms only, since those are the only types with
+  // a fixed trigger point a distance can be measured to.
+  const distEl2 = document.getElementById('afkDpAlertDist');
+  if (distEl2) {
+    const nd = _afkETA.nextDistance(ac);
+    if (nd) {
+      distEl2.textContent = nd.distNm.toFixed(1) + ' nm';
+      distEl2.className = 'afk-dp-value' + (nd.location ? ' is-link' : '');
+      const typeLbl = _afkAlarmTypeLabel(nd.alarm.type);
+      const userName = (nd.alarm.params && nd.alarm.params.label) ? String(nd.alarm.params.label).trim() : '';
+      const wpLeg = (nd.alarm.type === 'waypoint' && nd.location && nd.location.label) ? ' (' + nd.location.label + ')' : '';
+      const label = (userName ? userName + ' (' + typeLbl + ')' : typeLbl) + wpLeg;
+      const tip = 'Closest geo-bound alert: ' + label + (nd.location ? '\n\nClick to centre the map on this alert.' : '');
+      _afkSetTitleSafe(distEl2, tip);
+      distEl2.onclick = nd.location ? (() => _afkRecentreOnAlarm(nd.location)) : null;
+      _afkDpSetTitle('afkDpAlertDist', tip);
+    } else {
+      distEl2.textContent = '—';
+      distEl2.className = 'afk-dp-value muted';
+      _afkSetTitleSafe(distEl2, '');
+      distEl2.onclick = null;
+      _afkDpSetTitle('afkDpAlertDist', null);
+    }
   }
 }
 
@@ -45855,7 +45928,7 @@ function rgSendToFlightPlanner() {
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
-              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA. Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -45960,7 +46033,7 @@ function rgSendToFlightPlanner() {
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
             <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE, and <strong>NEXT</strong> (the ident of the next un-passed waypoint on the loaded SimBrief route; v3.6.0 — shows &mdash; without a plan). A <strong>TRK DEV</strong> field (v3.6.2 — cross-track distance in nm abeam the SimBrief route) is also available but hidden by default; add it from the ⚙ menu under <em>Navigation</em>. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
             <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. <strong>In Flight Demo Mode</strong> (v3.6.5) ELAPSED shows <em>simulated</em> time since takeoff — matching the scrub bar — rather than wall-clock, so a sped-up demo reports the flight time it represents.<br/><br/>
-            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks.<br/><br/>
+            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks. An optional <strong>ALERT DISTANCE</strong> field (v3.75.0, hidden by default &mdash; add it from the ⚙ menu under <em>Alerts</em>) shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point. It's a separate ranking from NEXT ALERT &mdash; NEXT ALERT picks whichever armed alert of <em>any</em> type will trip soonest, while ALERT DISTANCE only ever considers geofence and waypoint alerts (the only types with a fixed trigger point a distance can be measured to), so a fast-approaching timer or altitude alert can be the overall NEXT ALERT without changing what ALERT DISTANCE shows. Like NEXT ALERT, the value is clickable to recentre the map on that alert.<br/><br/>
             The panel starts collapsed on every page load and auto-expands as soon as live data begins flowing (FSUIPC connected or demo started); it returns to collapsed when the source stops. Click the small <strong>⏷</strong> chevron to toggle it manually at any time. The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
 
             <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Navigation</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
@@ -46034,10 +46107,32 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.76.0</span>
+          <span class="release-date">July 3, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Conditional-alert (🧩) parameter: Alert distance.</strong> Build custom alarms like "notify me when the closest geofence/waypoint alert is under 5 nm" — mirrors the existing Alert ETA parameter, but compares against the nautical-mile ALERT DISTANCE value (v3.75.0) instead of the time-based ALERT ETA. Only meaningful for geofence and waypoint alerts, so it reads "awaiting data" whenever none is armed, even if another alert type is next overall.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.75.0</span>
+          <span class="release-date">July 3, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New optional data-panel field: ALERT DISTANCE.</strong> Shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point — the only alert types with a fixed map location a distance can be measured to. Hidden by default; add it from the ⚙ data-panel menu under <em>Alerts</em>, alongside NEXT ALERT and ALERT ETA. Deliberately a separate ranking from NEXT ALERT — a fast-approaching timer or altitude alert can be the overall soonest alert without changing what ALERT DISTANCE shows, since it only ever considers geofence/waypoint alerts. Like NEXT ALERT, the value is clickable to recentre the map on that alert.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.74.2</span>
-          <span class="release-date">July 3, 2026 &middot; Current</span>
+          <span class="release-date">July 3, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
