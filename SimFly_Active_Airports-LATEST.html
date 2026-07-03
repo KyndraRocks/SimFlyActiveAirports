@@ -8969,7 +8969,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.74.0';
+const APP_VERSION = '3.74.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -29337,9 +29337,19 @@ function _slShowToast(msg) {
     x.textContent = '✕';
     x.title = 'Dismiss';
     x.setAttribute('aria-label', 'Dismiss notification');
-    x.addEventListener('click', _slDismissToast);
+    x.addEventListener('click', (ev) => { ev.stopPropagation(); _slDismissToast(); });
     t.appendChild(span);
     t.appendChild(x);
+    // v3.74.1 — This toast floats directly over the Leaflet map (it's shown by
+    // _slToggleFromMap, itself triggered by clicking a map dot in "add scenery
+    // from map" mode), so without this guard a click on the ✕ bleeds through
+    // to the map underneath and re-fires whatever dot sits at that screen
+    // position — same class of bug fixed for the floating measurement toolbar
+    // in v3.72.2. stopPropagation() above covers the button; this covers the
+    // whole toast pill in case the click lands just outside the ✕ hit area.
+    if (typeof L !== 'undefined' && L.DomEvent) {
+      try { L.DomEvent.disableClickPropagation(t); } catch (_) {}
+    }
   }
   span.textContent = msg;
   t.classList.add('show');
@@ -46008,10 +46018,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.74.1</span>
+          <span class="release-date">July 3, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: Scenery Library toast's ✕ close button bled through to the map.</strong> The toast shown when adding/removing an airport from your Scenery Library (including via clicking a dot on the map) floats directly over the map, and clicking its ✕ wasn't stopping the click there — it kept going and could re-trigger whatever map interaction was underneath, on top of not reliably dismissing the toast. Same class of bug as the floating measurement toolbar fix in v3.72.2; fixed the same way.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.74.0</span>
-          <span class="release-date">July 2, 2026 &middot; Current</span>
+          <span class="release-date">July 2, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
