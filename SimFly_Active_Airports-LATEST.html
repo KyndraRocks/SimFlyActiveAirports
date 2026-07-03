@@ -8969,7 +8969,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.74.1';
+const APP_VERSION = '3.74.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12726,9 +12726,21 @@ function _stampRecipInbox(newPilots) {
 // creates a fixed-position pill at the bottom-right that auto-dismisses.
 let _aaRtToastTmr      = null;
 let _aaRtToastDeadline = 0;
+let _aaRtToastRaf      = 0;   // pending fade-in rAF handle — cancelled on dismiss (v3.74.2)
 function _aaRtToastDismiss() {
   const el = document.getElementById('aaRtToast');
   if (el) {
+    // v3.74.2 — cancel any pending fade-in rAF BEFORE touching opacity. rAF is
+    // suspended entirely while the tab is backgrounded (unlike setTimeout,
+    // which keeps firing, just throttled) — so if this toast appeared while
+    // backgrounded, its fade-in rAF from _aaRtToast() could still be queued
+    // when this timeout-driven dismiss runs. Left uncancelled, that stale rAF
+    // fires the instant the tab regains focus/visibility and sets
+    // el.style.opacity='1' — AFTER pointerEvents was already set to 'none'
+    // below — so the toast looks fully visible again but is actually inert,
+    // eating every click as a pass-through to whatever is underneath (the
+    // map) with no way to dismiss it. Cancelling here closes that race.
+    if (_aaRtToastRaf) { cancelAnimationFrame(_aaRtToastRaf); _aaRtToastRaf = 0; }
     el.style.opacity = '0';
     el.classList.remove('show');   // disables the ✕ button's pointer-events
     // v3.13.1 — the toast was created with pointer-events:auto (so it
@@ -12771,7 +12783,11 @@ function _aaRtToast(msg, kind) {
   el.querySelector('.toast-msg').textContent = msg;
   el.style.pointerEvents = 'auto';
   el.classList.add('show');   // enables the ✕ button's pointer-events
-  requestAnimationFrame(() => { el.style.opacity = '1'; });
+  // v3.74.2 — track the rAF handle so a dismiss (timer-driven, possibly firing
+  // while still backgrounded) can cancel it before it goes stale. See the
+  // cancellation comment in _aaRtToastDismiss() for the full race.
+  if (_aaRtToastRaf) cancelAnimationFrame(_aaRtToastRaf);
+  _aaRtToastRaf = requestAnimationFrame(() => { _aaRtToastRaf = 0; el.style.opacity = '1'; });
   if (_aaRtToastTmr) clearTimeout(_aaRtToastTmr);
   _aaRtToastDeadline = Date.now() + 4000;
   _aaRtToastTmr = setTimeout(_aaRtToastDismiss, 4000);
@@ -46020,8 +46036,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.74.1</span>
+          <span class="release-version">v3.74.2</span>
           <span class="release-date">July 3, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: FSUIPC (and other) toasts could get stuck un-dismissable after alt-tabbing back to the app.</strong> A toast's fade-in relied on a browser animation frame, which is paused entirely while the tab is in the background — so a toast that appeared while you were alt-tabbed into the sim (like the "FSUIPC not detected yet" heads-up) could get auto-dismissed by its 4-second timer (which keeps running in the background) before that fade-in ever ran. The stale, still-queued fade-in then fired the moment you returned focus, making the toast look fully visible again — but it was already non-interactive underneath, so clicking it (including its ✕) did nothing and the click fell straight through to the map. The fade-in is now cancelled the instant a toast is dismissed, so a late-returning animation frame can never resurrect a toast that's already gone.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.74.1</span>
+          <span class="release-date">July 3, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
