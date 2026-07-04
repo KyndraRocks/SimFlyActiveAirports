@@ -748,6 +748,8 @@
   .npc-btn-file:hover { background: rgba(255,106,0,0.1); }
   .npc-btn-save   { border-color: var(--accent2); color: var(--accent2); background: rgba(255,106,0,0.15); }
   .npc-btn-save:hover { background: rgba(255,106,0,0.3); }
+  .npc-btn-danger { border-color: #e24b4a; color: #e24b4a; }
+  .npc-btn-danger:hover { background: rgba(226,75,74,0.15); }
   /* v2.97.24 — visible disabled state on every .npc-btn variant. Without
      this, a disabled save/start button kept its filled accent colour and
      was visually indistinguishable from the enabled state. Matches both
@@ -793,6 +795,11 @@
   /* Low-rotation confirm — same map-pill entry point, and it stacks ABOVE the
      new-pilot confirm (shows first), so it needs to clear the map too. */
   #lrcModal { z-index: 9600; }
+  /* Owner Groups delete confirm (v3.82.0) — opened from inside the Owner
+     Groups floating panel (#ogpPanel, z-index 1004), itself inside the
+     region map (#regionModal, z-index 9000). Missed this override when the
+     modal was added — it was rendering underneath both. */
+  #ogpConfirmModal { z-index: 9600; }
   .lrc-rem { color: #e84a4a; font-weight: 700; letter-spacing: 0.05em; min-width: 5.5rem; text-align: right; font-variant-numeric: tabular-nums; }
   /* LOW ROTATIONS modal — yellow title and all text 30% larger than the shared
      modal defaults (title 0.96→1.25, close 1.2→1.56, rows 1→1.3, msg 0.88→1.14,
@@ -8969,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.76.0';
+const APP_VERSION = '3.82.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -9276,6 +9283,7 @@ function loadAirportDB() {
       _aaRentLoadCollapse();
       _aaRentPaletteLoad();
       try { _aaListLoadPrefs(); } catch (_) {}   // Aircraft Listing prefs (v3.66.0)
+      try { _ogpLoadPrefs(); _ogpLoadGroups(); } catch (_) {}   // Owner Groups panel (v3.77.0)
 
       // ── Build new-airports set (airports activated within the configured window) ──
       if (payoutDataJson && typeof payoutDataJson === 'object') {
@@ -29918,6 +29926,8 @@ const _MSF_SETTINGS_REGISTRY = {
   'simfly_aa_rotation_filter':        { label:'Rotations-left filter',         group:'Map display & filters' },
   'simfly_aa_new_airports':           { label:'New-airports overlay',          group:'Map display & filters' },
   'simfly_aa_owner_ac_badge':         { label:'Owner-aircraft badges',         group:'Map display & filters' },
+  'simfly_aa_owner_groups':           { label:'Saved owner groups',            group:'Map display & filters' },
+  'simfly_aa_owner_groups_panel_prefs': { label:'Airport Owners panel prefs', group:'Map display & filters' },
   // Color palettes
   'simfly_aa_payout_palette':         { label:'Payout color palette',          group:'Color palettes' },
   'simfly_aa_rent_palette':           { label:'Rentals color palette',         group:'Color palettes' },
@@ -29965,6 +29975,7 @@ const _MSF_COUNT_NOUN = {
   'simfly_aa_scenery_library':   'airport',
   'simfly_aa_afk_alarms':        'alarm',
   'simfly_aa_afk_alert_history': 'entry',
+  'simfly_aa_owner_groups':      'group',
 };
 
 // ── runtime state ──
@@ -31174,6 +31185,39 @@ function _aaListSavePrefs() {
   } catch (_) {}
 }
 
+// ── Owner Groups panel persistence (v3.77.0) ────────────────────────────────
+function _ogpLoadPrefs() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_OGP_PREFS_KEY) || 'null');
+    if (!o || typeof o !== 'object') return;
+    if (o.view === 'owners' || o.view === 'groups') _ogpView = o.view;
+    if (o.sort === 'name' || o.sort === 'count') _ogpSort = o.sort;
+    if (o.sortDir === 'asc' || o.sortDir === 'desc') _ogpSortDir = o.sortDir;
+    if (o.geom && typeof o.geom === 'object') _ogpGeom = o.geom;
+    if (typeof o.opacity === 'number') _ogpOpacity = Math.max(0.1, Math.min(1, o.opacity));
+    if (typeof o.userSized === 'boolean') _ogpUserSized = o.userSized;
+  } catch (_) {}
+}
+function _ogpSavePrefs() {
+  try {
+    localStorage.setItem(_OGP_PREFS_KEY, JSON.stringify({
+      view:_ogpView, sort:_ogpSort, sortDir:_ogpSortDir, geom:_ogpGeom, opacity:_ogpOpacity, userSized:_ogpUserSized,
+    }));
+  } catch (_) {}
+}
+function _ogpLoadGroups() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(_OGP_GROUPS_KEY) || 'null');
+    if (Array.isArray(arr)) {
+      _ogpGroups = arr.filter(g => g && typeof g === 'object' && typeof g.id === 'string' && typeof g.name === 'string' && Array.isArray(g.ownerNames))
+        .map(g => ({ id:g.id, name:g.name, color: typeof g.color === 'string' ? g.color : _RG_OWNER_PALETTE_16[0], ownerNames: g.ownerNames.filter(n => typeof n === 'string') }));
+    }
+  } catch (_) {}
+}
+function _ogpSaveGroups() {
+  try { localStorage.setItem(_OGP_GROUPS_KEY, JSON.stringify(_ogpGroups)); } catch (_) {}
+}
+
 // Ingest the feed JSON into the in-memory model. Null/!ok feed = empty model
 // (mode still works, just shows nothing). Called once at boot.
 function _aaRentIngest(json) {
@@ -31810,6 +31854,33 @@ let _rgDepOwnerFilter = null;
 let _rgArrOwnerFilter = null;
 let _rgMapOwnerFilter   = null; // map-wide owner filter — Set of owner names, null = show all
 let _rgMapCountryFilter = null; // map-wide country filter — Set of ISO codes, null = show all
+
+// ── Owner Groups panel (v3.77.0) — floating panel replacing the old Airport
+// Owners dropdown. Ad hoc filtering still writes straight to _rgMapOwnerFilter
+// above; groups are just named, saved subsets of owner names that can be
+// re-applied in one click. See _ogpToggleGroup / _rgRebuildOwnerColorAssignment.
+// v3.81.0 — dropped the imperative _ogpActiveGroupId/_ogpEditingGroupId
+// tracking (source of the "what does Applied mean / how do I exit editing"
+// confusion). A group's checkbox/color-tint state is now always DERIVED live
+// from _rgMapOwnerFilter (see _ogpGroupActiveInfo/_ogpFindExactGroupMatch) —
+// no separate state to get out of sync or need "exiting." The only remaining
+// imperative bit is _ogpLastLoadedGroupId, a lightweight breadcrumb (not a
+// mode) so the Owners tab footer can offer "Update <name>" after "load group
+// for editing" — cleared the instant that's resolved (Update / Save as new).
+const _OGP_GROUPS_KEY = 'simfly_aa_owner_groups';
+const _OGP_PREFS_KEY  = 'simfly_aa_owner_groups_panel_prefs';
+let _ogpGroups        = [];      // [{id, name, color, ownerNames:[...]}]
+let _ogpLastLoadedGroupId = null; // id of the group last loaded via ✎ "edit", or null
+let _ogpGroupExpanded = new Set(); // group ids currently expanded to show member chips — session-only
+let _ogpView          = 'owners'; // 'owners' | 'groups'
+let _ogpSort          = 'name';  // 'name' | 'count'
+let _ogpSortDir       = 'asc';
+let _ogpSearch        = '';
+let _ogpExpanded      = new Set(); // owner names currently expanded — session-only, not persisted
+let _ogpGeom          = null;    // panel geometry, same shape as _aaListGeom
+let _ogpOpacity       = 1;
+let _ogpUserSized     = false;
+let _ogpArrowIdx      = -1;      // keyboard row-focus index into the currently visible owner rows
 let _rgPinnedIcaos      = new Set(); // ICAOs explicitly pinned via search; always rendered
 // v3.44.1 — pins are normally PURELY ADDITIVE (shown on top of whatever else is
 // visible). This flag flips them to EXCLUSIVE ("show only the pins") and is set
@@ -38073,6 +38144,21 @@ let _rgOwnerColorAssignment = null;             // Map<ownerName, color> rebuilt
 function _rgRebuildOwnerColorAssignment() {
   _rgOwnerColorAssignment = null;
   if (!_rgMapOwnerFilter || _rgMapOwnerFilter.size === 0) return;
+  // v3.77.0 (derivation rewritten v3.81.0) — when the current filter EXACTLY
+  // matches a saved Owner Group's membership, every member shares that
+  // group's single swatch color instead of the per-owner rainbow below, so
+  // the group reads as one visual unit on the map. Derived live from
+  // whatever _rgMapOwnerFilter happens to be — no separate "which group is
+  // active" flag to keep in sync, so this is correct regardless of whether
+  // the match came from toggling the group, hand-checking the same owners,
+  // or editing then coincidentally landing back on an exact match.
+  const _ogpMatchedGroup = typeof _ogpFindExactGroupMatch === 'function' ? _ogpFindExactGroupMatch() : null;
+  if (_ogpMatchedGroup) {
+    const map = new Map();
+    for (const n of _rgMapOwnerFilter) map.set(n, _ogpMatchedGroup.color);
+    _rgOwnerColorAssignment = map;
+    return;
+  }
   const owners = [..._rgMapOwnerFilter].sort();
   const map = new Map();
   if (owners.length <= _RG_OWNER_PALETTE_16.length) {
@@ -39795,6 +39881,81 @@ function _aaListResizeStart(ev, dir) {
 function _aaListDragFromHandle(ev) {
   if (typeof _aaChipDragFromHandle === 'function') _aaChipDragFromHandle(ev, 'aaListPanel');
   window.addEventListener('pointerup', _aaListSaveGeom, { once: true });
+}
+
+// ── Owner Groups panel lifecycle / drag / resize (v3.77.0) — mirrors the
+// Aircraft Listing panel mechanics above. Unlike that panel, closing this one
+// does NOT clear _rgMapOwnerFilter — the owner filter persists exactly like
+// it did with the dropdown this panel replaces. ─────────────────────────────
+function _ogpPanelOpen() { const p = document.getElementById('ogpPanel'); return !!(p && p.classList.contains('ogp-open')); }
+function _ogpTogglePanel() { _ogpShowPanel(!_ogpPanelOpen()); }
+function _ogpClosePanel() { _ogpShowPanel(false); }
+function _ogpShowPanel(on) {
+  const p = document.getElementById('ogpPanel'); if (!p) return;
+  p.classList.toggle('ogp-open', !!on);
+  if (on) {
+    if (!p._ogpPosInit) {
+      _ogpApplyGeom(p);
+      p._ogpPosInit = true;
+      if (typeof L !== 'undefined' && L.DomEvent) { L.DomEvent.disableScrollPropagation(p); L.DomEvent.disableClickPropagation(p); }
+    }
+    _ogpApplyOpacity();
+    _ogpSetView(_ogpView);
+    document.addEventListener('keydown', _ogpKeyHandler);
+  } else {
+    _ogpSaveGeom();
+    document.removeEventListener('keydown', _ogpKeyHandler);
+    _ogpSetArrow(-1);
+  }
+}
+function _ogpApplyOpacity() {
+  const o = (_ogpOpacity == null ? 1 : _ogpOpacity);
+  const p = document.getElementById('ogpPanel'); if (p) p.style.opacity = o;
+  const sl = document.getElementById('ogpOpacity'); if (sl) sl.value = Math.round(o * 100);
+}
+function _ogpSetOpacity(v) {
+  _ogpOpacity = Math.max(0.1, Math.min(1, (+v || 100) / 100));
+  const p = document.getElementById('ogpPanel'); if (p) p.style.opacity = _ogpOpacity;
+  _ogpSavePrefs();
+}
+function _ogpApplyGeom(p) {
+  const mc = document.getElementById('rgMapContainer');
+  const cw = mc ? mc.clientWidth : window.innerWidth, ch = mc ? mc.clientHeight : window.innerHeight;
+  let g = _ogpGeom;
+  if (!g || !g.width) { const W = Math.round(Math.min(cw * 0.55, 640)), H = Math.round(Math.min(ch * 0.6, 560)); g = { width:W, height:H, left:Math.round((cw - W) / 2), top:Math.round((ch - H) / 2) }; _ogpGeom = g; }
+  const W = Math.max(420, Math.min(g.width, cw - 12)), H = Math.max(340, Math.min(g.height, ch - 12));
+  const left = Math.max(0, Math.min(g.left, cw - W)), top = Math.max(0, Math.min(g.top, ch - H));
+  p.style.left = left + 'px'; p.style.top = top + 'px'; p.style.right = 'auto'; p.style.width = W + 'px'; p.style.height = H + 'px';
+}
+function _ogpSaveGeom() {
+  const p = document.getElementById('ogpPanel'); if (!p || !p._ogpPosInit) return;
+  _ogpGeom = { left:p.offsetLeft, top:p.offsetTop, width:p.offsetWidth, height:p.offsetHeight };
+  _ogpSavePrefs();
+}
+function _ogpResizeStart(ev, dir) {
+  ev.preventDefault(); ev.stopPropagation();
+  const p = document.getElementById('ogpPanel'); if (!p) return;
+  if (p.style.right && p.style.right !== 'auto') { p.style.left = p.offsetLeft + 'px'; p.style.right = 'auto'; }
+  const mc = document.getElementById('rgMapContainer');
+  const cw = mc ? mc.clientWidth : window.innerWidth, ch = mc ? mc.clientHeight : window.innerHeight;
+  const s = { x:ev.clientX, y:ev.clientY, w:p.offsetWidth, h:p.offsetHeight, left:p.offsetLeft, top:p.offsetTop };
+  const minW = 420, minH = 340, maxW = cw - 8, maxH = ch - 8;
+  const move = e => {
+    const dx = e.clientX - s.x, dy = e.clientY - s.y; let w = s.w, h = s.h, left = s.left, top = s.top;
+    if (dir.indexOf('e') >= 0) w = Math.max(minW, Math.min(maxW, s.w + dx));
+    if (dir.indexOf('w') >= 0) { const nw = Math.max(minW, Math.min(maxW, s.w - dx)); left = s.left + (s.w - nw); w = nw; }
+    if (dir.indexOf('s') >= 0) h = Math.max(minH, Math.min(maxH, s.h + dy));
+    if (dir.indexOf('n') >= 0) { const nh = Math.max(minH, Math.min(maxH, s.h - dy)); top = s.top + (s.h - nh); h = nh; }
+    p.style.width = w + 'px'; p.style.height = h + 'px'; p.style.left = left + 'px'; p.style.top = top + 'px';
+  };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.body.style.userSelect = ''; _ogpUserSized = true; _ogpSaveGeom(); };
+  document.body.style.userSelect = 'none';
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+function _ogpDragFromHandle(ev) {
+  if (typeof _aaChipDragFromHandle === 'function') _aaChipDragFromHandle(ev, 'ogpPanel');
+  window.addEventListener('pointerup', _ogpSaveGeom, { once: true });
 }
 
 // "2h 14m" / "47m" countdown from a future ms timestamp.
@@ -42143,7 +42304,6 @@ function _rgClearAllFilters() {
   if (_rgMapOwnerFilter !== null) {
     if (typeof _rgHideOwnerLegend === 'function') _rgHideOwnerLegend();
     _rgMapOwnerFilter = null;
-    document.querySelectorAll('#rgMapOwnerList .rg-owner-row').forEach(r => r.classList.add('active'));
     if (typeof _rgUpdateMapOwnerBtn === 'function') _rgUpdateMapOwnerBtn();
     if (typeof _rgApplyMapOwnerFilter === 'function') _rgApplyMapOwnerFilter();
   }
@@ -42426,7 +42586,6 @@ function _rgUpdateBreadcrumbs() {
         // the popover would otherwise linger on the map.
         _rgHideOwnerLegend();
         _rgMapOwnerFilter = null;
-        document.querySelectorAll('#rgMapOwnerList .rg-owner-row').forEach(r => r.classList.add('active'));
         _rgUpdateMapOwnerBtn();
         _rgApplyMapOwnerFilter();
       }
@@ -43153,192 +43312,563 @@ function _rgApplyCatFilter() {
   _rgRenderMatrix();
 }
 
-// ── Map-wide owner filter ────────────────────────────────────────────────────
-
-function _rgBuildMapOwnerList() {
-  const ownerData = _getOwnerData();
-  if (!ownerData) return;
-  const list = document.getElementById('rgMapOwnerList');
-  if (!list) return;
-  list.innerHTML = ownerData.map(({ name, airports }) => {
-    const col = _rgOwnerColor(name);
-    const dot = `<span class="rg-owner-swatch" style="background:${col}"></span>`;
-    const isActive = _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(name);
-    return `<div class="rg-owner-row${isActive ? ' active' : ''}" data-rg-owner="${_rgX(name)}" onclick="_rgToggleMapOwner(this)">` +
-      `<span class="rg-owner-check">✓</span>${dot}` +
-      `<span class="rg-owner-name">${_rgX(name)}</span>` +
-      `<span class="rg-owner-count">(${airports.length})</span></div>`;
-  }).join('');
-}
-
-function _rgToggleMapOwnerDropdown() {
-  const panel = document.getElementById('rgMapOwnerPanel');
-  const btn   = document.getElementById('rgMapOwnerBtn');
-  if (!panel || !btn) return;
-  const opening = !panel.classList.contains('open');
-  if (opening) {
-    _rgBuildMapOwnerList();
-    const r = btn.getBoundingClientRect();
-    const panelMinW = parseInt(getComputedStyle(panel).minWidth) || 300;
-    const clampedLeft = Math.min(r.left, window.innerWidth - panelMinW - 8);
-    panel.style.left   = Math.max(8, clampedLeft) + 'px';
-    panel.style.top    = (r.bottom + 4) + 'px';
-    panel.style.bottom = 'auto';
-    panel.classList.add('open');
-    const searchEl = document.getElementById('rgMapOwnerSearch');
-    if (searchEl) { searchEl.value = ''; _rgMapOwnerSearchFilter(''); searchEl.focus(); }
-    panel._arrowIdx = -1;
-    const keyCapture = function(e) {
-      if (!panel.classList.contains('open')) { document.removeEventListener('keydown', keyCapture); return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Tab' || e.key === 'Escape') return;
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const visibleRows = [...document.querySelectorAll('#rgMapOwnerList .rg-owner-row')]
-          .filter(r => r.style.display !== 'none');
-        if (!visibleRows.length) return;
-        if (e.key === 'ArrowDown') {
-          const next = panel._arrowIdx + 1;
-          if (next < visibleRows.length) _rgOwnerSetArrow(panel, 'rgMapOwnerList', next);
-        } else {
-          if (panel._arrowIdx <= 0) {
-            _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
-            if (searchEl) searchEl.focus();
-          } else {
-            _rgOwnerSetArrow(panel, 'rgMapOwnerList', panel._arrowIdx - 1);
-          }
-        }
-        return;
-      }
-      if (e.key === ' ' && panel._arrowIdx >= 0) {
-        e.preventDefault();
-        const visibleRows = [...document.querySelectorAll('#rgMapOwnerList .rg-owner-row')]
-          .filter(r => r.style.display !== 'none');
-        const row = visibleRows[panel._arrowIdx];
-        if (row) {
-          const savedIdx = panel._arrowIdx;
-          _rgToggleMapOwner(row);
-          _rgOwnerSetArrow(panel, 'rgMapOwnerList', savedIdx);
-        }
-        return;
-      }
-      if (document.activeElement === searchEl) return;
-      if (e.key === 'Enter') { _rgMapOwnerSearchKey(e); return; }
-      if (e.key === 'Backspace') {
-        if (!searchEl) return;
-        searchEl.value = searchEl.value.slice(0, -1);
-        _rgMapOwnerSearchFilter(searchEl.value);
-        searchEl.focus();
-        e.preventDefault();
-        return;
-      }
-      if (e.key.length === 1) {
-        if (!searchEl) return;
-        searchEl.value += e.key;
-        _rgMapOwnerSearchFilter(searchEl.value);
-        searchEl.focus();
-        e.preventDefault();
-      }
-    };
-    panel._keyCapture = keyCapture;
-    document.addEventListener('keydown', keyCapture);
-    setTimeout(() => {
-      document.addEventListener('click', function _close(e) {
-        const path = e.composedPath();
-        if (path.includes(panel) || path.includes(btn)) return;
-        panel.classList.remove('open');
-        if (panel._keyCapture) { document.removeEventListener('keydown', panel._keyCapture); panel._keyCapture = null; }
-        _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
-        document.removeEventListener('click', _close);
-      });
-    }, 0);
+// ── Owner Groups panel — Owners tab (v3.77.0) ───────────────────────────────
+// Ad hoc checkbox toggling here writes straight to _rgMapOwnerFilter, exactly
+// like the old dropdown it replaces (see _rgMapOwnerFilter declaration).
+function _ogpSetView(view) {
+  _ogpView = view === 'groups' ? 'groups' : 'owners';
+  const isOwners = _ogpView === 'owners';
+  const segO = document.getElementById('ogpSegOwners'), segG = document.getElementById('ogpSegGroups');
+  if (segO) segO.classList.toggle('ogp-seg-on', isOwners);
+  if (segG) segG.classList.toggle('ogp-seg-on', !isOwners);
+  const ownersView = document.getElementById('ogpOwnersView'), groupsView = document.getElementById('ogpGroupsView');
+  if (ownersView) ownersView.style.display = isOwners ? '' : 'none';
+  if (groupsView) groupsView.style.display = isOwners ? 'none' : '';
+  ['ogpSearchWrap', 'ogpAllBtn', 'ogpNoneBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isOwners ? '' : 'none'; });
+  const bar = document.getElementById('ogpFootbar'); if (bar) bar.classList.remove('ogp-show');
+  if (isOwners) {
+    _ogpRenderOwners();
+    const searchEl = document.getElementById('ogpSearch'); if (searchEl && _ogpPanelOpen()) searchEl.focus();
   } else {
-    panel.classList.remove('open');
-    if (panel._keyCapture) { document.removeEventListener('keydown', panel._keyCapture); panel._keyCapture = null; }
-    _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
+    _ogpRenderGroups();
   }
+  _ogpSavePrefs();
 }
-
-function _rgMapOwnerSearchFilter(query) {
-  const q = query.trim().toLowerCase();
-  const panel = document.getElementById('rgMapOwnerPanel');
-  if (panel && panel._arrowIdx > 0) _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
-  document.querySelectorAll('#rgMapOwnerList .rg-owner-row').forEach(row => {
-    row.style.display = (!q || row.dataset.rgOwner.toLowerCase().includes(q)) ? '' : 'none';
+// Some mutations (owner toggle, member-chip click) can be triggered from
+// either tab — this re-renders whichever one is actually visible instead of
+// hardcoding one, so e.g. clicking a member chip inside a group card
+// correctly refreshes the Groups tab rather than a hidden Owners tab.
+function _ogpRenderCurrentView() {
+  if (_ogpView === 'owners') _ogpRenderOwners(); else _ogpRenderGroups();
+}
+function _ogpUpdateGroupCountBadge() {
+  const el = document.getElementById('ogpGroupCount');
+  if (el) el.textContent = _ogpGroups.length ? `(${_ogpGroups.length})` : '';
+}
+// Matches an owner against the search query by name OR by any of their
+// ICAOs. ICAO-only hits report which airports matched so the row can
+// auto-expand and highlight the specific chip(s) that matched.
+function _ogpOwnerMatch(o, q) {
+  if (!q) return { match: true, matchedIcaos: null };
+  if (o.name.toLowerCase().includes(q)) return { match: true, matchedIcaos: null };
+  const hits = o.airports.filter(a => a.icao.toLowerCase().includes(q)).map(a => a.icao);
+  return hits.length ? { match: true, matchedIcaos: new Set(hits) } : { match: false, matchedIcaos: null };
+}
+function _ogpVisibleOwnerNames() {
+  const q = (_ogpSearch || '').trim().toLowerCase();
+  return _getOwnerData().filter(o => _ogpOwnerMatch(o, q).match).map(o => o.name);
+}
+// The color swatch shown in the leftmost column. If the owner is currently
+// part of the live _rgOwnerColorAssignment (built by _rgRebuildOwnerColorAssignment
+// whenever the filter changes — already shares one color across an applied
+// group's members), show that exact color; otherwise fall back to the
+// deterministic per-owner hash color (_rgOwnerColor) as a reference/preview.
+function _ogpOwnerDisplayColor(name) {
+  if (_rgOwnerColorAssignment && _rgOwnerColorAssignment.has(name)) return _rgOwnerColorAssignment.get(name);
+  return typeof _rgOwnerColor === 'function' ? _rgOwnerColor(name) : '#888';
+}
+function _ogpRenderOwners() {
+  const owners = _getOwnerData();
+  const rowsEl = document.getElementById('ogpOwnerRows');
+  if (!rowsEl) return;
+  const q = (_ogpSearch || '').trim().toLowerCase();
+  const matchInfo = new Map();
+  const rows = owners.filter(o => {
+    const m = _ogpOwnerMatch(o, q);
+    if (m.match) matchInfo.set(o.name, m.matchedIcaos);
+    return m.match;
   });
-  const clearBtn = document.getElementById('rgMapOwnerSearchClear');
-  if (clearBtn) clearBtn.classList.toggle('visible', q.length > 0);
-}
-
-function _rgMapOwnerSearchKey(e) {
-  if (e.key !== 'Enter') return;
-  const searchEl = document.getElementById('rgMapOwnerSearch');
-  if (searchEl) { searchEl.value = ''; _rgMapOwnerSearchFilter(''); }
-}
-
-function _rgToggleMapOwner(row) {
-  const name = row.dataset.rgOwner;
-  const rows = [...document.querySelectorAll('#rgMapOwnerList .rg-owner-row')];
-  let filter = _rgMapOwnerFilter;
-  if (filter === null) {
-    filter = new Set(rows.filter(r => r.classList.contains('active')).map(r => r.dataset.rgOwner));
+  rows.sort((a, b) => {
+    const cmp = _ogpSort === 'count' ? (a.airports.length - b.airports.length) : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    return _ogpSortDir === 'desc' ? -cmp : cmp;
+  });
+  if (!rows.length) {
+    rowsEl.innerHTML = `<div class="ogp-empty">${owners.length ? 'No owners or airports match your search.' : 'No owners found — import a KML with owner labels first.'}</div>`;
+  } else {
+    rowsEl.innerHTML = rows.map(o => {
+      const included = _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(o.name);
+      const matchedIcaos = matchInfo.get(o.name); // Set of ICAOs that matched via search, or null (name match / no query)
+      const expanded = _ogpExpanded.has(o.name) || !!matchedIcaos;
+      const chips = expanded
+        ? `<div class="ogp-chips">${o.airports.map(a => {
+            const icaoUp = a.icao.toUpperCase();
+            // Chip "selected" mirrors whether this airport is actually showing on
+            // the map: on by default when its owner is checked/included (matching
+            // the checkbox), off by default when the owner isn't — either can be
+            // flipped per-airport via _rgExcludedIcaos (subtract from an included
+            // owner) or _rgPinnedIcaos (add on top of a not-included owner).
+            const selected = (_rgPinnedIcaos && _rgPinnedIcaos.has(icaoUp)) ||
+              (included && !(_rgExcludedIcaos && _rgExcludedIcaos.has(icaoUp)));
+            const cls = ['ogp-chip'];
+            if (selected) cls.push('ogp-chip-selected');
+            if (matchedIcaos && matchedIcaos.has(a.icao)) cls.push('ogp-chip-match');
+            return `<span class="${cls.join(' ')}" data-ogp-icao="${_rgX(a.icao)}" data-ogp-owner="${_rgX(o.name)}" onclick="_ogpToggleIcaoChip(this)" title="Click to ${selected ? 'hide' : 'show'} ${_rgX(a.icao)} on the map">${_rgX(a.icao)}</span>`;
+          }).join('')}</div>`
+        : '';
+      const color = _ogpOwnerDisplayColor(o.name);
+      return `<div class="ogp-row" data-ogp-owner="${_rgX(o.name)}">` +
+        `<div class="ogp-cell ogp-cell-color" title="Color used to represent ${_rgX(o.name)} on the map"><span class="ogp-swatch" style="background:${_rgX(color)}"></span></div>` +
+        `<div class="ogp-cell"><input type="checkbox" ${included ? 'checked' : ''} onchange="_ogpToggleOwnerRow(this.closest('.ogp-row'))"></div>` +
+        `<div class="ogp-cell ogp-cell-name" onclick="_ogpToggleOwnerRow(this.closest('.ogp-row'))">${_rgX(o.name)}</div>` +
+        `<div class="ogp-cell ogp-cell-r">${o.airports.length}</div>` +
+        `<div class="ogp-cell ogp-chevron" onclick="_ogpToggleExpand(this.closest('.ogp-row'))">${expanded ? '▼' : '▶'}</div>` +
+        `</div>${chips}`;
+    }).join('');
   }
-  if (filter.has(name)) { filter.delete(name); row.classList.remove('active'); }
-  else                  { filter.add(name);    row.classList.add('active'); }
-  if (filter.size === rows.length) filter = null;
+  document.querySelectorAll('#ogpOwnersView .ogp-th[onclick]').forEach(th => {
+    const key = th.getAttribute('onclick').includes("'name'") ? 'name' : 'count';
+    const sorted = key === _ogpSort;
+    th.classList.toggle('ogp-sorted', sorted);
+    const arr = th.querySelector('.ogp-th-arr'); if (arr) arr.textContent = sorted ? (_ogpSortDir === 'desc' ? ' ▼' : ' ▲') : '';
+  });
+  _ogpUpdateFootbar();
+  _ogpUpdateGroupCountBadge();
+}
+function _ogpHeaderSort(key) {
+  if (_ogpSort === key) _ogpSortDir = _ogpSortDir === 'asc' ? 'desc' : 'asc';
+  else { _ogpSort = key; _ogpSortDir = 'asc'; }
+  _ogpSavePrefs();
+  _ogpRenderOwners();
+}
+function _ogpSearchInput(v) {
+  _ogpSearch = v || '';
+  const clearBtn = document.getElementById('ogpSearchClear');
+  if (clearBtn) clearBtn.classList.toggle('visible', _ogpSearch.length > 0);
+  _ogpSetArrow(-1);
+  _ogpRenderOwners();
+}
+function _ogpToggleExpand(rowOrName) {
+  const name = typeof rowOrName === 'string' ? rowOrName : (rowOrName && rowOrName.dataset ? rowOrName.dataset.ogpOwner : null);
+  if (!name) return;
+  if (_ogpExpanded.has(name)) _ogpExpanded.delete(name); else _ogpExpanded.add(name);
+  _ogpRenderOwners();
+}
+// Clicking an airport chip toggles whether that ONE airport shows on the map,
+// on top of whatever its owner's checkbox already implies:
+//  - Owner checked (included): the chip starts "on" (matches the map). Clicking
+//    it off adds it to _rgExcludedIcaos — the app's existing per-ICAO exclusion
+//    set, already wired into the filter gate — subtracting just this one
+//    airport from an otherwise-included owner. Clicking it back on removes
+//    the exclusion.
+//  - Owner unchecked (not included): the chip starts "off." Clicking it on
+//    adds it to _rgPinnedIcaos (the same mechanism the map search's +ICAO pin
+//    uses), forcing just this one airport to show despite the owner filter.
+//    Clicking it back off un-pins it.
+// Either way, turning a chip ON flies the map to it (mirrors _aaListPanTo's
+// gentle zoom — never zooms OUT to reach it).
+function _ogpToggleIcaoChip(chipOrIcao) {
+  const isEl = chipOrIcao && chipOrIcao.dataset;
+  const icao = isEl ? chipOrIcao.dataset.ogpIcao : chipOrIcao;
+  const ownerName = isEl ? chipOrIcao.dataset.ogpOwner : null;
+  if (!icao || typeof lookupICAO !== 'function') return;
+  const rec = lookupICAO(icao);
+  if (!rec || !rec.latitude || !rec.longitude) return;
+  const icaoUp = icao.toUpperCase();
+  const ownerIncluded = ownerName != null && (_rgMapOwnerFilter === null || _rgMapOwnerFilter.has(ownerName));
+  const currentlySelected = _rgPinnedIcaos.has(icaoUp) || (ownerIncluded && !_rgExcludedIcaos.has(icaoUp));
+  let turnedOn = false;
+  if (currentlySelected) {
+    if (_rgPinnedIcaos.has(icaoUp)) _rgPinnedIcaos.delete(icaoUp);
+    else if (ownerIncluded) _rgExcludedIcaos.add(icaoUp);
+  } else {
+    if (ownerIncluded) _rgExcludedIcaos.delete(icaoUp);
+    else _rgPinnedIcaos.add(icaoUp);
+    turnedOn = true;
+  }
+  if (turnedOn && _rgMap) { try { _rgMap.flyTo([rec.latitude, rec.longitude], Math.max(_rgMap.getZoom(), 6), { animate: true, duration: 0.6 }); } catch (_) {} }
+  if (typeof _rgApplyMapFilter === 'function') _rgApplyMapFilter();
+  _ogpRenderOwners();
+}
+function _ogpToggleOwnerRow(rowOrName) {
+  const name = typeof rowOrName === 'string' ? rowOrName : (rowOrName && rowOrName.dataset ? rowOrName.dataset.ogpOwner : null);
+  if (!name) return;
+  const owners = _getOwnerData();
+  let filter = _rgMapOwnerFilter;
+  if (filter === null) filter = new Set(owners.map(o => o.name));
+  if (filter.has(name)) filter.delete(name); else filter.add(name);
+  if (filter.size === owners.length) filter = null;
+  _rgMapOwnerFilter = filter;
+  // The checkbox/name toggle is authoritative for this owner: clear any
+  // per-airport chip overrides (individually excluded or pinned) left over
+  // from before, so "select this owner" always means ALL their airports show,
+  // and "deselect" always means NONE of them do — matching the map state.
+  const ownerRec = owners.find(o => o.name === name);
+  if (ownerRec) {
+    for (const a of ownerRec.airports) {
+      const up = a.icao.toUpperCase();
+      _rgExcludedIcaos.delete(up);
+      _rgPinnedIcaos.delete(up);
+    }
+  }
+  _rgUpdateMapOwnerBtn();
+  _rgApplyMapOwnerFilter();
+  _ogpRenderCurrentView();
+}
+function _ogpAllOwners() {
+  const owners = _getOwnerData();
+  if (!_ogpSearch) {
+    _rgMapOwnerFilter = null;
+  } else {
+    let filter = _rgMapOwnerFilter;
+    if (filter === null) filter = new Set(owners.map(o => o.name));
+    _ogpVisibleOwnerNames().forEach(n => filter.add(n));
+    if (filter.size === owners.length) filter = null;
+    _rgMapOwnerFilter = filter;
+  }
+  _ogpLastLoadedGroupId = null;
+  _rgUpdateMapOwnerBtn();
+  _rgApplyMapOwnerFilter();
+  _ogpRenderOwners();
+}
+function _ogpNoOwners() {
+  const owners = _getOwnerData();
+  if (!_ogpSearch) {
+    _rgMapOwnerFilter = new Set();
+  } else {
+    let filter = _rgMapOwnerFilter;
+    if (filter === null) filter = new Set(owners.map(o => o.name));
+    _ogpVisibleOwnerNames().forEach(n => filter.delete(n));
+    _rgMapOwnerFilter = filter;
+  }
+  _ogpLastLoadedGroupId = null;
+  _rgUpdateMapOwnerBtn();
+  _rgApplyMapOwnerFilter();
+  _ogpRenderOwners();
+}
+// Saves the current Owners-tab selection as a brand-new named group.
+function _ogpSaveNewGroupFromCurrent() {
+  if (_rgMapOwnerFilter === null) return; // "show all" isn't a meaningful group
+  const names = [..._rgMapOwnerFilter];
+  const name = (prompt('Name this owner group:', '') || '').trim();
+  if (!name) return;
+  const color = _RG_OWNER_PALETTE_16[_ogpGroups.length % _RG_OWNER_PALETTE_16.length];
+  const g = { id: 'og' + Date.now() + Math.random().toString(36).slice(2), name, color, ownerNames: names };
+  _ogpGroups.push(g);
+  _ogpSaveGroups();
+  _ogpLastLoadedGroupId = null;
+  _aaRtToast(`Saved group "${name}" — ${names.length} owner${names.length !== 1 ? 's' : ''}.`, 'ok');
+  _rgRebuildOwnerColorAssignment();
+  _ogpSetView('groups');
+}
+// Writes the current Owners-tab selection back into the group that was
+// loaded via ✎ (see _ogpLoadGroupForEdit) and clears that breadcrumb.
+function _ogpUpdateLoadedGroup() {
+  if (_rgMapOwnerFilter === null || !_ogpLastLoadedGroupId) return;
+  const g = _ogpGroups.find(x => x.id === _ogpLastLoadedGroupId);
+  _ogpLastLoadedGroupId = null;
+  if (!g) return;
+  g.ownerNames = [..._rgMapOwnerFilter];
+  _ogpSaveGroups();
+  _aaRtToast(`Updated "${g.name}" — ${g.ownerNames.length} owner${g.ownerNames.length !== 1 ? 's' : ''}.`, 'ok');
+  _rgRebuildOwnerColorAssignment();
+  _ogpSetView('groups');
+}
+// Does the CURRENT _rgMapOwnerFilter exactly equal group g's (known) members?
+// null filter = "all owners" — compared against the full known-owner set.
+function _ogpFilterMatchesGroup(g) {
+  const known = new Set(_getOwnerData().map(o => o.name));
+  const members = new Set(g.ownerNames.filter(n => known.has(n)));
+  const filterSize = _rgMapOwnerFilter === null ? known.size : _rgMapOwnerFilter.size;
+  if (members.size !== filterSize) return false;
+  for (const n of members) if (!(_rgMapOwnerFilter === null || _rgMapOwnerFilter.has(n))) return false;
+  return true;
+}
+function _ogpUpdateFootbar() {
+  const bar = document.getElementById('ogpFootbar');
+  const txt = document.getElementById('ogpFootbarTxt');
+  const btnWrap = document.getElementById('ogpFootbarBtns');
+  if (!bar || !txt || !btnWrap) return;
+  if (_rgMapOwnerFilter === null) { bar.classList.remove('ogp-show'); return; }
+  const n = _rgMapOwnerFilter.size;
+  txt.textContent = n === 0 ? 'No owners currently filtering the map' : `${n} owner${n !== 1 ? 's' : ''} filtering the map`;
+  const loaded = _ogpLastLoadedGroupId && _ogpGroups.find(g => g.id === _ogpLastLoadedGroupId);
+  // Only offer "Update <name>" once the selection has actually drifted from
+  // that group's saved membership — loading a group and changing nothing
+  // has nothing to update.
+  const dirty = loaded && !_ogpFilterMatchesGroup(loaded);
+  btnWrap.innerHTML = dirty
+    ? `<button onclick="_ogpUpdateLoadedGroup()">Update "${_rgX(loaded.name)}"</button><button onclick="_ogpSaveNewGroupFromCurrent()">Save as new group</button>`
+    : `<button onclick="_ogpSaveNewGroupFromCurrent()">Save as group</button>`;
+  bar.classList.add('ogp-show');
+}
+
+// ── Owner Groups panel — keyboard operation (v3.77.0) ───────────────────────
+// Ported from the old dropdown's keyCapture/_rgOwnerSetArrow so fast
+// keyboard-only operation (type-to-search, arrow-key row focus, spacebar
+// toggle) still works. One deliberate change: this panel is persistent/
+// non-modal (unlike the old transient dropdown), so the handler only acts
+// while focus is actually inside #ogpPanel — it won't hijack keystrokes
+// meant for the map or another field while the panel sits open in the
+// background.
+function _ogpSetArrow(idx) {
+  const rows = [...document.querySelectorAll('#ogpOwnerRows .ogp-row')];
+  rows.forEach(r => r.classList.remove('ogp-row-focused'));
+  _ogpArrowIdx = idx;
+  if (idx >= 0 && idx < rows.length) {
+    rows[idx].classList.add('ogp-row-focused');
+    rows[idx].scrollIntoView({ block: 'nearest' });
+  }
+}
+function _ogpKeyHandler(e) {
+  if (!_ogpPanelOpen()) { document.removeEventListener('keydown', _ogpKeyHandler); return; }
+  const panel = document.getElementById('ogpPanel');
+  if (!panel || !panel.contains(document.activeElement)) return;
+  if (_ogpView !== 'owners') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Tab' || e.key === 'Escape') return;
+  const searchEl = document.getElementById('ogpSearch');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const rows = [...document.querySelectorAll('#ogpOwnerRows .ogp-row')];
+    if (!rows.length) return;
+    if (e.key === 'ArrowDown') {
+      const next = _ogpArrowIdx + 1;
+      if (next < rows.length) _ogpSetArrow(next);
+    } else if (_ogpArrowIdx <= 0) {
+      _ogpSetArrow(-1);
+      if (searchEl) searchEl.focus();
+    } else {
+      _ogpSetArrow(_ogpArrowIdx - 1);
+    }
+    return;
+  }
+  if (e.key === ' ' && _ogpArrowIdx >= 0) {
+    e.preventDefault();
+    const rows = [...document.querySelectorAll('#ogpOwnerRows .ogp-row')];
+    const row = rows[_ogpArrowIdx];
+    if (row) { const savedIdx = _ogpArrowIdx; _ogpToggleOwnerRow(row); _ogpSetArrow(savedIdx); }
+    return;
+  }
+  if (document.activeElement === searchEl) return;
+  if (e.key === 'Enter') { if (searchEl) { searchEl.value = ''; _ogpSearchInput(''); } return; }
+  if (e.key === 'Backspace') {
+    if (!searchEl) return;
+    searchEl.value = searchEl.value.slice(0, -1);
+    _ogpSearchInput(searchEl.value);
+    searchEl.focus();
+    e.preventDefault();
+    return;
+  }
+  if (e.key.length === 1) {
+    if (!searchEl) return;
+    searchEl.value += e.key;
+    _ogpSearchInput(searchEl.value);
+    searchEl.focus();
+    e.preventDefault();
+  }
+}
+
+// ── Owner Groups panel — Groups tab (v3.77.0; redesigned v3.81.0) ───────────
+// A group's checkbox/member state is always DERIVED from _rgMapOwnerFilter —
+// never tracked separately — so it can't drift out of sync and there's no
+// "mode" to be stuck in. Groups behave exactly like owner rows: a tri-state
+// checkbox (checked = every member active, unchecked = none, indeterminate =
+// some), and each member is its own clickable chip using the SAME toggle
+// function as the Owners tab (_ogpToggleOwnerRow) — clicking a pilot's name
+// inside a group does exactly what clicking it in the owner list does.
+let _ogpLastDeleted = null; // { group, timer } — short-lived undo buffer for one-click delete
+// members = this group's owners that still exist in _getOwnerData(); activeCount
+// = how many of those are currently included in the map filter; total = members.length.
+function _ogpGroupActiveInfo(g, known) {
+  const members = g.ownerNames.filter(n => known.has(n));
+  const activeCount = members.filter(n => _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(n)).length;
+  return { members, activeCount, total: members.length };
+}
+// Is _rgMapOwnerFilter's membership EXACTLY equal to some saved group's
+// (known) members? Used to derive color-tinting — see _rgRebuildOwnerColorAssignment.
+function _ogpFindExactGroupMatch() {
+  if (!_rgMapOwnerFilter || _rgMapOwnerFilter.size === 0) return null;
+  const known = new Set(_getOwnerData().map(o => o.name));
+  for (const g of _ogpGroups) {
+    const members = g.ownerNames.filter(n => known.has(n));
+    if (members.length !== _rgMapOwnerFilter.size) continue;
+    if (members.every(n => _rgMapOwnerFilter.has(n))) return g;
+  }
+  return null;
+}
+function _ogpStartNewGroup() {
+  _ogpLastLoadedGroupId = null;
+  if (_rgMapOwnerFilter === null) {
+    _rgMapOwnerFilter = new Set();
+    _rgUpdateMapOwnerBtn();
+    _rgApplyMapOwnerFilter();
+  }
+  _ogpSetView('owners');
+}
+// Tri-state checkbox click: unchecked/indeterminate -> turn ALL (known)
+// members on (additive — unioned into whatever's already showing, just like
+// checking an individual owner would be); fully checked -> turn them all off.
+function _ogpToggleGroup(groupId) {
+  const g = _ogpGroups.find(x => x.id === groupId);
+  if (!g) return;
+  const owners = _getOwnerData();
+  const known = new Set(owners.map(o => o.name));
+  const { members, activeCount, total } = _ogpGroupActiveInfo(g, known);
+  const turningOn = !(total > 0 && activeCount === total);
+  let filter = _rgMapOwnerFilter;
+  if (filter === null) filter = new Set(known);
+  members.forEach(n => turningOn ? filter.add(n) : filter.delete(n));
+  if (filter.size === known.size) filter = null;
   _rgMapOwnerFilter = filter;
   _rgUpdateMapOwnerBtn();
   _rgApplyMapOwnerFilter();
-  const searchEl = document.getElementById('rgMapOwnerSearch');
-  if (searchEl) searchEl.focus();
-  const panel = document.getElementById('rgMapOwnerPanel');
-  if (panel) _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
+  _ogpRenderCurrentView();
 }
-
-function _rgAllMapOwners() {
-  const rows = [...document.querySelectorAll('#rgMapOwnerList .rg-owner-row')];
-  const searchEl = document.getElementById('rgMapOwnerSearch');
-  const filtered = searchEl && searchEl.value.trim() !== '';
-  if (!filtered) {
-    _rgMapOwnerFilter = null;
-    rows.forEach(r => r.classList.add('active'));
-  } else {
-    let filter = _rgMapOwnerFilter;
-    if (filter === null) filter = new Set(rows.filter(r => r.classList.contains('active')).map(r => r.dataset.rgOwner));
-    rows.forEach(r => { if (r.style.display !== 'none') { filter.add(r.dataset.rgOwner); r.classList.add('active'); } });
-    if (rows.every(r => r.classList.contains('active'))) filter = null;
-    _rgMapOwnerFilter = filter;
-  }
+function _ogpToggleGroupExpand(groupId) {
+  if (_ogpGroupExpanded.has(groupId)) _ogpGroupExpanded.delete(groupId); else _ogpGroupExpanded.add(groupId);
+  _ogpRenderGroups();
+}
+// ✎ — replaces the current filter with EXACTLY this group's members (a clean
+// slate to fine-tune from, unlike the checkbox's additive toggle) and remembers
+// it via _ogpLastLoadedGroupId so the Owners tab footer can offer "Update".
+function _ogpLoadGroupForEdit(groupId) {
+  const g = _ogpGroups.find(x => x.id === groupId);
+  if (!g) return;
+  const known = new Set(_getOwnerData().map(o => o.name));
+  _rgMapOwnerFilter = new Set(g.ownerNames.filter(n => known.has(n)));
+  _ogpLastLoadedGroupId = groupId;
   _rgUpdateMapOwnerBtn();
   _rgApplyMapOwnerFilter();
-  if (searchEl) searchEl.focus();
-  const panel = document.getElementById('rgMapOwnerPanel');
-  if (panel) _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
+  _ogpSetView('owners');
+}
+// v3.82.0 — deleting a group now asks first (Kyndra explicitly asked for a
+// confirm step here, overriding the app's usual one-click-delete-plus-toast
+// convention for routine removals). Reuses the same small confirm-modal
+// pattern as _showLowRotConfirm/#lrcModal — dynamic per-open button wiring,
+// no stored callback state to get stale.
+function _ogpConfirmDeleteGroup(groupId) {
+  const g = _ogpGroups.find(x => x.id === groupId);
+  if (!g) return;
+  document.getElementById('ogpConfirmMsg').textContent = `Delete the group "${g.name}"? You'll have a few seconds to undo right after.`;
+  document.getElementById('ogpConfirmOkBtn').onclick = () => { _ogpConfirmClose(); _ogpDeleteGroup(groupId); };
+  document.getElementById('ogpConfirmCancelBtn').onclick = () => _ogpConfirmClose();
+  document.getElementById('ogpConfirmModal').classList.add('open');
+}
+function _ogpConfirmClose() {
+  document.getElementById('ogpConfirmModal').classList.remove('open');
+}
+function _ogpDeleteGroup(groupId) {
+  const idx = _ogpGroups.findIndex(g => g.id === groupId);
+  if (idx === -1) return;
+  const removed = _ogpGroups.splice(idx, 1)[0];
+  if (_ogpLastLoadedGroupId === removed.id) _ogpLastLoadedGroupId = null;
+  _ogpSaveGroups();
+  if (_ogpLastDeleted && _ogpLastDeleted.timer) clearTimeout(_ogpLastDeleted.timer);
+  _ogpLastDeleted = { group: removed, timer: setTimeout(() => { _ogpLastDeleted = null; _ogpRenderGroups(); }, 6000) };
+  _aaRtToast(`Deleted "${removed.name}".`, 'warn');
+  _ogpRenderGroups();
+}
+function _ogpUndoDeleteGroup() {
+  if (!_ogpLastDeleted) return;
+  clearTimeout(_ogpLastDeleted.timer);
+  _ogpGroups.push(_ogpLastDeleted.group);
+  _ogpSaveGroups();
+  _ogpLastDeleted = null;
+  _ogpRenderGroups();
+}
+// In-card member-chip editing: only ever a subset of a group's EXISTING
+// members (toggled off/back on), never a brand-new owner — unlike ✎, which
+// loads into the full Owners tab. Both write to the same _ogpGroups/_OGP_GROUPS_KEY.
+function _ogpUpdateGroupFromMembers(groupId) {
+  const g = _ogpGroups.find(x => x.id === groupId);
+  if (!g) return;
+  const known = new Set(_getOwnerData().map(o => o.name));
+  const { members } = _ogpGroupActiveInfo(g, known);
+  const activeMembers = members.filter(n => _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(n));
+  g.ownerNames = activeMembers;
+  _ogpSaveGroups();
+  _aaRtToast(`Updated "${g.name}" — ${activeMembers.length} owner${activeMembers.length !== 1 ? 's' : ''}.`, 'ok');
+  _rgRebuildOwnerColorAssignment();
+  _ogpRenderGroups();
+}
+function _ogpSaveGroupMembersAsNew(groupId) {
+  const g = _ogpGroups.find(x => x.id === groupId);
+  if (!g) return;
+  const known = new Set(_getOwnerData().map(o => o.name));
+  const { members } = _ogpGroupActiveInfo(g, known);
+  const activeMembers = members.filter(n => _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(n));
+  const name = (prompt('Name this owner group:', '') || '').trim();
+  if (!name) return;
+  const color = _RG_OWNER_PALETTE_16[_ogpGroups.length % _RG_OWNER_PALETTE_16.length];
+  const ng = { id: 'og' + Date.now() + Math.random().toString(36).slice(2), name, color, ownerNames: activeMembers };
+  _ogpGroups.push(ng);
+  _ogpSaveGroups();
+  _aaRtToast(`Saved group "${name}" — ${activeMembers.length} owner${activeMembers.length !== 1 ? 's' : ''}.`, 'ok');
+  _rgRebuildOwnerColorAssignment();
+  _ogpRenderGroups();
+}
+function _ogpRenderGroups() {
+  const el = document.getElementById('ogpGroupsView');
+  if (!el) return;
+  _ogpUpdateGroupCountBadge();
+  const owners = _getOwnerData();
+  const known = new Set(owners.map(o => o.name));
+  const airportCountByOwner = new Map(owners.map(o => [o.name, o.airports.length]));
+  let html = '';
+  if (_ogpLastDeleted) {
+    html += `<div class="ogp-grow" style="grid-template-columns:1fr auto;padding:6px 10px;">` +
+      `<span style="color:#e0a64a;">Deleted "${_rgX(_ogpLastDeleted.group.name)}".</span>` +
+      `<button class="ogp-gicon-btn" onclick="_ogpUndoDeleteGroup()">Undo</button></div>`;
+  }
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 2px 10px;">` +
+    `<span style="font-size:1.0rem;color:#7d8ea3;">${_ogpGroups.length} saved group${_ogpGroups.length !== 1 ? 's' : ''}</span>` +
+    `<button class="ogp-newgroup" onclick="_ogpStartNewGroup()">+ New group</button></div>`;
+  if (!_ogpGroups.length) {
+    html += `<div class="ogp-empty">No saved groups yet — check some owners in "All owners" and click "Save as group", or start here.</div>`;
+  } else {
+    html += _ogpGroups.map(g => {
+      const { members, activeCount, total } = _ogpGroupActiveInfo(g, known);
+      const missingCount = g.ownerNames.length - total;
+      const airportTotal = members.reduce((sum, n) => sum + (airportCountByOwner.get(n) || 0), 0);
+      const state = activeCount === 0 ? 'unchecked' : (total > 0 && activeCount === total ? 'checked' : 'indeterminate');
+      const expanded = _ogpGroupExpanded.has(g.id);
+      // Toggling member chips in-card can only subtract from / restore among
+      // EXISTING members (no way to add a brand-new owner from here — that
+      // still requires ✎), so "dirty" is simply "not every member is
+      // currently active." Surface Update/Save-as-new right where the change
+      // was made instead of making the user go find the Owners tab footer.
+      const dirty = expanded && total > 0 && state !== 'checked';
+      const memberChips = expanded
+        ? `<div class="ogp-gmembers">${members.map(n => {
+            const active = _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(n);
+            return `<span class="ogp-chip${active ? ' ogp-chip-selected' : ''}" data-ogp-owner="${_rgX(n)}" onclick="_ogpToggleOwnerRow(this)" title="Click to toggle ${_rgX(n)} on the map">${_rgX(n)}</span>`;
+          }).join('')}${missingCount > 0 ? `<span class="ogp-chip ogp-member-missing">${missingCount} not found</span>` : ''}</div>` +
+          (dirty ? `<div class="ogp-gsavebar">` +
+            `<span class="ogp-gsavebar-txt">${activeCount}/${total} active — not saved</span>` +
+            `<button onclick="_ogpUpdateGroupFromMembers('${g.id}')">Update "${_rgX(g.name)}"</button>` +
+            `<button onclick="_ogpSaveGroupMembersAsNew('${g.id}')">Save as new group</button>` +
+            `</div>` : '')
+        : '';
+      return `<div class="ogp-grow" data-ogp-group="${_rgX(g.id)}">` +
+        `<div class="ogp-gcell ogp-cell-color"><span class="ogp-swatch" style="background:${_rgX(g.color)}"></span></div>` +
+        `<div class="ogp-gcell"><input type="checkbox" class="ogp-group-checkbox" data-ogp-gstate="${state}" ${state === 'checked' ? 'checked' : ''} onchange="_ogpToggleGroup('${g.id}')"></div>` +
+        `<div class="ogp-gcell ogp-gcell-name" onclick="_ogpToggleGroup('${g.id}')" title="${activeCount}/${total} owners currently on the map">${_rgX(g.name)}</div>` +
+        `<div class="ogp-gcell ogp-gcell-meta">${activeCount}/${total} &middot; ${airportTotal} apt</div>` +
+        `<button class="ogp-gicon" onclick="_ogpLoadGroupForEdit('${g.id}')" title="Load into the Owners tab to fine-tune membership">✎</button>` +
+        `<button class="ogp-gicon" onclick="_ogpConfirmDeleteGroup('${g.id}')" title="Delete this group">🗑</button>` +
+        `<div class="ogp-gcell ogp-chevron" onclick="_ogpToggleGroupExpand('${g.id}')">${expanded ? '▼' : '▶'}</div>` +
+        `</div>${memberChips}`;
+    }).join('');
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('.ogp-group-checkbox').forEach(cb => { cb.indeterminate = cb.dataset.ogpGstate === 'indeterminate'; });
 }
 
-function _rgNoMapOwners() {
-  const rows = [...document.querySelectorAll('#rgMapOwnerList .rg-owner-row')];
-  const searchEl = document.getElementById('rgMapOwnerSearch');
-  const filtered = searchEl && searchEl.value.trim() !== '';
-  if (!filtered) {
-    _rgMapOwnerFilter = new Set();
-    rows.forEach(r => r.classList.remove('active'));
-  } else {
-    let filter = _rgMapOwnerFilter;
-    if (filter === null) filter = new Set(rows.filter(r => r.classList.contains('active')).map(r => r.dataset.rgOwner));
-    rows.forEach(r => { if (r.style.display !== 'none') { filter.delete(r.dataset.rgOwner); r.classList.remove('active'); } });
-    _rgMapOwnerFilter = filter;
-  }
-  _rgUpdateMapOwnerBtn();
-  _rgApplyMapOwnerFilter();
-  if (searchEl) searchEl.focus();
-  const panel = document.getElementById('rgMapOwnerPanel');
-  if (panel) _rgOwnerSetArrow(panel, 'rgMapOwnerList', -1);
+// v3.77.0 — compatibility shim. Several other filter-mutation call sites
+// (search "@owner" syntax, exclude chips, pilots= URL handoff, boot) call
+// this after changing _rgMapOwnerFilter directly, expecting the owner
+// checklist UI to resync. The checklist is now the Owner Groups panel, which
+// already re-renders fresh from _rgMapOwnerFilter every time it's shown — so
+// this only needs to refresh it if it happens to be open already.
+function _rgBuildMapOwnerList() {
+  if (typeof _ogpPanelOpen === 'function' && _ogpPanelOpen()) _ogpRenderOwners();
 }
 
 function _rgUpdateMapOwnerBtn() {
-  const total  = document.querySelectorAll('#rgMapOwnerList .rg-owner-row').length;
-  const active = document.querySelectorAll('#rgMapOwnerList .rg-owner-row.active').length;
+  // v3.77.0 — counts now come from _getOwnerData() (the Owner Groups panel's
+  // data source), not the old dropdown's DOM rows, which no longer exist.
+  const total  = _getOwnerData().length;
+  const active = _rgMapOwnerFilter === null ? total : _rgMapOwnerFilter.size;
   const lbl = document.getElementById('rgMapOwnerBtnLabel');
   const btn = document.getElementById('rgMapOwnerBtn');
   if (!lbl || !btn) return;
@@ -45406,6 +45936,19 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">👥</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Airport Owners</div>
+          <div class="help-feature-desc">
+            Click <strong>Airport Owners &#9662;</strong> on the map&rsquo;s top bar (v3.77.0) to open the <strong>Airport Owners</strong> panel &mdash; a resizable, draggable panel matching Aircraft Listing&rsquo;s look and feel. A small <strong>color swatch</strong> on the far left of each row (v3.79.0) shows the color that owner (or their applied group) renders as on the map when 🎨 owner-color mode is on. The <strong>All owners</strong> tab lists every owner with an airport count, sortable by either column and searchable by <strong>owner name or ICAO</strong> (v3.78.0) &mdash; typing an airport code jumps straight to the owner(s) who have it, auto-expanding their row with the matching airport(s) outlined in green. Click an owner&rsquo;s &#9656; to expand it in place and see every airport they own as a chip list, without leaving the panel. Click a checkbox <strong>or the owner&rsquo;s name</strong> (v3.79.0) to filter the map to them instantly &mdash; the same one-click filtering the old dropdown offered, plus full keyboard operation: type to jump straight into the search box, arrow keys to move a highlight through the list, and spacebar to toggle the highlighted owner.<br/><br/>
+            <strong>Airport chips default to matching their owner's checkbox</strong> (v3.78.0&ndash;v3.80.0): check an owner and every one of their chips lights up cyan/selected to match the map; uncheck the owner and they all go dark. Click any individual chip to flip just that one airport &mdash; fly to it and show it even if its owner is unchecked, or hide it even if its owner stays checked. Re-toggling the owner's checkbox always resets its chips back to matching the checkbox.<br/><br/>
+            The real upgrade is <strong>Owner Groups</strong> (v3.77.0, redesigned v3.81.0): once you&rsquo;ve checked a combination of owners, click <strong>Save as group</strong> at the bottom to name it. Saved groups live in the <strong>Saved groups</strong> tab, and every group works exactly like an owner row: its checkbox mirrors the map &mdash; <strong>checked</strong> when every member is currently showing, <strong>empty</strong> when none are, and a <strong>dash</strong> when only some are. Click the checkbox (or the group&rsquo;s name) to turn the whole group on or off &mdash; on adds every member to whatever&rsquo;s already showing, off removes just them. Click &#9656; to expand a group and see its members as chips &mdash; <strong>click any pilot&rsquo;s name to toggle just them</strong>, exactly like clicking their row in the All owners tab; the map updates immediately either way. When a group&rsquo;s membership exactly matches what&rsquo;s currently filtered, 🎨 owner-color mode tints all of it with the group&rsquo;s own color automatically.<br/><br/>
+            To change who&rsquo;s in a group, click its <strong>✎</strong> &mdash; this loads exactly that group&rsquo;s members into the All owners tab so you can check/uncheck anyone (including owners not yet in the group). The footer bar then offers <strong>Update &ldquo;&lt;name&gt;&rdquo;</strong> to save your changes back into that group, or <strong>Save as new group</strong> to keep the original untouched and create a separate one instead &mdash; there&rsquo;s no separate &ldquo;editing mode&rdquo; to exit, so navigating away or toggling other owners never leaves anything stuck. You can also toggle a group&rsquo;s existing members without leaving the Saved groups tab (v3.82.0): expand it and click a pilot&rsquo;s chip off, and the same <strong>Update</strong> / <strong>Save as new group</strong> choice appears right there under the chips. <strong>🗑 Delete</strong> asks for confirmation first (v3.82.0), then removes the group with a few seconds to <strong>Undo</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">🛩</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Filter the Map to Your Aircraft</div>
@@ -46107,10 +46650,104 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.82.2</span>
+          <span class="release-date">July 4, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: the Owners tab footer's "Update"/"Save as new group" buttons showed up even when nothing had actually changed.</strong> Loading a group via ✎ and not touching anything now correctly shows just "Save as group" again — Update only appears once the checked owners actually differ from what's saved.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.82.1</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Fixed: the new group-delete confirmation could appear hidden behind the Airport Owners panel (and behind the map itself).</strong> Missed giving the new confirm dialog the same "sits above the map" z-index override every other in-map confirm modal already has.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.82.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Deleting a saved group now asks for confirmation first.</strong> A "Delete group?" prompt appears before it's removed — you can still Cancel, or Delete and get a few seconds to Undo afterward.</li>
+          <li><strong>Toggling a group's members now surfaces Update/Save-as-new right where you made the change.</strong> Expand a group and toggle a pilot's chip off — a small bar appears right there offering "Update" (save that change back to the group) or "Save as new group" (keep the original, split the rest into a new one), instead of needing to remember the Owners tab footer exists.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.81.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Saved Groups redesigned to work exactly like the owner list.</strong> The confusing "Apply"/"Applied" button is gone — each group now has a checkbox that mirrors the map (checked/empty/dash for all-on, all-off, or some-on), and clicking it toggles the whole group on or off, just like clicking a pilot. Expand a group to see its members as chips; click a pilot's name to toggle just them, exactly like clicking their row in the owner list.</li>
+          <li><strong>Group editing no longer has a "mode" to get stuck in.</strong> Clicking ✎ loads a group's members into the owner list to edit; the footer now clearly offers "Update" (save changes back to that group) or "Save as new group" (keep the original, create a separate one) — no more wondering how to exit or what "Update" would even do.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.80.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport chips now default to matching their owner's checkbox.</strong> Check an owner and every one of their airport chips shows as selected/on, matching the map. Uncheck the owner and they all show as off. Individual chips can still be toggled either way from there — checking an owner back on (or off) always resets any one-off chip toggles back to matching the checkbox.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.79.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Clicking an owner's name now toggles it, just like clicking its checkbox.</strong> No need to land precisely on the small checkbox anymore.</li>
+          <li><strong>New color column in the Airport Owners panel.</strong> A small swatch on the far left of each row shows the color used to represent that owner (or, when a saved group is applied, the group's own shared color) if you turn on 🎨 owner-color mode.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.78.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Renamed the Owner Groups panel back to "Airport Owners."</strong> Matches the top-bar button it opens from; the saved/named-group feature inside it keeps its own "Owner Groups" / "Saved groups" naming.</li>
+          <li><strong>Airport chips are now clickable.</strong> In the Airport Owners panel, click any airport chip under an expanded owner to pin it and fly the map to it — it lights up cyan while pinned and stays visible on the map even through other active filters, exactly like a map-search pin. Click it again to un-pin it.</li>
+          <li><strong>Owner search now matches ICAOs too.</strong> Typing an airport code (not just an owner name) into the search box finds every owner who has it, auto-expanding their row with the matching airport(s) outlined in green so it's obvious why they matched.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.77.0</span>
+          <span class="release-date">July 4, 2026</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New Owner Groups panel replaces the Airport Owners dropdown.</strong> Click <em>Airport Owners &#9662;</em> to open a full floating panel — draggable, resizable, sortable by name or airport count, with a live search box — instead of the old small checklist. Every owner row expands (&#9656;/&#9662;) to show that owner's full list of airports as chips, without leaving the panel. Checking owners still filters the map instantly, exactly like the dropdown it replaces — nothing about that day-to-day workflow changed, including full keyboard operation (type to search, arrow keys to move between owners, spacebar to toggle).</li>
+          <li><strong>New: named, saved Owner Groups.</strong> Check any combination of owners and click <em>Save as group</em> to name and keep it — then re-apply the whole group to the map filter in one click from the panel's <em>Saved groups</em> tab, without re-checking anyone. Applying a group also color-tints all of its members' airports on the map with that group's own color (via the existing 🎨 owner-color mode), so it's immediately obvious which airports belong to the active group. Groups can be renamed/edited, and deleted with one click (with a few seconds to undo) — no confirmation dialog needed.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.76.0</span>
-          <span class="release-date">July 3, 2026 &middot; Current</span>
+          <span class="release-date">July 3, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -59152,9 +59789,9 @@ function rgSendToFlightPlanner() {
       <div class="rg-hdr-right">
         <span class="rg-hdr-flex-spacer"></span>
         <div class="rg-owner-wrap">
-          <button id="rgMapOwnerBtn" class="rg-owner-btn" onclick="_rgToggleMapOwnerDropdown()"
+          <button id="rgMapOwnerBtn" class="rg-owner-btn" onclick="_ogpTogglePanel()"
                   onmouseenter="_rgShowOwnerLegend(this)" onmouseleave="_rgHideOwnerLegend()"
-                  title="Filter airports by owner" tabindex="-1"><span class="aa-owner-prefix">Airport&nbsp;</span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
+                  title="Airport Owners — filter the map by owner, or apply a saved group" tabindex="-1"><span class="aa-owner-prefix">Airport&nbsp;</span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
           <button id="rgOwnerColorBtn" class="rg-owner-color-btn disabled" onclick="_rgToggleOwnerColorMode()"
                   onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegend()"
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
@@ -59162,18 +59799,6 @@ function rgSendToFlightPlanner() {
           <div id="rgDeveloperLegend" class="rg-owner-legend"></div>
           <div id="rgStoreLegend" class="rg-owner-legend"></div>
           <div id="rgListLegend" class="rg-owner-legend"></div>
-          <div id="rgMapOwnerPanel" class="rg-owner-panel">
-            <div class="rg-owner-panel-hdr">
-              <span class="rg-owner-panel-title">Filter airport owners</span>
-              <button class="rg-cat-acc-btn" onclick="_rgAllMapOwners()">All</button>
-              <button class="rg-cat-acc-btn" onclick="_rgNoMapOwners()">None</button>
-            </div>
-            <div class="rg-owner-search-wrap">
-              <input type="text" id="rgMapOwnerSearch" class="rg-owner-search" placeholder="Filter owners…" oninput="_rgMapOwnerSearchFilter(this.value)" onkeydown="_rgMapOwnerSearchKey(event)">
-              <button class="rg-owner-search-clear" id="rgMapOwnerSearchClear" onclick="_rgMapOwnerSearchKey({key:'Enter'})" title="Clear search" tabindex="-1">✕</button>
-            </div>
-            <div id="rgMapOwnerList" class="rg-owner-list"></div>
-          </div>
         </div>
         <span class="rg-hdr-flex-spacer"></span>
         <!-- v3.36.0 — 💰 Payout and ⭐ Rating moved into the 👁 Display menu on
@@ -59754,6 +60379,174 @@ function rgSendToFlightPlanner() {
         <div class="aal-foot" id="aaListFreshness">↻ Aircraft data syncing…</div>
       </div>
       <div id="aaListFilterPop" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"></div>
+
+      <!-- ── Owner Groups panel (v3.77.0) — replaces the old "Airport Owners ▾"
+           dropdown. Full sortable/filterable owner table with expandable
+           per-owner airport lists, plus named/saved owner groups that can be
+           re-applied (and color-tinted) on the map in one click. Ad hoc
+           checkbox filtering still writes straight to _rgMapOwnerFilter, same
+           as the dropdown it replaces. Resizable + draggable, same chrome as
+           the Aircraft Listing panel above. ──────────────────────────────── -->
+      <style>
+        #ogpPanel { position:absolute; z-index:1004; display:none; flex-direction:column; overflow:hidden;
+          min-width:420px; min-height:340px; background:rgba(13,20,30,0.96); border:1px solid rgba(46,204,113,0.42);
+          border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.6); pointer-events:all; user-select:none;
+          font-family:'Rajdhani',sans-serif; box-sizing:border-box; }
+        #ogpPanel.ogp-open { display:flex; }
+        .ogp-rz { position:absolute; z-index:5; }
+        .ogp-rz-t { top:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .ogp-rz-b { bottom:0; left:9px; right:9px; height:6px; cursor:ns-resize; }
+        .ogp-rz-l { left:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .ogp-rz-r { right:0; top:9px; bottom:9px; width:6px; cursor:ew-resize; }
+        .ogp-rz-tl { top:0; left:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .ogp-rz-tr { top:0; right:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .ogp-rz-bl { bottom:0; left:0; width:11px; height:11px; cursor:nesw-resize; z-index:6; }
+        .ogp-rz-br { bottom:0; right:0; width:11px; height:11px; cursor:nwse-resize; z-index:6; }
+        .ogp-rz-br::after { content:''; position:absolute; right:2px; bottom:2px; width:8px; height:8px; pointer-events:none; opacity:0.55;
+          background:linear-gradient(135deg,transparent 0 45%,#2ecc71 45% 60%,transparent 60% 72%,#2ecc71 72% 85%,transparent 85%); }
+        .ogp-title { font-family:'Orbitron',sans-serif; font-size:0.8rem; font-weight:700; color:#2ecc71; letter-spacing:0.06em; }
+        .ogp-toolbar { display:flex; align-items:center; gap:8px; padding:7px 11px; border-bottom:1px solid rgba(255,255,255,0.1); flex-shrink:0; flex-wrap:wrap; }
+        .ogp-seg { display:flex; gap:4px; flex-shrink:0; }
+        .ogp-seg-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.16); color:#aab8c8; border-radius:6px;
+          padding:4px 11px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.98rem; font-weight:600; }
+        .ogp-seg-btn.ogp-seg-on { background:rgba(46,204,113,0.16); border-color:#2ecc71; color:#3fe089; }
+        .ogp-search-wrap { position:relative; flex:1; min-width:120px; }
+        .ogp-search { width:100%; box-sizing:border-box; background:#0a121c; border:1px solid rgba(255,255,255,0.16); border-radius:6px;
+          padding:5px 26px 5px 9px; color:#eef3f8; font-family:'Rajdhani',sans-serif; font-size:1.0rem; }
+        .ogp-search:focus { outline:none; border-color:#2ecc71; }
+        .ogp-search-clear { position:absolute; right:5px; top:50%; transform:translateY(-50%); background:none; border:none; color:#7d8ea3;
+          font-size:0.9rem; cursor:pointer; line-height:1; display:none; padding:2px; }
+        .ogp-search-clear.visible { display:block; }
+        .ogp-newgroup { background:rgba(46,204,113,0.10); border:1px solid rgba(46,204,113,0.5); color:#7fe6a8; border-radius:6px;
+          padding:5px 12px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.98rem; font-weight:600; flex-shrink:0; }
+        .ogp-newgroup:hover { background:rgba(46,204,113,0.18); }
+        .ogp-tablewrap { flex:1 1 auto; min-height:0; overflow:auto; margin:0 10px 0 0;
+          scrollbar-width:auto; scrollbar-color:rgba(140,160,185,0.6) rgba(255,255,255,0.05); }
+        .ogp-tablewrap::-webkit-scrollbar { width:15px; height:15px; }
+        .ogp-tablewrap::-webkit-scrollbar-track { background:rgba(255,255,255,0.05); border-radius:8px; }
+        .ogp-tablewrap::-webkit-scrollbar-thumb { background:rgba(140,160,185,0.6); border-radius:8px; border:3px solid transparent; background-clip:content-box; }
+        .ogp-tablewrap::-webkit-scrollbar-thumb:hover { background:rgba(170,195,225,0.85); border:3px solid transparent; background-clip:content-box; }
+        .ogp-head { position:sticky; top:0; z-index:3; display:grid; grid-template-columns:22px 28px 1fr 88px 26px; background:rgba(10,16,24,0.99);
+          border-bottom:1px solid rgba(255,255,255,0.16); }
+        .ogp-th { display:flex; align-items:center; gap:3px; padding:7px 9px; font-family:'Rajdhani',sans-serif; font-weight:600;
+          font-size:1.0rem; text-transform:uppercase; letter-spacing:0.03em; color:#aab8c8; white-space:nowrap; cursor:pointer; box-sizing:border-box; }
+        .ogp-th:hover { color:#eaf4ff; }
+        .ogp-th.ogp-sorted { color:#3fe089; }
+        .ogp-th-r { justify-content:flex-end; text-align:right; }
+        .ogp-row { display:grid; grid-template-columns:22px 28px 1fr 88px 26px; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05); }
+        .ogp-row:hover { background:rgba(0,200,255,0.07); }
+        .ogp-row.ogp-row-focused { background:rgba(0,200,255,0.16); box-shadow:inset 2px 0 0 rgba(0,200,255,0.55); }
+        .ogp-cell { padding:5px 9px; font-size:1.05rem; color:#dce6f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+        .ogp-cell input[type=checkbox] { accent-color:#2ecc71; width:15px; height:15px; margin:0; cursor:pointer; }
+        .ogp-cell-r { text-align:right; }
+        .ogp-cell-color { display:flex; align-items:center; justify-content:center; padding:5px 4px; }
+        .ogp-cell-name { cursor:pointer; }
+        .ogp-cell-name:hover { color:#4fd2ff; }
+        .ogp-chevron { cursor:pointer; color:#7d8ea3; text-align:center; }
+        .ogp-chevron:hover { color:#4fd2ff; }
+        .ogp-chips { grid-column:1 / -1; padding:8px 10px 10px 66px; background:rgba(0,0,0,0.18); display:flex; flex-wrap:wrap; gap:6px;
+          border-bottom:1px solid rgba(255,255,255,0.05); }
+        .ogp-chip { font-size:0.94rem; padding:3px 9px; border-radius:999px; border:1px solid rgba(255,255,255,0.18); color:#b4c2d2; cursor:pointer; user-select:none; }
+        .ogp-chip:hover { border-color:#4fd2ff; color:#eaf4ff; }
+        .ogp-chip-match { border-color:#3fe089; color:#7fe6a8; }
+        .ogp-chip-selected, .ogp-chip-selected:hover { color:#04141e; background:linear-gradient(135deg,#00d4ff,#009fe3); border-color:#8fecff; font-weight:600; }
+        .ogp-empty { padding:18px; text-align:center; color:#7d8ea3; font-size:1.08rem; }
+        .ogp-footbar { display:none; align-items:center; gap:10px; padding:7px 11px; background:rgba(46,204,113,0.10); border-top:1px solid rgba(46,204,113,0.35); flex-shrink:0; }
+        .ogp-footbar.ogp-show { display:flex; }
+        .ogp-footbar-txt { font-size:1.0rem; color:#7fe6a8; flex:1; min-width:0; }
+        .ogp-footbar button { background:rgba(46,204,113,0.14); border:1px solid #2ecc71; color:#7fe6a8; border-radius:6px;
+          padding:5px 12px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.98rem; font-weight:600; }
+        .ogp-footbar button:hover { background:rgba(46,204,113,0.24); }
+        .ogp-groupslist { flex:1 1 auto; min-height:0; overflow:auto; padding:4px 8px; }
+        .ogp-swatch { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+        /* Group rows mirror the Owners-tab row language (checkbox/name/chevron)
+           so the two tabs read as one consistent interaction model, not two
+           different UIs bolted together. */
+        .ogp-grow { display:grid; grid-template-columns:22px 26px 1fr 88px 22px 22px 22px; align-items:center;
+          border-bottom:1px solid rgba(255,255,255,0.06); }
+        .ogp-grow:hover { background:rgba(0,200,255,0.05); }
+        .ogp-gcell { padding:5px 6px; font-size:1.05rem; color:#dce6f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+        .ogp-gcell input[type=checkbox] { accent-color:#2ecc71; width:15px; height:15px; margin:0; cursor:pointer; }
+        .ogp-gcell-name { cursor:pointer; font-weight:600; color:#eaf4ff; }
+        .ogp-gcell-name:hover { color:#4fd2ff; }
+        .ogp-gcell-meta { font-size:0.92rem; color:#8b9aab; text-align:right; }
+        .ogp-gicon { background:none; border:none; color:#8b9aab; cursor:pointer; font-size:0.95rem; padding:5px 2px; text-align:center; }
+        .ogp-gicon:hover { color:#eaf4ff; }
+        .ogp-gicon-btn { background:rgba(46,204,113,0.14); border:1px solid #2ecc71; color:#7fe6a8; border-radius:6px;
+          padding:4px 11px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.94rem; font-weight:600; }
+        .ogp-gmembers { grid-column:1/-1; padding:7px 10px 10px 50px; background:rgba(0,0,0,0.15); display:flex; flex-wrap:wrap; gap:6px; }
+        .ogp-member-missing { opacity:0.55; font-style:italic; cursor:default; }
+        .ogp-member-missing:hover { border-color:rgba(255,255,255,0.18); color:#b4c2d2; }
+        .ogp-gsavebar { grid-column:1/-1; display:flex; align-items:center; gap:8px; padding:7px 10px 9px 50px;
+          background:rgba(224,166,74,0.10); border-bottom:1px solid rgba(255,255,255,0.06); }
+        .ogp-gsavebar-txt { font-size:0.94rem; color:#e0a64a; flex:1; min-width:0; }
+        .ogp-gsavebar button { background:rgba(46,204,113,0.14); border:1px solid #2ecc71; color:#7fe6a8; border-radius:6px;
+          padding:4px 10px; cursor:pointer; font-family:'Rajdhani',sans-serif; font-size:0.92rem; font-weight:600; flex-shrink:0; }
+        .ogp-gsavebar button:hover { background:rgba(46,204,113,0.24); }
+      </style>
+      <div id="ogpPanel" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+        <div class="ogp-rz ogp-rz-t" onpointerdown="_ogpResizeStart(event,'n')"></div>
+        <div class="ogp-rz ogp-rz-b" onpointerdown="_ogpResizeStart(event,'s')"></div>
+        <div class="ogp-rz ogp-rz-l" onpointerdown="_ogpResizeStart(event,'w')"></div>
+        <div class="ogp-rz ogp-rz-r" onpointerdown="_ogpResizeStart(event,'e')"></div>
+        <div class="ogp-rz ogp-rz-tl" onpointerdown="_ogpResizeStart(event,'nw')"></div>
+        <div class="ogp-rz ogp-rz-tr" onpointerdown="_ogpResizeStart(event,'ne')"></div>
+        <div class="ogp-rz ogp-rz-bl" onpointerdown="_ogpResizeStart(event,'sw')"></div>
+        <div class="ogp-rz ogp-rz-br" onpointerdown="_ogpResizeStart(event,'se')"></div>
+        <div class="aa-chip-draghandle" style="display:flex;align-items:center;justify-content:space-between;padding:8px 11px;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;" onpointerdown="_ogpDragFromHandle(event)" title="Drag to move this panel">
+          <span style="display:flex;align-items:center;gap:7px;min-width:0;"><span class="aa-chip-grip" aria-hidden="true">⠿</span><span class="ogp-title">👥 AIRPORT OWNERS</span></span>
+          <span style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+            <span class="aal-opac" title="Panel opacity"><span class="aal-opac-ico" aria-hidden="true">◐</span><input type="range" id="ogpOpacity" min="10" max="100" step="5" value="100" oninput="_ogpSetOpacity(this.value)" title="Drag to set panel opacity (10–100%)"></span>
+            <button onclick="_ogpClosePanel()" title="Close (the map filter stays as-is)" style="background:none;border:none;color:rgba(255,255,255,0.55);cursor:pointer;font-size:1.05rem;line-height:1;padding:0;" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='rgba(255,255,255,0.55)'">✕</button>
+          </span>
+        </div>
+        <div class="ogp-toolbar">
+          <div class="ogp-seg">
+            <button class="ogp-seg-btn" id="ogpSegOwners" onclick="_ogpSetView('owners')">All owners</button>
+            <button class="ogp-seg-btn" id="ogpSegGroups" onclick="_ogpSetView('groups')">Saved groups <span id="ogpGroupCount"></span></button>
+          </div>
+          <button class="ogp-seg-btn" id="ogpAllBtn" onclick="_ogpAllOwners()" title="Include all (visible) owners in the map filter">All</button>
+          <button class="ogp-seg-btn" id="ogpNoneBtn" onclick="_ogpNoOwners()" title="Exclude all (visible) owners from the map filter">None</button>
+          <div class="ogp-search-wrap" id="ogpSearchWrap">
+            <input type="text" id="ogpSearch" class="ogp-search" placeholder="Filter owners or ICAO…" oninput="_ogpSearchInput(this.value)">
+            <button class="ogp-search-clear" id="ogpSearchClear" onclick="_ogpSearchInput('');document.getElementById('ogpSearch').value='';document.getElementById('ogpSearch').focus();" title="Clear search">✕</button>
+          </div>
+        </div>
+        <div class="ogp-tablewrap" id="ogpOwnersView">
+          <div class="ogp-head">
+            <div class="ogp-th" title="Color used to represent this owner (or group) on the map"></div>
+            <div class="ogp-th"></div>
+            <div class="ogp-th" onclick="_ogpHeaderSort('name')" title="Sort A–Z / Z–A">Owner<span class="ogp-th-arr"></span></div>
+            <div class="ogp-th ogp-th-r" onclick="_ogpHeaderSort('count')" title="Sort low–high / high–low">Airports<span class="ogp-th-arr"></span></div>
+            <div class="ogp-th"></div>
+          </div>
+          <div id="ogpOwnerRows"></div>
+        </div>
+        <div class="ogp-groupslist" id="ogpGroupsView" style="display:none;"></div>
+        <div class="ogp-footbar" id="ogpFootbar">
+          <span class="ogp-footbar-txt" id="ogpFootbarTxt"></span>
+          <span id="ogpFootbarBtns" style="display:flex;align-items:center;gap:8px;flex-shrink:0;"></span>
+        </div>
+      </div>
+
+      <!-- Owner Groups delete confirmation (v3.82.0) — same small confirm-modal
+           pattern as #lrcModal (_showLowRotConfirm), reused here because
+           Kyndra asked for a confirm step before deleting a group. -->
+      <div class="modal-overlay" id="ogpConfirmModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _ogpConfirmClose)">
+        <div class="modal" style="max-width:400px;">
+          <div class="modal-header">
+            <span class="modal-title">⚠ &nbsp;Delete Group</span>
+            <button class="modal-close" onclick="_ogpConfirmClose()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="npc-msg" id="ogpConfirmMsg"></p>
+            <div class="npc-btns">
+              <button class="npc-btn npc-btn-cancel" id="ogpConfirmCancelBtn">Cancel</button>
+              <button class="npc-btn npc-btn-danger" id="ogpConfirmOkBtn">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Aircraft rentals palette editor (v3.50.0) — right-click the gradient bar. -->
       <div id="aaRentPaletteEditor" style="display:none;position:absolute;z-index:1004;background:rgba(13,20,30,0.97);border:1px solid rgba(46,204,113,0.42);border-radius:8px;padding:12px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.55);pointer-events:all;user-select:none;font-family:'Rajdhani',sans-serif;width:416px;box-sizing:border-box;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" oncontextmenu="event.stopPropagation()">
