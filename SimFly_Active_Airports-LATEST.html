@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.82.2';
+const APP_VERSION = '3.83.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11561,8 +11561,9 @@ const _urlParams = (() => {
       arrOwner: (p.get('arrOwner') || '').trim(),
       fltnum:   (p.get('fltnum')   || '').trim().toUpperCase(),
       pilots:   (p.get('pilots')   || '').trim(),
+      groups:   (p.get('groups')   || '').trim(),
       // Direct-mode entry (v3.50.0) — skip the choice screen and open a mode.
-      // Considered LAST, only when no owner/route/pilots handoff is present.
+      // Considered LAST, only when no owner/route/pilots/groups handoff is present.
       mode:     (p.get('mode')     || '').trim().toLowerCase(),
       ac: p.get('acCode') ? {
         code:     (p.get('acCode')  || '').trim().toUpperCase(),
@@ -11576,7 +11577,7 @@ const _urlParams = (() => {
         payloadPct: p.get('acPayloadPct') ? parseInt(p.get('acPayloadPct'), 10) : 0,
       } : null,
     };
-  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', pilots:'', ac:null }; }
+  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', pilots:'', groups:'', ac:null }; }
 })();
 
 // Expose for future aircraft-aware filtering
@@ -11585,13 +11586,13 @@ window._urlAc = _urlParams.ac;
 // ── Startup choice screen (v3.7.0) ──────────────────────────────────────────
 // Shown after the splash fades, unless an RT/RM Lite handoff already told us
 // which mode the user wants. dep/arr/depOwner/arrOwner → owner/matrix mode;
-// pilots= → map mode (already opened by _applyUrlParams). Either case bypasses.
+// pilots=/groups= → map mode (already opened by _applyUrlParams). Either case bypasses.
 // Wiring lives at module scope (not inside _applyUrlParams) so it works even
 // when no URL params are present — that's the case where the choice matters.
 window._aaChoiceShowIfNeeded = function _aaChoiceShowIfNeeded(){
   try {
     const goneToMatrix = !!(_urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner);
-    const goneToMap    = !!_urlParams.pilots;
+    const goneToMap    = !!(_urlParams.pilots || _urlParams.groups);
     if (goneToMatrix || goneToMap) return;
     // Direct-mode entry (?mode=…) — considered LAST so it never overrides an
     // RT/RM handoff (owner/route/pilots). Accepts e.g. mapmode/map, ownermode/
@@ -11697,7 +11698,7 @@ let _urlParamsApplied = false;
 
 function _applyUrlParams() {
   if (_urlParamsApplied) return;
-  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac || _urlParams.pilots;
+  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac || _urlParams.pilots || _urlParams.groups;
   if (!hasAny) { _urlParamsApplied = true; return; }
 
 
@@ -11765,10 +11766,20 @@ function _applyUrlParams() {
 
   _urlParamsApplied = true;
 
-  // pilots= param: open region map pre-filtered to the named owners
-  if (_urlParams.pilots) {
-    const pilotNames = _urlParams.pilots.split(',').map(s => s.trim()).filter(Boolean);
-    if (pilotNames.length) openRegionModal(new Set(pilotNames));
+  // pilots=/groups= params: open region map pre-filtered to the named owners
+  // and/or named owner groups (comma-separated; each name is trimmed only at
+  // its edges, so names containing spaces pass through untouched — a literal
+  // comma inside a name isn't supported, same existing limitation as pilots=).
+  // Both can be combined in one handoff; the results are unioned together.
+  if (_urlParams.pilots || _urlParams.groups) {
+    const pilotNames = _urlParams.pilots ? _urlParams.pilots.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const groupNames = _urlParams.groups ? _urlParams.groups.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const filterSet = new Set(pilotNames);
+    for (const gName of groupNames) {
+      const g = _ogpGroups.find(x => x.name === gName);
+      if (g) g.ownerNames.forEach(n => filterSet.add(n));
+    }
+    if (filterSet.size) openRegionModal(filterSet);
   }
 }
 
@@ -32186,7 +32197,7 @@ function openRegionModal(forceOwnerFilter) {
   const mainDep = (document.getElementById('distDep')?.value || '').trim().toUpperCase();
   const mainArr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
   if (mainDep && mainArr) { _rgDotSelDep = mainDep; _rgDotSelArr = mainArr; }
-  // If called with an explicit owner set (e.g. from Recip Tracker pilots= URL param), apply it.
+  // If called with an explicit owner set (e.g. from a pilots=/groups= URL handoff), apply it.
   // Otherwise leave _rgMapOwnerFilter unchanged so the map reopens with the last-used filter.
   if (forceOwnerFilter) {
     _rgMapOwnerFilter = forceOwnerFilter;
@@ -45904,7 +45915,7 @@ function rgSendToFlightPlanner() {
             After the loading splash fades (v3.7.0+) a choice screen asks what you&rsquo;d like to do. Three options are available on desktop; two on mobile (the SimBrief option requires a PC).<br/><br/>
             <strong>Load SimBrief Flight Plan</strong> (desktop only, v3.21.0+) &mdash; appears centered above the other two cards. Click it to import your latest SimBrief OFP and open the map with the Alerts panel ready to configure. If your SimBrief Pilot ID isn&rsquo;t saved yet you&rsquo;ll be prompted for it once; it&rsquo;s stored locally for future sessions. The flight plan is fetched and plotted on the map automatically, then the Alerts panel opens so you can set up waypoint, cruise, descent, or timer alarms before you even take off. Cancelling the Pilot ID prompt returns you to the choice screen.<br/><br/>
             <strong>Show airports by Owner</strong> takes you to the classic distance matrix &mdash; pick this when you already know which pilots own the airports you want for departure and arrival. <strong>Explore map</strong> opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking flights, and setting up in-flight alerts.<br/><br/>
-            A small <em>Skip</em> link (or pressing <kbd>Esc</kbd>) dismisses the choice and drops you on the matrix. The choice is <strong>bypassed automatically</strong> when Recip Tracker or RM Lite hands you off with a specific intent &mdash; a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> URL parameter sends you straight to the matrix with the route prefilled, and a <code>pilots=</code> URL parameter opens the map pre-filtered to those owners. The choice only appears on a plain startup with no parameters.
+            A small <em>Skip</em> link (or pressing <kbd>Esc</kbd>) dismisses the choice and drops you on the matrix. The choice is <strong>bypassed automatically</strong> when Recip Tracker or RM Lite hands you off with a specific intent &mdash; a <code>dep</code>/<code>arr</code>/<code>depOwner</code>/<code>arrOwner</code> URL parameter sends you straight to the matrix with the route prefilled, and a <code>pilots=</code> and/or <code>groups=</code> URL parameter opens the map pre-filtered to those owners (<code>groups=</code> takes one or more saved Owner Groups by name, v3.83.0+; both accept a comma-separated list and can be combined in the same link). The choice only appears on a plain startup with no parameters.
           </div>
         </div>
       </div>
@@ -46650,10 +46661,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.83.0</span>
+          <span class="release-date">July 9, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New <code>groups=</code> URL parameter opens the map straight to one or more saved owner groups.</strong> Works exactly like the existing <code>pilots=</code> handoff — skips the startup choice screen and goes directly to the map, pre-filtered. Pass one or more saved group names, comma-separated (URL-encode any spaces in a name); the two params can be combined in the same link and their memberships are merged together.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.82.2</span>
-          <span class="release-date">July 4, 2026 &middot; Current</span>
+          <span class="release-date">July 4, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <div class="release-divider"></div>
