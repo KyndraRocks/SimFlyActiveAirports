@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.83.0**
+**Current version: v3.84.0**
 
 ---
 
@@ -343,6 +343,8 @@ If a flight plan is already plotted when you save the modal, the route repaints 
 Open the interactive map and click the **🔌 Live** pulldown in the header, then choose **FSUIPC Live**. The header is organised into two pulldowns: **🛠 Tools** (Select Regions + Measurement), and **🔌 Live** (SimBrief Flight Plan, FSUIPC Live, Follow A/C, the Aircraft Icon picker, and Mobile Alerts). A small green dot on the trigger button lights when anything inside is active. The app connects to **Paul Henty's WebSocket Server** running locally as part of **FSUIPC7** and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age.
 
 **Adaptive push cadence** (v2.88.0+) — updates push every **500 ms while on the ground** (so taxi detail captures cleanly) and every **1000 ms in flight** (eases the per-second JS work for the rest of the trip). The cadence switches automatically the moment flight phase changes. The breadcrumb trail decimates by distance so cadence has no visible effect on track quality at cruise. The icon grays out automatically after 30 seconds without a fresh fix (sim paused, MSFS exited, FSUIPC stopped). As of v3.31.0 the plane icon always draws **above** every flight-path element — the SimBrief route line, waypoint markers, route labels, and its own breadcrumb trail — so it's never hidden behind the route it's flying.
+
+**Smooth marker motion** (v3.84.0) — position fixes arrive about once a second, but the plane no longer hops from one spot to the next. Between fixes the icon glides continuously along a great-circle path — position and heading both interpolated at your screen's refresh rate — so it tracks smoothly across the map instead of stepping once per second. When **Follow A/C** is on, the map scrolls smoothly under the gliding plane too. It's purely a display improvement: the same data drives it, the breadcrumb trail and alerts are unchanged, and the Flight Demo marker gets the same smoothing. This applies to live FSUIPC tracking and demo flights alike.
 
 **Auto-connect after a flight plan loads** (v3.32.0) — once you plot a SimBrief flight plan, Active Airports quietly checks for FSUIPC about once a minute and connects on its own the moment FSUIPC7 + the WebSocket Server is reachable, so you don't have to remember to click **FSUIPC Live** before alt-tabbing to the sim. The first time it can't find FSUIPC you get a single heads-up, then it keeps checking silently. As of **v3.39.0** it also re-checks the instant you switch back to the Active Airports tab — so popping over to confirm your flight connects on the spot instead of waiting out the once-a-minute timer (browsers throttle background timers), and **touchscreen flight-sim PCs are no longer mistaken for phones/tablets and skipped**. Clicking **FSUIPC Live** yourself still connects instantly (and uses the faster 15-second reconnect if the link drops); stopping tracking, or clearing the flight plan, cancels the auto-checks. Desktop only — FSUIPC needs a PC sim.
 

@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.83.0';
+const APP_VERSION = '3.84.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14654,7 +14654,103 @@ function _liveAcPlaneIcon(hdgDeg, stale) {
   return L.divIcon({ className: 'live-ac-icon', html, iconSize: [34, 34], iconAnchor: [17, 17] });
 }
 
-function _liveAcRenderMarker(d) {
+// ── Live/demo marker motion smoothing (v3.84.0) ──────────────────────────
+// Both the FSUIPC/STKP live feed and the demo engine push a new position to
+// _liveAcRenderMarker at ~1 Hz (one telemetry fix / one demo setInterval tick
+// per second). Snapping the icon straight to each fix makes the plane teleport
+// once a second even though the position math is already exact — the driver
+// cadence, not the interpolation, was the bottleneck (same lesson the sibling
+// FTE app learned). This rAF loop glides the icon — position AND heading —
+// between the two most-recent fixes at frame rate, so it moves continuously
+// through the same sparse data. Pure render-side: the breadcrumb trail,
+// tooltip data, AFK/alerts and the follow decision all still run at fix
+// cadence inside _liveAcRenderMarker; only the icon's visible position and
+// rotation are interpolated here. No stored data or sampling rate changes.
+let   _acSlideRaf    = 0;        // requestAnimationFrame handle (0 = idle)
+let   _acSlideFromLL = null;     // {lat,lng} glide start
+let   _acSlideToLL   = null;     // {lat,lng} glide target (latest fix)
+let   _acSlideFromH  = 0;        // heading at glide start (deg)
+let   _acSlideToH    = 0;        // heading target (deg)
+let   _acSlideT0     = 0;        // performance.now() when this glide began
+let   _acSlideDur    = 0;        // glide duration (ms) — sized to the fix interval
+let   _acDispLL      = null;     // currently displayed {lat,lng}
+let   _acDispHdg     = 0;        // currently displayed heading (deg)
+let   _acLastFixMs   = 0;        // performance.now() of the previous fix
+let   _acIconStale   = false;    // true while the marker is showing its grey stale icon
+const _AC_SLIDE_MIN_MS  = 120;   // below this, snap — micro-moves aren't worth a tween
+const _AC_SLIDE_MAX_MS  = 1500;  // cap so a slow source (STKP ~10 s) can't lag the icon far behind
+const _AC_SLIDE_SNAP_NM = 100;   // jumps beyond this = teleport (sim restart / slew) → snap
+const _AC_SLIDE_STILL_NM = 0.0005; // essentially stationary → snap, don't spin up a rAF
+
+// Rotate the plane divIcon's inner element in place — far cheaper than setIcon,
+// which rebuilds the icon DOM on every call. Leaflet's setLatLng only moves the
+// marker container, so this inner rotation survives position updates between fixes.
+function _acApplyIconRotation(hdg) {
+  if (!_liveAcMarker) return;
+  const el = _liveAcMarker.getElement && _liveAcMarker.getElement();
+  const inner = el && el.firstElementChild;
+  if (inner) inner.style.transform = 'rotate(' + hdg + 'deg)';
+}
+
+function _acSlideCancel() {
+  if (_acSlideRaf) { try { cancelAnimationFrame(_acSlideRaf); } catch (_) {} _acSlideRaf = 0; }
+}
+
+function _acSlideFrame() {
+  _acSlideRaf = 0;
+  if (!_liveAcMarker || !_acSlideToLL) return;
+  const now = performance.now();
+  let f = _acSlideDur > 0 ? (now - _acSlideT0) / _acSlideDur : 1;
+  if (f < 0) f = 0; if (f > 1) f = 1;
+  // Great-circle position (exact for long / high-latitude segments — same
+  // interpolator the demo track walker uses) + wrap-aware heading lerp.
+  const ll = _demoInterp(_acSlideFromLL.lat, _acSlideFromLL.lng, _acSlideToLL.lat, _acSlideToLL.lng, f);
+  let dh = _acSlideToH - _acSlideFromH;
+  while (dh >  180) dh -= 360;
+  while (dh < -180) dh += 360;
+  const hdg = ((_acSlideFromH + dh * f) + 720) % 360;
+  _acDispLL = { lat: ll[0], lng: ll[1] };
+  _acDispHdg = hdg;
+  try { _liveAcMarker.setLatLng([ll[0], ll[1]]); } catch (_) {}
+  _acApplyIconRotation(hdg);
+  // Follow-mode: pan per-frame with no tile animation so the map scrolls
+  // smoothly under the gliding icon (cheap CSS translate; Leaflet still only
+  // fetches tiles as new area is revealed). Skipped mid double-click zoom.
+  if (_liveAcFollow && _rgMap && !_rgDblClickActive) {
+    try { _rgMap.panTo([ll[0], ll[1]], { animate: false }); } catch (_) {}
+  }
+  if (f < 1) _acSlideRaf = requestAnimationFrame(_acSlideFrame);
+}
+
+// Start (or re-aim) the glide toward a freshly-received fix. `from` is wherever
+// the icon is displayed right now, so a fix arriving mid-glide re-aims smoothly.
+function _acSlideTo(lat, lng, hdg) {
+  const now  = performance.now();
+  const from = _acDispLL || (_liveAcMarker ? _liveAcMarker.getLatLng() : { lat, lng });
+  const interval = _acLastFixMs ? (now - _acLastFixMs) : _AC_SLIDE_MAX_MS;
+  _acLastFixMs   = now;
+  _acSlideFromLL = { lat: from.lat, lng: from.lng };
+  _acSlideToLL   = { lat, lng };
+  _acSlideFromH  = _acDispHdg;
+  _acSlideToH    = isFinite(hdg) ? hdg : _acDispHdg;
+  _acSlideT0     = now;
+  _acSlideDur    = Math.max(_AC_SLIDE_MIN_MS, Math.min(_AC_SLIDE_MAX_MS, interval));
+  if (!_acSlideRaf) _acSlideRaf = requestAnimationFrame(_acSlideFrame);
+}
+
+// Snap the icon straight to a position with no glide (first fix, teleport,
+// timeline scrub, or a stationary hold).
+function _acSlideSnap(lat, lng, hdg) {
+  _acSlideCancel();
+  _acSlideToLL = null;
+  _acDispLL    = { lat, lng };
+  _acDispHdg   = isFinite(hdg) ? hdg : _acDispHdg;
+  _acLastFixMs = performance.now();
+  try { _liveAcMarker && _liveAcMarker.setLatLng([lat, lng]); } catch (_) {}
+  _acApplyIconRotation(_acDispHdg);
+}
+
+function _liveAcRenderMarker(d, snap) {
   if (!_rgMap) return;
   const lat = parseFloat(d.lat), lng = parseFloat(d.lng);
   if (!isFinite(lat) || !isFinite(lng)) return;
@@ -14679,8 +14775,8 @@ function _liveAcRenderMarker(d) {
   // AFK Alerts + Aircraft Data Panel tick — defensive guard so a tick failure
   // never breaks live-aircraft rendering.
   if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
-  const icon = _liveAcPlaneIcon(hdg, false);
   if (!_liveAcMarker) {
+    const icon = _liveAcPlaneIcon(hdg, false);
     _liveAcMarker = L.marker([lat, lng], { icon, pane: _rgMap.getPane('liveAcPane') ? 'liveAcPane' : 'markerPane', zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
     _liveAcMarker.on('mouseover', e => _tipAPI && _tipAPI.showLive(_liveAcTooltipHtml, e.originalEvent.clientX, e.originalEvent.clientY));
     _liveAcMarker.on('mousemove', e => _tipAPI && _tipAPI.move(e.originalEvent.clientX, e.originalEvent.clientY));
@@ -14696,19 +14792,34 @@ function _liveAcRenderMarker(d) {
       _rgDblClickActive = true;
       _rgMap.setView([lat2, lng2], Math.round(zoom), { animate: true });
     });
+    _acIconStale = false;
+    _acSlideSnap(lat, lng, hdg);       // first fix — position + init glide state, no tween
   } else {
-    _liveAcMarker.setLatLng([lat, lng]);
-    _liveAcMarker.setIcon(icon);
+    // v3.84.0 — feed the rAF slide-tween instead of snapping. Icon *style*
+    // (plane shape / stale colour) is owned by setIcon elsewhere; here we only
+    // move + rotate, so a per-fix setIcon DOM rebuild is avoided. Recover the
+    // green icon the first fix after a stale-grey period, then let the tween
+    // own rotation again.
+    if (_acIconStale) {
+      try { _liveAcMarker.setIcon(_liveAcPlaneIcon(hdg, false)); } catch (_) {}
+      _acIconStale = false;
+    }
+    const cur  = _acDispLL || _liveAcMarker.getLatLng();
+    const jump = _afkDistNm(cur.lat, cur.lng, lat, lng);
+    if (snap || !isFinite(jump) || jump > _AC_SLIDE_SNAP_NM || jump < _AC_SLIDE_STILL_NM) {
+      _acSlideSnap(lat, lng, hdg);     // teleport / scrub / stationary → instant
+    } else {
+      _acSlideTo(lat, lng, hdg);       // normal fix → glide at frame rate
+    }
   }
   if (!_liveAcCentred) {
     try { _rgMap.setView([lat, lng], Math.max(_rgMap.getZoom(), 6), { animate: true }); } catch (_) {}
     _liveAcCentred = true;
-  } else if (_liveAcFollow) {
-    // Smooth pan — preserves zoom and uses Leaflet's built-in tween. The
-    // 0.8 s duration bridges the gap between 1 Hz FSUIPC fixes so motion
-    // feels continuous instead of stepping; STKP's 10 s cadence still
-    // animates cleanly within the longer tween envelope.
-    try { _rgMap.panTo([lat, lng], { animate: true, duration: 0.8, easeLinearity: 0.5 }); } catch (_) {}
+  } else if (_liveAcFollow && !_acSlideRaf) {
+    // No glide in flight (snap / teleport / scrub / stale hold) — pan directly.
+    // While a glide IS running, _acSlideFrame pans the map per-frame instead,
+    // so the two never fight.
+    try { _rgMap.panTo([lat, lng], { animate: true, duration: 0.5, easeLinearity: 0.5 }); } catch (_) {}
   }
   _liveAcScheduleStaleCheck();
 }
@@ -14946,6 +15057,10 @@ function _liveAcMarkStale() {
   if (!_liveAcMarker) return;
   const hdg = (_liveAcLastData && parseFloat(_liveAcLastData.hdg)) || 0;
   _liveAcMarker.setIcon(_liveAcPlaneIcon(hdg, true));
+  // No fixes are arriving (that's why it's stale), so any in-flight glide is
+  // stale too — stop it and mark the icon grey so the next fix restores green.
+  _acSlideCancel();
+  _acIconStale = true;
 }
 
 function _liveAcScheduleStaleCheck() {
@@ -14961,6 +15076,9 @@ function _liveAcScheduleStaleCheck() {
 
 function _liveAcClear() {
   if (_liveAcStaleTimer) { clearTimeout(_liveAcStaleTimer); _liveAcStaleTimer = 0; }
+  // Tear down the slide-tween so a removed marker can't keep an rAF alive.
+  _acSlideCancel();
+  _acSlideToLL = null; _acDispLL = null; _acLastFixMs = 0; _acIconStale = false;
   if (_liveAcMarker) { try { _rgMap && _rgMap.removeLayer(_liveAcMarker); } catch (_) {} _liveAcMarker = null; }
   // Intentionally NOT clearing the trail here — the breadcrumb is persisted
   // so a browser close/crash, or a manual STKP / FSUIPC source-stop, keeps
@@ -17466,7 +17584,7 @@ function _demoScrubTo(simSec) {
           ident: 'DEMO', af: _demoPlan.acCode || null, phase: null,
           dep: _demoPlan.raw.dep.icao, dest: _demoPlan.raw.dest.icao,
           source: 'demo', _demoPhase: baseline._demoPhase,
-        });
+        }, true);   // scrub = snap to the scrubbed position, no glide lag behind the slider
       } catch (_) {}
     }
   }
@@ -46661,10 +46779,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.84.0</span>
+          <span class="release-date">July 12, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Smoother live &amp; demo aircraft motion.</strong> The moving aircraft marker &mdash; whether driven by FSUIPC/live telemetry or a Flight Demo &mdash; now glides continuously between position fixes instead of hopping once per second. Both feeds deliver roughly one update per second, and the marker previously jumped straight to each new spot; it now interpolates its position and heading along a great-circle path at screen-refresh rate, so the plane tracks smoothly. When Follow mode is on, the map scrolls smoothly under the gliding marker too. This is purely a display improvement &mdash; no change to recorded data, the breadcrumb trail, alerts, or timeline scrubbing (which still snaps instantly to wherever you drag).</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.83.0</span>
-          <span class="release-date">July 9, 2026 &middot; Current</span>
+          <span class="release-date">July 9, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
