@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.84.0';
+const APP_VERSION = '3.85.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -31322,6 +31322,7 @@ function _ogpLoadPrefs() {
     if (o.view === 'owners' || o.view === 'groups') _ogpView = o.view;
     if (o.sort === 'name' || o.sort === 'count') _ogpSort = o.sort;
     if (o.sortDir === 'asc' || o.sortDir === 'desc') _ogpSortDir = o.sortDir;
+    if (typeof o.selectedOnly === 'boolean') _ogpSelectedOnly = o.selectedOnly;
     if (o.geom && typeof o.geom === 'object') _ogpGeom = o.geom;
     if (typeof o.opacity === 'number') _ogpOpacity = Math.max(0.1, Math.min(1, o.opacity));
     if (typeof o.userSized === 'boolean') _ogpUserSized = o.userSized;
@@ -31330,7 +31331,7 @@ function _ogpLoadPrefs() {
 function _ogpSavePrefs() {
   try {
     localStorage.setItem(_OGP_PREFS_KEY, JSON.stringify({
-      view:_ogpView, sort:_ogpSort, sortDir:_ogpSortDir, geom:_ogpGeom, opacity:_ogpOpacity, userSized:_ogpUserSized,
+      view:_ogpView, sort:_ogpSort, sortDir:_ogpSortDir, selectedOnly:_ogpSelectedOnly, geom:_ogpGeom, opacity:_ogpOpacity, userSized:_ogpUserSized,
     }));
   } catch (_) {}
 }
@@ -32005,6 +32006,7 @@ let _ogpView          = 'owners'; // 'owners' | 'groups'
 let _ogpSort          = 'name';  // 'name' | 'count'
 let _ogpSortDir       = 'asc';
 let _ogpSearch        = '';
+let _ogpSelectedOnly  = false;   // v3.85.0 — Owners tab: true = list only currently-checked owners
 let _ogpExpanded      = new Set(); // owner names currently expanded — session-only, not persisted
 let _ogpGeom          = null;    // panel geometry, same shape as _aaListGeom
 let _ogpOpacity       = 1;
@@ -43453,7 +43455,7 @@ function _ogpSetView(view) {
   const ownersView = document.getElementById('ogpOwnersView'), groupsView = document.getElementById('ogpGroupsView');
   if (ownersView) ownersView.style.display = isOwners ? '' : 'none';
   if (groupsView) groupsView.style.display = isOwners ? 'none' : '';
-  ['ogpSearchWrap', 'ogpAllBtn', 'ogpNoneBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isOwners ? '' : 'none'; });
+  ['ogpSearchWrap', 'ogpAllBtn', 'ogpNoneBtn', 'ogpSelBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = isOwners ? '' : 'none'; });
   const bar = document.getElementById('ogpFootbar'); if (bar) bar.classList.remove('ogp-show');
   if (isOwners) {
     _ogpRenderOwners();
@@ -43504,15 +43506,25 @@ function _ogpRenderOwners() {
   const matchInfo = new Map();
   const rows = owners.filter(o => {
     const m = _ogpOwnerMatch(o, q);
-    if (m.match) matchInfo.set(o.name, m.matchedIcaos);
-    return m.match;
+    if (!m.match) return false;
+    // v3.85.0 — "Selected only" narrows the list to owners currently checked
+    // (included in the map filter). A null filter means every owner is included.
+    if (_ogpSelectedOnly && !(_rgMapOwnerFilter === null || _rgMapOwnerFilter.has(o.name))) return false;
+    matchInfo.set(o.name, m.matchedIcaos);
+    return true;
   });
   rows.sort((a, b) => {
     const cmp = _ogpSort === 'count' ? (a.airports.length - b.airports.length) : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
     return _ogpSortDir === 'desc' ? -cmp : cmp;
   });
   if (!rows.length) {
-    rowsEl.innerHTML = `<div class="ogp-empty">${owners.length ? 'No owners or airports match your search.' : 'No owners found — import a KML with owner labels first.'}</div>`;
+    const emptyMsg = !owners.length
+      ? 'No owners found — import a KML with owner labels first.'
+      : _ogpSelectedOnly
+        ? (q ? 'No selected owners match your search.'
+             : 'No owners are currently selected — check some owners, or turn off “Selected only”.')
+        : 'No owners or airports match your search.';
+    rowsEl.innerHTML = `<div class="ogp-empty">${emptyMsg}</div>`;
   } else {
     rowsEl.innerHTML = rows.map(o => {
       const included = _rgMapOwnerFilter === null || _rgMapOwnerFilter.has(o.name);
@@ -43552,6 +43564,23 @@ function _ogpRenderOwners() {
   });
   _ogpUpdateFootbar();
   _ogpUpdateGroupCountBadge();
+  _ogpUpdateSelBtn();
+}
+// v3.85.0 — "Selected only" toggle: list only currently-checked owners.
+function _ogpToggleSelectedOnly() {
+  _ogpSelectedOnly = !_ogpSelectedOnly;
+  _ogpUpdateSelBtn();
+  _ogpSavePrefs();
+  _ogpRenderOwners();
+}
+function _ogpUpdateSelBtn() {
+  const b = document.getElementById('ogpSelBtn');
+  if (!b) return;
+  b.classList.toggle('ogp-seg-on', _ogpSelectedOnly);
+  b.setAttribute('aria-pressed', _ogpSelectedOnly ? 'true' : 'false');
+  b.title = _ogpSelectedOnly
+    ? 'Showing only checked (selected) owners — click to show all owners'
+    : 'Show only owners that are currently checked (selected)';
 }
 function _ogpHeaderSort(key) {
   if (_ogpSort === key) _ogpSortDir = _ogpSortDir === 'asc' ? 'desc' : 'asc';
@@ -46069,7 +46098,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Airport Owners</div>
           <div class="help-feature-desc">
-            Click <strong>Airport Owners &#9662;</strong> on the map&rsquo;s top bar (v3.77.0) to open the <strong>Airport Owners</strong> panel &mdash; a resizable, draggable panel matching Aircraft Listing&rsquo;s look and feel. A small <strong>color swatch</strong> on the far left of each row (v3.79.0) shows the color that owner (or their applied group) renders as on the map when 🎨 owner-color mode is on. The <strong>All owners</strong> tab lists every owner with an airport count, sortable by either column and searchable by <strong>owner name or ICAO</strong> (v3.78.0) &mdash; typing an airport code jumps straight to the owner(s) who have it, auto-expanding their row with the matching airport(s) outlined in green. Click an owner&rsquo;s &#9656; to expand it in place and see every airport they own as a chip list, without leaving the panel. Click a checkbox <strong>or the owner&rsquo;s name</strong> (v3.79.0) to filter the map to them instantly &mdash; the same one-click filtering the old dropdown offered, plus full keyboard operation: type to jump straight into the search box, arrow keys to move a highlight through the list, and spacebar to toggle the highlighted owner.<br/><br/>
+            Click <strong>Airport Owners &#9662;</strong> on the map&rsquo;s top bar (v3.77.0) to open the <strong>Airport Owners</strong> panel &mdash; a resizable, draggable panel matching Aircraft Listing&rsquo;s look and feel. A small <strong>color swatch</strong> on the far left of each row (v3.79.0) shows the color that owner (or their applied group) renders as on the map when 🎨 owner-color mode is on. The <strong>All owners</strong> tab lists every owner with an airport count, sortable by either column and searchable by <strong>owner name or ICAO</strong> (v3.78.0) &mdash; typing an airport code jumps straight to the owner(s) who have it, auto-expanding their row with the matching airport(s) outlined in green. Click an owner&rsquo;s &#9656; to expand it in place and see every airport they own as a chip list, without leaving the panel. Click a checkbox <strong>or the owner&rsquo;s name</strong> (v3.79.0) to filter the map to them instantly &mdash; the same one-click filtering the old dropdown offered, plus full keyboard operation: type to jump straight into the search box, arrow keys to move a highlight through the list, and spacebar to toggle the highlighted owner. The <strong>&#10003; Selected only</strong> toggle (v3.85.0) collapses the list to just the owners you currently have checked &mdash; handy for reviewing or trimming a large selection without scrolling past everyone else; turn it off to list every owner again.<br/><br/>
             <strong>Airport chips default to matching their owner's checkbox</strong> (v3.78.0&ndash;v3.80.0): check an owner and every one of their chips lights up cyan/selected to match the map; uncheck the owner and they all go dark. Click any individual chip to flip just that one airport &mdash; fly to it and show it even if its owner is unchecked, or hide it even if its owner stays checked. Re-toggling the owner's checkbox always resets its chips back to matching the checkbox.<br/><br/>
             The real upgrade is <strong>Owner Groups</strong> (v3.77.0, redesigned v3.81.0): once you&rsquo;ve checked a combination of owners, click <strong>Save as group</strong> at the bottom to name it. Saved groups live in the <strong>Saved groups</strong> tab, and every group works exactly like an owner row: its checkbox mirrors the map &mdash; <strong>checked</strong> when every member is currently showing, <strong>empty</strong> when none are, and a <strong>dash</strong> when only some are. Click the checkbox (or the group&rsquo;s name) to turn the whole group on or off &mdash; on adds every member to whatever&rsquo;s already showing, off removes just them. Click &#9656; to expand a group and see its members as chips &mdash; <strong>click any pilot&rsquo;s name to toggle just them</strong>, exactly like clicking their row in the All owners tab; the map updates immediately either way. When a group&rsquo;s membership exactly matches what&rsquo;s currently filtered, 🎨 owner-color mode tints all of it with the group&rsquo;s own color automatically.<br/><br/>
             To change who&rsquo;s in a group, click its <strong>✎</strong> &mdash; this loads exactly that group&rsquo;s members into the All owners tab so you can check/uncheck anyone (including owners not yet in the group). The footer bar then offers <strong>Update &ldquo;&lt;name&gt;&rdquo;</strong> to save your changes back into that group, or <strong>Save as new group</strong> to keep the original untouched and create a separate one instead &mdash; there&rsquo;s no separate &ldquo;editing mode&rdquo; to exit, so navigating away or toggling other owners never leaves anything stuck. You can also toggle a group&rsquo;s existing members without leaving the Saved groups tab (v3.82.0): expand it and click a pilot&rsquo;s chip off, and the same <strong>Update</strong> / <strong>Save as new group</strong> choice appears right there under the chips. <strong>🗑 Delete</strong> asks for confirmation first (v3.82.0), then removes the group with a few seconds to <strong>Undo</strong>.
@@ -46779,10 +46808,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.85.0</span>
+          <span class="release-date">July 12, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Selected only&rdquo; toggle in the Airport Owners panel.</strong> The <strong>All owners</strong> tab has a new <strong>&#10003; Selected only</strong> button in its toolbar. Turn it on and the list collapses to just the owners you currently have checked, hiding everyone else &mdash; handy for reviewing or trimming a large selection without scrolling past hundreds of unchecked owners. It works alongside the search box (both filters apply together) and remembers its state between sessions. Turn it off to see every owner again.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.84.0</span>
-          <span class="release-date">July 12, 2026 &middot; Current</span>
+          <span class="release-date">July 12, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -60658,6 +60698,7 @@ function rgSendToFlightPlanner() {
           </div>
           <button class="ogp-seg-btn" id="ogpAllBtn" onclick="_ogpAllOwners()" title="Include all (visible) owners in the map filter">All</button>
           <button class="ogp-seg-btn" id="ogpNoneBtn" onclick="_ogpNoOwners()" title="Exclude all (visible) owners from the map filter">None</button>
+          <button class="ogp-seg-btn" id="ogpSelBtn" aria-pressed="false" onclick="_ogpToggleSelectedOnly()" title="Show only owners that are currently checked (selected)">✓ Selected only</button>
           <div class="ogp-search-wrap" id="ogpSearchWrap">
             <input type="text" id="ogpSearch" class="ogp-search" placeholder="Filter owners or ICAO…" oninput="_ogpSearchInput(this.value)">
             <button class="ogp-search-clear" id="ogpSearchClear" onclick="_ogpSearchInput('');document.getElementById('ogpSearch').value='';document.getElementById('ogpSearch').focus();" title="Clear search">✕</button>
