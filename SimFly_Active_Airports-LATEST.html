@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.85.0';
+const APP_VERSION = '3.86.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -35787,6 +35787,11 @@ function _rgRandLoadOpts() {
     minNm:  num(o.minNm),  maxNm:  num(o.maxNm),
     minMin: num(o.minMin), maxMin: num(o.maxMin),
     visibleOnly: !!o.visibleOnly,
+    // v3.86.0 — owner pairing mode: 'off' | 'diff' | 'same'. Absent (every
+    // pre-3.86.0 saved payload) falls back to 'diff', which is exactly what the
+    // generator hardcoded before this option existed — so upgrading changes
+    // nothing until the user picks another mode.
+    ownerMatch: (o.ownerMatch === 'off' || o.ownerMatch === 'same') ? o.ownerMatch : 'diff',
     dep: dep,
     arr: arr,
   };
@@ -35867,11 +35872,22 @@ function _rgRandEndpointOK(c, f) {
   return true;
 }
 
-// Is candidate c a valid ARRIVAL from departure dep? Different airport, different
-// pilot, passes the ARRIVAL endpoint filters, and within the route distance/time.
+// Is candidate c a valid ARRIVAL from departure dep? Different airport, satisfies
+// the owner-pairing mode, passes the ARRIVAL endpoint filters, and within the
+// route distance/time.
 function _rgRandRouteOK(dep, c, opts, useTime) {
   if (c.icao === dep.icao) return false;
-  if (dep.owner && c.owner && c.owner === dep.owner) return false;   // must be another pilot
+  // v3.86.0 — owner pairing mode (was hardcoded to "another pilot" pre-3.86.0).
+  // A departure with no known owner (a pinned airport outside the owned pool —
+  // see the lookupICAO fallback in _rgRandomGenerate) is treated as having no
+  // owner at all: it differs from every owner, and matches none. So 'diff' still
+  // allows it (unchanged from the old rule) while 'same' correctly finds nothing.
+  const om = (opts && opts.ownerMatch) || 'diff';
+  if (om === 'diff') {
+    if (dep.owner && c.owner && c.owner === dep.owner) return false;        // must be another pilot
+  } else if (om === 'same') {
+    if (!(dep.owner && c.owner && c.owner === dep.owner)) return false;     // must be the same pilot
+  }
   if (!_rgRandEndpointOK(c, opts.arr)) return false;
   const nm = _haversineNm(dep.rec.latitude, dep.rec.longitude, c.rec.latitude, c.rec.longitude);
   if (opts.minNm != null && nm < opts.minNm) return false;
@@ -36194,6 +36210,7 @@ function _rgRandOpenModal() {
   setV('rgRandMinNm', opts.minNm);  setV('rgRandMaxNm', opts.maxNm);
   setV('rgRandMinMin', opts.minMin); setV('rgRandMaxMin', opts.maxMin);
   const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = !!opts.visibleOnly;
+  _rgRandSetOwnerMatch(opts.ownerMatch);
 
   // Build the shared option lists ONCE from the owned pool (same for both
   // endpoints). Present categories / continents and the full country / owner
@@ -36260,6 +36277,19 @@ function _aaOverlayClickToClose(e, closeFn) {
   if (e.target === e.currentTarget && _aaOverlayDownOnBackdrop) closeFn();
   _aaOverlayDownOnBackdrop = false;
 }
+// v3.86.0 — owner-pairing chips. Single-select (unlike the category / continent
+// chips, which are multi-select), so setting one clears the rest.
+function _rgRandSetOwnerMatch(mode) {
+  if (mode !== 'off' && mode !== 'same') mode = 'diff';
+  const wrap = document.getElementById('rgRandOwnerMatch');
+  if (!wrap) return;
+  wrap.querySelectorAll('.rgrand-chip').forEach(b => b.classList.toggle('active', b.dataset.om === mode));
+}
+function _rgRandGetOwnerMatch() {
+  const on = document.querySelector('#rgRandOwnerMatch .rgrand-chip.active');
+  const m = on && on.dataset.om;
+  return (m === 'off' || m === 'same') ? m : 'diff';
+}
 function _rgRandReadNum(id) {
   const el = document.getElementById(id);
   if (!el) return null;
@@ -36279,6 +36309,9 @@ function _rgRandReset() {
   setV('rgRandMinNm', '');  setV('rgRandMaxNm', '');
   setV('rgRandMinMin', ''); setV('rgRandMaxMin', '');
   const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = false;
+  // Owner pairing goes back to its default ('diff' — another pilot's airport),
+  // not to 'off': Reset restores defaults, and 'diff' is the default.
+  _rgRandSetOwnerMatch('diff');
   // Both endpoints back to empty so switching tabs shows a cleared panel too.
   _rgRandWork = { dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp() };
   _rgRandRenderTab();   // rebuilds the active tab's controls from the empty set + recounts
@@ -36286,6 +36319,7 @@ function _rgRandReset() {
     configured: _rgRandLoadOpts().configured,
     minNm: null, maxNm: null, minMin: null, maxMin: null,
     visibleOnly: false,
+    ownerMatch: 'diff',
     dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp(),
   });
 }
@@ -36298,6 +36332,7 @@ function _rgRandSaveAndGenerate() {
     minNm:  _rgRandReadNum('rgRandMinNm'),  maxNm:  _rgRandReadNum('rgRandMaxNm'),
     minMin: _rgRandReadNum('rgRandMinMin'), maxMin: _rgRandReadNum('rgRandMaxMin'),
     visibleOnly: !!(visEl && visEl.checked),
+    ownerMatch: _rgRandGetOwnerMatch(),
     dep: _rgRandCleanEp(_rgRandWork.dep),
     arr: _rgRandCleanEp(_rgRandWork.arr),
   };
@@ -45755,7 +45790,7 @@ function rgSendToFlightPlanner() {
       <button class="modal-close" onclick="_rgRandCloseModal()">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="rgrand-intro">Generate a random route to another pilot&rsquo;s SimFly-owned airport. Every filter below stacks &mdash; leave a field blank, a list empty, or the toggle off for no limit. Saved in this browser.</p>
+      <p class="rgrand-intro">Generate a random route between SimFly-owned airports &mdash; to another pilot&rsquo;s airport by default, or set your own rule under <strong>Airport owners</strong> below. Every filter below stacks &mdash; leave a field blank, a list empty, or the toggle off for no limit. Saved in this browser.</p>
 
       <div class="rgrand-section">
         <div class="rgrand-section-title">Scope</div>
@@ -45765,6 +45800,19 @@ function rgSendToFlightPlanner() {
           <span class="fp-toggle-text">Only airports currently shown on the map</span>
         </label>
         <div class="rgrand-note">Respects the active map filters (category, level, owner, country, region, continent, developer, excludes, pins).</div>
+      </div>
+
+      <!-- Owner pairing (v3.86.0) — route-level, so it lives outside the Dep/Arr
+           tabs: it compares the two endpoints against each other rather than
+           filtering either one on its own. -->
+      <div class="rgrand-section">
+        <div class="rgrand-section-title">Airport owners</div>
+        <div class="rgrand-chips" id="rgRandOwnerMatch">
+          <button type="button" class="rgrand-chip" data-om="off"  onclick="_rgRandSetOwnerMatch('off')"  title="Ignore who owns each end — any pairing is allowed">Ignore owners</button>
+          <button type="button" class="rgrand-chip" data-om="diff" onclick="_rgRandSetOwnerMatch('diff')" title="The arrival must belong to a different pilot than the departure (the original behaviour)">Must be different</button>
+          <button type="button" class="rgrand-chip" data-om="same" onclick="_rgRandSetOwnerMatch('same')" title="Both ends must belong to the same pilot">Must be the same</button>
+        </div>
+        <div class="rgrand-note">Compares the departure and arrival airport owners. <strong>Must be different</strong> is the default &mdash; a route to another pilot&rsquo;s airport.</div>
       </div>
 
       <!-- Dep/Arr endpoint toggle — shown only in Create Random Route mode -->
@@ -46212,10 +46260,10 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Random Flight</div>
           <div class="help-feature-desc">
-            For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport, draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
+            For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport (the default &mdash; the <strong>Airport owners</strong> filter can relax or invert that rule), draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
             If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
             After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them). Click the small <strong>✕</strong> on its right to dismiss it; it returns the next time you create a random flight.<br/><br/>
-            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click — and saves that cleared state immediately, so it sticks even if you close the window without generating. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
+            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); an <strong>Airport owners</strong> rule (v3.86.0) comparing the two ends &mdash; <strong>Must be different</strong> (the default: a route to another pilot's airport), <strong>Must be the same</strong> (both ends owned by the same pilot), or <strong>Ignore owners</strong> (any pairing); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click — and saves that cleared state immediately, so it sticks even if you close the window without generating. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
           </div>
         </div>
       </div>
@@ -46810,8 +46858,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
+          <span class="release-version">v3.86.0</span>
+          <span class="release-date">July 17, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Random Flight filters &mdash; new &ldquo;Airport owners&rdquo; rule.</strong> The random flight generator always forced the destination to belong to a <em>different</em> pilot than the departure. That rule is now a choice: <strong>Must be different</strong> (a route to another pilot&rsquo;s airport), <strong>Must be the same</strong> (both ends owned by the same pilot &mdash; handy for repositioning within one pilot&rsquo;s network), or <strong>Ignore owners</strong> (any pairing at all). It sits near the top of the filter dialog, since it compares the two ends against each other rather than filtering either one on its own. <strong>Must be different stays the default</strong>, so nothing changes about your existing random flights unless you pick another mode. Like every other filter, it saves in your browser, and <strong>↺ Reset</strong> returns it to the default.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
           <span class="release-version">v3.85.0</span>
-          <span class="release-date">July 12, 2026 &middot; Current</span>
+          <span class="release-date">July 12, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
