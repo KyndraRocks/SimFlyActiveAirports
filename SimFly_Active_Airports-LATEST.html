@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.86.1';
+const APP_VERSION = '3.87.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -11562,6 +11562,10 @@ const _urlParams = (() => {
       fltnum:   (p.get('fltnum')   || '').trim().toUpperCase(),
       pilots:   (p.get('pilots')   || '').trim(),
       groups:   (p.get('groups')   || '').trim(),
+      // For-sale launch filter (v3.87.0) — forsale=true opens the map showing
+      // only airports listed for sale. Combines with pilots=/groups= (owner
+      // filter) and any other params. Tolerates true/1/yes/on (case-insensitive).
+      forsale:  /^(1|true|yes|on)$/i.test((p.get('forsale') || '').trim()),
       // Direct-mode entry (v3.50.0) — skip the choice screen and open a mode.
       // Considered LAST, only when no owner/route/pilots/groups handoff is present.
       mode:     (p.get('mode')     || '').trim().toLowerCase(),
@@ -11577,7 +11581,7 @@ const _urlParams = (() => {
         payloadPct: p.get('acPayloadPct') ? parseInt(p.get('acPayloadPct'), 10) : 0,
       } : null,
     };
-  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', pilots:'', groups:'', ac:null }; }
+  } catch (e) { return { dep:'', arr:'', depOwner:'', arrOwner:'', fltnum:'', pilots:'', groups:'', forsale:false, ac:null }; }
 })();
 
 // Expose for future aircraft-aware filtering
@@ -11592,7 +11596,7 @@ window._urlAc = _urlParams.ac;
 window._aaChoiceShowIfNeeded = function _aaChoiceShowIfNeeded(){
   try {
     const goneToMatrix = !!(_urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner);
-    const goneToMap    = !!(_urlParams.pilots || _urlParams.groups);
+    const goneToMap    = !!(_urlParams.pilots || _urlParams.groups || _urlParams.forsale);
     if (goneToMatrix || goneToMap) return;
     // Direct-mode entry (?mode=…) — considered LAST so it never overrides an
     // RT/RM handoff (owner/route/pilots). Accepts e.g. mapmode/map, ownermode/
@@ -11698,7 +11702,7 @@ let _urlParamsApplied = false;
 
 function _applyUrlParams() {
   if (_urlParamsApplied) return;
-  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac || _urlParams.pilots || _urlParams.groups;
+  const hasAny = _urlParams.dep || _urlParams.arr || _urlParams.depOwner || _urlParams.arrOwner || _urlParams.ac || _urlParams.pilots || _urlParams.groups || _urlParams.forsale;
   if (!hasAny) { _urlParamsApplied = true; return; }
 
 
@@ -11766,12 +11770,24 @@ function _applyUrlParams() {
 
   _urlParamsApplied = true;
 
+  // forsale=true (v3.87.0): engage the for-sale-only map filter before the map
+  // renders so dots are gated from the first paint. Runtime-only — deliberately
+  // NOT persisted to localStorage, so it doesn't leak into a later plain load.
+  // It's an independent filter layer, so it AND-combines with the owner filter
+  // below (e.g. pilots=Jo&forsale=true → only Jo's for-sale airports).
+  if (_urlParams.forsale) {
+    _rgForSaleFilter = true;
+    if (typeof _rgSyncForSaleButton === 'function') _rgSyncForSaleButton();
+  }
+
   // pilots=/groups= params: open region map pre-filtered to the named owners
   // and/or named owner groups (comma-separated; each name is trimmed only at
   // its edges, so names containing spaces pass through untouched — a literal
   // comma inside a name isn't supported, same existing limitation as pilots=).
   // Both can be combined in one handoff; the results are unioned together.
-  if (_urlParams.pilots || _urlParams.groups) {
+  // forsale=true (no owner filter) opens the map unfiltered by owner, letting
+  // the for-sale filter set above do the narrowing.
+  if (_urlParams.pilots || _urlParams.groups || _urlParams.forsale) {
     const pilotNames = _urlParams.pilots ? _urlParams.pilots.split(',').map(s => s.trim()).filter(Boolean) : [];
     const groupNames = _urlParams.groups ? _urlParams.groups.split(',').map(s => s.trim()).filter(Boolean) : [];
     const filterSet = new Set(pilotNames);
@@ -11780,6 +11796,7 @@ function _applyUrlParams() {
       if (g) g.ownerNames.forEach(n => filterSet.add(n));
     }
     if (filterSet.size) openRegionModal(filterSet);
+    else if (_urlParams.forsale) openRegionModal();
   }
 }
 
@@ -12575,7 +12592,22 @@ function _sbPillStatsRender() {
   const arr = (document.getElementById('distArr')?.value || '').trim().toUpperCase();
   const depRec = (dep && typeof lookupICAO === 'function') ? lookupICAO(dep) : null;
   const arrRec = (arr && typeof lookupICAO === 'function') ? lookupICAO(arr) : null;
-  const owner = ic => (typeof _findOwner === 'function') ? _findOwner(ic) : '';
+  // Resolve owner from the parsed KML import data (v3.87.0 fix). The previous
+  // implementation referenced a global `_findOwner`, but that name only exists
+  // as a local const inside another function — so `typeof _findOwner` was never
+  // 'function' here and the owner row was silently dropped from both cards.
+  // Mirror the same _getOwnerData() lookup the main info panel uses; case-
+  // insensitive so it matches regardless of how the ICAO was typed/imported.
+  const owner = ic => {
+    try {
+      const up = (ic || '').toUpperCase();
+      const od = (typeof _getOwnerData === 'function') ? _getOwnerData() : [];
+      for (const o of od) {
+        if (o.airports.some(a => (a.icao || '').toUpperCase() === up)) return o.name;
+      }
+    } catch (_) {}
+    return '';
+  };
   const depCard = document.getElementById('sbStatsDepCard');
   const arrCard = document.getElementById('sbStatsArrCard');
   const depEl = document.getElementById('sbStatsDepContent');
@@ -46856,10 +46888,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.87.0</span>
+          <span class="release-date">July 26, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New <code>forsale=true</code> launch parameter.</strong> Adding <code>?forsale=true</code> to the app URL opens the map straight into the <strong>For&nbsp;Sale Only</strong> view &mdash; showing just the airports currently listed for sale &mdash; without going through the start screen. It combines with the existing URL parameters, so <code>?pilots=Jane&amp;forsale=true</code> lands on only Jane&rsquo;s for-sale airports, and it stacks with any other launch options. The filter is applied for that launch only and isn&rsquo;t saved to your preferences.</li>
+          <li><strong>File-on-SimBrief info cards now show the airport owner.</strong> The ⓘ cards on the SimBrief route pill were missing the <strong>Owner</strong> line that every other airport card shows. It&rsquo;s now displayed for both the departure and arrival cards, immediately above the Pilot Payout row.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.86.1</span>
-          <span class="release-date">July 24, 2026 &middot; Current</span>
+          <span class="release-date">July 24, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
