@@ -198,10 +198,29 @@ jobs:
             });
           }
 
+          // A roster read that is a GitHub error page (e.g. HTTP 429 "Too Many
+          // Requests") or otherwise tiny must NEVER be used as the base for a
+          // rebuild: the add/transfer logic below only re-adds payout-bearing
+          // airports, so starting from a broken read silently DROPS every owned
+          // airport with 0% payout (absent from `payout`). That is exactly how
+          // this roster was truncated ~1010 -> 783 once before. Guard both cases.
+          function rosterReadLooksBad(txt) {
+            const t = (txt || '').trim();
+            if (!t) return true;
+            if (/^</.test(t)) return true;                                   // HTML error page
+            if (/^\d{3}\s*:/.test(t)) return true;                           // "429: ..." status line
+            return /too many requests|you may be scraping|rate limit|terms of service|github-terms/i.test(t.slice(0, 800));
+          }
+
           async function updateOwnerGist(payout, token) {
             const txt = await rawGet(
               `https://gist.githubusercontent.com/KyndraRocks/${OWNER_GIST_ID}/raw/${OWNER_FILENAME}?t=${Date.now()}`
             );
+
+            if (rosterReadLooksBad(txt)) {
+              console.error('Owner Gist: existing roster read looks like an error page — SKIPPING update this run to avoid truncation.');
+              return;
+            }
 
             // Parse existing owner file: "Name: ICAO1 ICAO2 ..."
             const owners = new Map();
@@ -215,6 +234,16 @@ jobs:
               if (!owners.has(key)) owners.set(key, { name, icaos: new Set() });
               line.slice(colon + 1).trim().split(/\s+/).filter(Boolean)
                   .forEach(ic => owners.get(key).icaos.add(ic.toUpperCase()));
+            }
+
+            // Second guard: a healthy roster is ~1000 airports across ~280 owners.
+            // If the parsed base is far smaller, the read was corrupt/partial —
+            // rebuilding from it would truncate the roster. Skip rather than harm.
+            const baseAirports = new Set();
+            for (const e of owners.values()) for (const ic of e.icaos) baseAirports.add(ic);
+            if (baseAirports.size < 600) {
+              console.error(`Owner Gist: existing roster only ${baseAirports.size} airports (<600) — likely a bad read, SKIPPING update to avoid truncation.`);
+              return;
             }
 
             let added = 0, transferred = 0;
@@ -267,6 +296,10 @@ jobs:
             const txt   = await rawGet(
               `https://gist.githubusercontent.com/KyndraRocks/${CAT_GIST_ID}/raw/${CAT_FILENAME}?t=${Date.now()}`
             );
+            if (rosterReadLooksBad(txt)) {
+              console.error('Category Gist: existing CSV read looks like an error page — SKIPPING update this run.');
+              return;
+            }
             const lines = txt.split('\n').filter(l => l.trim());
             if (!lines.length) throw new Error('Category CSV is empty');
 
