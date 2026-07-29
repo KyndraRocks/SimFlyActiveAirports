@@ -1,0 +1,38 @@
+name: Sweep Airport Membership
+
+# Authoritative "owned + activated" membership pipeline. Unlike fetch-payout (a
+# REWARD feed that only sees airports with payout > 0), this sweeps ground truth
+# from the per-airport details endpoint so owned airports with 0% payout are
+# included, and it discovers new airports via the marketplace.
+#
+# ADD / TRANSFER ONLY. Membership is monotonic in SimFly (airports are never
+# unowned, only transferred), so this never removes an airport — the roster is
+# strictly non-shrinking and cannot be truncated by a bug here.
+# See scripts/membership-sweep.js.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (compute + print, no Gist writes)'
+        type: boolean
+        default: false
+
+# Prevent overlap with a previous long sweep.
+concurrency:
+  group: membership-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run membership sweep
+        env:
+          GIST_PAT: ${{ secrets.GIST_PAT }}
+          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '' }}
+        run: node scripts/membership-sweep.js
