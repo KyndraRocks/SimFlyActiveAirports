@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.87.0';
+const APP_VERSION = '3.88.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -17124,6 +17124,41 @@ function _demoRefineTiming(simSec) {
   T.cruiseSec = T.totalSec - (T.taxiSec + T.climbSec + (T.descentSec || 0) + (T.apprSec || 0) + T.taxiSec);
 }
 
+// v3.88.0 — Synthesise the extended SimConnect telemetry (AGL / indicated
+// altitude / native VS / wheels-on-ground) onto a demo fix, so the new ALT IND
+// / ALT AGL / GROUND telemetry fields, the bulletproof on-ground path, and the
+// AGL/indicated altitude alarms are all exercisable in Flight Demo Mode with no
+// live sim. Terrain height is approximated by blending departure→destination
+// field elevation along the flight's time progress — enough to make AGL diverge
+// from MSL for testing. Indicated ≈ MSL (standard pressure). VS is differenced
+// from the previous emitted altitude. Ground state follows the demo phase.
+let _demoPrevEmit = null; // { alt, t } — for native-VS differencing
+function _demoExtendFix(fix, phaseLabel, noVs) {
+  try {
+    const tm   = (_demoPlan && _demoPlan.timing) ? _demoPlan.timing : null;
+    const depE = tm && isFinite(tm.depElev)  ? tm.depElev  : 0;
+    const dstE = tm && isFinite(tm.destElev) ? tm.destElev : 0;
+    const tot  = tm && isFinite(tm.totalSec) && tm.totalSec > 0 ? tm.totalSec : 0;
+    const frac = tot ? Math.max(0, Math.min(1, _demoSimSec / tot)) : 0;
+    const terrain = depE + (dstE - depE) * frac;
+    const alt = isFinite(fix.alt) ? fix.alt : 0;
+    fix.agl    = Math.max(0, alt - terrain);
+    fix.altInd = alt;                        // indicated ≈ MSL at standard pressure
+    fix.gnd    = (phaseLabel === 'ground');
+    if (noVs) {
+      _demoPrevEmit = null;                  // scrub/landed — don't difference across a jump
+    } else {
+      const now = performance.now();
+      if (_demoPrevEmit && isFinite(_demoPrevEmit.alt)) {
+        const dt = (now - _demoPrevEmit.t) / 1000;
+        if (dt > 0.05 && dt < 10) fix.vs = ((alt - _demoPrevEmit.alt) / dt) * 60;
+      }
+      _demoPrevEmit = { alt, t: now };
+    }
+  } catch (_) {}
+  return fix;
+}
+
 // Each tick: compute target heading/alt/gs (from manual setpoints or plan
 // baseline), integrate state by simulated dt seconds, emit a packet
 // through the FSUIPC-shaped _liveAcRenderMarker chokepoint. simSec keeps
@@ -17158,7 +17193,7 @@ function _demoTick() {
     const _destPt = _demoPlan.points[_demoPlan.points.length - 1];
     const _destE  = (_demoPlan.timing && _demoPlan.timing.destElev) || 0;
     try {
-      _liveAcRenderMarker({
+      _liveAcRenderMarker(_demoExtendFix({
         lat: _destPt.lat, lng: _destPt.lon, hdg: _demoAcHdg,
         alt: _destE, gs: 0, ias: 0,
         ident: 'DEMO',
@@ -17168,7 +17203,7 @@ function _demoTick() {
         dest:  (_demoPlan.raw && _demoPlan.raw.dest && _demoPlan.raw.dest.icao) || null,
         source: 'demo',
         _demoPhase: 'ground',
-      });
+      }, 'ground', true));
     } catch (e) { console.warn('[demo] landed render error', e); }
     _demoUpdateBar();
     return;
@@ -17378,7 +17413,7 @@ function _demoTick() {
   }
 
   try {
-    _liveAcRenderMarker({
+    _liveAcRenderMarker(_demoExtendFix({
       lat: _demoAcLat, lng: _demoAcLon, hdg: _demoAcHdg,
       alt: Math.max(0, _demoAcAlt),
       gs:  Math.max(0, _demoAcGs),
@@ -17390,7 +17425,7 @@ function _demoTick() {
       dest:   (_demoPlan && _demoPlan.raw && _demoPlan.raw.dest && _demoPlan.raw.dest.icao) || null,
       source: 'demo',
       _demoPhase: _demoLanded ? 'ground' : planBase._demoPhase,
-    });
+    }, _demoLanded ? 'ground' : planBase._demoPhase));
   } catch (e) { console.warn('[demo] render error', e); }
   _demoUpdateBar();
 }
@@ -17610,13 +17645,13 @@ function _demoScrubTo(simSec) {
     }
     if (!_demoSuspendEmit) {
       try {
-        _liveAcRenderMarker({
+        _liveAcRenderMarker(_demoExtendFix({
           lat: _demoAcLat, lng: _demoAcLon, hdg: _demoAcHdg,
           alt: _demoAcAlt, gs: _demoAcGs, ias: _demoAcGs,
           ident: 'DEMO', af: _demoPlan.acCode || null, phase: null,
           dep: _demoPlan.raw.dep.icao, dest: _demoPlan.raw.dest.icao,
           source: 'demo', _demoPhase: baseline._demoPhase,
-        }, true);   // scrub = snap to the scrubbed position, no glide lag behind the slider
+        }, baseline._demoPhase, true), true);   // scrub = snap to the scrubbed position, no glide lag behind the slider
       } catch (_) {}
     }
   }
@@ -19684,7 +19719,7 @@ const _afkPhase = (() => {
     return ((newest.alt - oldest.alt) / dtSec) * 60;
   }
 
-  function _computePhase(altFt, gsKts) {
+  function _computePhase(altFt, gsKts, gndFlag) {
     // v3.16.0 — Asymmetric two-window bucket model.
     // v3.18.2 — Asymmetric thresholds added alongside the asymmetric
     //           windows to further suppress turbulence-driven false TOD
@@ -19715,8 +19750,21 @@ const _afkPhase = (() => {
     // rule continues to use the tighter ±LEVEL_THRESH because at taxi speed
     // there's no real flight-level wobble to filter — anything above
     // LEVEL_THRESH genuinely means airborne climbing.
-    const onGround = (gsKts != null && gsKts < 5) ||
-                     (gsKts != null && gsKts < 55 && Math.abs(fastVS) < LEVEL_THRESH);
+    // v3.88.0 — Bulletproof on-ground: when the live source supplies the
+    // SIM ON GROUND / FSUIPC 0x0366 wheels-on-ground simvar (SimConnect
+    // desktop feed, FSUIPC), trust it verbatim. This eliminates the two
+    // classic heuristic failure modes the gs+VS test can't distinguish: a
+    // fast taxi / high-speed RTO (gs > 55) misread as airborne, and a
+    // slow near-level airborne pass (gliders, helicopters at a hover,
+    // low-and-slow bush flying) misread as on-ground. The gs+VS heuristic
+    // remains the fallback for sources that don't carry the flag (STKP).
+    let onGround;
+    if (gndFlag === true || gndFlag === false) {
+      onGround = gndFlag;
+    } else {
+      onGround = (gsKts != null && gsKts < 5) ||
+                 (gsKts != null && gsKts < 55 && Math.abs(fastVS) < LEVEL_THRESH);
+    }
     const now  = performance.now();
     const prev = lastEmittedPhase;
     let next = prev;
@@ -19787,6 +19835,8 @@ const _afkPhase = (() => {
     if (!data) return null;
     const alt = (data.alt != null && isFinite(data.alt)) ? data.alt : null;
     const gs  = (data.gs  != null && isFinite(data.gs))  ? data.gs  : null;
+    // v3.88.0 — Authoritative wheels-on-ground flag when the source carries it.
+    const gnd = (data.gnd === true || data.gnd === false) ? data.gnd : null;
     if (alt != null) pushSample(alt);
     const phaseFromSource = (data.phase && typeof data.phase === 'string') ? data.phase.toLowerCase() : null;
     if (phaseFromSource && data.source === 'stkp') {
@@ -19806,7 +19856,7 @@ const _afkPhase = (() => {
       const vs = currentVSfpm();
       if (vs > peakClimbVS) peakClimbVS = vs;
     } else if (alt != null) {
-      _computePhase(alt, gs);
+      _computePhase(alt, gs, gnd);
     }
     return lastEmittedPhase;
   }
@@ -19972,19 +20022,24 @@ const _afkETA = (() => {
       return (d / gs) * 3600;
     }
     if (alarm.type === 'alt-min') {
-      const vs = _afkPhase.vsFpm();
+      // v3.88.0 — Native VS when available; test against the alarm's chosen
+      // altitude source (MSL / indicated / AGL). Over the short ETA horizon
+      // the aircraft's vertical rate is essentially the crossing rate for all
+      // three sources (terrain change is slow relative to climb/descent).
+      const vs = _afkDisplayVsFpm(ac);
       const thresh = parseFloat(alarm.params.altFt);
-      if (ac.alt == null || !isFinite(ac.alt) || !isFinite(thresh)) return NaN;
+      const cur = _afkAltForSource(ac, alarm.params && alarm.params.altSource);
+      if (cur == null || !isFinite(cur) || !isFinite(thresh) || vs == null || !isFinite(vs)) return NaN;
       const direction = (alarm.params && alarm.params.direction === 'climbing') ? 'climbing' : 'descending';
       if (direction === 'descending') {
         // Need to be ABOVE threshold and DESCENDING to predict a crossing.
-        if (ac.alt <= thresh) return NaN; // already on the wrong side; can't predict crossing
+        if (cur <= thresh) return NaN; // already on the wrong side; can't predict crossing
         if (vs >= 0) return NaN;          // not descending
-        return ((ac.alt - thresh) / Math.abs(vs)) * 60;
+        return ((cur - thresh) / Math.abs(vs)) * 60;
       } else { // climbing
-        if (ac.alt >= thresh) return NaN; // already on the wrong side
+        if (cur >= thresh) return NaN; // already on the wrong side
         if (vs <= 0) return NaN;          // not climbing
-        return ((thresh - ac.alt) / vs) * 60;
+        return ((thresh - cur) / vs) * 60;
       }
     }
     if (alarm.type === 'cruise') {
@@ -21173,6 +21228,22 @@ function _afkEvalDescent(alarm) {
   return false;
 }
 
+// v3.88.0 — Resolve the altitude value an alt-min alarm (or its ETA) tests
+// against, honouring the alarm's altSource param: 'agl' (height above ground),
+// 'indicated' (altimeter reading), or 'msl' (default, above mean sea level).
+// Returns null when the chosen source isn't carried by the current live feed
+// (AGL / indicated require the SimConnect desktop feed) so the alarm simply
+// waits rather than seeding/crossing on a wrong or absent value.
+function _afkAltForSource(ac, src) {
+  if (!ac) return null;
+  if (src === 'agl')       return (ac.agl    != null && isFinite(ac.agl))    ? ac.agl    : null;
+  if (src === 'indicated') return (ac.altInd != null && isFinite(ac.altInd)) ? ac.altInd : null;
+  return (ac.alt != null && isFinite(ac.alt)) ? ac.alt : null;
+}
+// v3.88.0 — Short source label ('MSL' | 'IND' | 'AGL') for an alt-min alarm,
+// passed to _afkFmtAltDisplay so the threshold reads e.g. "1,000 ft AGL".
+function _afkAltSourceShort(src) { return src === 'agl' ? 'AGL' : src === 'indicated' ? 'IND' : 'MSL'; }
+
 function _afkEvalAltMin(alarm, ac) {
   // Crossing-only detection (v2.72.0+): tracks prev-tick altitude and fires
   // ONLY when the aircraft actually crosses the threshold in the chosen
@@ -21181,23 +21252,26 @@ function _afkEvalAltMin(alarm, ac) {
   // crossing event. First tick after arming just seeds prevAlt.
   if (alarm.state.fired) return false;
   const t = parseFloat(alarm.params.altFt);
-  if (ac.alt == null || !isFinite(ac.alt) || !isFinite(t)) return false;
+  // v3.88.0 — Read the altitude for the alarm's configured source (MSL /
+  // indicated / AGL). null = source unavailable this feed → wait, don't fire.
+  const cur = _afkAltForSource(ac, alarm.params && alarm.params.altSource);
+  if (cur == null || !isFinite(cur) || !isFinite(t)) return false;
   const direction = (alarm.params && alarm.params.direction === 'climbing') ? 'climbing' : 'descending';
   const prev = alarm.state.prevAlt;
   // Seed prev-alt on first valid sample — no firing.
   if (prev == null || !isFinite(prev)) {
-    alarm.state.prevAlt = ac.alt;
+    alarm.state.prevAlt = cur;
     return false;
   }
   let crossed = false;
   if (direction === 'descending') {
     // Was at-or-above threshold AND is now below.
-    if (prev >= t && ac.alt < t) crossed = true;
+    if (prev >= t && cur < t) crossed = true;
   } else { // climbing
     // Was at-or-below threshold AND is now above.
-    if (prev <= t && ac.alt > t) crossed = true;
+    if (prev <= t && cur > t) crossed = true;
   }
-  alarm.state.prevAlt = ac.alt;
+  alarm.state.prevAlt = cur;
   if (crossed) { alarm.state.fired = true; return true; }
   return false;
 }
@@ -21223,9 +21297,14 @@ function _afkEvalAltMin(alarm, ac) {
 // always seconds — `valueUnit` only affects entry/display.
 const _AFK_COND_PARAMS = [
   { id: 'alt',       label: 'Altitude (MSL)',          unit: 'ft',  defaultVal: 10000, evalFn: (ac) => (ac && ac.alt != null && isFinite(ac.alt)) ? ac.alt : null },
+  // v3.88.0 — Indicated + AGL altitude, from the SimConnect desktop feed. Both
+  // return null (condition not met / not evaluable) on sources that can't
+  // supply them, so a condition using them simply never fires under FSUIPC.
+  { id: 'altInd',    label: 'Altitude (indicated)',    unit: 'ft',  defaultVal: 10000, evalFn: (ac) => (ac && ac.altInd != null && isFinite(ac.altInd)) ? ac.altInd : null },
+  { id: 'agl',       label: 'Height above ground (AGL)', unit: 'ft', defaultVal: 1000, evalFn: (ac) => (ac && ac.agl != null && isFinite(ac.agl)) ? ac.agl : null },
   { id: 'ias',       label: 'Indicated airspeed',      unit: 'kt',  defaultVal: 250,   evalFn: (ac) => (ac && ac.ias != null && isFinite(ac.ias)) ? ac.ias : null },
   { id: 'gs',        label: 'Ground speed',            unit: 'kt',  defaultVal: 400,   evalFn: (ac) => (ac && ac.gs  != null && isFinite(ac.gs )) ? ac.gs  : null },
-  { id: 'vs',        label: 'Vertical speed (±fpm)',   unit: 'fpm', defaultVal: 500,   evalFn: () => { try { const v = _afkPhase.vsFpm(); return isFinite(v) ? v : null; } catch (_) { return null; } } },
+  { id: 'vs',        label: 'Vertical speed (±fpm)',   unit: 'fpm', defaultVal: 500,   evalFn: (ac) => { const v = _afkDisplayVsFpm(ac); return (v != null && isFinite(v)) ? v : null; } },
   { id: 'distDest',  label: 'Distance to destination', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.destination || !isFinite(parseFloat(fp.destination.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.destination.pos_lat), parseFloat(fp.destination.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'distDep',   label: 'Distance from departure', unit: 'nm',  defaultVal: 50,    evalFn: (ac, c, fp) => { if (!ac || !fp || !fp.origin || !isFinite(parseFloat(fp.origin.pos_lat))) return null; const d = _afkDistNm(ac.lat, ac.lng, parseFloat(fp.origin.pos_lat), parseFloat(fp.origin.pos_long)); return isFinite(d) ? d : null; } },
   { id: 'distNext',  label: 'Distance to next waypoint', unit: 'nm', defaultVal: 10,   evalFn: (ac, c, fp) => { const nx = _afkNextWptInfo(ac, fp); return nx ? nx.distNm : null; } },
@@ -21254,7 +21333,10 @@ function _afkCondParamDef(id) { return _AFK_COND_PARAMS.find(p => p.id === id) |
 // physically non-negative, so a negative threshold is meaningless and gets
 // clamped to 0 (see _afkSetCondValue + _afkCondValDragStart).
 function _afkCondAllowsNegative(def) {
-  return !!def && (def.id === 'vs' || def.id === 'alt');
+  // v3.88.0 — indicated altitude can be negative at below-sea-level fields too
+  // (same as MSL). AGL is height above terrain — physically non-negative, so
+  // it stays clamped at 0.
+  return !!def && (def.id === 'vs' || def.id === 'alt' || def.id === 'altInd');
 }
 // v2.94.2 — Resolve the canonical seconds-multiplier for a condition's
 // chosen unit. Defaults to 1 (seconds) for backwards compat with pre-
@@ -21781,7 +21863,19 @@ function _afkTick(data) {
       }
     });
   }
-  const ac = { lat: parseFloat(data.lat), lng: parseFloat(data.lng), alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg };
+  // v3.88.0 — Carry the extended SimConnect telemetry (AGL / indicated
+  // altitude / native VS / wheels-on-ground) through to alarm evaluation and
+  // the data panel. Present on the native desktop SimConnect feed (and gnd on
+  // FSUIPC); undefined on sources that can't measure them, where downstream
+  // consumers fall back to '—' / MSL.
+  const ac = {
+    lat: parseFloat(data.lat), lng: parseFloat(data.lng),
+    alt: data.alt, gs: data.gs, ias: data.ias, hdg: data.hdg,
+    agl: (data.agl != null && isFinite(data.agl)) ? data.agl : null,
+    altInd: (data.altInd != null && isFinite(data.altInd)) ? data.altInd : null,
+    vs: (data.vs != null && isFinite(data.vs)) ? data.vs : null,
+    gnd: (data.gnd === true || data.gnd === false) ? data.gnd : null,
+  };
   // v2.91.0 introduced the two-pass group strategy. v2.92.0 extends it
   // for three modes:
   //   cascade    — pre-v2.91.0 behavior, member trips go straight to
@@ -23051,7 +23145,8 @@ function _afkAlarmShortDescription(a, includeTitle) {
   if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
   if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
-    return title + dir + ' ' + _afkFmtAltDisplay(a.params.altFt);
+    // v3.88.0 — label the measured source (MSL / IND / AGL) in the threshold.
+    return title + dir + ' ' + _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(a.params && a.params.altSource));
   }
   if (a.type === 'telemetry-loss') {
     const tSec = parseInt((a.params && a.params.thresholdSec) || 300, 10);
@@ -23425,7 +23520,8 @@ function _afkAlarmCardSummary(a) {
     lines.push('Fires when aircraft begins sustained descent');
   } else if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
-    lines.push(dir + ' ' + _afkFmtAltDisplay(a.params.altFt));
+    // v3.88.0 — label the measured altitude source (MSL / IND / AGL).
+    lines.push(dir + ' ' + _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(a.params && a.params.altSource)));
   }
   // Common settings
   const soundName = (_AFK_SOUNDS.find(s => s.id === (a.sound || 'digital-clock')) || {}).name || a.sound;
@@ -24281,6 +24377,9 @@ function _afkRenderEditor(a) {
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
     const dir = (a.params && a.params.direction === 'climbing') ? 'climbing' : 'descending';
+    // v3.88.0 — altitude source (MSL / indicated / AGL). AGL + indicated need
+    // the SimConnect desktop feed; MSL works from any live source.
+    const asrc = (a.params && (a.params.altSource === 'agl' || a.params.altSource === 'indicated')) ? a.params.altSource : 'msl';
     body =
       '<div class="afk-edit-row"><span class="afk-edit-label">Direction</span>' +
         '<select class="afk-select" onchange="_afkSetAltDirection(' + a.id + ', this.value)" title="Only fires on an actual crossing — won\'t trip if you arm the alarm already on the wrong side of the threshold.">' +
@@ -24288,9 +24387,16 @@ function _afkRenderEditor(a) {
           '<option value="climbing"'   + (dir === 'climbing'   ? ' selected' : '') + '>Climbing through</option>' +
         '</select>' +
       '</div>' +
+      '<div class="afk-edit-row"><span class="afk-edit-label">Measure</span>' +
+        '<select class="afk-select" onchange="_afkSetAltSource(' + a.id + ', this.value)" title="Which altitude to test the threshold against. MSL works from any live source. Indicated and AGL (height above the terrain) require the SimConnect desktop feed (Active Airports Desktop).">' +
+          '<option value="msl"'       + (asrc === 'msl'       ? ' selected' : '') + '>Altitude MSL (sea level)</option>' +
+          '<option value="indicated"' + (asrc === 'indicated' ? ' selected' : '') + '>Indicated altitude</option>' +
+          '<option value="agl"'       + (asrc === 'agl'       ? ' selected' : '') + '>Height above ground (AGL)</option>' +
+        '</select>' +
+      '</div>' +
       '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
         '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'altMin\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'altMin\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.">' +
-        '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt) + '</span>' +
+        '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(asrc)) + '</span>' +
       '</div>';
   }
   if (a.type === 'conditional') {
@@ -24803,10 +24909,15 @@ function _afkParseAlt(text) {
 
 // Pretty-print an altitude in feet — uses "FL350" form for round hundreds
 // at or above 18,000 ft (typical FL transition); otherwise "10,000 ft MSL".
-function _afkFmtAltDisplay(ft) {
+// v3.88.0 — Optional srcShort ('MSL' | 'IND' | 'AGL') labels the altitude
+// source; omitting it preserves the original MSL-labelled behaviour every
+// existing caller relies on. Flight-level shorthand is suppressed for AGL
+// (a flight level is a pressure altitude, meaningless above ground).
+function _afkFmtAltDisplay(ft, srcShort) {
   if (ft == null || !isFinite(ft) || ft <= 0) return '—';
-  if (ft >= 18000 && ft % 100 === 0) return 'FL' + (ft / 100);
-  return ft.toLocaleString() + ' ft MSL';
+  const label = srcShort || 'MSL';
+  if (ft >= 18000 && ft % 100 === 0 && label !== 'AGL') return 'FL' + (ft / 100);
+  return ft.toLocaleString() + ' ft ' + label;
 }
 
 function _afkSetAltMin(id, v) {
@@ -24827,7 +24938,7 @@ function _afkSetAltMin(id, v) {
   _afkAlarms.update(id, { params: a.params, state: a.state });
   // Live-update the hint next to the input and the subtitle line on the card
   const hint = document.getElementById('afkAltHint_' + id);
-  if (hint) hint.textContent = _afkFmtAltDisplay(a.params.altFt);
+  if (hint) hint.textContent = _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(a.params.altSource));
   const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
   if (card) {
     const sub = card.querySelector('.afk-card-desc-sub');
@@ -25193,6 +25304,26 @@ function _afkSetAltDirection(id, dir) {
   }
 }
 
+// v3.88.0 — Altitude-source picker for alt-min alarms (MSL / indicated / AGL).
+// Re-seeds crossing state so a source switch can't trip on whichever side of
+// the threshold the (differently-measured) altitude happens to be on.
+function _afkSetAltSource(id, src) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  a.params.altSource = (src === 'agl' || src === 'indicated') ? src : 'msl';
+  a.state.fired = false;
+  a.state.prevAlt = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  // Refresh the altitude hint next to the input so its source label (MSL /
+  // IND / AGL) tracks the picker without a full editor re-render.
+  const hint = document.getElementById('afkAltHint_' + id);
+  if (hint) hint.textContent = _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(a.params.altSource));
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+}
+
 function _afkSetDurationMode(id, mode) {
   const a = _afkAlarms.get(id); if (!a) return;
   a.params.durationMode = (mode === 'seconds') ? 'seconds' : 'indefinite';
@@ -25229,7 +25360,7 @@ function _afkAddAlarm(type) {
   }
   const base = { type, sound: 'digital-clock', params: {}, state: {} };
   if (type === 'waypoint') base.params = { scope: 'all', fixIdents: [] };
-  if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending' };
+  if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending', altSource: 'msl' };
   if (type === 'cruise') base.state = { fired: false, prevAlt: null,
     waitForNewCruise: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'cruise') };
   if (type === 'descent') base.state = { fired: false,
@@ -25924,10 +26055,22 @@ const _AFK_DP_ELEMENTS = {
   hdg:       { label:'HDG',          group:'Position',  valueId:'afkDpHdg',       minWidth:'3.2em' },
   altMsl:    { label:'ALT MSL',      group:'Altitude',  valueId:'afkDpAlt',       minWidth:'5.0em',
                title:'Altitude above mean sea level' },
+  // v3.88.0 — Indicated + AGL altitude, unlocked by the native SimConnect
+  // desktop feed. hideWhenNull hides each field entirely on sources that
+  // can't report it (browser FSUIPC, STKP) so the web build stays uncluttered.
+  altInd:    { label:'ALT IND',      group:'Altitude',  valueId:'afkDpAltInd',    minWidth:'5.0em', hideWhenNull:true,
+               title:'Indicated altitude — what the altimeter reads at the current barometric setting. Requires the SimConnect desktop feed (Active Airports Desktop); not available from browser FSUIPC.' },
+  agl:       { label:'ALT AGL',      group:'Altitude',  valueId:'afkDpAgl',       minWidth:'5.0em', hideWhenNull:true,
+               title:'Height above ground level — feet above the terrain directly beneath the aircraft. Requires the SimConnect desktop feed (Active Airports Desktop); not available from browser FSUIPC.' },
   gs:        { label:'GS',           group:'Speed',     valueId:'afkDpGs',        minWidth:'4.0em' },
   ias:       { label:'IAS',          group:'Speed',     valueId:'afkDpIas',       minWidth:'4.0em' },
   vs:        { label:'VS',           group:'Speed',     valueId:'afkDpVs',        minWidth:'6.0em' },
   phase:     { label:'PHASE',        group:'Status',    valueId:'afkDpPhase',     minWidth:'5.0em' },
+  // v3.88.0 — Bulletproof wheels-on-ground state from the SIM ON GROUND
+  // simvar. hideWhenNull: shown whenever the source reports it (SimConnect
+  // desktop feed and FSUIPC both do); hidden on STKP.
+  onGround:  { label:'GROUND',       group:'Status',    valueId:'afkDpGnd',       minWidth:'5.5em', hideWhenNull:true,
+               title:'Wheels-on-ground state straight from the sim (SIM ON GROUND / FSUIPC 0x0366). Reads ON GROUND while any gear is touching, AIRBORNE otherwise — the authoritative ground truth behind the PHASE field.' },
   elapsed:   { label:'ELAPSED',      group:'Time',      valueId:'afkDpElapsed',   minWidth:'4.5em' },
   remaining: { label:'REMAINING',    group:'Time',      valueId:'afkDpRemaining', minWidth:'4.5em' },
   etaLcl:    { label:'ETA LOCAL',    group:'Time',      valueId:'afkDpEtaLcl',    minWidth:'3.5em' },
@@ -25961,7 +26104,10 @@ const _AFK_DP_ELEMENTS = {
 };
 
 const _AFK_DP_DEFAULT_CONFIG = [
-  'lat', 'lon', 'hdg', 'altMsl', 'gs', 'ias', 'vs', 'phase', 'nextWpt',
+  // v3.88.0 — altInd / agl / onGround included by default; each is hideWhenNull
+  // so they render only when the live source actually supplies them (the
+  // SimConnect desktop feed), leaving the browser/FSUIPC layout unchanged.
+  'lat', 'lon', 'hdg', 'altMsl', 'altInd', 'agl', 'gs', 'ias', 'vs', 'phase', 'onGround', 'nextWpt',
   'spacer-1',
   'elapsed', 'remaining', 'distRem', 'trkRem', 'etaLcl', 'etaUtc',
   'spacer-2',
@@ -26028,8 +26174,12 @@ function _afkDpRender() {
     if (def.minWidth) styleBits.push('min-width:' + def.minWidth);
     if (def.maxWidth) styleBits.push('max-width:' + def.maxWidth + ';overflow:hidden;text-overflow:ellipsis');
     const titleAttr = def.title ? ' title="' + _afkDpEscapeAttr(def.title) + '"' : '';
+    // v3.88.0 — hideWhenNull fields start hidden; _afkUpdateDataPanel reveals
+    // them the moment the source supplies a value (and re-hides on sources
+    // that never do), so no permanent blank row appears on browser FSUIPC.
+    const fieldStyle = def.hideWhenNull ? ' style="display:none"' : '';
     parts.push(
-      '<div class="afk-dp-field" data-dp-id="' + id + '"' + titleAttr +
+      '<div class="afk-dp-field" data-dp-id="' + id + '"' + titleAttr + fieldStyle +
         ' draggable="true"' +
         ' ondragstart="_afkDpDragStart(event,\'' + id + '\')"' +
         ' ondragover="_afkDpDragOver(event,\'' + id + '\')"' +
@@ -26240,15 +26390,7 @@ function _afkDpToggleField(id, on) {
   _afkDpRenderMenu();
   // Push current live-aircraft values into the freshly-rendered DOM so
   // toggled-on fields aren't blank until the next tick.
-  if (_liveAcLastData) {
-    try {
-      _afkUpdateDataPanel({
-        lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng),
-        alt: _liveAcLastData.alt,
-        gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg
-      });
-    } catch (_) {}
-  }
+  { const _acSnap = _afkAcSnapshot(); if (_acSnap) { try { _afkUpdateDataPanel(_acSnap); } catch (_) {} } }
 }
 
 function _afkDpAddSpacer() {
@@ -26316,15 +26458,7 @@ function _afkDpDrop(ev, toId) {
   _afkDpSetConfig(cfg);
   _afkDpRender();
   // Replay values so the moved row isn't blank for a tick.
-  if (_liveAcLastData) {
-    try {
-      _afkUpdateDataPanel({
-        lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng),
-        alt: _liveAcLastData.alt,
-        gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg
-      });
-    } catch (_) {}
-  }
+  { const _acSnap = _afkAcSnapshot(); if (_acSnap) { try { _afkUpdateDataPanel(_acSnap); } catch (_) {} } }
 }
 function _afkDpDragEnd(ev) {
   _afkDpDragFromId = null;
@@ -26343,6 +26477,52 @@ function _afkDpSet(id, text, klass) {
   if (text !== undefined) el.textContent = text;
   if (klass !== undefined) el.className = klass;
   return el;
+}
+
+// v3.88.0 — Setter for hideWhenNull data-panel fields (ALT IND / ALT AGL /
+// GROUND). Passing a string reveals the whole field row and writes the value;
+// passing null hides the entire row, so a source that can't report the value
+// (browser FSUIPC, STKP) shows nothing rather than a permanent em-dash.
+function _afkDpSetOptional(valueId, text, klass) {
+  const el = document.getElementById(valueId);
+  if (!el) return;
+  const wrap = el.closest('.afk-dp-field');
+  if (text == null) {
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  if (wrap && wrap.style.display === 'none') wrap.style.display = '';
+  el.textContent = text;
+  if (klass !== undefined) el.className = klass;
+}
+
+// v3.88.0 — Full telemetry `ac` snapshot from the last live fix, including the
+// extended SimConnect fields (AGL / indicated altitude / native VS / wheels-
+// on-ground). Used to replay values into the data panel after a re-render
+// (field toggled on, row reordered) so new rows aren't blank for a tick.
+function _afkAcSnapshot() {
+  const d = _liveAcLastData;
+  if (!d) return null;
+  return {
+    lat: parseFloat(d.lat), lng: parseFloat(d.lng),
+    alt: d.alt, gs: d.gs, ias: d.ias, hdg: d.hdg,
+    agl: (d.agl != null && isFinite(d.agl)) ? d.agl : null,
+    altInd: (d.altInd != null && isFinite(d.altInd)) ? d.altInd : null,
+    vs: (d.vs != null && isFinite(d.vs)) ? d.vs : null,
+    gnd: (d.gnd === true || d.gnd === false) ? d.gnd : null,
+  };
+}
+
+// v3.88.0 — Vertical speed for DISPLAY / conditional-alarm use. Prefers the
+// sim-reported native VS (SimConnect VERTICAL SPEED) when the source carries
+// it — no quantization noise, no smoothing lag — and falls back to the
+// altitude-buffer derivative (_afkPhase.vsFpm) on sources that don't. Phase
+// bucketing deliberately keeps using its own tuned windowed VS; only the
+// human-facing number and the conditional 'vs' threshold read this.
+function _afkDisplayVsFpm(ac) {
+  const d = (ac && typeof ac === 'object') ? ac : _liveAcLastData;
+  if (d && d.vs != null && isFinite(d.vs)) return d.vs;
+  try { const v = _afkPhase.vsFpm(); return isFinite(v) ? v : null; } catch (_) { return null; }
 }
 
 // v2.88.0 — Set a dynamic tooltip on a data-panel field's wrapper. The
@@ -26388,10 +26568,14 @@ function _afkUpdateDataPanel(ac) {
   const hdgEl = document.getElementById('afkDpHdg');
   if (hdgEl) hdgEl.textContent = (ac.hdg != null && isFinite(ac.hdg)) ? Math.round(ac.hdg).toString().padStart(3, '0') + '°' : '—';
   _afkDpSet('afkDpAlt', _afkFmtInt(ac.alt, 'ft'));
+  // v3.88.0 — Extended SimConnect altitudes. hideWhenNull: absent → row hidden.
+  _afkDpSetOptional('afkDpAltInd', (ac.altInd != null && isFinite(ac.altInd)) ? _afkFmtInt(ac.altInd, 'ft') : null, 'afk-dp-value');
+  _afkDpSetOptional('afkDpAgl',    (ac.agl    != null && isFinite(ac.agl))    ? _afkFmtInt(Math.max(0, Math.round(ac.agl)), 'ft') : null, 'afk-dp-value');
   _afkDpSet('afkDpGs',  _afkFmtInt(ac.gs, 'kt'));
   _afkDpSet('afkDpIas', (ac.ias != null && isFinite(ac.ias)) ? (Math.round(ac.ias) + ' kt') : '—');
-  const vs = _afkPhase.vsFpm();
-  if (isFinite(vs)) {
+  // v3.88.0 — Prefer sim-reported native VS; fall back to derived when absent.
+  const vs = _afkDisplayVsFpm(ac);
+  if (vs != null && isFinite(vs)) {
     const rounded = Math.round(vs) || 0;
     const arrow = vs > 50 ? '↑' : vs < -50 ? '↓' : '–';
     _afkDpSet('afkDpVs',
@@ -26402,6 +26586,10 @@ function _afkUpdateDataPanel(ac) {
   }
   const phase = _afkPhase.get();
   _afkDpSet('afkDpPhase', phase ? phase.toUpperCase() : '—');
+  // v3.88.0 — Bulletproof wheels-on-ground state (hideWhenNull row).
+  _afkDpSetOptional('afkDpGnd',
+    ac.gnd === true ? 'ON GROUND' : ac.gnd === false ? 'AIRBORNE' : null,
+    'afk-dp-value');
 
   // Elapsed — extracted into a standalone helper (v2.97.19) so the
   // ELAPSED right-click menu can refresh just this field after a state
@@ -46707,9 +46895,9 @@ function rgSendToFlightPlanner() {
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
-              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments.</li>
+              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect desktop feed</strong> (Active Airports Desktop); an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
-              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect desktop feed; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -46752,6 +46940,8 @@ function rgSendToFlightPlanner() {
             <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>⤓ Save Log</strong> (v3.17.0+) in the footer saves all entries to a JSON file on disk regardless of the current filter — useful for post-flight review or sharing with someone for troubleshooting. <strong>Clear History</strong> wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
             <strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
+
+            <strong>Bulletproof on-ground detection</strong> (v3.88.0) &mdash; when you track with the <strong>SimConnect desktop feed</strong> (Active Airports Desktop, which also carries it from FSUIPC), the simulator&rsquo;s own wheels-on-ground signal drives the ground/airborne decision directly, replacing the GS + VS estimate. This removes the two cases the estimate can&rsquo;t tell apart &mdash; a fast taxi or high-speed rejected takeoff misread as airborne, and a slow, near-level pass (gliders, helicopters at a hover, low-and-slow bush flying) misread as on-ground. A new <strong>GROUND</strong> telemetry field (ON&nbsp;GROUND / AIRBORNE) surfaces this ground truth on the data bar, and the desktop feed also unlocks the <strong>ALT&nbsp;IND</strong> (indicated) and <strong>ALT&nbsp;AGL</strong> (height above terrain) telemetry fields; all three appear only while the source supplies them.<br/><br/>
 
             <strong>Sources required</strong> &mdash; Alerts need a live aircraft source (FSUIPC Live or STKP Live) to evaluate. Waypoint, TOC, and TOD alarms additionally need a SimBrief flight plan loaded.
           </div>
@@ -46890,8 +47080,23 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
+          <span class="release-version">v3.88.0</span>
+          <span class="release-date">July 29, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>New telemetry: Indicated altitude &amp; height above ground (AGL).</strong> When you track with <strong>Active Airports Desktop</strong> (the SimConnect feed), the telemetry bar can now show <strong>ALT IND</strong> (what the altimeter reads) and <strong>ALT AGL</strong> (feet above the terrain directly below you) alongside the existing ALT MSL. Both appear automatically the moment the desktop app is feeding them, and stay hidden on the browser build where the sim can&rsquo;t supply them &mdash; so nothing clutters the web layout.</li>
+          <li><strong>New telemetry: bulletproof GROUND state.</strong> A new <strong>GROUND</strong> field reads <strong>ON GROUND</strong> or <strong>AIRBORNE</strong> straight from the simulator&rsquo;s wheels-on-ground signal &mdash; the authoritative ground truth behind the PHASE field. It also now drives phase detection itself, so a fast taxi or a slow, low pass can no longer be mistaken for the wrong state.</li>
+          <li><strong>Altitude alerts can now trigger on indicated or AGL altitude.</strong> Every altitude alert has a new <strong>Measure</strong> option: <em>Altitude MSL</em> (works from any live source, the default), <em>Indicated altitude</em>, or <em>Height above ground (AGL)</em>. An AGL alert is ideal for terrain- and pattern-relative cues &mdash; e.g. &ldquo;descending through 1,000 ft AGL&rdquo; &mdash; independent of field elevation. Indicated and AGL need the SimConnect desktop feed; existing MSL alerts are untouched.</li>
+          <li><strong>Conditional alerts gain indicated &amp; AGL altitude.</strong> The 🧩 conditional-alert builder now offers <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> as parameters, so you can mix them into any AND/OR rule.</li>
+          <li><strong>More accurate vertical speed.</strong> The <strong>VS</strong> readout (and any VS-based conditional alert) now uses the simulator&rsquo;s own vertical-speed value when available, instead of estimating it from altitude changes &mdash; smoother and free of the quantization jitter the estimate could show at altitude.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
           <span class="release-version">v3.87.0</span>
-          <span class="release-date">July 26, 2026 &middot; Current</span>
+          <span class="release-date">July 26, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>

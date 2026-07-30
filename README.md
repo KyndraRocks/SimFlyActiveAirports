@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.87.0**
+**Current version: v3.88.0**
 
 ---
 
@@ -359,6 +359,16 @@ Click the button again to stop. If the WebSocket can't reach localhost (FSUIPC n
 **Auto-resume across reloads** (v3.1.0+) — if FSUIPC tracking was active when you refresh the tab (or the browser crashes and reopens), the app silently reconnects on the next page load and restores the aircraft marker, breadcrumb trail, and Follow A/C state exactly as they were — no need to re-click **FSUIPC Live**. The auto-reconnect is quiet (no connecting / retry toasts; one confirmation toast on success) and **gives up after 2 minutes** if the sim can't be reached, so opening the app on a machine without FSUIPC running — a laptop away from the sim PC — won't retry localhost forever. Explicitly clicking **⏹ FSUIPC Tracking…** to stop clears the resume intent, so a deliberate disconnect stays disconnected across reloads.
 
 No cloud round-trip, no API tokens, no handshakes that can silently fail. Position data travels straight from your sim to your browser over loopback. Browsers exempt `localhost` from mixed-content blocking (W3C "potentially trustworthy" rule), so the local WebSocket works even though the app itself is served over HTTPS.
+
+### Expanded telemetry & altitude alerts (v3.88.0)
+The telemetry bar and altitude alerts gained a set of values sourced straight from the simulator.
+
+- **Indicated altitude (ALT IND) and height above ground (ALT AGL)** join the telemetry bar. These come from the **SimConnect feed in Active Airports Desktop**, so they appear automatically there and stay hidden on the browser build (where the sim can't supply them) — no empty fields to clutter the web layout.
+- **Altitude alerts can trigger on any of three altitudes.** Every altitude alert now has a **Measure** option: **Altitude MSL** (above sea level — works from any live source, and stays the default), **Indicated altitude**, or **Height above ground (AGL)**. An AGL alert is perfect for terrain- and pattern-relative cues like "descending through 1,000 ft AGL," independent of field elevation. Indicated and AGL need the SimConnect desktop feed; existing MSL alerts are untouched. The 🧩 conditional-alert builder gains matching **Altitude (indicated)** and **Height above ground (AGL)** parameters.
+- **A bulletproof GROUND field** reads **ON GROUND / AIRBORNE** straight from the simulator's own wheels-on-ground signal — the authoritative ground truth behind the flight-phase readout. It now drives phase detection directly, so a fast taxi or a slow, low pass can no longer be mistaken for the wrong state. This improvement applies whenever the sim reports the signal, including over **FSUIPC in the browser build**, not just the desktop app.
+- **More accurate vertical speed.** The **VS** readout (and any VS-based conditional alert) uses the simulator's own vertical-speed value when available, instead of estimating it from altitude changes — smoother, with none of the jitter the estimate could show at altitude.
+
+All of these appear only when a live source actually provides them, so nothing changes for the web build with no sim connected, or on mobile.
 
 ### 📍 Follow A/C — keep the map centred on your aircraft
 While a live source is active, a **📍 Follow A/C** button appears next to the FSUIPC toggle. Click it to lock the map onto the aircraft — every position update smooth-pans the view (0.8 s tween) so the plane stays centred without jitter. Zoom is preserved; only the centre moves. Manually dragging the map turns Follow off automatically, so panning to look at something never fights the auto-centre. As of v3.14.0 the cancel also covers the two other map-navigation gestures: **right-mouse drag** (the universal map-pan affordance) and the **Shift+drag zoom rectangle**. Your follow preference persists across sessions. As of v3.14.1 the same toggle is also available as a **📍 pushpin button on the bottom data panel** (immediately to the left of the ⚙ options menu) — handy for flipping Follow on or off without opening the 🔌 Live pulldown. The pushpin lights cyan when Follow is on; both buttons stay in sync.
