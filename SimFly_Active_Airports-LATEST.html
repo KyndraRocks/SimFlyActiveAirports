@@ -8976,7 +8976,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.88.0';
+const APP_VERSION = '3.89.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10342,6 +10342,7 @@ function _acRefreshFlightTimeLabels() {
 //    so it degrades exactly to the old 2-point line when there's no live data.
 const _ACFT_LIVE_LS_KEY  = 'simfly_aa_ac_live_flights';  // { CODE: [ {d,nm,min}, ... ] }
 const _ACFT_LIVE_OPT_KEY = 'simfly_aa_ac_live_opt';      // { CODE: true }
+const _ACFT_CAP_LS_KEY   = 'simfly_aa_ac_live_cap';      // v3.89.0 — in-progress capture snapshot {startWall,accMs,accNm,ts}; persists so a CRASHED flight's elapsed time + distance survive a reboot (post-mortem via GpuCrashWatch\AA-CrashPoint.js). Cleared whenever _acftCap clears (land/void/teleport/reset).
 const _ACFT_BIN_NM             = 100;     // distance-band width (nm)
 const _ACFT_PER_BIN_CAP        = 10;      // newest flights kept per band
 const _ACFT_MANUAL_SEED_WEIGHT = 1;       // weight of each manual reference point in the fit
@@ -10363,6 +10364,16 @@ function _acftLoadLive() {
   catch (e) { _acftLiveFlights = {}; }
 }
 function _acftSaveLive() { try { localStorage.setItem(_ACFT_LIVE_LS_KEY, JSON.stringify(_acftLiveFlights)); } catch (e) {} }
+// v3.89.0 — persist a throttled snapshot of the in-progress capture so a crashed flight's elapsed
+// time + distance survive a reboot (the trail has only positions). Cleared when no capture is active.
+let _acftCapSaveTs = 0;
+function _acftSaveCapSnap(force) {
+  if (!_acftCap) { try { localStorage.removeItem(_ACFT_CAP_LS_KEY); } catch (_) {} _acftCapSaveTs = 0; return; }
+  const nowMs = Date.now();
+  if (!force && (nowMs - _acftCapSaveTs) < _LIVE_AC_TRAIL_SAVE_MS) return;   // 5s throttle (same cadence as the trail)
+  _acftCapSaveTs = nowMs;
+  try { localStorage.setItem(_ACFT_CAP_LS_KEY, JSON.stringify({ startWall: _acftCap.startWall, accMs: _acftCap.accMs, accNm: _acftCap.accNm, ts: nowMs })); } catch (_) {}
+}
 function _acftLoadOpt() {
   try { const o = JSON.parse(localStorage.getItem(_ACFT_LIVE_OPT_KEY)); _acftOptIn = (o && typeof o === 'object') ? o : {}; }
   catch (e) { _acftOptIn = {}; }
@@ -10461,7 +10472,7 @@ function _acftResolveFlightCode() {
 // ── Capture state machine ────────────────────────────────────────────────────
 // Called once per FSUIPC fix from _liveAcRenderMarker. Ignores STKP/demo sources
 // and any build that doesn't return the on-ground flag.
-function _acftResetCapture() { _acftCap = null; }
+function _acftResetCapture() { _acftCap = null; _acftSaveCapSnap(); }
 
 function _acftCaptureTick(d) {
   if (!d || d.source !== 'fsuipc') return;
@@ -10482,12 +10493,12 @@ function _acftCaptureTick(d) {
   }
 
   const gap = now - _acftCap.lastTick;
-  if (gap > _ACFT_DROPOUT_VOID_MS) { _acftCap = null; return; }   // 5-min continuous gap → discard
+  if (gap > _ACFT_DROPOUT_VOID_MS) { _acftCap = null; _acftSaveCapSnap(); return; }   // 5-min continuous gap → discard
   const paused = gap > _ACFT_DROPOUT_PAUSE_MS;                    // in-sim menu etc. → don't accrue across it
 
   if (!paused && !onGnd) {
     const segNm = _haversineNm(_acftCap.lastLat, _acftCap.lastLng, lat, lng);
-    if (segNm > _ACFT_TELEPORT_NM) { _acftCap = null; return; }   // teleport / new flight → restart fresh
+    if (segNm > _ACFT_TELEPORT_NM) { _acftCap = null; _acftSaveCapSnap(); return; }   // teleport / new flight → restart fresh
     _acftCap.accMs += gap;
     _acftCap.accNm += segNm;
   }
@@ -10503,6 +10514,7 @@ function _acftCaptureTick(d) {
   } else {
     _acftCap.pendLand = 0;
   }
+  _acftSaveCapSnap();   // v3.89.0 — throttled persist (or clear, if finalize just nulled the capture)
 }
 
 function _acftFinalizeFlight() {
