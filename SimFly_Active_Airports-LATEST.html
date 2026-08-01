@@ -26189,7 +26189,10 @@ function _afkDpRender() {
     // v3.88.0 — hideWhenNull fields start hidden; _afkUpdateDataPanel reveals
     // them the moment the source supplies a value (and re-hides on sources
     // that never do), so no permanent blank row appears on browser FSUIPC.
-    const fieldStyle = def.hideWhenNull ? ' style="display:none"' : '';
+    // v3.88.1 — but NOT on the desktop shell, where the SimConnect feed always
+    // supplies them: there they render visible from the start like every other
+    // field (em-dash until the first fix) instead of popping in.
+    const fieldStyle = (def.hideWhenNull && !_afkIsNativeShell()) ? ' style="display:none"' : '';
     parts.push(
       '<div class="afk-dp-field" data-dp-id="' + id + '"' + titleAttr + fieldStyle +
         ' draggable="true"' +
@@ -26491,16 +26494,36 @@ function _afkDpSet(id, text, klass) {
   return el;
 }
 
+// v3.88.0 — True when running inside the Active Airports Desktop WebView2 shell
+// (window.chrome.webview exists ONLY there, never in a plain browser — same gate
+// native-bridge.js uses). The desktop's native SimConnect feed always supplies
+// AGL / indicated / on-ground, so on desktop those fields behave like every
+// other telemetry field (always visible, em-dash when momentarily no value);
+// hideWhenNull's hide-on-null is a WEB-only concern, where the sim can never
+// supply them.
+function _afkIsNativeShell() {
+  try { return !!(window.chrome && window.chrome.webview); } catch (_) { return false; }
+}
+
 // v3.88.0 — Setter for hideWhenNull data-panel fields (ALT IND / ALT AGL /
-// GROUND). Passing a string reveals the whole field row and writes the value;
-// passing null hides the entire row, so a source that can't report the value
-// (browser FSUIPC, STKP) shows nothing rather than a permanent em-dash.
+// GROUND). Passing a string reveals the whole field row and writes the value.
+// Passing null: on the WEB build hides the entire row (the source can never
+// report the value, so no permanent em-dash appears); on DESKTOP (v3.88.1) the
+// row stays visible with an em-dash, exactly like ALT MSL / VS, because the
+// SimConnect feed always supplies it and a brief idle/inter-fix gap must not
+// make the field flicker out.
 function _afkDpSetOptional(valueId, text, klass) {
   const el = document.getElementById(valueId);
   if (!el) return;
   const wrap = el.closest('.afk-dp-field');
   if (text == null) {
-    if (wrap) wrap.style.display = 'none';
+    if (_afkIsNativeShell()) {
+      if (wrap && wrap.style.display === 'none') wrap.style.display = '';
+      el.textContent = '—';
+      if (klass !== undefined) el.className = klass;
+    } else if (wrap) {
+      wrap.style.display = 'none';
+    }
     return;
   }
   if (wrap && wrap.style.display === 'none') wrap.style.display = '';
@@ -26973,9 +26996,12 @@ function _afkInit() {
   // 1 Hz heartbeat so elapsed / ETA / countdown fields advance even between
   // live-aircraft updates (or with no live source connected at all).
   setInterval(() => {
-    const ac = _liveAcLastData
-      ? { lat: parseFloat(_liveAcLastData.lat), lng: parseFloat(_liveAcLastData.lng), alt: _liveAcLastData.alt, gs: _liveAcLastData.gs, ias: _liveAcLastData.ias, hdg: _liveAcLastData.hdg }
-      : { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null };
+    // v3.88.2 — use the full fix snapshot (incl. agl/altInd/vs/gnd) so the
+    // heartbeat doesn't overwrite the extended SimConnect telemetry fields with
+    // em-dash between fixes — that stripped-down ac was what made ALT IND /
+    // ALT AGL / GROUND flash to "—" once per second on the desktop feed.
+    const ac = _afkAcSnapshot()
+      || { lat: NaN, lng: NaN, alt: null, gs: null, ias: null, hdg: null, agl: null, altInd: null, vs: null, gnd: null };
     _afkUpdateDataPanel(ac);
     // Tick the subtitle of any visible Timer card so its countdown is live.
     if (document.getElementById('afkConfigModal') &&
@@ -30232,6 +30258,7 @@ const _MSF_EXCLUDE = new Set([
   'simfly_aa_sb_ofp_last',       // last raw OFP — session-scoped, large
   'simfly_aa_ac_track',          // live aircraft breadcrumb trail — ephemeral
   'simfly_aa_ac_track_fp_gen',   // trail clear-marker — ephemeral
+  'simfly_aa_ac_live_cap',       // v3.89.0 — in-progress flight capture snapshot, crash-recovery only — per-flight runtime
   'simfly_aa_afk_takeoff_at',    // wheels-up timestamp — per-flight runtime
   'simfly_aa_afk_elapsed_state', // elapsed-timer runtime
   'simfly_aa_afk_elapsed_frozen',// elapsed-timer runtime
@@ -47092,8 +47119,41 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
+          <span class="release-version">v3.89.0</span>
+          <span class="release-date">Aug 1, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Crash recovery — in-progress flight capture now survives a reboot.</strong> The live flight-time capture (used to calibrate per-aircraft time/distance estimates) only lived in memory, so a sim or PC crash mid-flight lost the elapsed time and distance flown — the aircraft trail only records positions, not duration. A throttled snapshot (start time, accumulated time, accumulated distance) now persists to <code>localStorage</code> every 5 seconds while a capture is active, and clears automatically on landing, an invalidated flight, a teleport, or a manual reset. This enables a post-mortem check to recover a crashed flight's exact time-into-flight and distance from the persisted snapshot.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.88.2</span>
+          <span class="release-date">July 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Desktop: ALT IND / ALT AGL / GROUND no longer flash to &ldquo;&mdash;&rdquo; once per second.</strong> The once-a-second heartbeat that keeps the ELAPSED / countdown fields ticking was rebuilding the telemetry snapshot without the SimConnect-only values, so it briefly blanked ALT IND, ALT AGL, and GROUND between each live fix. The heartbeat now carries the full telemetry snapshot, so those fields hold their value steadily.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.88.1</span>
+          <span class="release-date">July 29, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Desktop: ALT IND / ALT AGL / GROUND stay visible on the telemetry bar.</strong> On <strong>Active Airports Desktop</strong> the three SimConnect telemetry fields added in v3.88.0 could blink out during a brief gap between fixes, because they inherited the &ldquo;hide when the source can&rsquo;t supply this&rdquo; rule meant only for the browser build. On the desktop app the SimConnect feed always provides them, so they now behave like every other field &mdash; always shown, with a &ldquo;&mdash;&rdquo; placeholder for any momentary gap &mdash; rather than hiding. The browser build is unchanged: it still omits fields the sim can&rsquo;t provide.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
           <span class="release-version">v3.88.0</span>
-          <span class="release-date">July 29, 2026 &middot; Current</span>
+          <span class="release-date">July 29, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
