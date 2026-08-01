@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.88.0**
+**Current version: v3.89.0**
 
 ---
 
@@ -385,6 +385,8 @@ While a live aircraft source is active, the app draws a **green breadcrumb trail
 **Persistence across reloads** — the trail autosaves to your browser every 5 s while flying, so a browser close or crash mid-flight no longer loses the path. Manually stopping a live source also preserves the trail, so switching FSUIPC ↔ STKP or idle gaps don't wipe it either. The track auto-resets only when a **new flight** is detected: a fresh SimBrief flight plan is loaded (different generation timestamp) **and** the aircraft is on the ground. Loading a new plan mid-flight, or re-fetching the same plan after a reload, preserves the trail.
 
 A sim teleport (a single position jump of more than 100 nm — typically a sim restart) also wipes the trail.
+
+**Crash recovery (v3.89.0)** — the trail only stores positions, so a crash mid-flight left no record of how far along the flight actually was. The app now also persists a throttled snapshot (elapsed time + distance) of the in-progress flight capture every 5 s, cleared automatically on landing, a void flight, a teleport, or a manual reset. That snapshot lets a post-mortem check recover a crashed flight's exact time-into-flight and distance flown from the trail alone.
 
 **Stationary suppression** (v2.88.0+) — while ground speed is zero, the trail captures a single "I stopped here" point instead of accumulating thousands of identical samples. High-detail capture resumes the moment motion is detected again.
 
