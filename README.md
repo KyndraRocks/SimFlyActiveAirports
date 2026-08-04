@@ -4,13 +4,15 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.89.0**
+**Current version: v3.90.0**
 
 ---
 
 ## Download
 
 Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFlyActiveAirports/releases) page. Download `SimFly_Active_Airports-LATEST.html`, open it in your browser, and you're ready to go.
+
+**Optional — SimFly Telemetry Bridge.** If you fly Microsoft Flight Simulator on this PC, the same [Releases](https://github.com/KyndraRocks/SimFlyActiveAirports/releases) page also carries `SimFlyTelemetryBridge-Setup-*.exe`. It is a small free companion app that puts your live aircraft on the map with readings the browser cannot otherwise get — height above ground and indicated altitude among them. Install it once and forget it: no window, no tray icon, nothing to configure. See **Live Aircraft Tracking (SimConnect)** below.
 
 ---
 
@@ -339,6 +341,24 @@ The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrie
 
 If a flight plan is already plotted when you save the modal, the route repaints in place with the new color and label mode — no re-fetch.
 
+### Live Aircraft Tracking (SimConnect) — recommended
+**New in v3.90.0.** The best way to get your aircraft onto the map. Install the free **SimFly Telemetry Bridge** (on the [Releases](https://github.com/KyndraRocks/SimFlyActiveAirports/releases) page), then open the map and click **🛰 SimConnect Live** in the **🔌 Live** menu — or just load a flight plan and let the app find it on its own.
+
+The bridge talks to Microsoft Flight Simulator directly, so it can read values FSUIPC cannot:
+
+- **Height above ground (ALT AGL)** — genuinely measured against the terrain beneath you. The FSUIPC equivalent reported the nearest *airport's* elevation instead, which made it wrong by hundreds or thousands of feet anywhere away from a runway, so it had to be removed.
+- **Indicated altitude (ALT IND)** — what your altimeter actually reads, including your baro setting. FSUIPC never returned a usable value for this at all.
+- **Truer vertical speed** — read straight from the simulator rather than inferred from how much your altitude changed between updates, so it settles faster and wanders less.
+- **Your real aircraft name** in the tooltip, plus true airspeed, Mach, outside air temperature, wind, and fuel remaining.
+
+The first two unlock the **ALT AGL** and **ALT IND** readouts in the telemetry bar, and let altitude alerts measure against height-above-ground or indicated altitude instead of only sea level.
+
+**Installing it.** Download the setup file and run it. There is nothing to configure and no account to create. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight — no window and no tray icon. It only talks to the simulator while Active Airports is actually open, it only accepts connections from your own machine, and it never writes anything to the sim. Uninstall it from Settings → Apps like any other program.
+
+**Checking it's running.** Visit <http://127.0.0.1:8975/> for a plain "it's running" page. If something seems wrong, the Start Menu has a **Diagnostics** shortcut that runs the bridge in a console window so you can watch it work.
+
+**Do I still need FSUIPC?** No. The two do the same job, and Active Airports uses whichever it finds — preferring the bridge. If you load a flight plan it quietly looks for both once a minute and connects to whichever answers first, so nothing changes for pilots who stick with FSUIPC. Keeping both installed is harmless.
+
 ### Live Aircraft Tracking (FSUIPC)
 Open the interactive map and click the **🔌 Live** pulldown in the header, then choose **FSUIPC Live**. The header is organised into two pulldowns: **🛠 Tools** (Select Regions + Measurement), and **🔌 Live** (SimBrief Flight Plan, FSUIPC Live, Follow A/C, the Aircraft Icon picker, and Mobile Alerts). A small green dot on the trigger button lights when anything inside is active. The app connects to **Paul Henty's WebSocket Server** running locally as part of **FSUIPC7** and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age.
 
@@ -363,8 +383,8 @@ No cloud round-trip, no API tokens, no handshakes that can silently fail. Positi
 ### Expanded telemetry & altitude alerts (v3.88.0)
 The telemetry bar and altitude alerts gained a set of values sourced straight from the simulator.
 
-- **Indicated altitude (ALT IND) and height above ground (ALT AGL)** join the telemetry bar. These come from the **SimConnect feed in Active Airports Desktop**, so they appear automatically there and stay hidden on the browser build (where the sim can't supply them) — no empty fields to clutter the web layout.
-- **Altitude alerts can trigger on any of three altitudes.** Every altitude alert now has a **Measure** option: **Altitude MSL** (above sea level — works from any live source, and stays the default), **Indicated altitude**, or **Height above ground (AGL)**. An AGL alert is perfect for terrain- and pattern-relative cues like "descending through 1,000 ft AGL," independent of field elevation. Indicated and AGL need the SimConnect desktop feed; existing MSL alerts are untouched. The 🧩 conditional-alert builder gains matching **Altitude (indicated)** and **Height above ground (AGL)** parameters.
+- **Indicated altitude (ALT IND) and height above ground (ALT AGL)** join the telemetry bar. These need a SimConnect feed — as of **v3.90.0** that means the **SimFly Telemetry Bridge** (see *Live Aircraft Tracking (SimConnect)* above), which brings both to the ordinary browser build. They stay hidden on any source that can't supply them, so there are no empty fields cluttering the layout.
+- **Altitude alerts can trigger on any of three altitudes.** Every altitude alert now has a **Measure** option: **Altitude MSL** (above sea level — works from any live source, and stays the default), **Indicated altitude**, or **Height above ground (AGL)**. An AGL alert is perfect for terrain- and pattern-relative cues like "descending through 1,000 ft AGL," independent of field elevation. Indicated and AGL need the SimConnect feed from the SimFly Telemetry Bridge; existing MSL alerts are untouched. The 🧩 conditional-alert builder gains matching **Altitude (indicated)** and **Height above ground (AGL)** parameters.
 - **A bulletproof GROUND field** reads **ON GROUND / AIRBORNE** straight from the simulator's own wheels-on-ground signal — the authoritative ground truth behind the flight-phase readout. It now drives phase detection directly, so a fast taxi or a slow, low pass can no longer be mistaken for the wrong state. This improvement applies whenever the sim reports the signal, including over **FSUIPC in the browser build**, not just the desktop app.
 - **More accurate vertical speed.** The **VS** readout (and any VS-based conditional alert) uses the simulator's own vertical-speed value when available, instead of estimating it from altitude changes — smoother, with none of the jitter the estimate could show at altitude.
 

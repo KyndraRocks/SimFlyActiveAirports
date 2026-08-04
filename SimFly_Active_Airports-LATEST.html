@@ -3672,21 +3672,27 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     width:6px; height:6px; border-radius:50%;
     background:#ffc107; box-shadow:0 0 4px rgba(255,193,7,0.7);
   }
-  /* FSUIPC row status dot — v3.36.2 sits in the same right-justified trailing
+  /* Live-source row status dot — v3.36.2 sits in the same right-justified trailing
      slot as the menu checkmarks (was absolute-positioned at a different offset).
      A 1.1em flex box with the 6px dot drawn centered via radial-gradient, so the
-     live / no-signal dot lines up with the ✓ column on the other Live rows. */
-  #fsuipcLiveBtn { position:relative; }
+     live / no-signal dot lines up with the ✓ column on the other Live rows.
+     v3.90.0 — shared with the SimConnect Live row; each row's dot reflects only
+     its own source (see _rgUpdateLiveActive). */
+  #fsuipcLiveBtn, #sfbLiveBtn { position:relative; }
   #fsuipcLiveBtn.has-active::after,
-  #fsuipcLiveBtn.live-no-signal::after {
+  #fsuipcLiveBtn.live-no-signal::after,
+  #sfbLiveBtn.has-active::after,
+  #sfbLiveBtn.live-no-signal::after {
     content:''; flex:0 0 auto; align-self:center;
     min-width:1.1em; height:1em; margin-left:0.5em;
   }
-  #fsuipcLiveBtn.has-active::after {
+  #fsuipcLiveBtn.has-active::after,
+  #sfbLiveBtn.has-active::after {
     background:radial-gradient(circle at center, #00e676 0 3px, transparent 3.5px);
     filter:drop-shadow(0 0 3px rgba(0,230,118,0.7));
   }
-  #fsuipcLiveBtn.live-no-signal::after {
+  #fsuipcLiveBtn.live-no-signal::after,
+  #sfbLiveBtn.live-no-signal::after {
     background:radial-gradient(circle at center, #ffc107 0 3px, transparent 3.5px);
     filter:drop-shadow(0 0 3px rgba(255,193,7,0.7));
   }
@@ -8976,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.89.0';
+const APP_VERSION = '3.90.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10470,19 +10476,26 @@ function _acftResolveFlightCode() {
 }
 
 // ── Capture state machine ────────────────────────────────────────────────────
-// Called once per FSUIPC fix from _liveAcRenderMarker. Ignores STKP/demo sources
-// and any build that doesn't return the on-ground flag.
+// Called once per FSUIPC / SimConnect-bridge fix from _liveAcRenderMarker.
+// Ignores STKP/demo sources and any build that doesn't return the on-ground flag.
+// v3.90.0 — the bridge qualifies too: it supplies the same wheels-on-ground gate
+// (from the SIM ON GROUND SimVar rather than FSUIPC offset 0x0366) at the same
+// 1 Hz cadence, so airborne-time capture works identically on it.
 function _acftResetCapture() { _acftCap = null; _acftSaveCapSnap(); }
 
 function _acftCaptureTick(d) {
-  if (!d || d.source !== 'fsuipc') return;
+  if (!d || (d.source !== 'fsuipc' && d.source !== 'bridge')) return;
   if (typeof _demoActive !== 'undefined' && _demoActive) return;
   if (d.gnd == null) return;                          // build lacks 0x0366 → can't gate airborne
   const lat = +d.lat, lng = +d.lng;
   if (!isFinite(lat) || !isFinite(lng)) return;
   const onGnd = (d.gnd === true);
   const now   = performance.now();
-  const gsKt  = isFinite(+d.gs) ? +d.gs : 999;
+  // v3.90.0 — null-guard added alongside the isFinite check. The FSUIPC path can only ever yield a
+  // number or NaN (it parseFloats raw offsets), but the SimConnect bridge publishes an unsupplied
+  // value as JSON null — and `+null` is 0, which isFinite() accepts. Without this, an absent ground
+  // speed would read as a stationary 0 kt instead of falling through to the "unknown" default.
+  const gsKt  = (d.gs != null && isFinite(+d.gs)) ? +d.gs : 999;
 
   if (!_acftCap) {
     // Begin a capture only at wheels-up (first airborne fix after being on ground).
@@ -14338,9 +14351,11 @@ function _sbOfpRender(data, opts) {
   }
   // v3.5.0 — surface the "✈ Flight Plan" breadcrumb chip now that a plan is plotted.
   if (typeof _rgUpdateBreadcrumbs === 'function') { try { _rgUpdateBreadcrumbs(); } catch (_) {} }
-  // v3.32.0 — start the gentle 1-min FSUIPC auto-probe (desktop only). Internally
-  // guarded so it no-ops if FSUIPC is already connecting/tracking or Demo is running.
-  if (typeof _fsuipcStartAutoProbe === 'function') { try { _fsuipcStartAutoProbe(); } catch (_) {} }
+  // v3.32.0 — start the gentle 1-min live-source auto-probe (desktop only).
+  // v3.90.0 — routed through _liveAutoProbeStart, which arms the SimConnect-bridge
+  // probe alongside the FSUIPC one; whichever answers first stands the other down.
+  // Internally guarded so it no-ops if a source is already connecting/tracking.
+  if (typeof _liveAutoProbeStart === 'function') { try { _liveAutoProbeStart(); } catch (_) {} }
 }
 
 function _sbOfpClearLayers() {
@@ -14434,7 +14449,7 @@ let _liveAcMarker     = null;
 let _liveAcLastData   = null;      // normalized {lat,lng,hdg,alt,gs,ident,af,phase,dep,dest,source}
 let _liveAcLastUpdate = 0;
 let _liveAcStaleTimer = 0;
-let _liveAcSource     = null;      // 'stkp' | 'fsuipc' | null
+let _liveAcSource     = null;      // 'stkp' | 'fsuipc' | 'bridge' | 'demo' | null
 let _liveAcCentred    = false;     // true once we've re-centred on first fix
 
 // Follow-aircraft mode — when true, every live update pans the map to keep
@@ -14600,6 +14615,7 @@ function _liveAcStopOthers(thisSource) {
   if (_liveAcSource && _liveAcSource !== thisSource) {
     if (_liveAcSource === 'stkp')   _stkpStop();
     if (_liveAcSource === 'fsuipc') _fsuipcStop();
+    if (_liveAcSource === 'bridge' && typeof _sfbStop === 'function') _sfbStop();
     if (_liveAcSource === 'demo' && typeof _demoStop === 'function') _demoStop();
   }
 }
@@ -14614,8 +14630,13 @@ function _liveAcStopOthers(thisSource) {
 // check in a helper keeps the intent ("downstream behaviour is identical
 // for FSUIPC and Demo sources") explicit and gives one place to update
 // if a fourth push source is added later.
+//
+// v3.90.0 — that fourth source arrived: the SimFly Telemetry Bridge ('bridge')
+// pushes at the same 1 Hz cadence through the same _liveAcRenderMarker
+// chokepoint, so its staleness is reasoned about identically. This is the one
+// place that needed updating, exactly as the note above anticipated.
 function _liveSrcIsFsuipcLike() {
-  return _liveAcSource === 'fsuipc' || _liveAcSource === 'demo';
+  return _liveAcSource === 'fsuipc' || _liveAcSource === 'demo' || _liveAcSource === 'bridge';
 }
 
 // Aircraft-icon library — four hand-rolled silhouettes the user can pick
@@ -15146,6 +15167,7 @@ function _liveAcTooltipHtml() {
   const hdg   = (d.hdg != null && isFinite(d.hdg)) ? Math.round(d.hdg) + '°' : '—';
   const route = (d.dep || d.dest) ? `${d.dep || '?'} → ${d.dest || '?'}` : '';
   const src   = d.source === 'fsuipc' ? 'FSUIPC'
+              : d.source === 'bridge' ? 'SIMCONNECT'
               : d.source === 'stkp'   ? 'STKP'
               : d.source === 'demo'   ? 'DEMO'
               : '?';
@@ -15267,6 +15289,390 @@ async function _stkpFetchOnce() {
   });
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Source D: SimFly Telemetry Bridge — native SimConnect  (v3.90.0)
+   ---------------------------------------------------------------------------
+   The PREFERRED live source. A tiny headless companion app reads MSFS through
+   SimConnect directly and republishes it on a loopback WebSocket, which means
+   Active Airports finally gets the values FSUIPC could never deliver:
+
+     • AGL altitude       — FSUIPC offset 0x0B4C returns the nearest-airport
+                            reference elevation in MSFS, so it was wrong by
+                            hundreds-to-thousands of feet away from a runway
+                            (field removed in v2.76.1).
+     • Indicated altitude — FSUIPC offset 0x6020 never produced a usable
+                            reading on this user's build across two attempts
+                            (v2.79.1, v2.80.1; removed in v2.80.2).
+     • Native vertical speed, true airspeed, Mach, baro setting, OAT, wind,
+       fuel, gear/flaps, engine count, and the real aircraft title.
+
+   This replaces the retired Active Airports Desktop app, which obtained the
+   same telemetry but bundled a whole WebView2 browser to do it — costing ~5 GB
+   of VRAM in follow mode against the web app's ~1.2 GB. The bridge keeps the
+   telemetry and throws away the browser.
+
+   Download: https://github.com/KyndraRocks/SimFlyActiveAirports/releases
+
+   Protocol (see PROTOCOL.md in that repo): the server sends a JSON "hello"
+   frame on connect, then a "telemetry" frame every second — plus a heartbeat
+   every 2 s while the sim is closed, so we can tell "waiting for MSFS" from
+   "the bridge died". There is no subscribe handshake and nothing to send; the
+   link is strictly read-only in both directions.
+
+   Design note: fixes are injected through _liveAcRenderMarker, the SAME
+   chokepoint FSUIPC and Demo use, with source:'bridge'. Every downstream
+   consumer — marker glide, breadcrumb trail, AFK alerts, telemetry-loss
+   alarms, live flight-time calibration — therefore works unchanged. The three
+   sites that gate on "is this a real-time push source" go through
+   _liveSrcIsFsuipcLike(), which now accepts 'bridge' too.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// The bridge binds 8975 and walks up to two ports if it is taken, so we probe
+// the same short range. Keep in sync with BridgeConfig.DefaultPort/PortScanRange.
+const _SFB_PORT_BASE   = 8975;
+const _SFB_PORT_SCAN   = 3;
+const _SFB_RECONNECT   = 15000;   // silent retry cadence while the button is armed
+const _SFB_DEBUG       = false;   // true to log every frame to the console
+const _SFB_DOWNLOAD    = 'https://github.com/KyndraRocks/SimFlyActiveAirports/releases';
+// Mirrors _FSUIPC_WANTED_LS: persisted connect-intent so a reload auto-resumes.
+const _SFB_WANTED_LS   = 'simfly_aa_bridge_wanted';
+const _SFB_AUTORESUME_CAP_MS = 120000;
+
+let _sfbWs              = null;
+let _sfbReconnectTmr    = 0;
+let _sfbUserActive      = false;  // true while the user wants tracking; survives reconnects
+let _sfbRetryCount      = 0;
+let _sfbEverConnected   = false;
+let _sfbAutoResume      = false;
+let _sfbAutoResumeStart = 0;
+let _sfbPortIdx         = 0;      // which port in the scan range we are currently trying
+let _sfbInfo            = null;   // last "hello" payload (version / field list)
+
+function _sfbUrl(idx) { return 'ws://127.0.0.1:' + (_SFB_PORT_BASE + (idx || 0)) + '/'; }
+
+// Coerce a bridge value to a finite number, or null if it can't supply one.
+//
+// The bridge publishes anything it cannot read as JSON `null` — a SimVar this aircraft doesn't
+// implement, or a field dropped because the sim rejected the extended set (its "degraded" mode).
+// The obvious `isFinite(+v) ? +v : null` is WRONG here: unary + coerces null to 0 and isFinite(0)
+// is true, so every unsupplied value silently becomes a confident zero. For AGL that reads as
+// "on the ground", for fuel as "empty" — the unknown-vs-zero confusion the bridge deliberately
+// avoids on its own side. Check for null/undefined BEFORE coercing.
+function _sfbNum(v) {
+  if (v == null) return null;
+  const n = +v;
+  return isFinite(n) ? n : null;
+}
+
+function _sfbGetWanted() {
+  try { return localStorage.getItem(_SFB_WANTED_LS) === '1'; } catch (_) { return false; }
+}
+function _sfbSetWanted(on) {
+  try {
+    if (on) localStorage.setItem(_SFB_WANTED_LS, '1');
+    else    localStorage.removeItem(_SFB_WANTED_LS);
+  } catch (_) {}
+}
+
+function _sfbButtonClick() {
+  if (_sfbUserActive) { _sfbStop(); return; }
+  _sfbStart();
+}
+
+// `auto` is true only for the reload-initiated auto-resume and the plan-load
+// probe promotion — both suppress the connecting / retry / failure toasts and
+// cap background retries at 2 minutes. A manual click toasts normally.
+function _sfbStart(auto) {
+  if (!_rgMap) { if (!auto) _aaRtToast('Open the map first.', 'err'); return; }
+  if (typeof WebSocket === 'undefined') { if (!auto) _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
+  _sfbStopAutoProbe();
+  _fsuipcStopAutoProbe();       // the bridge supersedes the FSUIPC probe entirely
+  _liveAcStopOthers('bridge');
+  _liveAcSource      = 'bridge';
+  _sfbUserActive     = true;
+  _sfbRetryCount     = 0;
+  _sfbPortIdx        = 0;
+  _sfbSetWanted(true);
+  _sfbAutoResume      = !!auto;
+  _sfbAutoResumeStart = auto ? Date.now() : 0;
+  _sfbUpdateButtonState(true);
+  if (!auto) _aaRtToast('🛰 Connecting to the SimFly Telemetry Bridge…', 'ok');
+  _sfbOpenWs();
+}
+
+function _sfbStop() {
+  _sfbUserActive  = false;
+  _sfbAutoResume  = false;
+  _sfbStopAutoProbe();
+  _sfbSetWanted(false);         // an explicit disconnect stays disconnected across reloads
+  if (_sfbReconnectTmr) { clearTimeout(_sfbReconnectTmr); _sfbReconnectTmr = 0; }
+  if (_sfbWs) {
+    try { _sfbWs.close(); } catch (_) {}
+    _sfbWs = null;
+  }
+  _sfbRetryCount = 0;
+  if (_liveAcSource === 'bridge') _liveAcClear();
+  _sfbUpdateButtonState(false);
+  if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(false);
+}
+
+// Tri-state, mirroring _fsuipcUpdateButtonState: active → "Tracking…";
+// armed-but-dropped → "Reconnecting…"; otherwise idle. Never claim to be
+// tracking while the silent retry loop is still searching.
+function _sfbUpdateButtonState(active, mode) {
+  const btn = document.getElementById('sfbLiveBtn');
+  if (!btn) return;
+  const retrying = !active && mode === 'retrying';
+  const enabled  = active || retrying;
+  const lbl = btn.querySelector('.rg-btn-label');
+  if (lbl) lbl.textContent = active ? 'SimConnect Tracking…' : (retrying ? 'SimConnect Reconnecting…' : 'SimConnect Live');
+  if (btn.firstChild && btn.firstChild.nodeType === 3) btn.firstChild.nodeValue = enabled ? '⏹ ' : '🛰 ';
+  btn.title = enabled
+    ? 'Stop SimConnect live-aircraft tracking'
+    : 'Live aircraft via the SimFly Telemetry Bridge — adds AGL and indicated altitude, which FSUIPC cannot provide';
+  btn.classList.toggle('active', enabled);
+  _liveAcUpdateFollowBtn();
+  if (typeof _rgUpdateLiveActive === 'function') _rgUpdateLiveActive();
+}
+
+function _sfbOpenWs() {
+  try {
+    _sfbWs = new WebSocket(_sfbUrl(_sfbPortIdx));
+  } catch (err) {
+    if (!_sfbAutoResume && _sfbRetryCount === 0) {
+      _aaRtToast('✕ Could not reach the SimFly Telemetry Bridge. Retrying every 15 s in the background.', 'err');
+    }
+    _sfbScheduleRetry();
+    return;
+  }
+
+  _sfbWs.onopen = () => {
+    const _wasRetry = _sfbRetryCount > 0;
+    _sfbRetryCount    = 0;
+    _sfbEverConnected = true;
+    const _wasAuto = _sfbAutoResume;
+    _sfbAutoResume = false;
+    _sfbUpdateButtonState(true);
+    // Suppress the reconnect toast for background retries when the tab isn't
+    // focused — the 4 s dismiss window may already have passed by the time the
+    // user comes back, leaving a stuck toast (the v3.15.0 lesson).
+    if (document.hasFocus() || !_wasRetry) {
+      _aaRtToast(_wasAuto
+        ? '🛰 Reconnected to the SimFly Telemetry Bridge after reload.'
+        : '🛰 Tracking via SimConnect — AGL and indicated altitude are now live.', 'ok');
+    }
+    if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(true);
+  };
+
+  _sfbWs.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (_SFB_DEBUG) console.log('[bridge]', msg);
+
+    if (msg.type === 'hello') { _sfbInfo = msg; return; }
+    if (msg.type !== 'telemetry') return;
+
+    // Status-only frame (sim not running, or no flight loaded yet). Don't
+    // force-clear the marker — AA's own stale-check greys it on its own
+    // schedule, and a brief sim hiccup shouldn't yank the aircraft away.
+    if (!msg.connected || !msg.hasData || !msg.data) return;
+
+    const d = msg.data;
+    const lat = +d.lat, lng = +d.lon;
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    // Skip the sim's null-island parked state (main menu, no flight loaded).
+    if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
+
+    // Shaped to match the FSUIPC fix exactly, so the whole downstream pipeline
+    // treats it identically. Units already match — the bridge requests degrees,
+    // feet and knots from SimConnect, so there is no conversion to get wrong.
+    _liveAcRenderMarker({
+      lat, lng,
+      // Heading falls back to 0 only because the marker must be drawn at SOME rotation; every
+      // other field stays null when unsupplied so downstream code can tell "unknown" from a value.
+      hdg:    _sfbNum(d.hdgTrue) ?? 0,
+      alt:    _sfbNum(d.altMsl),                          // MSL feet — what AFK/tooltip expect
+      gs:     _sfbNum(d.gs),
+      ias:    _sfbNum(d.ias),
+      gnd:    (typeof d.onGround === 'boolean') ? d.onGround : null,
+      ident:  'My Aircraft',
+      af:     msg.title || null,                          // real airframe name in the tooltip
+      phase:  null,
+      dep:    null,
+      dest:   null,
+      source: 'bridge',
+      // The browser-impossible values. v3.88.0 already reads agl / altInd / vs
+      // off the fix (ALT AGL / ALT IND / GROUND telemetry fields, altitude
+      // alarms with an MSL / indicated / AGL measure source, native-VS-preferred
+      // vertical speed), so these light up with no further plumbing.
+      agl:    _sfbNum(d.altAgl),
+      altInd: _sfbNum(d.altInd),
+      vs:     _sfbNum(d.vs),
+      // Carried for future features. Unknown fields are ignored downstream, so
+      // adding them here is free and saves a bridge round-trip later.
+      tas:     _sfbNum(d.tas),
+      mach:    _sfbNum(d.mach),
+      hdgMag:  _sfbNum(d.hdgMag),
+      baro:    _sfbNum(d.baroInHg),
+      oatC:    _sfbNum(d.oatC),
+      windKts: _sfbNum(d.windKts),
+      windDir: _sfbNum(d.windDir),
+      fuelLb:  _sfbNum(d.fuelLb),
+      pitch:   _sfbNum(d.pitch),
+      bank:    _sfbNum(d.bank),
+    });
+  };
+
+  _sfbWs.onerror = () => {
+    // onclose fires immediately after onerror; report from onclose so we don't
+    // double-toast.
+  };
+
+  _sfbWs.onclose = () => {
+    _sfbWs = null;
+    if (!_sfbUserActive) return;
+    _sfbUpdateButtonState(false, 'retrying');
+    if (!_sfbAutoResume && !_liveAcMarker && _sfbRetryCount === 0 && !_sfbEverConnected) {
+      _aaRtToast('✕ The SimFly Telemetry Bridge isn’t responding. Is it installed and running? Retrying every 15 s in the background.', 'warn');
+    }
+    _sfbScheduleRetry();
+  };
+}
+
+function _sfbScheduleRetry() {
+  if (_sfbReconnectTmr) return;
+
+  // Walk the port scan range before backing off, so a bridge that landed on
+  // 8976 (because something else held 8975) is still found. Cycling is cheap —
+  // a refused loopback connection settles in about a millisecond.
+  _sfbPortIdx = (_sfbPortIdx + 1) % _SFB_PORT_SCAN;
+
+  // Same give-up rule as FSUIPC: a reload-initiated auto-resume that still
+  // hasn't connected after 2 minutes stops and clears the persisted intent, so
+  // a machine without the bridge doesn't retry forever or on every reload.
+  if (_sfbAutoResume && (Date.now() - _sfbAutoResumeStart) >= _SFB_AUTORESUME_CAP_MS) {
+    _sfbAutoResume  = false;
+    _sfbUserActive  = false;
+    _sfbSetWanted(false);
+    if (_liveAcSource === 'bridge') _liveAcSource = null;
+    _sfbUpdateButtonState(false);
+    return;
+  }
+
+  // Retry immediately while still walking the port range; only wait the full
+  // 15 s once we've been round the whole range and come up empty.
+  const delay = _sfbPortIdx === 0 ? _SFB_RECONNECT : 250;
+  _sfbReconnectTmr = setTimeout(() => {
+    _sfbReconnectTmr = 0;
+    if (!_sfbUserActive) return;
+    if (_sfbPortIdx === 0) _sfbRetryCount++;
+    _sfbOpenWs();
+  }, delay);
+}
+
+// ── Bridge auto-probe (mirrors the FSUIPC probe, and outranks it) ────────────
+// Same triggers as FSUIPC's: armed when a flight plan loads, plus the reload
+// auto-resume. Deliberately NOT armed on every map open — auto-starting live
+// tracking without any signal of intent would be a surprising behaviour change.
+const _SFB_PROBE_INTERVAL = 60000;
+let _sfbProbeTmr       = 0;
+let _sfbProbeActive    = false;
+let _sfbProbeBusy      = false;
+let _sfbProbePortIdx   = 0;
+let _sfbProbeWakeBound = false;
+
+function _sfbStartAutoProbe() {
+  if (_sfbProbeActive) return;
+  // Desktop only, and for the same reason as the FSUIPC probe: gate on
+  // (hover:none) rather than _aaIsTouchDevice(), so a touchscreen Windows
+  // laptop — exactly the kind of machine that runs the bridge — still probes.
+  if (window.matchMedia && window.matchMedia('(hover: none)').matches) return;
+  if (typeof WebSocket === 'undefined') return;
+  if (_sfbUserActive || _liveAcSource) return;
+  _sfbProbeActive  = true;
+  _sfbProbePortIdx = 0;
+  _sfbBindProbeWake();
+  _sfbProbeTick();
+  _sfbProbeTmr = setInterval(_sfbProbeTick, _SFB_PROBE_INTERVAL);
+}
+
+function _sfbStopAutoProbe() {
+  _sfbProbeActive = false;
+  if (_sfbProbeTmr) { clearInterval(_sfbProbeTmr); _sfbProbeTmr = 0; }
+}
+
+function _sfbBindProbeWake() {
+  if (_sfbProbeWakeBound) return;
+  _sfbProbeWakeBound = true;
+  const wake = () => {
+    if (!_sfbProbeActive) return;
+    if (document.visibilityState === 'hidden') return;
+    _sfbProbeTick();
+  };
+  try {
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+  } catch (_) {}
+}
+
+function _sfbProbeTick() {
+  if (!_sfbProbeActive) return;
+  if (_sfbUserActive || _liveAcSource === 'bridge') { _sfbStopAutoProbe(); return; }
+  if (_liveAcSource) return;              // Demo/STKP driving the map — try again next minute
+  if (_sfbProbeBusy) return;
+  _sfbProbeBusy = true;
+
+  const idx = _sfbProbePortIdx;
+  _sfbProbePortIdx = (_sfbProbePortIdx + 1) % _SFB_PORT_SCAN;
+
+  let ws, settled = false, to = 0;
+  const done = (ok) => {
+    if (settled) return;
+    settled = true;
+    if (to) { clearTimeout(to); to = 0; }
+    _sfbProbeBusy = false;
+    try { if (ws) ws.close(); } catch (_) {}
+    if (!ok) return;                      // silent — the FSUIPC probe keeps its own counsel
+    _sfbStopAutoProbe();
+    _fsuipcStopAutoProbe();               // found the better source; stand the fallback down
+    if (!_sfbUserActive && (!_liveAcSource || _liveAcSource === 'bridge')) {
+      _sfbPortIdx = idx;                  // connect on the port that actually answered
+      _sfbStart(true);
+    }
+  };
+  // A THROWAWAY trial socket, exactly as the FSUIPC probe does, so a failed
+  // tick can never flicker the button to "Tracking…".
+  try { ws = new WebSocket(_sfbUrl(idx)); }
+  catch (_) { done(false); return; }
+  to = setTimeout(() => done(false), 5000);
+  ws.onopen  = () => done(true);
+  ws.onerror = () => done(false);
+  ws.onclose = () => done(false);
+}
+
+/* ── Live-source auto-start arbitration (v3.90.0) ─────────────────────────────
+   One entry point for "start looking for a live source", so the preference
+   order lives in exactly one place instead of being duplicated at each call
+   site. The bridge outranks FSUIPC because it supplies strictly more (AGL and
+   indicated altitude, native VS, true airspeed) over a link that needs no
+   third-party add-on. Both probes are armed together: whichever answers first
+   stands the other down (see _sfbProbeTick / _fsuipcProbeTick), so a user with
+   only FSUIPC installed is completely unaffected by this change. */
+function _liveAutoProbeStart() {
+  try { _sfbStartAutoProbe(); } catch (_) {}
+  try { _fsuipcStartAutoProbe(); } catch (_) {}
+}
+
+/* Reload auto-resume arbitration. If the user was on the bridge when the tab
+   closed, resume the bridge; otherwise fall back to the FSUIPC intent flag.
+   Never both — _liveAcStopOthers would immediately tear one of them down. */
+function _liveAutoResume() {
+  try {
+    if (_sfbGetWanted())    { _sfbStart(true);    return; }
+    if (_fsuipcGetWanted()) { _fsuipcStart(true); return; }
+  } catch (_) {}
+}
+
 // ── Source B: FSUIPC7 + Paul Henty WebSocket Server (local push, every 100 ms)
 // ws://localhost:2048/fsuipc/ with the 'fsuipc' subprotocol (REQUIRED — the
 // server rejects connections without it). Free unregistered FSUIPC7 covers
@@ -15331,6 +15737,7 @@ function _fsuipcStart(auto) {
   if (!_rgMap) { if (!auto) _aaRtToast('Open the map first.', 'err'); return; }
   if (typeof WebSocket === 'undefined') { if (!auto) _aaRtToast('This browser does not support WebSocket.', 'err'); return; }
   _fsuipcStopAutoProbe(); // v3.32.0 — a real connect (manual, auto-resume, or probe-promoted) supersedes the gentle 1-min probe
+  try { _sfbStopAutoProbe(); } catch (_) {} // v3.90.0 — and supersedes the bridge probe too
   _liveAcStopOthers('fsuipc');
   _liveAcSource = 'fsuipc';
   _fsuipcUserActive = true;
@@ -15663,6 +16070,10 @@ function _fsuipcProbeTick() {
     try { if (ws) ws.close(); } catch (_) {}
     if (ok) {
       _fsuipcStopAutoProbe();
+      // v3.90.0 — FSUIPC answered first; stand the bridge probe down so the two
+      // can't both promote themselves and immediately tear each other out via
+      // _liveAcStopOthers.
+      try { _sfbStopAutoProbe(); } catch (_) {}
       // Re-confirm nothing else grabbed the source while the trial was open.
       if (!_fsuipcUserActive && (!_liveAcSource || _liveAcSource === 'fsuipc')) _fsuipcStart();
     } else {
@@ -15679,10 +16090,17 @@ function _fsuipcProbeTick() {
 
 function _fsuipcProbeMiss() {
   // One gentle, one-time heads-up so the auto behaviour is discoverable; then
-  // silent minute-by-minute retries until FSUIPC appears.
+  // silent minute-by-minute retries until a source appears.
   if (_fsuipcProbeAnnounced) return;
   _fsuipcProbeAnnounced = true;
-  _aaRtToast('🔌 FSUIPC not detected yet — I’ll keep checking every minute and connect automatically once it’s available.', 'ok');
+  // v3.90.0 — both probes are armed together now, so a miss here does NOT mean
+  // "no FSUIPC" in isolation; the bridge probe may still be mid-flight on its
+  // own trial socket. Word the notice for whichever sources are actually being
+  // looked for, so a bridge-only user is never told FSUIPC is missing.
+  const alsoBridge = (typeof _sfbProbeActive !== 'undefined') && _sfbProbeActive;
+  _aaRtToast(alsoBridge
+    ? '🛰 No live telemetry source detected yet — I’ll keep checking every minute and connect automatically once the SimFly Telemetry Bridge or FSUIPC is available.'
+    : '🔌 FSUIPC not detected yet — I’ll keep checking every minute and connect automatically once it’s available.', 'ok');
 }
 
 /* ===========================================================================
@@ -17716,7 +18134,7 @@ function _demoSimDisconnect() {
 // the demo runs — switching mid-demo would yank the marker out from under
 // our packets. Map/airport interaction stays fully alive.
 function _demoApplyLockdown(on) {
-  const ids = ['fsuipcLiveBtn', 'stkpLiveBtn', 'sbOfpBtn'];
+  const ids = ['sfbLiveBtn', 'fsuipcLiveBtn', 'stkpLiveBtn', 'sbOfpBtn'];
   ids.forEach(id => {
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -30332,6 +30750,7 @@ const _MSF_SETTINGS_REGISTRY = {
   'simfly_aa_ac_follow':              { label:'Follow-aircraft toggle',        group:'Live aircraft & FSUIPC' },
   'simfly_aa_ac_icon':                { label:'Aircraft marker icon',          group:'Live aircraft & FSUIPC' },
   'simfly_aa_fsuipc_wanted':          { label:'FSUIPC auto-connect',           group:'Live aircraft & FSUIPC' },
+  'simfly_aa_bridge_wanted':          { label:'SimConnect bridge auto-connect', group:'Live aircraft & FSUIPC' },
   // SimBrief
   'simfly_aa_sb_pid':                 { label:'SimBrief Pilot ID',             group:'SimBrief' },
   'simfly_aa_fp_labels':              { label:'Waypoint labels',               group:'SimBrief' },
@@ -32729,20 +33148,35 @@ function _rgUpdateToolsActive() {
 function _rgUpdateLiveActive() {
   const btn     = document.getElementById('rgLiveBtn');
   const menuBtn = document.getElementById('fsuipcLiveBtn');
-  if (!btn && !menuBtn) return;
-  // Green dot: FSUIPC enabled AND telemetry recently received.
-  // Yellow dot: FSUIPC enabled but not currently receiving (connecting or stale).
-  // No dot: FSUIPC not enabled.
-  const enabled   = (typeof _fsuipcUserActive !== 'undefined') && !!_fsuipcUserActive;
-  const receiving = enabled
-    && _liveAcSource === 'fsuipc'
-    && (typeof _liveAcLastUpdate !== 'undefined') && _liveAcLastUpdate > 0
-    && performance.now() - _liveAcLastUpdate < _LIVE_AC_STALE_MS;
-  [btn, menuBtn].forEach(el => {
+  const sfbBtn  = document.getElementById('sfbLiveBtn');
+  if (!btn && !menuBtn && !sfbBtn) return;
+  // Green dot: source enabled AND telemetry recently received.
+  // Yellow dot: source enabled but not currently receiving (connecting or stale).
+  // No dot: source not enabled.
+  //
+  // v3.90.0 — two mutually-exclusive sim sources now feed this. Each row's own
+  // dot reflects only its own source, while the parent 🔌 Live trigger lights
+  // for whichever one is active.
+  const now = (typeof _liveAcLastUpdate !== 'undefined' && _liveAcLastUpdate > 0)
+    ? (performance.now() - _liveAcLastUpdate < _LIVE_AC_STALE_MS) : false;
+
+  const fsEnabled   = (typeof _fsuipcUserActive !== 'undefined') && !!_fsuipcUserActive;
+  const fsReceiving = fsEnabled && _liveAcSource === 'fsuipc' && now;
+
+  const sfbEnabled   = (typeof _sfbUserActive !== 'undefined') && !!_sfbUserActive;
+  const sfbReceiving = sfbEnabled && _liveAcSource === 'bridge' && now;
+
+  const anyEnabled   = fsEnabled   || sfbEnabled;
+  const anyReceiving = fsReceiving || sfbReceiving;
+
+  const paint = (el, enabled, receiving) => {
     if (!el) return;
     el.classList.toggle('has-active',     receiving);
     el.classList.toggle('live-no-signal', enabled && !receiving);
-  });
+  };
+  paint(btn,     anyEnabled, anyReceiving);
+  paint(menuBtn, fsEnabled,  fsReceiving);
+  paint(sfbBtn,  sfbEnabled, sfbReceiving);
 }
 
 // Floating measurement toolbar — shown only while measurement mode is
@@ -33760,7 +34194,10 @@ async function _rgInitMap() {
   // The persisted Follow A/C flag and breadcrumb trail are already restored
   // above, so when the first fix arrives the marker reappears and follow
   // resumes exactly as it was. A single success toast confirms reconnect.
-  try { if (_fsuipcGetWanted()) _fsuipcStart(true); } catch (_) {}
+  // v3.90.0 — routed through _liveAutoResume so the SimConnect bridge resumes in
+  // preference to FSUIPC when the user was on it (never both — _liveAcStopOthers
+  // would immediately tear one down).
+  try { _liveAutoResume(); } catch (_) {}
   // Restore alarm visuals — geofence rings + labels, and waypoint highlight
   // rings. Alarms persist via _afkAlarms' _load() at DOMContentLoaded time,
   // but the map didn't exist then, so _afkRenderGeofenceVisuals() returned
@@ -46528,6 +46965,31 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature help-feature--pc">
+        <div class="help-feature-icon">🛰</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Live Aircraft Tracking (SimConnect &mdash; recommended)</div>
+          <div class="help-feature-desc">
+            The best way to get your aircraft onto the map. Install the free <strong>SimFly Telemetry Bridge</strong>, then open the map and click <strong>🛰 SimConnect Live</strong> in the 🔌 Live menu &mdash; or just load a flight plan and let Active Airports find it on its own.<br/><br/>
+
+            <strong>Why it beats FSUIPC.</strong> The bridge talks to Microsoft Flight Simulator directly, so it can read values FSUIPC cannot:
+            <ul>
+              <li><strong>Height above ground (ALT AGL)</strong> &mdash; genuinely measured against the terrain beneath you. The FSUIPC equivalent reported the nearest <em>airport's</em> elevation instead, which made it wrong by hundreds or thousands of feet anywhere away from a runway, so it had to be removed.</li>
+              <li><strong>Indicated altitude (ALT IND)</strong> &mdash; what your altimeter actually reads, including your baro setting. FSUIPC never returned a usable value for this at all.</li>
+              <li><strong>Truer vertical speed</strong> &mdash; read straight from the simulator rather than inferred from how much your altitude changed between updates, so it settles faster and wanders less.</li>
+              <li><strong>Your real aircraft name</strong>, plus true airspeed, Mach, outside air temperature, wind, and fuel remaining.</li>
+            </ul>
+            Those first two unlock the <em>ALT AGL</em> and <em>ALT IND</em> readouts in the telemetry bar, and let altitude alarms measure against height-above-ground or indicated altitude instead of only sea level.<br/><br/>
+
+            <strong>Setting it up.</strong> Download the <em>SimFly Telemetry Bridge</em> setup file from <a href="https://github.com/KyndraRocks/SimFlyActiveAirports/releases" target="_blank" rel="noopener">the Active Airports releases page</a> and run it. There is nothing to configure and no account to create. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight &mdash; no window and no tray icon. It only talks to the simulator while Active Airports is actually open, and it only accepts connections from this machine.<br/><br/>
+
+            <strong>Checking it's running.</strong> Visit <a href="http://127.0.0.1:8975/" target="_blank" rel="noopener">http://127.0.0.1:8975/</a> for a plain "it's running" page. If something seems wrong, the Start Menu has a <em>Diagnostics</em> shortcut that runs the bridge in a console window so you can watch it work.<br/><br/>
+
+            <strong>Do I still need FSUIPC?</strong> No. The two do the same job and Active Airports will use whichever it finds, preferring the bridge. Keeping both installed is harmless.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature help-feature--pc">
         <div class="help-feature-icon">🔌</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Live Aircraft Tracking (FSUIPC)</div>
@@ -47119,8 +47581,24 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.89.0</span>
+          <span class="release-version">v3.90.0</span>
           <span class="release-date">Aug 1, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>New: SimConnect Live &mdash; a far better live-aircraft source.</strong> A small free companion app, the <em>SimFly Telemetry Bridge</em>, reads Microsoft Flight Simulator directly and hands Active Airports telemetry that FSUIPC simply cannot provide. Install it once and it starts with Windows and stays out of your way &mdash; no window, no tray icon, nothing to configure. Get it from the <a href="https://github.com/KyndraRocks/SimFlyActiveAirports/releases" target="_blank" rel="noopener">Active Airports releases page</a> &mdash; look for the <em>SimFly Telemetry Bridge</em> setup file.</li>
+          <li><strong>AGL altitude and indicated altitude finally work.</strong> Both were attempted through FSUIPC and both had to be removed: AGL (offset 0x0B4C) reported the nearest airport's elevation rather than the ground actually beneath you, so it was wrong by hundreds or thousands of feet over terrain; indicated altitude (offset 0x6020) never returned a usable value at all. The bridge reads the real simulator variables, so the <em>ALT AGL</em> and <em>ALT IND</em> telemetry fields, and the altitude alarms that can measure against them, now work properly.</li>
+          <li><strong>More accurate vertical speed, plus true airspeed, Mach, wind, temperature, and fuel.</strong> Vertical speed comes straight from the simulator instead of being inferred from altitude changes between fixes, so it settles faster and drifts less. The additional readings are carried on every fix and are available for future features.</li>
+          <li><strong>Your actual aircraft name in the tooltip.</strong> The live-aircraft tooltip now shows the airframe the simulator reports rather than a generic label.</li>
+          <li><strong>It connects itself.</strong> When you load a flight plan, Active Airports quietly looks for both the bridge and FSUIPC once a minute and connects to whichever it finds, preferring the bridge. If you were tracking when the page was last open, it resumes on reload. Nothing changes for FSUIPC users who don't install the bridge.</li>
+          <li><strong>Everything downstream works unchanged.</strong> Marker glide, breadcrumb trail, Follow A/C, AFK alerts, mobile alerts, loss-of-telemetry alarms, and live flight-time calibration all behave exactly as they do on FSUIPC &mdash; the new source feeds the same internal pipeline.</li>
+          <li><strong>Active Airports Desktop has been retired.</strong> It delivered the same simulator telemetry but bundled an entire browser engine to do it, which consumed close to 5&nbsp;GB of video memory in follow mode against roughly 1.2&nbsp;GB for the web app. The bridge keeps the telemetry and drops the browser, so you get the same data in the browser you already use. Existing Desktop installs keep working; you can uninstall it once the bridge is set up.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.89.0</span>
+          <span class="release-date">Aug 1, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
@@ -60306,6 +60784,7 @@ function rgSendToFlightPlanner() {
           <div class="rg-pulldown" id="rgLiveMenu">
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan…</span></button>
             <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
+            <button class="rg-btn rg-pulldown-row" id="sfbLiveBtn" onclick="_sfbButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via the SimFly Telemetry Bridge — adds AGL and indicated altitude, which FSUIPC cannot provide"><span class="rg-row-icon">🛰</span><span class="rg-btn-label">SimConnect Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
