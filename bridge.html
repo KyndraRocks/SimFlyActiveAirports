@@ -45,6 +45,8 @@
        font-size:.78rem;color:var(--muted);word-break:break-all}
   ul{padding-left:1.2em} li{margin:.35em 0}
   .warn{border-left:3px solid var(--accent2);padding-left:14px;color:var(--muted)}
+  .unavailable{border-left:3px solid var(--accent2);padding-left:14px;text-align:left;
+               color:var(--text);font-size:1rem;margin-top:0}
   .no{color:var(--ok);font-weight:600}
   a{color:var(--accent)}
   footer{margin-top:3em;padding-top:1.4em;border-top:1px solid var(--line);
@@ -158,6 +160,14 @@
   fetch('bridge-latest.json?t=' + Date.now())
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (j) {
+      // Download withdrawn. Distinct from the error path below: there is nothing to
+      // send people to, so offering a Releases link would just waste their time.
+      if (j && j.available === false) {
+        dl.remove();
+        meta.className = 'unavailable';
+        meta.textContent = j.notice || 'The download is temporarily unavailable.';
+        return;
+      }
       if (!j || !j.url || !j.version) throw new Error('incomplete manifest');
       dl.className = 'dl';
       dl.href = j.url;

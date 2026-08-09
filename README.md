@@ -14,7 +14,7 @@ Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFl
 
 **Optional — SimFly Telemetry Bridge.** If you fly Microsoft Flight Simulator on this PC, there is a small free companion app that puts your live aircraft on the map with readings the browser cannot otherwise get — height above ground and indicated altitude among them. Install it once and forget it: no window, no tray icon, nothing to configure.
 
-**[→ Download the SimFly Telemetry Bridge](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html)** — that page always points at the current version and publishes its checksum. See **Live Aircraft Tracking (SimConnect)** below.
+**The download is temporarily unavailable** while a third-party component licensing question is resolved — see the [bridge page](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html) for status. Existing installations are unaffected. See **Live Aircraft Tracking (SimConnect)** below.
 
 ---
 
@@ -344,7 +344,7 @@ The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrie
 If a flight plan is already plotted when you save the modal, the route repaints in place with the new color and label mode — no re-fetch.
 
 ### Live Aircraft Tracking (SimConnect) — recommended
-**New in v3.90.0.** The best way to get your aircraft onto the map. Install the free **[SimFly Telemetry Bridge](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html)**, then open the map and click **🛰 SimConnect Live** in the **🔌 Live** menu — or just load a flight plan and let the app find it on its own. If you have not got it yet, the **🔌 Live** menu's **Get the Telemetry Bridge…** item explains what it is and takes you to the download.
+**New in v3.90.0.** The best way to get your aircraft onto the map. With the free **[SimFly Telemetry Bridge](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html)** installed (*the download is temporarily unavailable — see the bridge page*), open the map and click **🛰 SimConnect Live** in the **🔌 Live** menu — or just load a flight plan and let the app find it on its own. If you have not got it yet, the **🔌 Live** menu's **Get the Telemetry Bridge…** item explains what it is and takes you to the download.
 
 The bridge talks to Microsoft Flight Simulator directly, so it can read values FSUIPC cannot:
 
