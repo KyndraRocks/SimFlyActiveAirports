@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SimFly Telemetry Bridge — Download</title>
+<meta name="description" content="Free companion app that puts your Microsoft Flight Simulator aircraft on the SimFly Active Airports map, with height above ground and indicated altitude.">
+<!--
+  The bridge's permanent download address.
+
+  It exists because the bridge and Active Airports share one releases page, where
+  AA must keep the "Latest" badge (it is the headline product, and releases/latest
+  is linked from elsewhere). That leaves the bridge as one item part-way down a
+  mixed list, with a version-specific URL that goes stale on every release. This
+  page is the stable thing to link: it reads bridge-latest.json at load and points
+  at whatever the current release is.
+
+  Kept deliberately dependency-free and self-contained — no build step, no fonts,
+  no scripts from anywhere else. It is served from GitHub Pages next to the app.
+-->
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#26303d; --text:#e8eef7; --muted:#9aa4b2;
+    --accent:#00c8ff; --accent2:#ff6a00; --ok:#3fb950;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.65}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 22px 80px}
+  h1{font-size:1.85rem;margin:0 0 .3em;letter-spacing:.01em}
+  h2{font-size:1.1rem;margin:2.2em 0 .6em;color:var(--accent);letter-spacing:.03em}
+  .tag{color:var(--muted);margin:0 0 2em;font-size:1.02rem}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:22px 24px;margin:0 0 26px}
+  .dl{display:inline-block;background:var(--accent2);color:#fff;text-decoration:none;
+      font-weight:600;font-size:1.05rem;padding:.72em 1.5em;border-radius:8px;
+      transition:filter .15s}
+  .dl:hover{filter:brightness(1.12)}
+  .dl.disabled{background:#39424f;pointer-events:none}
+  .meta{color:var(--muted);font-size:.9rem;margin-top:.9em}
+  code{background:#0b0f16;border:1px solid var(--line);border-radius:4px;
+       padding:2px 7px;font-size:.87em;word-break:break-all}
+  .sha{display:block;margin-top:.5em;padding:9px 11px;background:#0b0f16;
+       border:1px solid var(--line);border-radius:6px;font-family:Consolas,monospace;
+       font-size:.78rem;color:var(--muted);word-break:break-all}
+  ul{padding-left:1.2em} li{margin:.35em 0}
+  .warn{border-left:3px solid var(--accent2);padding-left:14px;color:var(--muted)}
+  .no{color:var(--ok);font-weight:600}
+  a{color:var(--accent)}
+  footer{margin-top:3em;padding-top:1.4em;border-top:1px solid var(--line);
+         color:var(--muted);font-size:.86rem}
+  @media(prefers-color-scheme:light){
+    :root{--bg:#f6f8fa;--panel:#fff;--line:#d6dde5;--text:#1c2430;--muted:#5b6675}
+    code,.sha{background:#f0f3f6}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>SimFly Telemetry Bridge</h1>
+  <p class="tag">A small free companion app that puts your Microsoft Flight Simulator
+     aircraft on the <a href="./">SimFly Active Airports</a> map — including readings the
+     browser cannot otherwise reach.</p>
+
+  <div class="card">
+    <a class="dl disabled" id="dl" href="#">Loading…</a>
+    <div class="meta" id="meta">Fetching the current release…</div>
+    <div class="sha" id="sha" hidden></div>
+  </div>
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Shows your live aircraft on the map, updating once a second.</li>
+    <li>Adds <strong>height above ground</strong> and <strong>indicated altitude</strong> —
+        neither of which FSUIPC can supply correctly.</li>
+    <li>Adds true airspeed, Mach, vertical speed, barometric pressure, outside air
+        temperature, wind, fuel, and your actual aircraft name.</li>
+    <li>Lets altitude alerts trigger on height above ground, which is what you want for
+        terrain- and pattern-relative cues.</li>
+  </ul>
+
+  <h2>Installing it</h2>
+  <ul>
+    <li>Download and run it. There is nothing to configure and no account to create.</li>
+    <li>It installs for you alone — <span class="no">no administrator prompt</span>.</li>
+    <li>It needs <span class="no">no firewall rule</span>, and Windows will not ask for one.</li>
+    <li>It bundles everything it needs — <span class="no">no .NET download</span>.</li>
+    <li>It starts with Windows and runs invisibly. There is no window and no tray icon.</li>
+    <li>Then open Active Airports, and click <strong>🛰 SimConnect Live</strong> in the
+        <strong>🔌 Live</strong> menu — or just load a flight plan and let it connect itself.</li>
+  </ul>
+  <p>Requires 64-bit Windows 10 or 11 and Microsoft Flight Simulator (2020 or 2024).</p>
+
+  <h2 id="smartscreen">Windows will warn you — this is expected</h2>
+  <p class="warn">The installer is not code-signed, because a certificate costs several
+     hundred dollars a year for a free hobby app. Windows therefore shows
+     <em>“Windows protected your PC”</em> and calls the publisher unknown. To continue,
+     click <strong>More info</strong> and then <strong>Run anyway</strong>.<br><br>
+     If you would rather verify the file first, the SHA-256 checksum of the exact file
+     served above is published in the box at the top of this page. In PowerShell:<br>
+     <code>Get-FileHash .\SimFlyTelemetryBridge-Setup-*.exe -Algorithm SHA256</code></p>
+
+  <h2>What it does not do</h2>
+  <ul>
+    <li>It never writes to the simulator. The connection is strictly read-only, so it
+        cannot affect your flight.</li>
+    <li>It never sends anything over the internet. Its server accepts connections only
+        from your own computer, and it checks for updates never — Active Airports does
+        that on its behalf.</li>
+    <li>It collects no analytics of any kind.</li>
+    <li>It stays out of the way of motion-platform software: it asks the simulator for
+        data once a second at below-normal priority, and does not connect to the
+        simulator at all until you actually open the map.</li>
+  </ul>
+
+  <h2>If something goes wrong</h2>
+  <ul>
+    <li>Visit <code>http://127.0.0.1:8975/</code> for a plain “it’s running” page.</li>
+    <li>That page has a <strong>Copy diagnostic report</strong> button — paste its output
+        into an <a href="https://github.com/KyndraRocks/SimFlyActiveAirports/issues">issue</a>.
+        It contains no flight data.</li>
+    <li>The Start Menu also has <em>Diagnostics</em> (runs it in a console window so you can
+        watch it work) and <em>Save Diagnostic Report</em> (writes a zip to your desktop).</li>
+  </ul>
+
+  <h2>Removing it</h2>
+  <p>Uninstall from Add/Remove Programs. That removes the program, its scheduled startup
+     task, and its settings folder.</p>
+
+  <footer>
+    Free for personal use. Microsoft Flight Simulator is a trademark of Microsoft
+    Corporation; this is an independent add-on and is not affiliated with or endorsed by
+    Microsoft. &middot;
+    <a href="https://github.com/KyndraRocks/SimFlyActiveAirports/releases">All releases</a> &middot;
+    <a href="./">Active Airports</a>
+  </footer>
+</div>
+
+<script>
+// Resolve the current release from the manifest, so this page never needs editing on a
+// bridge release — publishing bridge-latest.json is what makes the new version live.
+// The cache-buster matters: Pages sits behind a CDN that will otherwise serve a stale
+// manifest for minutes after a release.
+(function () {
+  var RELEASES = 'https://github.com/KyndraRocks/SimFlyActiveAirports/releases';
+  var dl = document.getElementById('dl'),
+      meta = document.getElementById('meta'),
+      sha = document.getElementById('sha');
+
+  function fallback(msg) {
+    dl.className = 'dl';
+    dl.href = RELEASES;
+    dl.textContent = 'Go to the Releases page →';
+    meta.textContent = msg + ' Look for the SimFlyTelemetryBridge-Setup file under the newest bridge-v tag.';
+  }
+
+  fetch('bridge-latest.json?t=' + Date.now())
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (j) {
+      if (!j || !j.url || !j.version) throw new Error('incomplete manifest');
+      dl.className = 'dl';
+      dl.href = j.url;
+      dl.setAttribute('download', '');
+      dl.textContent = 'Download v' + j.version + ' for Windows';
+      meta.textContent =
+        'Version ' + j.version +
+        (j.released ? ' · released ' + j.released : '') +
+        (j.sizeMb ? ' · ' + j.sizeMb + ' MB' : '') +
+        ' · 64-bit Windows';
+      if (j.sha256) {
+        sha.hidden = false;
+        sha.textContent = 'SHA-256  ' + j.sha256;
+      }
+    })
+    .catch(function () {
+      fallback('Could not read the version manifest.');
+    });
+})();
+</script>
+</body>
+</html>

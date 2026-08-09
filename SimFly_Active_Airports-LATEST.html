@@ -740,6 +740,11 @@
   .npc-arrow { color: var(--muted); }
   .npc-code { color: var(--accent2); font-weight: 700; letter-spacing: 0.1em; min-width: 2.8rem; }
   .npc-msg  { font-size: 0.88rem; margin: 0 0 1.2rem; line-height: 1.45; }
+  /* v3.91.0 — the "Windows will warn you" paragraph in the Get-the-Bridge dialog.
+     Set apart because it is a heads-up about something alarming the user is
+     about to see, not part of the pitch: forewarned, an unsigned-publisher
+     warning is a formality rather than a reason to abandon the download. */
+  .sfb-get-note { border-left: 2px solid var(--accent2); padding-left: 0.7rem; color: var(--muted); }
   .npc-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
   .npc-btn  { font-family: 'Orbitron', monospace; font-size: 0.72rem; letter-spacing: 0.08em; padding: 0.35rem 0.9rem; border-radius: 4px; cursor: pointer; border: 1px solid; background: transparent; }
   .npc-btn-cancel { border-color: var(--muted); color: var(--muted); }
@@ -8982,7 +8987,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.90.0';
+const APP_VERSION = '3.91.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15333,7 +15338,17 @@ const _SFB_PORT_BASE   = 8975;
 const _SFB_PORT_SCAN   = 3;
 const _SFB_RECONNECT   = 15000;   // silent retry cadence while the button is armed
 const _SFB_DEBUG       = false;   // true to log every frame to the console
-const _SFB_DOWNLOAD    = 'https://github.com/KyndraRocks/SimFlyActiveAirports/releases';
+const _SFB_DOWNLOAD    = 'https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html';
+// Version manifest for the bridge, published next to the download page. Lets an ALREADY-CONNECTED
+// bridge be compared against the current release — the bridge deliberately has no update check of
+// its own (it never contacts the internet), so this page is the only thing positioned to notice.
+const _SFB_MANIFEST    = 'https://kyndrarocks.github.io/SimFlyActiveAirports/bridge-latest.json';
+// Only nag once per session per version: an update is worth mentioning, not worth repeating every
+// time the socket reconnects mid-flight.
+let _sfbUpdateNagged   = '';
+// Newest version the manifest has reported this session, so the "Get the Bridge" dialog can name
+// it even when the toast has long since faded.
+let _sfbLatestKnown    = '';
 // Mirrors _FSUIPC_WANTED_LS: persisted connect-intent so a reload auto-resumes.
 const _SFB_WANTED_LS   = 'simfly_aa_bridge_wanted';
 const _SFB_AUTORESUME_CAP_MS = 120000;
@@ -15392,6 +15407,7 @@ function _sfbStart(auto) {
   _sfbUserActive     = true;
   _sfbRetryCount     = 0;
   _sfbPortIdx        = 0;
+  _sfbOfferedThisRun = false;   // a fresh explicit attempt earns a fresh offer
   _sfbSetWanted(true);
   _sfbAutoResume      = !!auto;
   _sfbAutoResumeStart = auto ? Date.now() : 0;
@@ -15469,7 +15485,13 @@ function _sfbOpenWs() {
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (_SFB_DEBUG) console.log('[bridge]', msg);
 
-    if (msg.type === 'hello') { _sfbInfo = msg; return; }
+    if (msg.type === 'hello') {
+      _sfbInfo = msg;
+      // The bridge never checks for its own updates (by design — it makes no
+      // internet requests at all), so this page is the only place that can.
+      try { _sfbCheckForUpdate(); } catch (_) {}
+      return;
+    }
     if (msg.type !== 'telemetry') return;
 
     // Status-only frame (sim not running, or no flight loaded yet). Don't
@@ -15533,7 +15555,13 @@ function _sfbOpenWs() {
     if (!_sfbUserActive) return;
     _sfbUpdateButtonState(false, 'retrying');
     if (!_sfbAutoResume && !_liveAcMarker && _sfbRetryCount === 0 && !_sfbEverConnected) {
-      _aaRtToast('✕ The SimFly Telemetry Bridge isn’t responding. Is it installed and running? Retrying every 15 s in the background.', 'warn');
+      // The user asked for this and nothing answered. Pre-v3.91.0 the toast
+      // asked "is it installed?" and left them to work out where to get it;
+      // now the answer comes with it. Gated on !_sfbAutoResume and
+      // !_sfbEverConnected, so a mid-flight dropout re-toasts quietly rather
+      // than throwing a modal over the map.
+      _aaRtToast('✕ No SimFly Telemetry Bridge found. Retrying every 15 s in the background.', 'warn');
+      _sfbOfferInstall();
     }
     _sfbScheduleRetry();
   };
@@ -15568,6 +15596,137 @@ function _sfbScheduleRetry() {
     if (_sfbPortIdx === 0) _sfbRetryCount++;
     _sfbOpenWs();
   }, delay);
+}
+
+/* ── "Get the Bridge" dialog + update check ───────────────────────────────────
+   Before v3.91.0 _SFB_DOWNLOAD was declared and never used: a pilot who clicked
+   SimConnect Live without the bridge installed got a toast ASKING them "is it
+   installed and running?" and no way to answer it. The toast is the wrong
+   vehicle for the fix — it is textContent-only (deliberately), auto-dismisses in
+   4 s, and dismisses on any click, so it can carry neither a link nor enough
+   time to act on one. Hence a small modal, shown ONLY on explicit user intent.
+
+   The background auto-probe must stay silent: it runs once a minute on every
+   machine, and a pilot who uses FSUIPC (or no live source at all) should never
+   be advertised at. _sfbOfferInstall is therefore called from the user-initiated
+   failure path only.                                                            */
+
+// One offer per explicit connect attempt. onclose fires once for EVERY port in
+// the scan range, so without this latch a single failed click would call this
+// three times in about half a second — reopening a dialog the user may have just
+// dismissed.
+let _sfbOfferedThisRun = false;
+
+function _sfbOfferInstall() {
+  if (_sfbOfferedThisRun) return;
+  _sfbOfferedThisRun = true;
+
+  // Let the rest of the port sweep finish before concluding anything. A bridge
+  // that landed on 8976 (because something else held 8975) is found ~250 ms per
+  // port later, and telling that user to go and install what they already have
+  // would be worse than saying nothing.
+  setTimeout(() => {
+    if (_sfbEverConnected || !_sfbUserActive) return;
+    _sfbOpenGetModal('install');
+  }, 1200);
+}
+
+// Shown when the user asked for SimConnect Live and nothing answered, and from
+// the always-available Live-menu row.
+function _sfbOpenGetModal(mode, latestVersion) {
+  const m = document.getElementById('sfbGetModal');
+  if (!m) return;
+
+  const isUpdate = mode === 'update';
+  const title    = document.getElementById('sfbGetTitle');
+  const body     = document.getElementById('sfbGetBody');
+  const dl       = document.getElementById('sfbGetDownloadBtn');
+
+  if (title) title.textContent = isUpdate ? '🛰  Bridge Update Available'
+                                          : '🛰  SimConnect Live needs the Bridge';
+
+  if (body) {
+    body.innerHTML = isUpdate
+      ? '<p class="npc-msg">A newer SimFly Telemetry Bridge is available' +
+        (latestVersion ? ' (<strong>v' + _sfbEsc(latestVersion) + '</strong>)' : '') +
+        (_sfbInfo && _sfbInfo.version ? ', and you are running <strong>v' + _sfbEsc(_sfbInfo.version) + '</strong>' : '') +
+        '. Updating installs straight over the top — your settings are kept, and you do not need to uninstall first.</p>'
+      : '<p class="npc-msg">SimConnect Live reads your aircraft straight from Microsoft Flight Simulator, ' +
+        'which is how it can show <strong>height above ground</strong> and <strong>indicated altitude</strong> — ' +
+        'readings FSUIPC cannot provide.</p>' +
+        '<p class="npc-msg">It needs a small free companion app, the <strong>SimFly Telemetry Bridge</strong>. ' +
+        'It installs without administrator rights, runs invisibly in the background, and starts with Windows. ' +
+        'The connection to the simulator is read-only, and nothing ever leaves your PC.</p>' +
+        '<p class="npc-msg sfb-get-note">Windows will warn you that the publisher is unknown, because the ' +
+        'installer is not code-signed. Choose <strong>More info</strong> and then <strong>Run anyway</strong>. ' +
+        'The download page lists a checksum you can verify against.</p>';
+  }
+
+  if (dl) dl.textContent = isUpdate ? 'Get the Update →' : 'Download the Bridge →';
+
+  m.classList.add('open');
+}
+
+function _sfbCloseGetModal() {
+  const m = document.getElementById('sfbGetModal');
+  if (m) m.classList.remove('open');
+}
+
+function _sfbGetModalDownload() {
+  // noopener: this opens an external page from a local/file context, and the
+  // opened tab must never get a handle back to window.opener.
+  try { window.open(_SFB_DOWNLOAD, '_blank', 'noopener'); } catch (_) {}
+  _sfbCloseGetModal();
+}
+
+function _sfbEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Called from the Live menu row — always available, so the update toast has
+// somewhere to send people and so the app is self-explanatory to a new pilot.
+function _sfbMenuGetBridge() {
+  const installed = _sfbInfo && _sfbInfo.version;
+  _sfbOpenGetModal(installed ? 'update' : 'install', _sfbLatestKnown);
+}
+
+// Numeric semver compare. Returns true when `latest` is strictly newer than
+// `have`. Anything unparseable answers false — a malformed manifest must never
+// produce a phantom update prompt.
+function _sfbVersionNewer(latest, have) {
+  const parse = v => String(v || '').trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10));
+  const a = parse(latest), b = parse(have);
+  if (a.length < 3 || b.length < 3) return false;
+  for (let i = 0; i < 3; i++) {
+    if (!isFinite(a[i]) || !isFinite(b[i])) return false;
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+// Fired once a bridge has identified itself via the hello frame. Failure here is
+// entirely silent: an offline pilot, a blocked request or a missing manifest
+// must never interrupt a flight, and the bridge works perfectly well out of date.
+function _sfbCheckForUpdate() {
+  if (!_sfbInfo || !_sfbInfo.version) return;
+  const have = _sfbInfo.version;
+
+  // Cache-buster: GitHub Pages holds a CDN copy for minutes, so a fresh release
+  // would otherwise stay invisible to anyone who loaded the page recently.
+  _fetchWithTimeout(_SFB_MANIFEST + '?t=' + Date.now(), 6000)
+    .then(r => (r && r.ok) ? r.json() : null)
+    .then(j => {
+      const latest = j && j.version;
+      if (!latest) return;
+      _sfbLatestKnown = latest;
+      if (!_sfbVersionNewer(latest, have)) return;
+      if (_sfbUpdateNagged === latest) return;
+      _sfbUpdateNagged = latest;
+      _aaRtToast('🛰 Telemetry Bridge v' + latest + ' is available (you have v' + have +
+                 '). Live menu → Get the Telemetry Bridge.', 'ok');
+    })
+    .catch(() => {});
 }
 
 // ── Bridge auto-probe (mirrors the FSUIPC probe, and outranks it) ────────────
@@ -26489,9 +26648,9 @@ const _AFK_DP_ELEMENTS = {
   // desktop feed. hideWhenNull hides each field entirely on sources that
   // can't report it (browser FSUIPC, STKP) so the web build stays uncluttered.
   altInd:    { label:'ALT IND',      group:'Altitude',  valueId:'afkDpAltInd',    minWidth:'5.0em', hideWhenNull:true,
-               title:'Indicated altitude — what the altimeter reads at the current barometric setting. Requires the SimConnect desktop feed (Active Airports Desktop); not available from browser FSUIPC.' },
+               title:'Indicated altitude — what the altimeter reads at the current barometric setting. Requires the SimConnect feed (SimFly Telemetry Bridge); not available from FSUIPC.' },
   agl:       { label:'ALT AGL',      group:'Altitude',  valueId:'afkDpAgl',       minWidth:'5.0em', hideWhenNull:true,
-               title:'Height above ground level — feet above the terrain directly beneath the aircraft. Requires the SimConnect desktop feed (Active Airports Desktop); not available from browser FSUIPC.' },
+               title:'Height above ground level — feet above the terrain directly beneath the aircraft. Requires the SimConnect feed (SimFly Telemetry Bridge); not available from FSUIPC.' },
   gs:        { label:'GS',           group:'Speed',     valueId:'afkDpGs',        minWidth:'4.0em' },
   ias:       { label:'IAS',          group:'Speed',     valueId:'afkDpIas',       minWidth:'4.0em' },
   vs:        { label:'VS',           group:'Speed',     valueId:'afkDpVs',        minWidth:'6.0em' },
@@ -46417,6 +46576,26 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
+<!-- v3.91.0 — "Get the Telemetry Bridge" dialog. Opened from the Live menu, and
+     automatically when the user asks for SimConnect Live and no bridge answers.
+     Body content is written by _sfbOpenGetModal, which serves both the
+     first-install and the update-available cases. -->
+<div class="modal-overlay" id="sfbGetModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _sfbCloseGetModal)">
+  <div class="modal" style="max-width:470px;">
+    <div class="modal-header">
+      <span class="modal-title" id="sfbGetTitle">🛰 &nbsp;SimConnect Live needs the Bridge</span>
+      <button class="modal-close" onclick="_sfbCloseGetModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="sfbGetBody"></div>
+      <div class="npc-btns">
+        <button class="npc-btn npc-btn-cancel" onclick="_sfbCloseGetModal()">Not Now</button>
+        <button class="npc-btn npc-btn-save" id="sfbGetDownloadBtn" onclick="_sfbGetModalDownload()">Download the Bridge →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="npcModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _closeNewPilotConfirm)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
@@ -46980,9 +47159,15 @@ function rgSendToFlightPlanner() {
             </ul>
             Those first two unlock the <em>ALT AGL</em> and <em>ALT IND</em> readouts in the telemetry bar, and let altitude alarms measure against height-above-ground or indicated altitude instead of only sea level.<br/><br/>
 
-            <strong>Setting it up.</strong> Download the <em>SimFly Telemetry Bridge</em> setup file from <a href="https://github.com/KyndraRocks/SimFlyActiveAirports/releases" target="_blank" rel="noopener">the Active Airports releases page</a> and run it. There is nothing to configure and no account to create. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight &mdash; no window and no tray icon. It only talks to the simulator while Active Airports is actually open, and it only accepts connections from this machine.<br/><br/>
+            <strong>Setting it up.</strong> Open the &#128268;&nbsp;Live menu and choose <strong>Get the Telemetry Bridge&hellip;</strong>, or go straight to <a href="https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html" target="_blank" rel="noopener">the download page</a>, and run the setup file. There is nothing to configure and no account to create. Because the installer is not code-signed, Windows will warn you that the publisher is unknown &mdash; choose <strong>More info</strong>, then <strong>Run anyway</strong>. The download page publishes a SHA-256 checksum you can check the file against first if you prefer. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight &mdash; no window and no tray icon. It only talks to the simulator while Active Airports is actually open, and it only accepts connections from this machine.<br/><br/>
 
             <strong>Checking it's running.</strong> Visit <a href="http://127.0.0.1:8975/" target="_blank" rel="noopener">http://127.0.0.1:8975/</a> for a plain "it's running" page. If something seems wrong, the Start Menu has a <em>Diagnostics</em> shortcut that runs the bridge in a console window so you can watch it work.<br/><br/>
+
+            <strong>Reporting a problem.</strong> The status page has a <strong>Copy diagnostic report</strong> button that gathers everything useful &mdash; version, port, what the simulator link is doing, your settings and the recent log &mdash; into one block of text to paste into a bug report. It contains no flight data. The Start Menu also has <em>Save Diagnostic Report</em>, which writes the same thing plus the full log to your desktop as a zip you can attach.<br/><br/>
+
+            <strong>Settings.</strong> There is normally nothing to change, but the Start Menu <em>Settings</em> shortcut opens the bridge's configuration file if you need to move it to a different port, or allow a self-hosted copy of Active Airports to connect.<br/><br/>
+
+            <strong>Updates.</strong> The bridge never phones home, so Active Airports checks on its behalf: whenever it connects, it compares the running version against the current release and tells you if a newer one exists. Installing an update goes straight over the top and keeps your settings.<br/><br/>
 
             <strong>Do I still need FSUIPC?</strong> No. The two do the same job and Active Airports will use whichever it finds, preferring the bridge. Keeping both installed is harmless.
           </div>
@@ -47396,9 +47581,9 @@ function rgSendToFlightPlanner() {
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
               <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
-              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect desktop feed</strong> (Active Airports Desktop); an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
+              <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>; an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
-              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect desktop feed; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
+              <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect feed from the SimFly Telemetry Bridge; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
             </ul>
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
@@ -47442,7 +47627,7 @@ function rgSendToFlightPlanner() {
 
             <strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
 
-            <strong>Bulletproof on-ground detection</strong> (v3.88.0) &mdash; when you track with the <strong>SimConnect desktop feed</strong> (Active Airports Desktop, which also carries it from FSUIPC), the simulator&rsquo;s own wheels-on-ground signal drives the ground/airborne decision directly, replacing the GS + VS estimate. This removes the two cases the estimate can&rsquo;t tell apart &mdash; a fast taxi or high-speed rejected takeoff misread as airborne, and a slow, near-level pass (gliders, helicopters at a hover, low-and-slow bush flying) misread as on-ground. A new <strong>GROUND</strong> telemetry field (ON&nbsp;GROUND / AIRBORNE) surfaces this ground truth on the data bar, and the desktop feed also unlocks the <strong>ALT&nbsp;IND</strong> (indicated) and <strong>ALT&nbsp;AGL</strong> (height above terrain) telemetry fields; all three appear only while the source supplies them.<br/><br/>
+            <strong>Bulletproof on-ground detection</strong> (v3.88.0) &mdash; when you track with the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>, the simulator&rsquo;s own wheels-on-ground signal drives the ground/airborne decision directly, replacing the GS + VS estimate. This removes the two cases the estimate can&rsquo;t tell apart &mdash; a fast taxi or high-speed rejected takeoff misread as airborne, and a slow, near-level pass (gliders, helicopters at a hover, low-and-slow bush flying) misread as on-ground. A new <strong>GROUND</strong> telemetry field (ON&nbsp;GROUND / AIRBORNE) surfaces this ground truth on the data bar, and the SimConnect feed also unlocks the <strong>ALT&nbsp;IND</strong> (indicated) and <strong>ALT&nbsp;AGL</strong> (height above terrain) telemetry fields; all three appear only while the source supplies them.<br/><br/>
 
             <strong>Sources required</strong> &mdash; Alerts need a live aircraft source (FSUIPC Live or STKP Live) to evaluate. Waypoint, TOC, and TOD alarms additionally need a SimBrief flight plan loaded.
           </div>
@@ -47579,10 +47764,26 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.91.0</span>
+          <span class="release-date">Aug 9, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Asking for SimConnect Live without the bridge now tells you where to get it.</strong> Previously, clicking <strong>&#128225; SimConnect Live</strong> on a machine without the SimFly Telemetry Bridge produced a message asking whether it was installed &mdash; and no way to answer that. Now a short panel explains what the bridge is, what it adds, and offers a download button. It appears only when you have actually asked for SimConnect Live; the background search that runs after you load a flight plan stays silent, as before.</li>
+          <li><strong>New Live-menu item: Get the Telemetry Bridge&hellip;</strong> The same panel is now available on demand, so you can find the download without having to make the connection fail first.</li>
+          <li><strong>Active Airports now watches for bridge updates on its behalf.</strong> The bridge deliberately never contacts the internet, so it cannot check for its own updates. Active Airports compares the running version against the current release each time it connects and mentions it once if a newer one is out. Updates install over the top and keep your settings.</li>
+          <li><strong>Forewarned about the Windows publisher warning.</strong> The bridge installer is not code-signed, so Windows shows an &ldquo;unknown publisher&rdquo; warning. The download panel and the help now say so up front, and explain the <em>More info &rarr; Run anyway</em> step, rather than letting it come as a nasty surprise mid-download.</li>
+          <li><strong>One permanent download address.</strong> The bridge now has its own download page rather than being one item among many on a shared releases list, so a link to it never goes stale and always points at the current version.</li>
+          <li><strong>Help no longer refers to the retired desktop app.</strong> Several places still told you that indicated altitude, height above ground and wheels-on-ground detection required <em>Active Airports Desktop</em>, which was retired in v3.90.0 and replaced by the bridge. Those now name the bridge, so following the instructions no longer sends you looking for an app that is not available.</li>
+          <li><strong>New help sections for troubleshooting the bridge.</strong> Covering the one-click diagnostic report, where the settings live, and how updates are handled.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.90.0</span>
-          <span class="release-date">Aug 1, 2026 &middot; Current</span>
+          <span class="release-date">Aug 1, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
@@ -60785,6 +60986,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan…</span></button>
             <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
             <button class="rg-btn rg-pulldown-row" id="sfbLiveBtn" onclick="_sfbButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via the SimFly Telemetry Bridge — adds AGL and indicated altitude, which FSUIPC cannot provide"><span class="rg-row-icon">🛰</span><span class="rg-btn-label">SimConnect Live</span></button>
+            <button class="rg-btn rg-pulldown-row" id="sfbGetBridgeBtn" onclick="_sfbMenuGetBridge();_rgCloseAnyPulldown()" title="What the SimFly Telemetry Bridge is, and where to download it — the free companion app that powers SimConnect Live"><span class="rg-row-icon">⤓</span><span class="rg-btn-label">Get the Telemetry Bridge…</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>
