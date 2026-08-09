@@ -740,11 +740,6 @@
   .npc-arrow { color: var(--muted); }
   .npc-code { color: var(--accent2); font-weight: 700; letter-spacing: 0.1em; min-width: 2.8rem; }
   .npc-msg  { font-size: 0.88rem; margin: 0 0 1.2rem; line-height: 1.45; }
-  /* v3.91.0 — the "Windows will warn you" paragraph in the Get-the-Bridge dialog.
-     Set apart because it is a heads-up about something alarming the user is
-     about to see, not part of the pitch: forewarned, an unsigned-publisher
-     warning is a formality rather than a reason to abandon the download. */
-  .sfb-get-note { border-left: 2px solid var(--accent2); padding-left: 0.7rem; color: var(--muted); }
   .npc-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
   .npc-btn  { font-family: 'Orbitron', monospace; font-size: 0.72rem; letter-spacing: 0.08em; padding: 0.35rem 0.9rem; border-radius: 4px; cursor: pointer; border: 1px solid; background: transparent; }
   .npc-btn-cancel { border-color: var(--muted); color: var(--muted); }
@@ -8987,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.91.0';
+const APP_VERSION = '3.92.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15338,17 +15333,10 @@ const _SFB_PORT_BASE   = 8975;
 const _SFB_PORT_SCAN   = 3;
 const _SFB_RECONNECT   = 15000;   // silent retry cadence while the button is armed
 const _SFB_DEBUG       = false;   // true to log every frame to the console
-const _SFB_DOWNLOAD    = 'https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html';
-// Version manifest for the bridge, published next to the download page. Lets an ALREADY-CONNECTED
-// bridge be compared against the current release — the bridge deliberately has no update check of
-// its own (it never contacts the internet), so this page is the only thing positioned to notice.
-const _SFB_MANIFEST    = 'https://kyndrarocks.github.io/SimFlyActiveAirports/bridge-latest.json';
-// Only nag once per session per version: an update is worth mentioning, not worth repeating every
-// time the socket reconnects mid-flight.
-let _sfbUpdateNagged   = '';
-// Newest version the manifest has reported this session, so the "Get the Bridge" dialog can name
-// it even when the toast has long since faded.
-let _sfbLatestKnown    = '';
+// NOTE (v3.92.0): there is deliberately no download link or update check here. The SimFly
+// Telemetry Bridge is a personal-use companion app and is not publicly distributed — the MSFS SDK
+// licence does not grant the right to redistribute the SimConnect client libraries it bundles.
+// Do not reintroduce a "get the bridge" prompt; there is nowhere to send anyone.
 // Mirrors _FSUIPC_WANTED_LS: persisted connect-intent so a reload auto-resumes.
 const _SFB_WANTED_LS   = 'simfly_aa_bridge_wanted';
 const _SFB_AUTORESUME_CAP_MS = 120000;
@@ -15407,7 +15395,6 @@ function _sfbStart(auto) {
   _sfbUserActive     = true;
   _sfbRetryCount     = 0;
   _sfbPortIdx        = 0;
-  _sfbOfferedThisRun = false;   // a fresh explicit attempt earns a fresh offer
   _sfbSetWanted(true);
   _sfbAutoResume      = !!auto;
   _sfbAutoResumeStart = auto ? Date.now() : 0;
@@ -15487,9 +15474,6 @@ function _sfbOpenWs() {
 
     if (msg.type === 'hello') {
       _sfbInfo = msg;
-      // The bridge never checks for its own updates (by design — it makes no
-      // internet requests at all), so this page is the only place that can.
-      try { _sfbCheckForUpdate(); } catch (_) {}
       return;
     }
     if (msg.type !== 'telemetry') return;
@@ -15555,13 +15539,7 @@ function _sfbOpenWs() {
     if (!_sfbUserActive) return;
     _sfbUpdateButtonState(false, 'retrying');
     if (!_sfbAutoResume && !_liveAcMarker && _sfbRetryCount === 0 && !_sfbEverConnected) {
-      // The user asked for this and nothing answered. Pre-v3.91.0 the toast
-      // asked "is it installed?" and left them to work out where to get it;
-      // now the answer comes with it. Gated on !_sfbAutoResume and
-      // !_sfbEverConnected, so a mid-flight dropout re-toasts quietly rather
-      // than throwing a modal over the map.
-      _aaRtToast('✕ No SimFly Telemetry Bridge found. Retrying every 15 s in the background.', 'warn');
-      _sfbOfferInstall();
+      _aaRtToast('✕ No SimFly Telemetry Bridge found. Is it installed and running? Retrying every 15 s in the background.', 'warn');
     }
     _sfbScheduleRetry();
   };
@@ -15596,137 +15574,6 @@ function _sfbScheduleRetry() {
     if (_sfbPortIdx === 0) _sfbRetryCount++;
     _sfbOpenWs();
   }, delay);
-}
-
-/* ── "Get the Bridge" dialog + update check ───────────────────────────────────
-   Before v3.91.0 _SFB_DOWNLOAD was declared and never used: a pilot who clicked
-   SimConnect Live without the bridge installed got a toast ASKING them "is it
-   installed and running?" and no way to answer it. The toast is the wrong
-   vehicle for the fix — it is textContent-only (deliberately), auto-dismisses in
-   4 s, and dismisses on any click, so it can carry neither a link nor enough
-   time to act on one. Hence a small modal, shown ONLY on explicit user intent.
-
-   The background auto-probe must stay silent: it runs once a minute on every
-   machine, and a pilot who uses FSUIPC (or no live source at all) should never
-   be advertised at. _sfbOfferInstall is therefore called from the user-initiated
-   failure path only.                                                            */
-
-// One offer per explicit connect attempt. onclose fires once for EVERY port in
-// the scan range, so without this latch a single failed click would call this
-// three times in about half a second — reopening a dialog the user may have just
-// dismissed.
-let _sfbOfferedThisRun = false;
-
-function _sfbOfferInstall() {
-  if (_sfbOfferedThisRun) return;
-  _sfbOfferedThisRun = true;
-
-  // Let the rest of the port sweep finish before concluding anything. A bridge
-  // that landed on 8976 (because something else held 8975) is found ~250 ms per
-  // port later, and telling that user to go and install what they already have
-  // would be worse than saying nothing.
-  setTimeout(() => {
-    if (_sfbEverConnected || !_sfbUserActive) return;
-    _sfbOpenGetModal('install');
-  }, 1200);
-}
-
-// Shown when the user asked for SimConnect Live and nothing answered, and from
-// the always-available Live-menu row.
-function _sfbOpenGetModal(mode, latestVersion) {
-  const m = document.getElementById('sfbGetModal');
-  if (!m) return;
-
-  const isUpdate = mode === 'update';
-  const title    = document.getElementById('sfbGetTitle');
-  const body     = document.getElementById('sfbGetBody');
-  const dl       = document.getElementById('sfbGetDownloadBtn');
-
-  if (title) title.textContent = isUpdate ? '🛰  Bridge Update Available'
-                                          : '🛰  SimConnect Live needs the Bridge';
-
-  if (body) {
-    body.innerHTML = isUpdate
-      ? '<p class="npc-msg">A newer SimFly Telemetry Bridge is available' +
-        (latestVersion ? ' (<strong>v' + _sfbEsc(latestVersion) + '</strong>)' : '') +
-        (_sfbInfo && _sfbInfo.version ? ', and you are running <strong>v' + _sfbEsc(_sfbInfo.version) + '</strong>' : '') +
-        '. Updating installs straight over the top — your settings are kept, and you do not need to uninstall first.</p>'
-      : '<p class="npc-msg">SimConnect Live reads your aircraft straight from Microsoft Flight Simulator, ' +
-        'which is how it can show <strong>height above ground</strong> and <strong>indicated altitude</strong> — ' +
-        'readings FSUIPC cannot provide.</p>' +
-        '<p class="npc-msg">It needs a small free companion app, the <strong>SimFly Telemetry Bridge</strong>. ' +
-        'It installs without administrator rights, runs invisibly in the background, and starts with Windows. ' +
-        'The connection to the simulator is read-only, and nothing ever leaves your PC.</p>' +
-        '<p class="npc-msg sfb-get-note">Windows will warn you that the publisher is unknown, because the ' +
-        'installer is not code-signed. Choose <strong>More info</strong> and then <strong>Run anyway</strong>. ' +
-        'The download page lists a checksum you can verify against.</p>';
-  }
-
-  if (dl) dl.textContent = isUpdate ? 'Get the Update →' : 'Download the Bridge →';
-
-  m.classList.add('open');
-}
-
-function _sfbCloseGetModal() {
-  const m = document.getElementById('sfbGetModal');
-  if (m) m.classList.remove('open');
-}
-
-function _sfbGetModalDownload() {
-  // noopener: this opens an external page from a local/file context, and the
-  // opened tab must never get a handle back to window.opener.
-  try { window.open(_SFB_DOWNLOAD, '_blank', 'noopener'); } catch (_) {}
-  _sfbCloseGetModal();
-}
-
-function _sfbEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// Called from the Live menu row — always available, so the update toast has
-// somewhere to send people and so the app is self-explanatory to a new pilot.
-function _sfbMenuGetBridge() {
-  const installed = _sfbInfo && _sfbInfo.version;
-  _sfbOpenGetModal(installed ? 'update' : 'install', _sfbLatestKnown);
-}
-
-// Numeric semver compare. Returns true when `latest` is strictly newer than
-// `have`. Anything unparseable answers false — a malformed manifest must never
-// produce a phantom update prompt.
-function _sfbVersionNewer(latest, have) {
-  const parse = v => String(v || '').trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10));
-  const a = parse(latest), b = parse(have);
-  if (a.length < 3 || b.length < 3) return false;
-  for (let i = 0; i < 3; i++) {
-    if (!isFinite(a[i]) || !isFinite(b[i])) return false;
-    if (a[i] !== b[i]) return a[i] > b[i];
-  }
-  return false;
-}
-
-// Fired once a bridge has identified itself via the hello frame. Failure here is
-// entirely silent: an offline pilot, a blocked request or a missing manifest
-// must never interrupt a flight, and the bridge works perfectly well out of date.
-function _sfbCheckForUpdate() {
-  if (!_sfbInfo || !_sfbInfo.version) return;
-  const have = _sfbInfo.version;
-
-  // Cache-buster: GitHub Pages holds a CDN copy for minutes, so a fresh release
-  // would otherwise stay invisible to anyone who loaded the page recently.
-  _fetchWithTimeout(_SFB_MANIFEST + '?t=' + Date.now(), 6000)
-    .then(r => (r && r.ok) ? r.json() : null)
-    .then(j => {
-      const latest = j && j.version;
-      if (!latest) return;
-      _sfbLatestKnown = latest;
-      if (!_sfbVersionNewer(latest, have)) return;
-      if (_sfbUpdateNagged === latest) return;
-      _sfbUpdateNagged = latest;
-      _aaRtToast('🛰 Telemetry Bridge v' + latest + ' is available (you have v' + have +
-                 '). Live menu → Get the Telemetry Bridge.', 'ok');
-    })
-    .catch(() => {});
 }
 
 // ── Bridge auto-probe (mirrors the FSUIPC probe, and outranks it) ────────────
@@ -46576,26 +46423,6 @@ function rgSendToFlightPlanner() {
   </div>
 </div>
 
-<!-- v3.91.0 — "Get the Telemetry Bridge" dialog. Opened from the Live menu, and
-     automatically when the user asks for SimConnect Live and no bridge answers.
-     Body content is written by _sfbOpenGetModal, which serves both the
-     first-install and the update-available cases. -->
-<div class="modal-overlay" id="sfbGetModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _sfbCloseGetModal)">
-  <div class="modal" style="max-width:470px;">
-    <div class="modal-header">
-      <span class="modal-title" id="sfbGetTitle">🛰 &nbsp;SimConnect Live needs the Bridge</span>
-      <button class="modal-close" onclick="_sfbCloseGetModal()">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div id="sfbGetBody"></div>
-      <div class="npc-btns">
-        <button class="npc-btn npc-btn-cancel" onclick="_sfbCloseGetModal()">Not Now</button>
-        <button class="npc-btn npc-btn-save" id="sfbGetDownloadBtn" onclick="_sfbGetModalDownload()">Download the Bridge →</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="npcModal" onmousedown="_aaOverlayDown(event)" onclick="_aaOverlayClickToClose(event, _closeNewPilotConfirm)">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
@@ -47159,7 +46986,7 @@ function rgSendToFlightPlanner() {
             </ul>
             Those first two unlock the <em>ALT AGL</em> and <em>ALT IND</em> readouts in the telemetry bar, and let altitude alarms measure against height-above-ground or indicated altitude instead of only sea level.<br/><br/>
 
-            <strong>Setting it up.</strong> Open the &#128268;&nbsp;Live menu and choose <strong>Get the Telemetry Bridge&hellip;</strong>, or go straight to <a href="https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html" target="_blank" rel="noopener">the download page</a>, and run the setup file. There is nothing to configure and no account to create. Because the installer is not code-signed, Windows will warn you that the publisher is unknown &mdash; choose <strong>More info</strong>, then <strong>Run anyway</strong>. The download page publishes a SHA-256 checksum you can check the file against first if you prefer. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight &mdash; no window and no tray icon. It only talks to the simulator while Active Airports is actually open, and it only accepts connections from this machine.<br/><br/>
+            <strong>Availability.</strong> The bridge is a personal-use companion app and is <strong>not publicly distributed</strong>. It bundles Microsoft&rsquo;s SimConnect client libraries, and the Flight Simulator SDK licence does not grant the right to pass those on to anyone else, so there is no download. If you are reading this without it installed, use <strong>FSUIPC Live</strong> below instead &mdash; it provides live tracking, just without height above ground and indicated altitude. It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight &mdash; no window and no tray icon. It only talks to the simulator while Active Airports is actually open, and it only accepts connections from this machine.<br/><br/>
 
             <strong>Checking it's running.</strong> Visit <a href="http://127.0.0.1:8975/" target="_blank" rel="noopener">http://127.0.0.1:8975/</a> for a plain "it's running" page. If something seems wrong, the Start Menu has a <em>Diagnostics</em> shortcut that runs the bridge in a console window so you can watch it work.<br/><br/>
 
@@ -47167,7 +46994,7 @@ function rgSendToFlightPlanner() {
 
             <strong>Settings.</strong> There is normally nothing to change, but the Start Menu <em>Settings</em> shortcut opens the bridge's configuration file if you need to move it to a different port, or allow a self-hosted copy of Active Airports to connect.<br/><br/>
 
-            <strong>Updates.</strong> The bridge never phones home, so Active Airports checks on its behalf: whenever it connects, it compares the running version against the current release and tells you if a newer one exists. Installing an update goes straight over the top and keeps your settings.<br/><br/>
+
 
             <strong>Do I still need FSUIPC?</strong> No. The two do the same job and Active Airports will use whichever it finds, preferring the bridge. Keeping both installed is harmless.
           </div>
@@ -47766,8 +47593,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.91.0</span>
+          <span class="release-version">v3.92.0</span>
           <span class="release-date">Aug 9, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>The SimFly Telemetry Bridge is no longer offered as a download.</strong> It is a personal-use companion app and is not publicly distributed. It bundles Microsoft&rsquo;s SimConnect client libraries, and the Flight Simulator SDK licence does not actually grant the right to pass those on to anyone else &mdash; so rather than distribute it on an assumption, it has been withdrawn. The download panel, the <em>Get the Telemetry Bridge</em> menu item and the update check added yesterday in v3.91.0 have all been removed, because there is nowhere to send anyone.</li>
+          <li><strong>SimConnect Live itself is unchanged.</strong> If you already have the bridge it connects exactly as before, with height above ground and indicated altitude. Nothing about how it works has changed &mdash; only the offer to go and get it.</li>
+          <li><strong>FSUIPC Live remains the live-tracking option for everyone else</strong>, as it was before v3.90.0. It provides position, heading, speeds and sea-level altitude; height above ground and indicated altitude are the two readings it cannot supply.</li>
+          <li><strong>Help now says so plainly</strong> rather than describing an install process you cannot follow.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.91.0</span>
+          <span class="release-date">Aug 9, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
@@ -60986,7 +60826,6 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan…</span></button>
             <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
             <button class="rg-btn rg-pulldown-row" id="sfbLiveBtn" onclick="_sfbButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via the SimFly Telemetry Bridge — adds AGL and indicated altitude, which FSUIPC cannot provide"><span class="rg-row-icon">🛰</span><span class="rg-btn-label">SimConnect Live</span></button>
-            <button class="rg-btn rg-pulldown-row" id="sfbGetBridgeBtn" onclick="_sfbMenuGetBridge();_rgCloseAnyPulldown()" title="What the SimFly Telemetry Bridge is, and where to download it — the free companion app that powers SimConnect Live"><span class="rg-row-icon">⤓</span><span class="rg-btn-label">Get the Telemetry Bridge…</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="liveAcFollowBtn" style="display:none" onclick="_liveAcToggleFollow(event);_rgCloseAnyPulldown()" title="Keep the map centred on the live aircraft as it moves — Shift-click here or use the row below to pick a different aircraft icon"><span class="rg-row-icon">📍</span><span class="rg-btn-label">Follow A/C</span></button>

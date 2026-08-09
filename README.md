@@ -12,10 +12,6 @@ This app is a replacement for the [SimFly Active Airports Google Earth map](http
 
 Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFlyActiveAirports/releases) page. Download `SimFly_Active_Airports-LATEST.html`, open it in your browser, and you're ready to go.
 
-**Optional — SimFly Telemetry Bridge.** If you fly Microsoft Flight Simulator on this PC, there is a small free companion app that puts your live aircraft on the map with readings the browser cannot otherwise get — height above ground and indicated altitude among them. Install it once and forget it: no window, no tray icon, nothing to configure.
-
-**The download is temporarily unavailable** while a third-party component licensing question is resolved — see the [bridge page](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html) for status. Existing installations are unaffected. See **Live Aircraft Tracking (SimConnect)** below.
-
 ---
 
 ## Features
@@ -343,27 +339,18 @@ The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrie
 
 If a flight plan is already plotted when you save the modal, the route repaints in place with the new color and label mode — no re-fetch.
 
-### Live Aircraft Tracking (SimConnect) — recommended
-**New in v3.90.0.** The best way to get your aircraft onto the map. With the free **[SimFly Telemetry Bridge](https://kyndrarocks.github.io/SimFlyActiveAirports/bridge.html)** installed (*the download is temporarily unavailable — see the bridge page*), open the map and click **🛰 SimConnect Live** in the **🔌 Live** menu — or just load a flight plan and let the app find it on its own. If you have not got it yet, the **🔌 Live** menu's **Get the Telemetry Bridge…** item explains what it is and takes you to the download.
+### Live Aircraft Tracking (SimConnect)
+Active Airports can take live telemetry from a SimConnect bridge running on the same PC, which
+supplies two readings FSUIPC cannot: **height above ground (ALT AGL)** and **indicated altitude
+(ALT IND)**, plus a native vertical speed and the simulator's own wheels-on-ground signal. Those
+unlock the matching telemetry-bar fields and let altitude alerts measure against AGL or indicated
+altitude instead of only sea level.
 
-The bridge talks to Microsoft Flight Simulator directly, so it can read values FSUIPC cannot:
-
-- **Height above ground (ALT AGL)** — genuinely measured against the terrain beneath you. The FSUIPC equivalent reported the nearest *airport's* elevation instead, which made it wrong by hundreds or thousands of feet anywhere away from a runway, so it had to be removed.
-- **Indicated altitude (ALT IND)** — what your altimeter actually reads, including your baro setting. FSUIPC never returned a usable value for this at all.
-- **Truer vertical speed** — read straight from the simulator rather than inferred from how much your altitude changed between updates, so it settles faster and wanders less.
-- **Your real aircraft name** in the tooltip, plus true airspeed, Mach, outside air temperature, wind, and fuel remaining.
-
-The first two unlock the **ALT AGL** and **ALT IND** readouts in the telemetry bar, and let altitude alerts measure against height-above-ground or indicated altitude instead of only sea level.
-
-**Installing it.** Download the setup file and run it. There is nothing to configure and no account to create. Because the installer is not code-signed, Windows will warn you that the publisher is unknown — click **More info**, then **Run anyway**. (The download page publishes a SHA-256 checksum if you would rather verify the file first.) It installs for you alone (no administrator prompt), starts with Windows, and then stays completely out of sight — no window and no tray icon. It only talks to the simulator while Active Airports is actually open, it only accepts connections from your own machine, and it never writes anything to the sim. Uninstall it from Settings → Apps like any other program.
-
-**Checking it's running.** Visit <http://127.0.0.1:8975/> for a plain "it's running" page. If something seems wrong, the Start Menu has a **Diagnostics** shortcut that runs the bridge in a console window so you can watch it work.
-
-**Reporting a problem.** The status page has a **Copy diagnostic report** button that gathers everything useful — version, port, what the simulator link is doing, your settings, and the recent log — into one block of text to paste into an issue. It contains no flight data and no position history. The Start Menu also has **Save Diagnostic Report**, which writes the same thing plus the full log to your desktop as a zip.
-
-**Settings and updates.** There is normally nothing to change, but a Start Menu **Settings** shortcut opens the bridge's configuration file if you need a different port or want to allow a self-hosted copy of Active Airports to connect. The bridge never contacts the internet, so it cannot check for its own updates — instead Active Airports compares the running version against the current release whenever it connects, and mentions it once if a newer one is out. Updates install straight over the top and keep your settings.
-
-**Do I still need FSUIPC?** No. The two do the same job, and Active Airports uses whichever it finds — preferring the bridge. If you load a flight plan it quietly looks for both once a minute and connects to whichever answers first, so nothing changes for pilots who stick with FSUIPC. Keeping both installed is harmless.
+**There is no public download for this.** The companion app that provides it is a personal-use
+tool and is not distributed — it bundles Microsoft's SimConnect client libraries, and the Flight
+Simulator SDK licence does not grant the right to pass those on to anyone else. The **🛰 SimConnect
+Live** menu item is present for anyone who already has a compatible bridge on `ws://127.0.0.1:8975/`;
+if you do not, use **FSUIPC Live** below.
 
 ### Live Aircraft Tracking (FSUIPC)
 Open the interactive map and click the **🔌 Live** pulldown in the header, then choose **FSUIPC Live**. The header is organised into two pulldowns: **🛠 Tools** (Select Regions + Measurement), and **🔌 Live** (SimBrief Flight Plan, FSUIPC Live, Follow A/C, the Aircraft Icon picker, and Mobile Alerts). A small green dot on the trigger button lights when anything inside is active. The app connects to **Paul Henty's WebSocket Server** running locally as part of **FSUIPC7** and draws a rotating green plane icon at your aircraft's lat/lon, oriented to true heading. Hover the plane to see callsign, aircraft type, altitude, ground speed, heading, source label, and last-update age.
