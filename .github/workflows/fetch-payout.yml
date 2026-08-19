@@ -107,9 +107,51 @@ jobs:
               const collect  = pg => { for (const it of (pg.items || [])) { const ic = (it.icao || it.sku || '').toUpperCase(); if (ic) forSale.add(ic); } };
               collect(mkt1);
               for (let p = 2; p <= mktPages; p++) collect(await getJson('/api/user/marketplace?type=airport&page=' + p));
-              let flagged = 0, missing = 0;
-              for (const ic of forSale) { if (db[ic]) { db[ic].for_sale = true; flagged++; } else { missing++; } }
-              console.log(`Marketplace: ${forSale.size} airports for sale (${flagged} flagged in payout data, ${missing} not in payout data)`);
+              let flagged = 0, backfilled = 0, unresolved = 0;
+              for (const ic of forSale) {
+                if (db[ic]) { db[ic].for_sale = true; flagged++; continue; }
+                // Listed for sale but absent from the rewards feed. That feed only returns
+                // airports with percToUser > 0, so a 0%-payout airport (TNCM, EPRA, KMMI,
+                // WS17 as of Aug 2026) never appears there and its for-sale flag used to be
+                // dropped on the floor - the tag tooltip and the "For Sale Only" filter both
+                // missed it. Backfill a full entry from the per-airport details endpoint
+                // (the same one scripts/membership-sweep.js uses, no auth required).
+                try {
+                  const ap = await getJson('/api/user/assets/details/airport/' + ic);
+                  if (!ap || String(ap.icao || '').toUpperCase() !== ic) { unresolved++; continue; }
+                  db[ic] = {
+                    p:     ap.percToUser != null ? ap.percToUser : 0,
+                    o:     (ap.owner && ap.owner.username) ? ap.owner.username : null,
+                    c:     ap.category != null ? ap.category : null,
+                    lvl:   ap.level != null ? ap.level : null,
+                    lprog: ap.level_progress != null ? Math.round(ap.level_progress * 10) / 10 : null,
+                    xp:    ap.xp != null ? ap.xp : null,
+                    exp:   ap.earnedXp != null ? ap.earnedXp : null,
+                    txp:   ap.totalEarnedXp != null ? ap.totalEarnedXp : null,
+                    rot:   ap.rotation != null ? ap.rotation : null,
+                    mrot:  ap.maxRotation != null ? ap.maxRotation : null,
+                    pax:   ap.pax != null ? ap.pax : null,
+                    epax:  ap.earnedPax != null ? ap.earnedPax : null,
+                    // The details endpoint returns activation_date as a UTC string
+                    // ('2025-01-09 14:52:30') while the rewards feed returns Unix seconds.
+                    // Normalise to seconds so `act` stays one type for _rgIsNewByAct.
+                    act:   (() => {
+                             const t = Date.parse(String(ap.activation_date || '').replace(' ', 'T') + 'Z');
+                             return Number.isFinite(t) ? Math.floor(t / 1000) : null;
+                           })(),
+                    // Not carried by the details endpoint - leave null rather than guess.
+                    mkt:   null,
+                    on:    ap.active != null ? ap.active : null,
+                    n:     (ap.owner && ap.owner.nonce != null) ? ap.owner.nonce : null,
+                    for_sale: true
+                  };
+                  backfilled++;
+                } catch (e) {
+                  unresolved++;
+                  console.error('  For-sale backfill failed for ' + ic + ': ' + e.message);
+                }
+              }
+              console.log(`Marketplace: ${forSale.size} airports for sale (${flagged} already in payout data, ${backfilled} backfilled from asset details, ${unresolved} unresolved)`);
             } catch (e) {
               console.error('Marketplace fetch failed (continuing without for-sale flags): ' + e.message);
             }
