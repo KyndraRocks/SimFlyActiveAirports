@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.92.1';
+const APP_VERSION = '3.93.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20712,7 +20712,7 @@ function _afkFreshState(alarm) {
       // v3.16.0 — If the alarm is (re-)armed while already in descent phase,
       // set waitForNewDescent so it waits for a non-descent phase before
       // firing. Mirrors the cruise re-arm guard.
-      return { fired: false,
+      return { fired: false, descTopAlt: null,
                waitForNewDescent: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'descent') };
     case 'geofence':
       // wasInside = null seeds on first valid sample after arming, so a
@@ -21645,7 +21645,20 @@ function _afkEvalCruise(alarm, ac) {
   return false;
 }
 
-function _afkEvalDescent(alarm) {
+// v3.93.0 — Minimum altitude loss before a Descent Started alarm can trip.
+// The phase detector alone was mis-firing: a 30 s trend below -400 fpm is
+// enough to promote phase to DESCENT, and an ATC step-down, a cruise-level
+// change or a long shallow drift all clear that bar without the arrival
+// descent having begun. Requiring the aircraft to have actually LOST a
+// user-set number of MSL feet makes the trigger about the descent's depth
+// as well as its rate. Backwards-compatible: alarms saved before this
+// feature carry no minDropFt and fall back to 500 ft.
+const _AFK_DESCENT_MIN_DROP_DEFAULT = 500;
+function _afkDescentMinDropFt(alarm) {
+  const v = (alarm && alarm.params) ? parseFloat(alarm.params.minDropFt) : NaN;
+  return (isFinite(v) && v >= 0) ? v : _AFK_DESCENT_MIN_DROP_DEFAULT;
+}
+function _afkEvalDescent(alarm, ac) {
   if (alarm.state.fired) return false;
   // v2.87.0 — same wheels-up gate as cruise (see _afkEvalCruise).
   if (!_afkTakeoffAt) return false;
@@ -21660,7 +21673,27 @@ function _afkEvalDescent(alarm) {
       return false;
     }
   }
-  if (_afkPhase.get() === 'descent') { alarm.state.fired = true; return true; }
+  const ph = _afkPhase.get();
+  // 'approach' is the phase machine's low-and-slow promotion of a descent
+  // already under way, so it CONTINUES an accumulating descent — but it can
+  // never start one (descTopAlt stays null until a real 'descent' sample),
+  // otherwise a pattern circuit would begin measuring from the wrong place.
+  const inDescent = (ph === 'descent') ||
+                    (ph === 'approach' && alarm.state.descTopAlt != null);
+  // Anything else (cruise / climb / ground) ends this descent — the next one
+  // measures its loss from its own top.
+  if (!inDescent) { alarm.state.descTopAlt = null; return false; }
+  const minDrop = _afkDescentMinDropFt(alarm);
+  if (minDrop <= 0) { alarm.state.fired = true; return true; }  // 0 ft = pre-v3.93.0 behaviour
+  const alt = (ac && ac.alt != null && isFinite(ac.alt)) ? ac.alt : null;
+  if (alt == null) return false;   // no MSL altitude this tick — wait, don't fire on the phase flag alone
+  // Measure from the HIGHEST altitude seen since the descent began, not the
+  // first sample: the phase flips several seconds in, and a momentary balloon
+  // at the top of descent would otherwise shrink the loss we credit.
+  if (alarm.state.descTopAlt == null || alt > alarm.state.descTopAlt) {
+    alarm.state.descTopAlt = alt;
+  }
+  if ((alarm.state.descTopAlt - alt) >= minDrop) { alarm.state.fired = true; return true; }
   return false;
 }
 
@@ -21885,7 +21918,7 @@ function _afkEvaluate(alarm, ac) {
     case 'geofence':       return _afkEvalGeofence(alarm, ac);
     case 'waypoint':       return _afkEvalWaypoint(alarm, ac);
     case 'cruise':         return _afkEvalCruise(alarm, ac);
-    case 'descent':        return _afkEvalDescent(alarm);
+    case 'descent':        return _afkEvalDescent(alarm, ac);
     case 'alt-min':        return _afkEvalAltMin(alarm, ac);
     case 'telemetry-loss': return _afkEvalTelemetryLoss(alarm);
     case 'conditional':    return _afkEvalConditional(alarm, ac);
@@ -23514,7 +23547,7 @@ function _afkAlarmTooltip(type) {
     case 'cruise':
       return 'Cruise Reached — one-shot alarm that fires when your aircraft levels off into cruise after a sustained climb. Uses an adaptive detector so it works for both light pistons and heavy jets without tuning.';
     case 'descent':
-      return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise. Useful as the "wake me up before TOD" backstop.';
+      return 'Descent Started — one-shot alarm that fires when your aircraft begins a sustained descent from cruise and has lost the minimum number of feet you set (500 ft by default). Useful as the "wake me up before TOD" backstop.';
     case 'alt-min':
       return 'Altitude — fires when your aircraft CROSSES through a specified altitude. Pick "descending through" or "climbing through". Only fires on an actual crossing — if you arm the alarm already on the wrong side of the threshold, it waits until you cross. Accepts both feet (e.g. 10000) and flight levels (e.g. FL350).';
     case 'conditional':
@@ -23578,7 +23611,11 @@ function _afkAlarmShortDescription(a, includeTitle) {
     if (isFinite(ft) && ft > 0) return title + 'Aircraft reaches ' + _afkFmtAltDisplay(ft) + minSuffix;
     return title + 'Aircraft levels off into cruise' + minSuffix;
   }
-  if (a.type === 'descent')      return title + 'Aircraft begins sustained descent';
+  if (a.type === 'descent') {
+    const drop = _afkDescentMinDropFt(a);
+    return title + 'Aircraft begins sustained descent' +
+      (drop > 0 ? ' — after losing ' + drop.toLocaleString() + ' ft' : '');
+  }
   if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
     // v3.88.0 — label the measured source (MSL / IND / AGL) in the threshold.
@@ -23953,7 +23990,10 @@ function _afkAlarmCardSummary(a) {
       lines.push('Only above: ' + _afkFmtAltDisplay(a.params.minAltFt));
     }
   } else if (a.type === 'descent') {
-    lines.push('Fires when aircraft begins sustained descent');
+    const drop = _afkDescentMinDropFt(a);
+    lines.push(drop > 0
+      ? ('Fires after descending ' + drop.toLocaleString() + ' ft below the top of the descent')
+      : 'Fires when aircraft begins sustained descent');
   } else if (a.type === 'alt-min') {
     const dir = (a.params && a.params.direction === 'climbing') ? 'Climbing through' : 'Descending through';
     // v3.88.0 — label the measured altitude source (MSL / IND / AGL).
@@ -24644,7 +24684,7 @@ function _afkRenderEditor(a) {
   const durMode = (a.params && a.params.durationMode) || 'indefinite';
   const durSec  = (a.params && a.params.durationSec)  || _afkGetUserDefaultDurationSec();
   const durSecInput = durMode === 'seconds'
-    ? '<input type="number" class="afk-input" style="width:70px;cursor:ns-resize;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" onmousedown="_afkDurDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="After this many seconds the alarm is auto-dismissed: sound stops, the trip-overlay row clears, and the alarm is disabled (same as a manual dismiss). Your value is saved as the default for new alarms. Click and drag up/down to scrub.">' +
+    ? '<input type="number" class="afk-input" style="width:70px;cursor:ns-resize;" min="1" step="1" value="' + durSec + '" oninput="_afkSetDurationSec(' + a.id + ', this.value)" onmousedown="_afkDurDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="After this many seconds the alarm is auto-dismissed: sound stops, the trip-overlay row clears, and the alarm is disabled (same as a manual dismiss). Your value is saved as the default for new alarms. Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">' +
       '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">seconds</span>'
     : '';
   // v2.94.0 — Renamed "Set duration" → "Auto-dismiss after". The previous
@@ -24679,9 +24719,9 @@ function _afkRenderEditor(a) {
       '</div>' +
       (mode === 'countdown'
         ? '<div class="afk-edit-row"><span class="afk-edit-label">Countdown</span>' +
-            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" step="1" value="' + ch + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownH\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownH\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">h</span>' +
-            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cm + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownM\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownM\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">m</span>' +
-            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cs + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownS\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownS\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">s</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" step="1" value="' + ch + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownH\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownH\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">h</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cm + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownM\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownM\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">m</span>' +
+            '<input type="number" class="afk-input" style="width:60px;cursor:ns-resize;" min="0" max="59" step="1" value="' + cs + '" oninput="_afkSetTimerCountdown(' + a.id + ', \'countdownS\', this.value)" onmousedown="_afkTimerDragStart(event,' + a.id + ',\'countdownS\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster."><span style="color:var(--muted);font-family:Rajdhani,sans-serif;">s</span>' +
           '</div>'
         : '<div class="afk-edit-row"><span class="afk-edit-label">At time</span>' +
             '<input type="time" class="afk-input" style="width:130px;" value="' + clockStr + '" onchange="_afkSetTimerClock(' + a.id + ', this.value)" title="Local clock time when the alarm should fire — if past today, fires tomorrow at this time">' +
@@ -24715,7 +24755,7 @@ function _afkRenderEditor(a) {
       '</div>';
     const radiusRow =
       '<div class="afk-edit-row"><span class="afk-edit-label">Radius</span>' +
-        '<input type="number" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="' + radiusVal + '" oninput="_afkSetGeofenceRadius(' + a.id + ', this.value)" onmousedown="_afkRadiusDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub (0.1 nm steps).">' +
+        '<input type="number" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="' + radiusVal + '" oninput="_afkSetGeofenceRadius(' + a.id + ', this.value)" onmousedown="_afkRadiusDragStart(event,' + a.id + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub in 0.1 nm steps — hold just off the click point for single steps, further away to run faster.">' +
         '<span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>' +
       '</div>';
     body =
@@ -24788,7 +24828,7 @@ function _afkRenderEditor(a) {
       '</div>';
     const altRow = (mode === 'specific')
       ? '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
-          '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'cruise\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'cruise\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.">' +
+          '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + cAltText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetCruiseAlt(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'cruise\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'cruise\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 35000 or 35,000) or flight levels (e.g. FL350). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">' +
           '<span class="afk-altmin-hint" id="afkCruiseAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + (cAltFt > 0 ? _afkFmtAltDisplay(cAltFt) : '(enter a target altitude above)') + '</span>' +
         '</div>'
       : '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
@@ -24803,12 +24843,32 @@ function _afkRenderEditor(a) {
           'onwheel="_afkAltWheel(event,' + a.id + ',\'cruiseMin\')" ' +
           'onmousedown="_afkAltDragStart(event,' + a.id + ',\'cruiseMin\')" ' +
           'ondragstart="event.preventDefault();event.stopPropagation();return false" ' +
-          'title="Optional. If set, the alarm skips cruise transitions at or below this altitude — prevents false alerts at ATC-assigned climb-and-maintain altitudes below your true cruise. Accepts feet (e.g. 18000) or flight levels (e.g. FL180). Leave blank to fire at any altitude. Mouse-wheel or drag to scrub.">' +
+          'title="Optional. If set, the alarm skips cruise transitions at or below this altitude — prevents false alerts at ATC-assigned climb-and-maintain altitudes below your true cruise. Accepts feet (e.g. 18000) or flight levels (e.g. FL180). Leave blank to fire at any altitude. Mouse-wheel or drag to scrub — drag further from the click point to run faster.">' +
         '<span class="afk-altmin-hint" id="afkCruiseMinAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' +
           (minAltFt > 0 ? _afkFmtAltDisplay(minAltFt) : '(any altitude)') +
         '</span>' +
       '</div>';
     body = modeRow + altRow + minAltRow;
+  }
+  if (a.type === 'descent') {
+    // v3.93.0 - Minimum altitude loss gate. See _afkEvalDescent. Reads the
+    // effective value through _afkDescentMinDropFt so an alarm saved before
+    // this feature shows the 500 ft it is actually using, not a blank field.
+    const dropFt = _afkDescentMinDropFt(a);
+    body =
+      '<div class="afk-edit-row"><span class="afk-edit-label">Min descent</span>' +
+        '<input type="number" class="afk-input" style="width:90px;cursor:ns-resize;" min="0" step="50" value="' + dropFt + '" ' +
+          'oninput="_afkSetDescentMinDrop(' + a.id + ', this.value)" ' +
+          'onmousedown="_afkDescentDropDragStart(event,' + a.id + ')" ' +
+          'ondragstart="event.preventDefault();event.stopPropagation();return false" ' +
+          'title="How far the aircraft must actually descend before this alert fires, in feet MSL below the altitude the descent began at. The phase detector promotes to DESCENT on a sustained 400 fpm trend alone, which an ATC step-down or a slow drift can satisfy without the arrival descent having started - this is the depth gate on top of that. Set 0 to fire the moment descent is detected. Alerts saved before this setting existed use 500 ft. Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">' +
+        '<span class="afk-altmin-hint" id="afkDescDropHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' +
+          (dropFt > 0 ? 'feet below the top of the descent' : 'fires as soon as descent is detected') +
+        '</span>' +
+      '</div>' +
+      '<div class="afk-footer-info" style="color:var(--muted);margin-top:0.2rem;font-size:0.85rem;">' +
+        'The phase detector calls a descent on a sustained 400 fpm trend, which an ATC step-down or a slow drift can satisfy long before the arrival descent. This alert waits until the aircraft is also this many feet below the altitude the descent started at.' +
+      '</div>';
   }
   if (a.type === 'alt-min') {
     const altText = a.params.altText != null ? a.params.altText : (a.params.altFt || 0).toString();
@@ -24831,7 +24891,7 @@ function _afkRenderEditor(a) {
         '</select>' +
       '</div>' +
       '<div class="afk-edit-row"><span class="afk-edit-label">Altitude</span>' +
-        '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'altMin\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'altMin\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.">' +
+        '<input type="text" class="afk-input" style="width:130px;cursor:ns-resize;" value="' + altText.replace(/"/g, '&quot;') + '" placeholder="10000 or FL350" oninput="_afkSetAltMin(' + a.id + ', this.value)" onwheel="_afkAltWheel(event,' + a.id + ',\'altMin\')" onmousedown="_afkAltDragStart(event,' + a.id + ',\'altMin\')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Accepts feet (e.g. 10000) or flight levels (e.g. FL350, FL 200). Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">' +
         '<span class="afk-altmin-hint" id="afkAltHint_' + a.id + '" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' + _afkFmtAltDisplay(a.params.altFt, _afkAltSourceShort(asrc)) + '</span>' +
       '</div>';
   }
@@ -24895,7 +24955,7 @@ function _afkRenderEditor(a) {
             '<option value=">"' + (op === '>' ? ' selected' : '') + '>&gt;</option>' +
             '<option value="<"' + (op === '<' ? ' selected' : '') + '>&lt;</option>' +
           '</select>' +
-          '<input type="text" class="afk-input afk-cond-val" style="cursor:ns-resize;" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 30' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)"' + (def.id === 'alt' ? ' onwheel="_afkCondAltWheel(event,' + a.id + ',' + idx + ')"' : '') + ' onmousedown="_afkCondValDragStart(event,' + a.id + ',' + idx + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="' + (def.isTime ? 'Numeric value in the chosen unit. Pick the unit (seconds / minutes / hours) from the pulldown to the right. Power-user formats H:MM:SS, M:SS, and "1h 30m" are also accepted and bypass the unit. Click and drag up/down to scrub.' : (def.id === 'alt' ? 'Accepts feet or FL form. Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub.' : 'Numeric ' + def.unit + ' value. Click and drag up/down to scrub.')) + '">' +
+          '<input type="text" class="afk-input afk-cond-val" style="cursor:ns-resize;" value="' + valTxt.replace(/"/g, '&quot;') + '" placeholder="' + (def.isTime ? 'e.g. 30' : (def.id === 'alt' ? '10000 or FL350' : 'value')) + '" oninput="_afkSetCondValue(' + a.id + ', ' + idx + ', this.value)"' + (def.id === 'alt' ? ' onwheel="_afkCondAltWheel(event,' + a.id + ',' + idx + ')"' : '') + ' onmousedown="_afkCondValDragStart(event,' + a.id + ',' + idx + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="' + (def.isTime ? 'Numeric value in the chosen unit. Pick the unit (seconds / minutes / hours) from the pulldown to the right. Power-user formats H:MM:SS, M:SS, and "1h 30m" are also accepted and bypass the unit. Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.' : (def.id === 'alt' ? 'Accepts feet or FL form. Mouse-wheel scrolls in 100-ft increments (hold Shift for 1000 ft). Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.' : 'Numeric ' + def.unit + ' value. Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.')) + '">' +
           unitPullDown +
           '<span class="afk-cond-unit">' + (def.isTime ? '= ' : (def.unit + ' ')) + '<span class="afk-cond-hint" id="afkCondHint_' + a.id + '_' + idx + '">' + hint + '</span></span>';
       if (def.needsWp) {
@@ -24964,7 +25024,7 @@ function _afkRenderEditor(a) {
     const tMax  = (tUnit === 'seconds') ? 600 : 60;
     body =
       '<div class="afk-edit-row"><span class="afk-edit-label">Trip after</span>' +
-        '<input type="number" class="afk-input" style="width:80px;cursor:ns-resize;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" onmousedown="_afkTelLossDragStart(event,' + a.id + ',' + tMin + ',' + tMax + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 30 s (the pre-trip countdown has a 10 s display gate, so anything shorter would fire with little or no visible countdown). The watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold. Click and drag up/down to scrub.">' +
+        '<input type="number" class="afk-input" style="width:80px;cursor:ns-resize;" min="' + tMin + '" max="' + tMax + '" step="1" value="' + tVal + '" oninput="_afkSetTelemetryLossThreshold(' + a.id + ', this.value)" onmousedown="_afkTelLossDragStart(event,' + a.id + ',' + tMin + ',' + tMax + ')" ondragstart="event.preventDefault();event.stopPropagation();return false" title="How long the gap between FSUIPC telemetry updates must be before this alert fires. Default 5 minutes — comfortably longer than any normal MSFS pause-menu interaction so opening Map / ATC / Settings won\'t false-alarm. Seconds mode allows down to 30 s (the pre-trip countdown has a 10 s display gate, so anything shorter would fire with little or no visible countdown). The watchdog runs every 15 s, so detection latency is one watchdog cycle on top of the threshold. Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">' +
         '<select class="afk-select" style="width:auto" onchange="_afkSetTelemetryLossUnit(' + a.id + ', this.value)" title="Switch between minutes and seconds.">' +
           '<option value="minutes"' + (tUnit === 'minutes' ? ' selected' : '') + '>minutes</option>' +
           '<option value="seconds"' + (tUnit === 'seconds' ? ' selected' : '') + '>seconds</option>' +
@@ -25165,14 +25225,27 @@ function _afkAltWheel(event, id, kind) {
   else if (kind === 'cruiseMin') _afkSetCruiseMinAlt(id, nextTxt);
   else if (kind === 'altMin')    _afkSetAltMin(id, nextTxt);
 }
-// v2.98.1 — Click-and-drag scrub for alert inputs. Mirrors the AP
-// panel's drag-to-scrub gesture: hold mouse on the input and drag up
-// to increase / down to decrease. Linear up to 20 px, accelerates 3×
-// after that. ALL alert altitude AND value inputs use this so a user
-// who drags down expecting the AP-style scrub gets the scrub instead
-// of the alarm-card's drag-reorder gesture. Card-drag is stopped on
-// these inputs via event.stopPropagation in the inline onmousedown,
-// plus an ondragstart blocker on every wired input.
+// v2.98.1 — Click-and-drag scrub for alert inputs. ALL alert altitude AND
+// value inputs use this so a user who drags down expecting a scrub gets the
+// scrub instead of the alarm-card's drag-reorder gesture. Card-drag is
+// stopped on these inputs via event.stopPropagation in the inline
+// onmousedown, plus an ondragstart blocker on every wired input.
+//
+// v3.93.0 — RATE-BASED, not position-based. The old model mapped deflection
+// straight onto value (1 step per 4 px, 3× past 20 px), so a 0.1-nm geofence
+// radius or a 1-second threshold needed most of a screen height of drag to
+// travel any useful distance. Now the deflection from the mousedown point
+// sets the SPEED the value runs at, the way a held-down zoom button
+// accelerates: park the mouse a few pixels off and it ticks over one step at
+// a time for fine tuning; push it further out and it sweeps. Holding still
+// keeps the value moving; returning to the click point stops it where it is
+// (it does not rewind — the gesture is a throttle, not a slider).
+//
+// Curve: 0.205 × px^1.27 steps/sec measured past a 4 px dead zone — about
+// 2/sec just outside the dead zone, 9/sec at 20 px, 29/sec at 50 px, 71/sec
+// at 100 px and 287/sec at 300 px. The first pixel past the dead zone always
+// emits exactly one step, so a quick flick still nudges by a single
+// increment.
 function _afkInputDragStart(event, opts) {
   if (event.button !== 0) return;
   const inp = (opts && opts.input) || event.currentTarget || event.target;
@@ -25192,30 +25265,31 @@ function _afkInputDragStart(event, opts) {
   event.stopPropagation();
   const startY = event.clientY;
   const parse  = (opts && opts.parse) || (s => { const v = parseFloat(s); return isFinite(v) ? v : 0; });
-  const startV = parse(inp.value);
-  let moved = false;
-  let lastSet = null;
-  const stepSize  = (opts && opts.step)  || 1;
-  const pxPerStep = (opts && opts.pxPerStep) || 4;
-  const accelPx   = 20;
+  const stepSize = (opts && opts.step) || 1;
+  const DEAD_PX  = 4;
+  let curV     = parse(inp.value);
+  let curY     = startY;
+  let moved    = false;
+  let lastSet  = null;
+  let lastSign = 0;
+  let acc      = 0;   // fractional steps carried between frames
+  let lastT    = 0;
+  let rafId    = 0;
 
-  function move(e) {
-    const dy = e.clientY - startY;
-    if (!moved) {
-      if (Math.abs(dy) < 3) return;
-      moved = true;
-    }
-    const dragPx = -dy;
-    const sign   = Math.sign(dragPx);
-    const absPx  = Math.abs(dragPx);
-    let steps;
-    if (absPx <= accelPx) steps = absPx / pxPerStep;
-    else                  steps = (accelPx / pxPerStep) + ((absPx - accelPx) * 3 / pxPerStep);
-    steps = sign * Math.round(steps);
-    let v = startV + steps * stepSize;
+  function stepsPerSec(px) {
+    const x = px - DEAD_PX;
+    return (x <= 0) ? 0 : 0.205 * Math.pow(x, 1.27);
+  }
+  function applySteps(n) {
+    if (!n) return;
+    let v = curV + n * stepSize;
     if (opts && opts.snap) v = opts.snap(v);
     if (opts && isFinite(opts.min)) v = Math.max(opts.min, v);
     if (opts && isFinite(opts.max)) v = Math.min(opts.max, v);
+    // Keep curV as the CLAMPED truth, so a value parked against min/max
+    // doesn't build up an invisible overshoot that has to be unwound
+    // before the field starts moving back the other way.
+    curV = v;
     if (v === lastSet) return;
     lastSet = v;
     // Preserve FL prefix on alt inputs (step 100 is the alt fingerprint).
@@ -25226,9 +25300,36 @@ function _afkInputDragStart(event, opts) {
     inp.value = nextTxt;
     if (opts && typeof opts.commit === 'function') opts.commit(nextTxt);
   }
+  function frame(t) {
+    rafId = requestAnimationFrame(frame);
+    // Clamp dt so a background-tab stall (rAF suspended, then one huge
+    // delta on wake) can't dump hundreds of steps into the field at once.
+    const dt = lastT ? Math.min(0.05, (t - lastT) / 1000) : 0;
+    lastT = t;
+    const dragPx = startY - curY;          // up = positive = increase
+    const absPx  = Math.abs(dragPx);
+    if (absPx <= DEAD_PX) { acc = 0; return; }
+    const sign = dragPx > 0 ? 1 : -1;
+    if (sign !== lastSign) { acc = 0; lastSign = sign; }
+    if (!moved) { moved = true; applySteps(sign); return; }   // first step is exactly one
+    acc += stepsPerSec(absPx) * dt;
+    if (acc >= 1) {
+      const whole = Math.floor(acc);
+      acc -= whole;
+      applySteps(sign * whole);
+    }
+  }
+  function move(e) {
+    // Button released outside the window — the document mouseup never
+    // arrives, and a rate-based scrub left running would keep counting.
+    if (e.buttons === 0) { end(); return; }
+    curY = e.clientY;
+  }
   function end() {
+    cancelAnimationFrame(rafId);
     document.removeEventListener('mousemove', move, true);
     document.removeEventListener('mouseup',   end,  true);
+    window.removeEventListener('blur', end, true);
     document.body.style.cursor = '';
     if (moved) {
       // v3.4.2 — Swallow the synthetic click the browser fires after a drag.
@@ -25248,7 +25349,9 @@ function _afkInputDragStart(event, opts) {
   }
   document.addEventListener('mousemove', move, true);
   document.addEventListener('mouseup',   end,  true);
+  window.addEventListener('blur', end, true);
   document.body.style.cursor = 'ns-resize';
+  rafId = requestAnimationFrame(frame);
 }
 function _afkAltDragStart(event, id, kind) {
   _afkInputDragStart(event, {
@@ -25294,6 +25397,9 @@ function _afkRadiusDragStart(event, id) {
     snap: v => Math.round(v * 10) / 10,
     commit: v => _afkSetGeofenceRadius(id, v),
   });
+}
+function _afkDescentDropDragStart(event, id) {
+  _afkInputDragStart(event, { step: 50, min: 0, commit: v => _afkSetDescentMinDrop(id, v) });
 }
 function _afkTelLossDragStart(event, id, lo, hi) {
   _afkInputDragStart(event, { step: 1, min: lo, max: hi, commit: v => _afkSetTelemetryLossThreshold(id, v) });
@@ -25683,6 +25789,28 @@ function _afkSetCondWp(id, idx, wp) {
 // v2.90.0 — Telemetry-loss threshold setter. Storage is seconds.
 // v2.91.0 — Split into two setters so the unit (minutes / seconds) is a
 // first-class param. The input value is interpreted in the current unit.
+// v3.93.0 — Minimum MSL feet of descent before a Descent Started alarm trips.
+function _afkSetDescentMinDrop(id, v) {
+  const a = _afkAlarms.get(id); if (!a) return;
+  const n = parseFloat(v);
+  if (!isFinite(n)) return;
+  a.params = a.params || {};
+  a.params.minDropFt = Math.max(0, Math.round(n));
+  // Re-measure from the current descent — a threshold edited mid-descent
+  // shouldn't be judged against a top captured under the old value.
+  a.state = a.state || {};
+  a.state.descTopAlt = null;
+  _afkAlarms.update(id, { params: a.params, state: a.state });
+  const card = document.querySelector('.afk-card[data-afk-id="' + id + '"]');
+  if (card) {
+    const sub = card.querySelector('.afk-card-desc-sub');
+    if (sub) sub.innerHTML = _afkAlarmShortDescription(a, false);
+  }
+  const hint = document.getElementById('afkDescDropHint_' + id);
+  if (hint) hint.textContent = a.params.minDropFt > 0
+    ? 'feet below the top of the descent'
+    : 'fires as soon as descent is detected';
+}
 function _afkSetTelemetryLossThreshold(id, v) {
   const a = _afkAlarms.get(id); if (!a) return;
   const unit = (a.params && a.params.thresholdUnit === 'seconds') ? 'seconds' : 'minutes';
@@ -25799,8 +25927,13 @@ function _afkAddAlarm(type) {
   if (type === 'alt-min') base.params = { altFt: 1000, altText: '1000', direction: 'descending', altSource: 'msl' };
   if (type === 'cruise') base.state = { fired: false, prevAlt: null,
     waitForNewCruise: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'cruise') };
-  if (type === 'descent') base.state = { fired: false,
-    waitForNewDescent: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'descent') };
+  if (type === 'descent') {
+    // v3.93.0 — 500 ft of MSL loss before the alarm trips (see _afkEvalDescent).
+    // Same value old alarms fall back to, so new and saved alarms behave alike.
+    base.params = { minDropFt: _AFK_DESCENT_MIN_DROP_DEFAULT };
+    base.state  = { fired: false, descTopAlt: null,
+      waitForNewDescent: !!(typeof _afkPhase !== 'undefined' && _afkPhase && _afkPhase.get() === 'descent') };
+  }
   if (type === 'conditional') {
     // v2.92.1 — Empty conditions list by default. The pre-v2.92.1 default
     // seeded "Altitude > 10000" as an example row, but if the user
@@ -47407,7 +47540,7 @@ function rgSendToFlightPlanner() {
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard. <strong>v3.93.0 &mdash; Min descent:</strong> the rate test alone still let an ATC step-down or a slow drift read as the arrival descent, so the alarm card now carries a <strong>Min descent</strong> field &mdash; how many feet (MSL) below the altitude the descent began at the aircraft must get before the alarm can fire. The loss is measured from the <em>highest</em> altitude seen since the descent started (a balloon at the top does not eat into it), and levelling off resets the measurement so the next descent is judged from its own top. Default <strong>500&nbsp;ft</strong>, which is also what alarms saved before v3.93.0 use, so nothing needs re-creating. Set <strong>0</strong> to fire the moment descent is detected, exactly as it behaved before.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>; an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect feed from the SimFly Telemetry Bridge; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
@@ -47415,7 +47548,7 @@ function rgSendToFlightPlanner() {
             <strong>Sounds</strong> &mdash; five synthesized tones (Digital Clock, Klaxon, Soft Chime, Urgent Beeper, Gentle Bell) picked per alarm. Click the ▶ button in any card or the geofence sub-modal to preview without arming.<br/><br/>
             <strong>Sound duration</strong> &mdash; each alarm has a <em>Sound for</em> picker: <em>Auto-dismiss after&hellip;</em> a seconds value (the sound auto-stops after the chosen interval and the alarm is dismissed automatically) OR <em>Indefinite (until dismissed)</em> (the sound loops until you click DISMISS ALL or the ✕ on the trip overlay row). <strong>v3.3.0:</strong> new alarms now default to <em>Auto-dismiss after 10 seconds</em> (or your saved preference) instead of indefinite, so an alarm you miss stops on its own; switch any card to <em>Indefinite</em> if you want it to keep sounding. If you change the seconds value, it&rsquo;s saved as your default for future new alarms. The <em>Sound for</em> picker also appears on the Geofence and Waypoint quick-add modals so you can set the duration up-front without revisiting the main Alerts modal afterwards.<br/><br/>
             <strong>Send to phone from the quick-add modals</strong> (v3.3.0) &mdash; the Geofence and Add Waypoint Alarm pop-ups now carry a <em>Send to phone</em> checkbox, so you can forward those alarms to your phone at creation time instead of opening the alarm card afterward. The checkbox only appears once a Mobile Alerts provider is configured (Live &rarr; Mobile Alerts).<br/><br/>
-            <strong>Drag any number to scrub it</strong> (v3.3.0) &mdash; every numeric field in the Alerts panel and the Geofence / Waypoint pop-ups (timer h/m/s, geofence radius, auto-dismiss seconds, telemetry-loss threshold, altitudes) now supports the same click-and-drag gesture: press on the field and drag up to increase or down to decrease (drag farther to move faster). A plain click still focuses the field for keyboard entry.<br/><br/>
+            <strong>Drag any number to scrub it</strong> (v3.3.0) &mdash; every numeric field in the Alerts panel and the Geofence / Waypoint pop-ups (timer h/m/s, geofence radius, auto-dismiss seconds, telemetry-loss threshold, altitudes, Min descent, conditional values) supports the same click-and-drag gesture: press on the field and drag up to increase or down to decrease. <strong>v3.93.0 &mdash; the gesture is now a throttle, not a slider.</strong> How far you hold the mouse from the point you clicked sets how <em>fast</em> the value runs, the way a held-down zoom button accelerates &mdash; hold a few pixels off for single steps, push further out to sweep (roughly 2 steps a second just outside the dead zone, 9 at 20&nbsp;px, 29 at 50&nbsp;px, 287 at 300&nbsp;px). Holding still keeps it running; returning to the click point stops it where it is rather than rewinding. Before v3.93.0 the field moved a fixed one step per four pixels, so a 0.1&nbsp;nm radius or a one-second threshold took most of a screen height of dragging to travel any distance. A quick flick past the dead zone still moves exactly one step, and a plain click still focuses the field for keyboard entry.<br/><br/>
             <strong>Keyboard shortcut</strong> &mdash; on the per-geofence sub-modal and per-waypoint quick-add modal, press <strong>Enter</strong> to commit the alarm without reaching for the Add Alarm button.<br/><br/>
             <strong>Reorder &amp; prioritize</strong> &mdash; grab the <strong>⋮⋮</strong> handle on the far left of any alarm card and drag it up or down to re-rank. The <strong>expand/collapse chevron</strong> sits immediately after the drag handle (▶ collapsed, ▼ expanded); the enable toggle and ✕ delete button stay on the right.<br/><br/>
             <em>List order IS sound priority</em>. There is no separate priority number &mdash; the alarm closest to the TOP of the list wins the audio channel when several alarms are tripped at once. Implications:
@@ -47591,10 +47724,23 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.93.0</span>
+          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Descent Started now waits until you have actually lost altitude, not just started sinking.</strong> The alert was firing when no arrival descent had begun &mdash; an ATC step-down, a cruise-level change or a long shallow drift is enough to satisfy the phase detector&rsquo;s &ldquo;sustained 400&nbsp;fpm for 30 seconds&rdquo; test on its own. The alert card gains a <strong>Min descent</strong> field: the number of feet (MSL) the aircraft must be below the altitude the descent began at before the alert can trip. The loss is measured from the highest altitude seen since the descent started, so a momentary balloon at the top does not eat into it, and a level-off resets the measurement so the next descent is judged from its own top. Set it to <strong>0</strong> for the old fire-as-soon-as-descent-is-detected behaviour.</li>
+          <li><strong>Alerts saved before this release keep working and default to 500&nbsp;ft.</strong> Nothing needs re-creating &mdash; an alert with no saved value uses 500&nbsp;ft, and the card shows that value rather than an empty box. New Descent Started alerts are created with the same 500&nbsp;ft, so old and new alerts behave identically.</li>
+          <li><strong>Dragging a number in the Alerts panel is no longer painfully slow.</strong> Every numeric field in the alerts UI &mdash; altitudes, geofence radius, timer hours/minutes/seconds, sound duration, telemetry-loss threshold, conditional values and the new Min descent &mdash; used to move a fixed one step per four pixels of drag, which meant a 0.1&nbsp;nm radius or a one-second threshold needed most of a screen height of dragging to travel any real distance. The gesture is now <em>rate-based</em>, like holding down a zoom button: how far you hold the mouse from where you clicked sets how fast the value runs. Hold a few pixels off and it ticks over one step at a time for fine tuning; push further out and it sweeps &mdash; roughly 2 steps a second just outside the dead zone, 9 at 20&nbsp;px, 29 at 50&nbsp;px and 287 at 300&nbsp;px. A quick flick past the dead zone still moves exactly one step, and releasing without moving still focuses the field for typing.</li>
+          <li><strong>The scrub can no longer run away.</strong> If the mouse button is released outside the browser window, or the window loses focus mid-drag, the scrub stops instead of continuing to count. A background-tab stall cannot dump a backlog of steps into the field on wake either.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.92.1</span>
-          <span class="release-date">Aug 9, 2026 &middot; Current</span>
+          <span class="release-date">Aug 9, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
@@ -60629,7 +60775,7 @@ function rgSendToFlightPlanner() {
           <option value="indefinite">Indefinite (until dismissed)</option>
           <option value="seconds">Auto-dismiss after…</option>
         </select>
-        <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub.">
+        <input type="number" id="afkWpDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">
         <span id="afkWpDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
       </div>
       <div class="afk-edit-row" id="afkWpMobileRow" style="margin-bottom:0.5rem;display:none;">
@@ -60719,7 +60865,7 @@ function rgSendToFlightPlanner() {
            drew on the map and keep this row hidden. -->
       <div class="afk-edit-row" id="afkGfRadiusRow" style="margin-bottom:0.7rem;display:none;">
         <span class="afk-edit-label">Radius</span>
-        <input type="number" id="afkGfRadius" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="5" onmousedown="_afkModalRadiusDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub (0.1 nm steps).">
+        <input type="number" id="afkGfRadius" class="afk-input" style="width:90px;cursor:ns-resize;" min="0.1" step="0.1" value="5" onmousedown="_afkModalRadiusDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub in 0.1 nm steps — hold just off the click point for single steps, further away to run faster.">
         <span style="color:var(--muted);font-family:Rajdhani,sans-serif;">nautical miles</span>
       </div>
       <div class="afk-edit-row" style="margin-bottom:0.7rem;">
@@ -60733,7 +60879,7 @@ function rgSendToFlightPlanner() {
           <option value="indefinite">Indefinite (until dismissed)</option>
           <option value="seconds">Auto-dismiss after…</option>
         </select>
-        <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub.">
+        <input type="number" id="afkGfDurationSec" class="afk-input" style="width:70px;display:none;cursor:ns-resize;" min="1" step="1" value="10" oninput="_afkModalDurationSecChange()" onmousedown="_afkModalDurDragStart(event)" ondragstart="event.preventDefault();event.stopPropagation();return false" title="Click and drag up/down to scrub — hold just off the click point for single steps, further away to run faster.">
         <span id="afkGfDurationSecUnit" style="color:var(--muted);font-family:Rajdhani,sans-serif;display:none;">seconds</span>
       </div>
       <div class="afk-edit-row" id="afkGfMobileRow" style="margin-bottom:0.7rem;display:none;">
