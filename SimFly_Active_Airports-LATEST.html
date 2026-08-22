@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.93.1';
+const APP_VERSION = '3.94.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20828,8 +20828,30 @@ function _afkTimerRepeatReschedule(id) {
   if (a.status === 'tripped') {
     _afkOnDismiss(a);  // dismiss overlay + update state
   }
-  // Recompute target from now and reschedule the next firing.
-  const newTarget = _afkComputeTimerTarget(a.params);
+  // v3.94.0 — Re-base the next cycle on the PREVIOUS target, not on "now".
+  // A firing can land late (a throttled background tab, an OS sleep, a busy
+  // main thread), and `Date.now() + duration` baked that lateness into every
+  // subsequent cycle — so a repeating 5-minute timer walked permanently
+  // further away from the schedule it was set to, a little more each time.
+  // Anchoring to prevTarget makes the lateness a one-off wobble instead.
+  // Whole cycles missed while the machine was asleep are skipped rather than
+  // fired back-to-back: we jump to the next target that is still in the future.
+  let newTarget = null;
+  const prevTarget = a.state && a.state.targetMs;
+  if ((a.params.timerMode || 'countdown') === 'countdown' && prevTarget) {
+    const h = parseInt(a.params.countdownH, 10) || 0;
+    const m = parseInt(a.params.countdownM, 10) || 0;
+    const sec = parseInt(a.params.countdownS, 10) || 0;
+    const stepMs = (h * 3600 + m * 60 + sec) * 1000;
+    if (stepMs > 0) {
+      const now = Date.now();
+      const k = Math.max(1, Math.floor((now - prevTarget) / stepMs) + 1);
+      newTarget = prevTarget + k * stepMs;
+    }
+  }
+  // Clock-mode timers (and any countdown with no usable previous target) keep
+  // the original behaviour — their target is absolute wall-clock time anyway.
+  if (!newTarget) newTarget = _afkComputeTimerTarget(a.params);
   _afkAlarms.update(id, { state: { targetMs: newTarget, fired: false } });
   _afkScheduleTimer(_afkAlarms.get(id));
   _afkRenderAlarmList();
@@ -20936,6 +20958,69 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { try { _afkSweepOverdueDismissals(); } catch (_) {} }
 });
 window.addEventListener('focus', () => { try { _afkSweepOverdueDismissals(); } catch (_) {} });
+
+// ---------------------- UNTHROTTLED HEARTBEAT (v3.94.0) -------------------
+// Everything time-critical in the alerts engine hangs off setTimeout /
+// setInterval, and a browser clamps those hard in a hidden tab: >= 1 s always,
+// and after roughly 5 minutes hidden, once per MINUTE ("intensive throttling").
+// AA spends its whole working life hidden behind the sim, so for this app that
+// is the normal case, not the edge case. v3.93.1 fixed the loudest symptom (an
+// alarm sound overrunning its auto-dismiss by 30-45 s) by moving that one
+// deadline onto the audio clock. This is the general version: a dedicated Web
+// Worker owns a 1 Hz tick and posts it back to the page. Worker timers do not
+// share the page's frame-timer throttling, so the beat keeps time while the
+// page's own timers are being slowed down.
+//
+// It is purely ADDITIVE. Every pre-existing setTimeout / setInterval path is
+// left exactly as it was, and everything the heartbeat does is idempotent and
+// gated on wall-clock state (targetMs / state.fired / status), so whichever
+// wake source arrives first does the work and the other becomes a no-op. That
+// matters because the worker can legitimately fail to start — a page opened
+// straight off disk (file://) has an opaque origin and the browser refuses to
+// construct a Blob worker there — in which case AA behaves exactly as before.
+let _afkHbWorker = null;
+let _afkHbUrl    = null;
+function _afkHeartbeatBeat() {
+  if (_afkHbUrl) { try { URL.revokeObjectURL(_afkHbUrl); } catch (_) {} _afkHbUrl = null; }
+  // 1. Auto-dismiss deadlines the throttled setTimeout has not reached yet.
+  try { _afkSweepOverdueDismissals(); } catch (_) {}
+  // 2. Timer alarms whose wall-clock target has passed. _afkEvalTimer is the
+  //    same predicate the telemetry tick uses, so the guards (already fired,
+  //    already tripped, no target) live in exactly one place. This is the path
+  //    that matters with NO live source connected — Timers are documented to
+  //    work without one, and until now setTimeout was their only way to fire.
+  try {
+    _afkAlarms.list().forEach(a => {
+      if (a.type !== 'timer' || !a.enabled) return;
+      if (_afkEvalTimer(a)) _afkTimerFire(a.id);
+    });
+  } catch (_) {}
+  // 3. Loss-of-Telemetry watchdog. Its own 15 s setInterval still runs; beating
+  //    it once a second additionally keeps _afkLastWatchdogTickPN fresh, which
+  //    stops a throttled ~60 s interval gap from being misread as an OS suspend.
+  //    That misreading would install a 60 s grace window every time it happened,
+  //    potentially suppressing the CTD alarm for as long as the tab stayed
+  //    hidden — which is the only situation where that alarm can help at all.
+  try { _afkTelemetryLossTick(); } catch (_) {}
+}
+function _afkStartHeartbeat() {
+  if (_afkHbWorker) return;
+  try {
+    const src = 'let t=null;onmessage=function(){if(!t)t=setInterval(function(){postMessage(1);},1000);};';
+    _afkHbUrl = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    _afkHbWorker = new Worker(_afkHbUrl);
+    _afkHbWorker.onmessage = _afkHeartbeatBeat;
+    _afkHbWorker.onerror = () => {
+      try { _afkHbWorker.terminate(); } catch (_) {}
+      _afkHbWorker = null;
+    };
+    _afkHbWorker.postMessage('start');
+  } catch (_) {
+    // file:// origin, a CSP, or no Worker support — the existing setTimeout /
+    // setInterval paths remain in place and unchanged.
+    _afkHbWorker = null;
+  }
+}
 
 const _afkAlarms = (() => {
   let alarms = [];
@@ -27626,6 +27711,10 @@ function _afkInit() {
   _afkAlarms.list().forEach(a => {
     if (a.type === 'timer' && a.enabled) _afkScheduleTimer(a);
   });
+  // v3.94.0 — unthrottled 1 Hz beat from a Web Worker. Drives the timing-
+  // critical alert paths (see _afkHeartbeatBeat); the display-only interval
+  // below is unchanged and still runs on the page's own timer.
+  try { _afkStartHeartbeat(); } catch (_) {}
   // 1 Hz heartbeat so elapsed / ETA / countdown fields advance even between
   // live-aircraft updates (or with no live source connected at all).
   setInterval(() => {
@@ -47612,7 +47701,7 @@ function rgSendToFlightPlanner() {
             Get notified by a loud, looping alarm when key events happen during long flights while you&rsquo;re away from the keyboard. Click <strong>🔔 Alerts</strong> in the map header to open the configuration modal. The left column lists five independent alarm types you can mix and match for a single flight; each one you add shows up as a card on the right with its own enable toggle, sound selection, and per-type settings. <em>Hover any alarm icon or title in a card for a plain-English description of what it does and when it fires.</em><br/><br/>
             <strong>The six alarm types:</strong>
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
-              <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30. <strong>Repeat</strong> (v3.18.0, Countdown mode only) &mdash; when the <em>Repeat</em> toggle is on, the alarm auto-dismisses and reschedules after each firing so it repeats at the same interval indefinitely — no manual reset needed. Each cycle plays the full audio/visual alert before auto-dismissing after ~5 seconds. Turn off Repeat (or disable the alarm) to stop the cycle.</li>
+              <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30. <strong>Repeat</strong> (v3.18.0, Countdown mode only) &mdash; when the <em>Repeat</em> toggle is on, the alarm auto-dismisses and reschedules after each firing so it repeats at the same interval indefinitely — no manual reset needed. Each cycle plays the full audio/visual alert before auto-dismissing after ~5 seconds. Turn off Repeat (or disable the alarm) to stop the cycle. <strong>v3.94.0:</strong> repeat cycles no longer drift &mdash; each new countdown is measured from when the previous one was <em>due</em> rather than from when it actually fired, so a repeating timer keeps its original schedule instead of sliding a little later every cycle. Timers also fire on time now when AA is sitting in a background tab with no simulator connected (see <em>Timing accuracy</em> below).</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
@@ -47630,6 +47719,7 @@ function rgSendToFlightPlanner() {
             <em>List order IS sound priority</em>. There is no separate priority number &mdash; the alarm closest to the TOP of the list wins the audio channel when several alarms are tripped at once. Implications:
             <ul style="margin:0.4rem 0 0.4rem 1.4rem;padding:0;">
               <li>If you care more about hearing certain alarms than others (e.g. <em>📡 Loss of Telemetry</em> should always override a quiet timer), drag those alarms to the top of the list.</li>
+              <li><strong>Timing accuracy in a background tab</strong> (v3.94.0) &mdash; browsers deliberately slow down a hidden tab&rsquo;s internal clock: after a few minutes out of sight it may only be allowed to check the time once a minute. Since AA normally sits behind the simulator, alerts now run off a separate timekeeper that is not slowed down, so a Timer fires when it is due, an auto-dismiss ends when it should, and <em>Loss of Telemetry</em> keeps watching. No setting to change.</li>
               <li>Sounds never overlap &mdash; only one plays at a time. Additional alarms that pile on are still added to the trip overlay list visually; their sound simply waits in queue.</li>
               <li>Dismissing the leading alarm via the ✕ on its row in the trip overlay seamlessly swaps audio to the next-highest still-tripped alarm.</li>
               <li>List order also drives Save / Load file ordering and the on-card per-alarm sequence in the trip overlay, so reordering helps with visual scanning too.</li>
@@ -47800,10 +47890,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.94.0</span>
+          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Alerts now keep their own time instead of trusting the browser&rsquo;s.</strong> A hidden tab is deliberately slowed down by the browser &mdash; after a few minutes out of sight it may only be allowed to check the time once a minute. AA spends its whole working life hidden behind the simulator, so for this app that is the normal case, not an edge case. v3.93.1 fixed the loudest consequence (an alarm sound running 30&ndash;45 seconds past its auto-dismiss). This release moves the rest of the alert timing onto a separate timekeeper that is not slowed down, so everything below holds whether AA is in front, behind, or minimised.</li>
+          <li><strong>Timer alerts fire on time with no simulator connected.</strong> With FSUIPC or the Bridge running, Timers were already accurate &mdash; each incoming position fix double-checks the clock. But Timers are meant to work on their own, and with no live source there was nothing to double-check them: a timer set for 20 minutes could go off up to a minute late in a hidden tab, and much later than that if the machine had been asleep in between. It is now checked once a second regardless.</li>
+          <li><strong>Repeating timers no longer drift.</strong> Each new cycle was measured from the moment the previous one actually fired, so any lateness was baked in permanently and a repeating timer slid further off its schedule with every cycle. Cycles are now measured from when the previous one was <em>due</em>, making a late firing a one-off wobble rather than a permanent shift. If the machine was asleep long enough to miss whole cycles, the missed ones are skipped rather than fired back-to-back.</li>
+          <li><strong>Loss of Telemetry (CTD) can no longer be talked out of firing.</strong> This alert has its own watchdog, because the thing it watches for &mdash; telemetry stopping &mdash; is also the thing that stops every other alert loop. That watchdog treats a long gap between its own checks as evidence the computer went to sleep, and politely stands down for a minute so a reconnecting simulator is not reported as a crash. A slowed-down background tab produces gaps of about the same length, so the watchdog could mistake ordinary throttling for a sleeping machine and keep standing down &mdash; in a hidden tab, which is the only situation where this alert can help at all. The steady one-second beat keeps those gaps small, so only a genuine sleep looks like one.</li>
+          <li><strong>Nothing was taken away to do this.</strong> The new timekeeper is an addition; every previous mechanism still runs exactly as before, and whichever notices first does the work. If it cannot start &mdash; opening the app as a file straight off disk is one case where the browser forbids it &mdash; AA behaves exactly as it did in v3.93.1.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.93.1</span>
-          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-date">Aug 21, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
