@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.93.0';
+const APP_VERSION = '3.93.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -19036,6 +19036,7 @@ const _afkAudio = (() => {
   let activeTimer = null;
   let activeSoundId = null;
   let activeNodes = new Set();   // oscillators scheduled ahead for the active alarm (for instant stop)
+  let activeBus = null;          // v3.93.1 per-playback gain node — carries the auto-dismiss hard cut
   let previewTimer = null;
   let previewStopAt = 0;
 
@@ -19047,7 +19048,7 @@ const _afkAudio = (() => {
     return ctx;
   }
 
-  function _scheduleNote(when, note, bucket) {
+  function _scheduleNote(when, note, bucket, dest) {
     const c = _ensureCtx();
     if (!c || !note || !note.f) return;
     const osc = c.createOscillator();
@@ -19064,7 +19065,7 @@ const _afkAudio = (() => {
       gain.gain.setValueAtTime(peak, when + note.d / 1000 - 0.01);
       gain.gain.linearRampToValueAtTime(0.0001, when + note.d / 1000);
     }
-    osc.connect(gain).connect(c.destination);
+    osc.connect(gain).connect(dest || c.destination);
     osc.start(when);
     osc.stop(when + note.d / 1000 + 0.02);
     // v3.59.2 — track scheduled oscillators so an active alarm can be silenced
@@ -19078,10 +19079,10 @@ const _afkAudio = (() => {
 
   // Schedule one full pattern beginning at audio-clock time `start`; returns the
   // audio-clock time the pattern ends so the caller can chain the next repeat.
-  function _schedulePatternAt(sound, start, bucket) {
+  function _schedulePatternAt(sound, start, bucket, dest) {
     let t = start;
     sound.pattern.forEach(note => {
-      if (note.f && note.f > 0) _scheduleNote(t, note, bucket);
+      if (note.f && note.f > 0) _scheduleNote(t, note, bucket, dest);
       t += note.d / 1000;
     });
     return t;
@@ -19112,23 +19113,47 @@ const _afkAudio = (() => {
   const _AFK_LOOKAHEAD_S = 90;    // seconds of audio scheduled ahead on the audio clock
   const _AFK_PUMP_MS     = 20000; // normal re-pump cadence (throttled tabs fall back on the buffer)
 
-  function play(soundId) {
+  // v3.93.1 — `maxSec` is the alarm's remaining auto-dismiss budget, and it is
+  // enforced ON THE AUDIO CLOCK, not by a JS timer. Background tabs clamp
+  // setTimeout to >=1 s and, after ~5 min hidden, to once per MINUTE, so the
+  // auto-dismiss timeout that used to be the only thing stopping the sound
+  // could arrive 30-60 s late while the look-ahead buffer (deliberately immune
+  // to that throttling, see above) kept beeping. A gain node on the audio
+  // thread now mutes the alarm at exactly `maxSec` regardless of JS timing;
+  // the state-side dismiss catches up separately (_afkSweepOverdueDismissals).
+  // Omit maxSec (or pass a non-finite value) for indefinite alarms.
+  function play(soundId, maxSec) {
     stop();
     const sound = _AFK_SOUNDS.find(s => s.id === soundId) || _AFK_SOUNDS[0];
     activeSoundId = sound.id;
     const c = _ensureCtx();
     if (!c) return;
+    const cap = (typeof maxSec === 'number' && isFinite(maxSec) && maxSec > 0) ? maxSec : null;
     let cursor = c.currentTime + 0.05;   // audio-clock time of the next pattern repeat
+    const hardStop = (cap != null) ? (cursor + cap) : Infinity;
+    // Per-playback bus so the cap can silence everything already buffered in
+    // one scheduled ramp — a pattern that straddles the deadline is cut mid-way
+    // rather than allowed to run on to its natural end.
+    activeBus = c.createGain();
+    activeBus.gain.setValueAtTime(1, c.currentTime);
+    activeBus.connect(c.destination);
+    if (cap != null) {
+      activeBus.gain.setValueAtTime(1, Math.max(c.currentTime, hardStop - 0.02));
+      activeBus.gain.linearRampToValueAtTime(0.0001, hardStop);
+    }
     function pump() {
       const cc = _ensureCtx();
       if (!cc || activeSoundId !== sound.id) return;   // stopped or swapped to another alarm
       // If the machine slept (or the tab was frozen long enough that the audio
       // clock outran our cursor), don't try to schedule into the past.
       if (cursor < cc.currentTime) cursor = cc.currentTime + 0.05;
-      const horizon = cc.currentTime + _AFK_LOOKAHEAD_S;
+      const horizon = Math.min(cc.currentTime + _AFK_LOOKAHEAD_S, hardStop);
       while (cursor < horizon) {
-        cursor = _schedulePatternAt(sound, cursor, activeNodes);
+        cursor = _schedulePatternAt(sound, cursor, activeNodes, activeBus);
       }
+      // Whole capped run is buffered — no further pumping needed, and no timer
+      // left behind that could re-schedule past the cap.
+      if (cursor >= hardStop) { activeTimer = null; return; }
       activeTimer = setTimeout(pump, _AFK_PUMP_MS);
     }
     pump();
@@ -19143,6 +19168,7 @@ const _afkAudio = (() => {
       activeNodes.forEach(o => { try { o.stop(now); } catch (_) {} try { o.disconnect(); } catch (_) {} });
       activeNodes.clear();
     }
+    if (activeBus) { try { activeBus.disconnect(); } catch (_) {} activeBus = null; }
     activeSoundId = null;
   }
 
@@ -20849,21 +20875,67 @@ function _afkSetUserDefaultCruiseAltText(v) {
 
 // Per-alarm auto-dismiss timers when mode='seconds'. Stored by alarm id.
 const _afkAlarmTimers = {};
+// v3.93.1 — wall-clock instant each tripped alarm is due to auto-dismiss, kept
+// alongside the setTimeout handle. The timeout alone is not trustworthy: a
+// hidden tab clamps setTimeout to >=1 s and, after ~5 min hidden, to once per
+// MINUTE, so a 3-second auto-dismiss could fire 30-60 s late. The deadline is
+// the authority — it caps the sound on the audio clock (_afkAudioCapSec) and
+// drives the telemetry-tick catch-up sweep (_afkSweepOverdueDismissals).
+const _afkAlarmDeadlines = {};
 function _afkClearAlarmTimer(id) {
   if (_afkAlarmTimers[id]) { clearTimeout(_afkAlarmTimers[id]); delete _afkAlarmTimers[id]; }
+  delete _afkAlarmDeadlines[id];
 }
 function _afkScheduleAutoDismiss(alarm) {
   if (!alarm || (alarm.params && alarm.params.durationMode) !== 'seconds') return;
   const sec = parseInt(alarm.params.durationSec, 10);
   if (!isFinite(sec) || sec <= 0) return;
   _afkClearAlarmTimer(alarm.id);
+  _afkAlarmDeadlines[alarm.id] = Date.now() + sec * 1000;
   _afkAlarmTimers[alarm.id] = setTimeout(() => {
     delete _afkAlarmTimers[alarm.id];
+    delete _afkAlarmDeadlines[alarm.id];
     // v2.87.0 — pass 'timer' as the dismissal reason so the Alert History
     // log records "duration timer" instead of "user dismissed" for these.
     if (typeof _afkDismissOne === 'function') _afkDismissOne(alarm.id, 'timer');
   }, sec * 1000);
 }
+// v3.93.1 — Seconds of sound an alarm is still entitled to, handed to
+// _afkAudio.play so the tone stops on the audio hardware clock instead of
+// waiting on a throttleable JS timer. Infinity = indefinite (no cap).
+// Falls back to the alarm's configured duration when no deadline is registered
+// yet — _afkOnTripped plays the sound before it schedules the timers.
+function _afkAudioCapSec(alarm) {
+  if (!alarm) return Infinity;
+  const dl = _afkAlarmDeadlines[alarm.id];
+  if (isFinite(dl)) return Math.max(0, (dl - Date.now()) / 1000);
+  const p = alarm.params || {};
+  if (p.durationMode !== 'seconds') return Infinity;
+  const sec = parseInt(p.durationSec, 10);
+  return (isFinite(sec) && sec > 0) ? sec : Infinity;
+}
+// v3.93.1 — State-side catch-up for the same throttling problem. Called from
+// _afkTick (driven by telemetry WebSocket messages, which are NOT timer-
+// throttled) and on tab focus, so the trip overlay, tab flash and enabled
+// state clear on schedule even when the setTimeout above is running minutes
+// behind. Idempotent: _afkDismissOne clears the deadline it acts on.
+function _afkSweepOverdueDismissals() {
+  const now = Date.now();
+  Object.keys(_afkAlarmDeadlines).forEach(k => {
+    if (now < _afkAlarmDeadlines[k]) return;
+    const id = parseInt(k, 10);
+    const a = (typeof _afkAlarms !== 'undefined') ? _afkAlarms.get(id) : null;
+    if (!a || a.status !== 'tripped') { _afkClearAlarmTimer(id); return; }
+    _afkClearAlarmTimer(id);
+    try { _afkDismissOne(id, 'timer'); } catch (_) {}
+  });
+}
+// Tab/window focus returning is the other moment a throttled timer is likely
+// overdue — sweep immediately rather than waiting for the next telemetry fix.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { try { _afkSweepOverdueDismissals(); } catch (_) {} }
+});
+window.addEventListener('focus', () => { try { _afkSweepOverdueDismissals(); } catch (_) {} });
 
 const _afkAlarms = (() => {
   let alarms = [];
@@ -22266,6 +22338,10 @@ function _afkUpdateDefaultsUI() {
 
 function _afkTick(data) {
   if (!data) return;
+  // v3.93.1 — telemetry arrives over a WebSocket, which browsers do NOT
+  // throttle the way they throttle setTimeout in a hidden tab. Piggy-back the
+  // auto-dismiss catch-up on it so an overdue dismissal lands within ~1 s.
+  try { _afkSweepOverdueDismissals(); } catch (_) {}
   // Detect flight-plan changes (drop specific-waypoint picks if route differs)
   const fpFp = _afkSbFingerprint();
   if (fpFp !== _afkLastSbFingerprint) {
@@ -22800,7 +22876,7 @@ function _afkOnTripped(newTrips) {
   if (allTripped.length > 0) {
     const highest = allTripped[0];
     if (_afkAudio.currentId() !== (highest.sound || 'digital-clock')) {
-      _afkAudio.play(highest.sound || 'digital-clock');
+      _afkAudio.play(highest.sound || 'digital-clock', _afkAudioCapSec(highest));
     }
   }
   // Schedule auto-dismiss timers for any newly-tripped alarms with a
@@ -23055,7 +23131,7 @@ function _afkDismissOne(id, reason) {
   // to the next-highest-priority still-tripped alarm.
   const remaining = _afkAlarms.tripped();
   if (remaining.length > 0) {
-    _afkAudio.play(remaining[0].sound || 'digital-clock');
+    _afkAudio.play(remaining[0].sound || 'digital-clock', _afkAudioCapSec(remaining[0]));
   } else {
     _afkAudio.stop();
     _afkHideTripOverlay();
@@ -23442,7 +23518,7 @@ function _afkReconcileAlarmAudio() {
     return;
   }
   const wantId = tripped[0].sound || 'digital-clock';
-  if (_afkAudio.currentId() !== wantId) _afkAudio.play(wantId);
+  if (_afkAudio.currentId() !== wantId) _afkAudio.play(wantId, _afkAudioCapSec(tripped[0]));
 }
 
 // ---------------------- TAB-TITLE FLASH -----------------------------------
@@ -23940,7 +24016,7 @@ function _afkListZoneDrop(ev, where) {
   _afkRenderWaypointVisuals();
   const tripped = _afkAlarms.tripped();
   if (tripped.length > 0 && _afkAudio.currentId() !== (tripped[0].sound || 'digital-clock')) {
-    _afkAudio.play(tripped[0].sound || 'digital-clock');
+    _afkAudio.play(tripped[0].sound || 'digital-clock', _afkAudioCapSec(tripped[0]));
   }
 }
 
@@ -24252,7 +24328,7 @@ function _afkCardDrop(ev, toId) {
   _afkRenderWaypointVisuals();
   const tripped = _afkAlarms.tripped();
   if (tripped.length > 0 && _afkAudio.currentId() !== (tripped[0].sound || 'digital-clock')) {
-    _afkAudio.play(tripped[0].sound || 'digital-clock');
+    _afkAudio.play(tripped[0].sound || 'digital-clock', _afkAudioCapSec(tripped[0]));
   }
 }
 
@@ -47724,10 +47800,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.93.1</span>
+          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Auto-dismiss after 3 seconds&rdquo; now really does stop after 3 seconds.</strong> An alert set to auto-dismiss could keep sounding for 30&ndash;45 seconds &mdash; sometimes up to a minute &mdash; whenever AA was sitting behind the sim. The alarm tone is deliberately buffered ahead on the sound hardware so that a background tab cannot make it stutter, but the countdown that switched it off was an ordinary browser timer, and a hidden tab is only allowed to run those <em>once a minute</em>. The sound played on perfectly while the stop signal waited its turn. The auto-dismiss deadline is now enforced on the same sound hardware clock as the tone itself, so the alarm cuts off at the second you asked for whether the tab is in front, behind, or minimised.</li>
+          <li><strong>The alert also clears itself from the screen on time.</strong> Alongside the sound, the dismissal of the alert &mdash; the trip banner, the flashing tab title and the alert switching itself off &mdash; used to wait on that same throttled timer. It now rides the once-a-second telemetry feed instead (which browsers do not throttle), and runs immediately when you switch back to the tab, so a late alarm can no longer sit tripped on screen after its sound has ended.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.93.0</span>
-          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-date">Aug 21, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
