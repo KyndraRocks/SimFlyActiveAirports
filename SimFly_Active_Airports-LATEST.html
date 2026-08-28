@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.94.0';
+const APP_VERSION = '3.95.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -13939,16 +13939,38 @@ function renderDistMatrix() {
 // ── Shared Leaflet bootstrap ──────────────────────────────────────────────────
 // Tile configurations and on-demand CDN loader used by Region Mode (_rgMap).
 const _DM_TILES = {
+  // v3.95.0 — the basemap button cycles Street -> Gray -> Satellite -> Street.
+  // Each entry's `label` is the layer the button switches to NEXT, which is the
+  // convention the two-way toggle already used (the button names its
+  // destination, not its current state).
   satellite: {
     url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attr:  'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics',
     label: '🗺 Street',
   },
-  street: {
-    url:   'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    attr:  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    sub:   'abcd',
+  // Esri Light Gray Canvas — near-monochrome, so payout / category dot colours
+  // read at maximum contrast. Its tiles only exist to z16: past that Esri
+  // answers with a blank tile and an HTTP 200, which Leaflet cannot tell from
+  // real data, so maxNativeZoom pins it at 16 and lets Leaflet upscale instead.
+  gray: {
+    url:   'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attr:  'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Sources: Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     label: '🛰 Satellite',
+    maxNative: 16,
+  },
+  // v3.95.0 — was CARTO Voyager. CARTO began requiring an API key on their
+  // public basemap CDN and now stamps "API KEY REQUIRED" diagonally across
+  // every tile — while still returning HTTP 200, so no amount of error
+  // handling here could have detected it. Moved to Esri's World Street Map:
+  // same provider as the satellite layer above (so no new third-party
+  // dependency), no key, no Referer requirement (works from a file:// page),
+  // and real tiles through z19 which is exactly the maxZoom both call sites
+  // already pass. Note the {z}/{y}/{x} axis order — Esri's is y-before-x,
+  // the opposite of the XYZ convention CARTO used.
+  street: {
+    url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attr:  'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Sources: Esri, HERE, Garmin, USGS, NGCC, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    label: '◻ Gray',
   },
 };
 
@@ -32107,8 +32129,35 @@ let _rgRadLine    = null;   // radius line during drag
 let _rgRulerLine  = null;   // measuring line during ruler phase
 let _rgHeroLayers = [];     // center-to-center hero line + midpoint label
 let _rgTileLayer  = null;   // current base tile layer
-const _RG_MAP_LAYER_LS = 'simfly_aa_map_layer'; // 'sat' | 'street'
-let _rgMapSat     = false;  // false = street (default), true = satellite — restored from LS at map init
+const _RG_MAP_LAYER_LS = 'simfly_aa_map_layer'; // 'sat' | 'gray' | 'street'
+// v3.95.0 — the basemap became a three-way cycle, so the stored value gained a
+// third option. Deliberately ADDITIVE, both ways: an older build reads 'gray'
+// with `=== 'sat'` and falls back to street, and this build still understands
+// the two values older builds write. Nothing needed adding to the Master Save
+// File registry — same key, same meaning, one more legal value.
+const _RG_LAYER_CYCLE = ['street', 'gray', 'sat'];
+function _rgLayerCfg(name) {
+  return name === 'sat' ? _DM_TILES.satellite : name === 'gray' ? _DM_TILES.gray : _DM_TILES.street;
+}
+// Tile-layer options are built identically at both construction sites; keeping
+// it in one place stops them drifting (maxNativeZoom was added for gray).
+function _rgLayerOpts(t) {
+  return {
+    attribution: t.attr,
+    maxZoom: 19,
+    ...(t.sub       ? { subdomains: t.sub }          : {}),
+    ...(t.maxNative ? { maxNativeZoom: t.maxNative } : {}),
+  };
+}
+// Human-readable name of whichever layer is showing, for the button tooltip.
+function _rgLayerTitle(name) {
+  const now = name === 'sat' ? 'Satellite' : name === 'gray' ? 'Gray' : 'Street';
+  return 'Basemap: ' + now + '. Cycles Street → Gray → Satellite. Click to switch.';
+}
+let _rgMapLayer   = 'street';  // 'street' | 'gray' | 'sat' — restored from LS at map init
+let _rgMapSat     = false;  // derived: true only for satellite imagery. Gray behaves like
+                            // street everywhere downstream (dot fills, opacity, measurement
+                            // colour), so every existing _rgMapSat consumer stays correct.
 
 // Measurement ring color is tile-mode aware: purple reads well on street tiles
 // but disappears against satellite imagery, so satellite gets a bright yellow.
@@ -34112,7 +34161,8 @@ function _rgApprBgImg(kind) {
   im.onload = function () { try { _rgApprDrawPreview(); } catch (_) {} };
   im.src = (kind === 'sat')
     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x
-    : 'https://a.basemaps.cartocdn.com/rastertiles/voyager/' + z + '/' + x + '/' + y + '.png';
+    // v3.95.0 — matches the live street basemap (Esri, {z}/{y}/{x} order).
+    : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/' + z + '/' + y + '/' + x;
   _rgApprBgImgs[kind] = im;
   return im;
 }
@@ -34420,14 +34470,19 @@ async function _rgInitMap() {
   _rgApplyLayerZ();
 
   // Restore the user's last-picked tile layer (v2.78.0+). Default street.
-  try { _rgMapSat = (localStorage.getItem(_RG_MAP_LAYER_LS) === 'sat'); }
-  catch (_) { _rgMapSat = false; }
-  const t     = _rgMapSat ? _DM_TILES.satellite : _DM_TILES.street;
-  _rgTileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19, ...(t.sub ? { subdomains: t.sub } : {}) })
-    .addTo(_rgMap);
-  // Sync the layer-toggle button label to whichever layer we restored.
+  try {
+    const saved = localStorage.getItem(_RG_MAP_LAYER_LS);
+    _rgMapLayer = _RG_LAYER_CYCLE.includes(saved) ? saved : 'street';
+  } catch (_) { _rgMapLayer = 'street'; }
+  _rgMapSat = (_rgMapLayer === 'sat');
+  const t     = _rgLayerCfg(_rgMapLayer);
+  _rgTileLayer = L.tileLayer(t.url, _rgLayerOpts(t)).addTo(_rgMap);
+  // Sync the layer-cycle button label to whichever layer we restored.
   const _rgLayerBtnInit = document.getElementById('rgLayerBtn');
-  if (_rgLayerBtnInit) _rgLayerBtnInit.textContent = t.label;
+  if (_rgLayerBtnInit) {
+    _rgLayerBtnInit.textContent = t.label;
+    _rgLayerBtnInit.title = _rgLayerTitle(_rgMapLayer);
+  }
   // v3.70.0 — apply the saved Map Dim + scenery accent now the map (and its
   // tilePane) exist. Dim is a brightness filter on the tile pane only, so dots
   // and overlays stay full-brightness.
@@ -34540,17 +34595,14 @@ function _rgCheckCategoryWarning() {
 
 function _rgToggleLayer() {
   if (!_rgMap || !_rgTileLayer) return;
-  _rgMapSat = !_rgMapSat;
-  try { localStorage.setItem(_RG_MAP_LAYER_LS, _rgMapSat ? 'sat' : 'street'); } catch (_) {}
-  const t = _rgMapSat ? _DM_TILES.satellite : _DM_TILES.street;
+  _rgMapLayer = _RG_LAYER_CYCLE[(_RG_LAYER_CYCLE.indexOf(_rgMapLayer) + 1) % _RG_LAYER_CYCLE.length];
+  _rgMapSat = (_rgMapLayer === 'sat');
+  try { localStorage.setItem(_RG_MAP_LAYER_LS, _rgMapLayer); } catch (_) {}
+  const t = _rgLayerCfg(_rgMapLayer);
   _rgMap.removeLayer(_rgTileLayer);
-  _rgTileLayer = L.tileLayer(t.url, {
-    attribution: t.attr,
-    maxZoom: 19,
-    ...(t.sub ? { subdomains: t.sub } : {}),
-  }).addTo(_rgMap);
+  _rgTileLayer = L.tileLayer(t.url, _rgLayerOpts(t)).addTo(_rgMap);
   const btn = document.getElementById('rgLayerBtn');
-  if (btn) btn.textContent = t.label;
+  if (btn) { btn.textContent = t.label; btn.title = _rgLayerTitle(_rgMapLayer); }
   // Re-render base dots with sat-aware colors
   _rgRenderDots();
   _rgHighlightDots();
@@ -47556,7 +47608,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-desc">
             Open the <strong>👁 Display</strong> menu and click <strong>🎨 Appearance</strong> to choose how airport dots look. It opens as a <strong>draggable floating panel</strong> &mdash; grab the <strong>⠿</strong> grip to move it, and use the <strong>◐</strong> slider in the title bar to fade the panel so the map shows through (just like the Aircraft panels). A live preview at the top shows your choices over real street and satellite imagery of a busy city. The settings are organized into collapsible sections &mdash; click a section heading (<strong>Airport dots</strong>, <strong>Basemap</strong>, <strong>Scenery marker</strong>) to fold it away. Everything applies instantly, is saved in your browser, and travels in <strong>Save / Load All Settings</strong>.<br/><br/>
             <strong>Airport dots</strong> — pick <em>Flat</em> (the classic solid dot, default), <em>Water droplet</em>, or <em>Glass</em>; the droplet and glass styles render each dot as a translucent, glossy bead that lets the map show through, while the <strong>rotation gauge ring</strong> and <strong>level badges</strong> keep working as before. Two sliders below: <em>Dot opacity</em> (more see-through &harr; each style's full opacity) and <em>Dot size</em> (smaller &harr; larger dots, great on big monitors).<br/><br/>
-            <strong>Basemap</strong> — <em>Map dim</em> darkens the basemap behind the dots so they pop, especially on bright satellite imagery.<br/><br/>
+            <strong>Basemap</strong> — <em>Map dim</em> darkens the basemap behind the dots so they pop, especially on bright satellite imagery. The button at the top-right of the map cycles through <strong>three</strong> basemaps (v3.95.0): <em>Street</em> (roads, towns and terrain — the default), <em>Gray</em> (near-monochrome, so payout and category dot colours read at maximum contrast), and <em>Satellite</em>. The button always names the one it will switch to next, and your choice is remembered between sessions. Gray is drawn only down to a moderate zoom and is gently upscaled if you zoom closer than that; switch to Street when you need fine detail.<br/><br/>
             <strong>Scenery marker</strong> — how an airport in your <em>Scenery Library</em> is flagged: a center <em>Dot</em> (classic, default), a <em>Ring</em> around the dot, an off-center <em>Corner pip</em>, or a <em>Star</em>. <em>Marker size</em> scales it on its own, and <em>Marker color</em> recolors it to anything you like (the <em>Auto</em> swatch keeps the classic black dot / gold ring). The map's scenery legend &mdash; the breadcrumb chip and the scenery toggle button &mdash; updates to name and show whichever marker you pick.<br/><br/>
             <strong>↺ Reset to Default</strong> restores flat dots, the black scenery dot, and all sliders to their defaults in one click.
           </div>
@@ -47890,10 +47942,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.95.0</span>
+          <span class="release-date">Aug 27, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>The street map no longer says &ldquo;API KEY REQUIRED&rdquo; across every tile.</strong> CARTO, who supplied the street basemap, have started requiring an API key on the public map service this app was using, and now stamp that message diagonally across every tile they send. They still send them as a normal, successful response &mdash; nothing was failing, so there was no error for the app to notice and nothing it could have done about it on its own. The street map is now drawn by <strong>Esri</strong>, the same mapping service that has always supplied the satellite view, so this is not a new outside dependency and needs no key. Expect a slightly different look: cleaner road colours and city labels, a little less contrast in the land tones. Zoom range, panning, and the 🗺 / 🛰 toggle are all unchanged.</li>
+          <li><strong>The Appearance panel&rsquo;s little preview picture was watermarked too.</strong> The thumbnail that shows you how dots will look against the map drew a real map tile from the same source, so it carried the same stamp. It now matches the live map again.</li>
+          <li><strong>The map button is now a three-way cycle: Street → Gray → Satellite.</strong> Alongside the replacement street map there is a new <strong>Gray</strong> basemap &mdash; near-monochrome, with coastlines, borders and country names but almost no colour of its own, so payout shading and category colours read at maximum contrast against it. The button still names the layer it will switch to next, and still remembers your choice between sessions. One caveat worth knowing: the Gray map is only drawn down to a moderate zoom level, and closer than that it is gently upscaled rather than sharp &mdash; switch to Street when you are working in close.</li>
+          <li><strong>Satellite view was never affected</strong> and is unchanged &mdash; it has always come from Esri.</li>
+          <li><strong>Release dates corrected.</strong> The v3.93.1 and v3.94.0 entries below were dated Aug 21; both were actually delivered Aug 27. Fixed.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.94.0</span>
-          <span class="release-date">Aug 21, 2026 &middot; Current</span>
+          <span class="release-date">Aug 27, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
@@ -47907,7 +47973,7 @@ function rgSendToFlightPlanner() {
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.93.1</span>
-          <span class="release-date">Aug 21, 2026</span>
+          <span class="release-date">Aug 27, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
@@ -62092,7 +62158,7 @@ function rgSendToFlightPlanner() {
         <span class="rg-cat-warning-text">Airport category data unavailable — category colors disabled. Refresh to retry.</span>
         <button class="rg-cat-warning-close" onclick="document.getElementById('rgCategoryWarning').classList.remove('visible')" title="Dismiss">✕</button>
       </div>
-      <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Switch map layer">🛰 Satellite</button>
+      <button id="rgLayerBtn" class="dist-map-layer-btn" onclick="_rgToggleLayer()" title="Basemap: Street. Cycles Street → Gray → Satellite. Click to switch.">◻ Gray</button>
       <!-- Floating measurement toolbar (v2.81.0+) — shown only while
            measurement mode is active. Replaces the inline Distance Ring /
            Clear All buttons that used to crowd the header. -->
