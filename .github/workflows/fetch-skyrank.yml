@@ -5,19 +5,35 @@ name: Fetch SimFly Sky Ranking
 # (no auth, no cookies), so this is a plain server-side fetch — the apps cannot
 # call it directly because SimFly sends no Access-Control-Allow-Origin on it.
 #
-# Cadence is DAILY on purpose, and the schedule is load-bearing rather than
-# cosmetic: SimFly exposes only all/month/week/day, so the 90-day figure is
-# synthesized from day-over-day deltas of the monotonic all-time counter. One
-# run per day = one sample. Running more often is harmless (a same-day re-run
-# replaces that day's sample rather than adding one), but running LESS often
-# coarsens the 90-day history permanently — those days cannot be backfilled.
+# ONE SNAPSHOT PER UTC DAY, but scheduled HOURLY so a bad hour is not a lost
+# day. This matters more here than for the sibling feeds: SimFly exposes only
+# all/month/week/day, so the 90-day figure is synthesized from day-over-day
+# deltas of the monotonic all-time counter. A missed day cannot be backfilled —
+# the number simply never existed — whereas a stale payout feed self-corrects on
+# the next run.
+#
+# The retry is free rather than brute force. The sweep reads the committed
+# history file FIRST and exits before touching the network if today is already
+# recorded, so on a normal day exactly one of the 24 runs does any work (the
+# 05:20 one) and the other 23 cost a few seconds each. A failed run writes
+# nothing at all, so the next hour just tries the whole sweep again. Individual
+# page fetches also retry 3x in-run, which catches the common transient blip
+# without spending a whole hour.
+#
+# Consequence: the day's sample is taken at the first hour that SUCCEEDS, so on
+# a good day samples land at a consistent time and the deltas line up cleanly.
 #
 # See scripts/skyrank-sweep.js for the history format and its invariants.
 
 on:
   schedule:
-    - cron: '20 5 * * *'   # daily, 05:20 UTC — off the hour, clear of the payout/rentals runs
+    - cron: '20 * * * *'   # hourly at :20 — first success of the day wins, the rest no-op
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-take today's snapshot even if one is already recorded"
+        type: boolean
+        default: false
 
 # A slow sweep must never overlap itself: two runs writing the same day's
 # snapshot would race on sky-rank-history.json.
@@ -35,6 +51,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Sweep sky ranking
+        env:
+          FORCE: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '' }}
         run: node scripts/skyrank-sweep.js
 
       - name: Commit if changed

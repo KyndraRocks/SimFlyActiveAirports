@@ -51,9 +51,9 @@ const PERIODS      = ['all', 'month', 'week', 'day'];
 // class of failure that poisoned the shared roster gist in the payout pipeline.
 const MIN_PILOTS = 500;
 
-function getJson(path) {
+function getJsonOnce(path) {
   return new Promise((resolve, reject) => {
-    https.get({ hostname: 'simfly.io', path, headers: {
+    const req = https.get({ hostname: 'simfly.io', path, headers: {
       'User-Agent': 'SimFly-AA-SkyRank/1.0', 'Accept': 'application/json'
     } }, res => {
       let data = '';
@@ -63,11 +63,33 @@ function getJson(path) {
         try { resolve(JSON.parse(data)); }
         catch (e) { reject(new Error('Parse error on ' + path + ': ' + data.slice(0, 200))); }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => req.destroy(new Error('Timed out on ' + path)));
   });
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// In-run retry for a single page. A whole sweep is ~43 requests, so a lone
+// blip should not cost the day's snapshot — but a genuinely bad page still
+// throws, which aborts the run without writing anything, and the hourly
+// schedule then retries the whole sweep (see the workflow header).
+async function getJson(path, attempts = 3) {
+  let last;
+  for (let i = 1; i <= attempts; i++) {
+    try { return await getJsonOnce(path); }
+    catch (e) {
+      last = e;
+      if (i < attempts) {
+        const wait = 2000 * i;
+        console.warn(`  ${e.message} — retry ${i}/${attempts - 1} in ${wait}ms`);
+        await sleep(wait);
+      }
+    }
+  }
+  throw last;
+}
 
 // Walk every page of one period. Returns Map(lowercaseUsername -> row).
 async function fetchPeriod(period) {
@@ -103,6 +125,27 @@ function loadHistory() {
 }
 
 async function main() {
+  // ── Have we already got today? ──────────────────────────────────────────
+  // The workflow is scheduled HOURLY but only one snapshot per UTC day is
+  // wanted, so the committed history file doubles as the run lock: once today
+  // is recorded, every later run that day exits here without touching the
+  // network. That is what turns the hourly schedule into "retry until it
+  // works" rather than "hammer SimFly 24 times a day" — a failed run writes
+  // nothing, so the next hour simply tries again.
+  //
+  // Consequence worth keeping in mind: the day's sample is taken at the FIRST
+  // hour that succeeds. On a normal day that is the 05:20 run, so samples land
+  // at a consistent time and the day-over-day deltas line up cleanly.
+  const hist  = loadHistory();
+  const today = dayKey(new Date());
+  const force = process.env.FORCE === '1';
+  const haveToday = hist.dates.length && hist.dates[hist.dates.length - 1] === today;
+  if (haveToday && !force) {
+    console.log(`Snapshot for ${today} is already recorded — nothing to do. (Set FORCE=1 to re-take it.)`);
+    return;
+  }
+  if (haveToday) console.log(`FORCE set — re-taking today's snapshot.`);
+
   console.log('Fetching sky-rank boards…');
   const boards = {};
   for (const p of PERIODS) boards[p] = await fetchPeriod(p);
@@ -113,11 +156,10 @@ async function main() {
   }
 
   // ── Roll the history forward one snapshot ────────────────────────────────
-  const hist  = loadHistory();
-  const today = dayKey(new Date());
 
-  // Re-running on a day already recorded replaces that day rather than adding a
-  // second column, so a manual workflow_dispatch can't double-count flights.
+  // Only reachable via FORCE (the early exit above catches the normal case).
+  // Re-taking a day already recorded REPLACES that day rather than adding a
+  // second column, so a forced re-run can never double-count flights.
   const replacing = hist.dates.length && hist.dates[hist.dates.length - 1] === today;
   if (replacing) {
     const popIdx = hist.dates.length - 1;
