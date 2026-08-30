@@ -1,0 +1,56 @@
+name: Fetch SimFly Sky Ranking
+
+# Pilot flight-activity feed, consumed by Recip Tracker's Balance Queue to tell
+# prolific pilots from dormant ones. The /api/game/sky-rank endpoint is public
+# (no auth, no cookies), so this is a plain server-side fetch — the apps cannot
+# call it directly because SimFly sends no Access-Control-Allow-Origin on it.
+#
+# Cadence is DAILY on purpose, and the schedule is load-bearing rather than
+# cosmetic: SimFly exposes only all/month/week/day, so the 90-day figure is
+# synthesized from day-over-day deltas of the monotonic all-time counter. One
+# run per day = one sample. Running more often is harmless (a same-day re-run
+# replaces that day's sample rather than adding one), but running LESS often
+# coarsens the 90-day history permanently — those days cannot be backfilled.
+#
+# See scripts/skyrank-sweep.js for the history format and its invariants.
+
+on:
+  schedule:
+    - cron: '20 5 * * *'   # daily, 05:20 UTC — off the hour, clear of the payout/rentals runs
+  workflow_dispatch:
+
+# A slow sweep must never overlap itself: two runs writing the same day's
+# snapshot would race on sky-rank-history.json.
+concurrency:
+  group: skyrank-sweep
+  cancel-in-progress: false
+
+jobs:
+  fetch-skyrank:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sweep sky ranking
+        run: node scripts/skyrank-sweep.js
+
+      - name: Commit if changed
+        run: |
+          git add sky-rank.json sky-rank-history.json
+          if git diff --cached --quiet; then
+            echo "No changes — skipping commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: sky ranking $(date -u '+%Y-%m-%d %H:%M UTC')"
+            for i in 1 2 3; do
+              if git push; then exit 0; fi
+              echo "Push rejected (attempt $i) — pulling with rebase and retrying."
+              git pull --rebase origin main
+            done
+            echo "Push still failing after 3 attempts." >&2
+            exit 1
+          fi
