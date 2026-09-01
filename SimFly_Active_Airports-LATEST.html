@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.96.0';
+const APP_VERSION = '3.97.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10202,39 +10202,268 @@ function _fmtHhMm(min) {
   return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
 }
 
-// Local-clock arrival time for a flight of `min` minutes departing right now,
-// e.g. "23:11 L" (v3.96.0) -- the browser's own time zone, on the aviation
-// convention where a trailing L marks a local time. A "(+1)" suffix is added
-// when the arrival lands on a later local calendar day, so a long haul can
-// never silently read as tonight. Returns '' when unavailable; callers append
-// nothing.
-function _acEtaStr(min) {
+// -- Time-zone resolution (v3.97.0) ------------------------------------------
+// OurAirports carries no time zone, and this app must keep working from
+// file://, so there is nothing to look one up from at runtime. Zones come from
+// a compact table built offline from the IANA tz database + GeoNames: a default
+// per country, exceptions per iso_region, and -- for the 94 regions that
+// genuinely straddle an offset boundary (Indiana, Arizona, Western Australia,
+// Mato Grosso do Sul ...) -- a condensed set of nearest-neighbour anchors.
+// Measured 99.9% offset-exact against all 85,936 OurAirports fields.
+//
+// Only the OFFSET is ever used, never the zone name, so zones that have agreed
+// since 1970 are deliberately interchangeable (Iceland resolves via
+// Africa/Abidjan, and that is correct -- both are +00 year-round).
+//
+//   line 0  zone names, space separated; index = position, referenced in base36
+//   line 1  country defaults, fixed 4 chars: CC + zoneIdx(2)
+//   line 2  iso_region exceptions, comma separated: REGION + zoneIdx(2)
+//   line 3  split-region anchors: REGION ':' then fixed 8-char records of
+//           zoneIdx(2) + lat(3) + lon(3), lat=(deg+90)*10, lon=(deg+180)*10
+const _TZ_TABLE = `Africa/Abidjan Africa/Accra Africa/Addis_Ababa Africa/Algiers Africa/Asmara Africa/Bamako Africa/Bangui Africa/Banjul Africa/Bissau Africa/Blantyre Africa/Brazzaville Africa/Bujumbura Africa/Cairo Africa/Casablanca Africa/Ceuta Africa/Conakry Africa/Dakar Africa/Dar_es_Salaam Africa/Djibouti Africa/Douala Africa/El_Aaiun Africa/Freetown Africa/Gaborone Africa/Harare Africa/Johannesburg Africa/Juba Africa/Kampala Africa/Khartoum Africa/Kigali Africa/Kinshasa Africa/Lagos Africa/Libreville Africa/Lome Africa/Luanda Africa/Lubumbashi Africa/Lusaka Africa/Malabo Africa/Maputo Africa/Maseru Africa/Mbabane Africa/Mogadishu Africa/Monrovia Africa/Nairobi Africa/Ndjamena Africa/Niamey Africa/Nouakchott Africa/Ouagadougou Africa/Porto-Novo Africa/Sao_Tome Africa/Tripoli Africa/Tunis Africa/Windhoek America/Anchorage America/Anguilla America/Antigua America/Araguaina America/Argentina/Buenos_Aires America/Argentina/Catamarca America/Argentina/Cordoba America/Argentina/Jujuy America/Argentina/La_Rioja America/Argentina/Mendoza America/Argentina/Rio_Gallegos America/Argentina/Salta America/Argentina/San_Juan America/Argentina/San_Luis America/Argentina/Tucuman America/Argentina/Ushuaia America/Aruba America/Asuncion America/Atikokan America/Bahia America/Bahia_Banderas America/Barbados America/Belem America/Belize America/Blanc-Sablon America/Boa_Vista America/Bogota America/Boise America/Cambridge_Bay America/Campo_Grande America/Cancun America/Caracas America/Cayenne America/Cayman America/Chicago America/Chihuahua America/Ciudad_Juarez America/Costa_Rica America/Coyhaique America/Creston America/Cuiaba America/Curacao America/Dawson America/Dawson_Creek America/Denver America/Detroit America/Dominica America/Edmonton America/Eirunepe America/El_Salvador America/Fort_Nelson America/Fortaleza America/Goose_Bay America/Grand_Turk America/Grenada America/Guadeloupe America/Guatemala America/Guayaquil America/Guyana America/Halifax America/Havana America/Hermosillo America/Indiana/Indianapolis America/Indiana/Knox America/Indiana/Vincennes America/Indiana/Winamac America/Inuvik America/Iqaluit America/Jamaica America/Kentucky/Louisville America/Kentucky/Monticello America/Kralendijk America/La_Paz America/Lima America/Los_Angeles America/Lower_Princes America/Maceio America/Managua America/Manaus America/Marigot America/Martinique America/Matamoros America/Mazatlan America/Menominee America/Merida America/Mexico_City America/Miquelon America/Moncton America/Monterrey America/Montevideo America/Montserrat America/Nassau America/New_York America/Noronha America/North_Dakota/Beulah America/North_Dakota/Center America/Nuuk America/Ojinaga America/Panama America/Paramaribo America/Phoenix America/Port-au-Prince America/Port_of_Spain America/Porto_Velho America/Puerto_Rico America/Punta_Arenas America/Rankin_Inlet America/Recife America/Regina America/Rio_Branco America/Santarem America/Santiago America/Santo_Domingo America/Sao_Paulo America/St_Barthelemy America/St_Johns America/St_Kitts America/St_Lucia America/St_Thomas America/St_Vincent America/Tegucigalpa America/Tijuana America/Toronto America/Tortola America/Vancouver America/Whitehorse America/Winnipeg Asia/Aden Asia/Almaty Asia/Amman Asia/Anadyr Asia/Aqtau Asia/Aqtobe Asia/Ashgabat Asia/Atyrau Asia/Baghdad Asia/Bahrain Asia/Baku Asia/Bangkok Asia/Barnaul Asia/Beirut Asia/Bishkek Asia/Brunei Asia/Chita Asia/Colombo Asia/Damascus Asia/Dhaka Asia/Dili Asia/Dubai Asia/Dushanbe Asia/Famagusta Asia/Gaza Asia/Hebron Asia/Ho_Chi_Minh Asia/Hong_Kong Asia/Hovd Asia/Irkutsk Asia/Jakarta Asia/Jayapura Asia/Jerusalem Asia/Kabul Asia/Kamchatka Asia/Karachi Asia/Kathmandu Asia/Kolkata Asia/Krasnoyarsk Asia/Kuala_Lumpur Asia/Kuching Asia/Kuwait Asia/Macau Asia/Magadan Asia/Makassar Asia/Manila Asia/Muscat Asia/Nicosia Asia/Novokuznetsk Asia/Novosibirsk Asia/Omsk Asia/Oral Asia/Phnom_Penh Asia/Pontianak Asia/Pyongyang Asia/Qatar Asia/Qostanay Asia/Qyzylorda Asia/Riyadh Asia/Sakhalin Asia/Samarkand Asia/Seoul Asia/Shanghai Asia/Singapore Asia/Taipei Asia/Tashkent Asia/Tbilisi Asia/Tehran Asia/Thimphu Asia/Tokyo Asia/Tomsk Asia/Ulaanbaatar Asia/Urumqi Asia/Vientiane Asia/Vladivostok Asia/Yakutsk Asia/Yangon Asia/Yekaterinburg Asia/Yerevan Atlantic/Azores Atlantic/Bermuda Atlantic/Canary Atlantic/Cape_Verde Atlantic/Faroe Atlantic/Madeira Atlantic/Reykjavik Atlantic/South_Georgia Atlantic/St_Helena Atlantic/Stanley Australia/Adelaide Australia/Brisbane Australia/Broken_Hill Australia/Darwin Australia/Hobart Australia/Melbourne Australia/Perth Australia/Sydney Europe/Amsterdam Europe/Andorra Europe/Astrakhan Europe/Athens Europe/Belgrade Europe/Berlin Europe/Bratislava Europe/Brussels Europe/Bucharest Europe/Budapest Europe/Chisinau Europe/Copenhagen Europe/Dublin Europe/Gibraltar Europe/Guernsey Europe/Helsinki Europe/Isle_of_Man Europe/Istanbul Europe/Jersey Europe/Kaliningrad Europe/Kirov Europe/Kyiv Europe/Lisbon Europe/Ljubljana Europe/London Europe/Luxembourg Europe/Madrid Europe/Malta Europe/Minsk Europe/Monaco Europe/Moscow Europe/Oslo Europe/Paris Europe/Podgorica Europe/Prague Europe/Riga Europe/Rome Europe/Samara Europe/San_Marino Europe/Sarajevo Europe/Saratov Europe/Simferopol Europe/Skopje Europe/Sofia Europe/Stockholm Europe/Tallinn Europe/Tirane Europe/Ulyanovsk Europe/Vaduz Europe/Vatican Europe/Vienna Europe/Vilnius Europe/Volgograd Europe/Warsaw Europe/Zagreb Europe/Zurich Indian/Antananarivo Indian/Chagos Indian/Christmas Indian/Cocos Indian/Comoro Indian/Kerguelen Indian/Mahe Indian/Maldives Indian/Mauritius Indian/Mayotte Indian/Reunion Pacific/Apia Pacific/Auckland Pacific/Bougainville Pacific/Chatham Pacific/Chuuk Pacific/Easter Pacific/Efate Pacific/Fiji Pacific/Funafuti Pacific/Galapagos Pacific/Gambier Pacific/Guadalcanal Pacific/Guam Pacific/Honolulu Pacific/Kiritimati Pacific/Kosrae Pacific/Kwajalein Pacific/Majuro Pacific/Marquesas Pacific/Nauru Pacific/Niue Pacific/Norfolk Pacific/Noumea Pacific/Pago_Pago Pacific/Palau Pacific/Pohnpei Pacific/Port_Moresby Pacific/Rarotonga Pacific/Saipan Pacific/Tahiti Pacific/Tarawa Pacific/Tongatapu Pacific/Wallis
+US2ePR4cMHa0MPabGU9vSO14PGa9CO26AD7pSD0rSA6lAE5kSS0pES8eCN6pAF5wLK5gAG1iSB9uAU7hMG98AI1hTD17AL8yXK7sAM75MZ11PWa7NRa2AO0xAR1mASa6AT92AW1wID5uAZ59BA8rBD5iBE7vGB8cBF1aBG8vGL44BH58MX3tBI0bIS7cBJ1bOM69BM77KE16BN5eBO3gBQ3fBR4lBS3zBT6vTH5aBW0mFJ9qBY8gUA89LR15BZ23CA4uCD0yCF06CG0aPH68CH97CI00CKaaCL4jCM0jCR2hCU34CV79CY6aCZ8mSK7uPA46DE7tDZ03YE4zGH01RU8iDJ0iDK7zDM2qNG0uDO4kNE18TN1eTG0wEC31EE8xEG0cFI83GG82JE86IM84FK7fEH0kNL7oIE80FO7aLU8dGT30NO8jPL95ER04MN6yPT8aSE8wET02LV8nLT93ZA0oSZ13GQ10SH7eMU9gIO99ZM0zFM9nKM9cYT9hRE9iMV9fGA0vST1cFR8kSC9eZW0nMW09LS12NA1fML05GM07GD2yGE6tGF2cSL0lGW08MA0dGN0fSN0gGP2zMR19GR7rGS7dGY32SR47HK5qLY1dHN4sVN5pHR96KZ50RW0sHT49TZ0hHU7xIN60UG0qTL5jIL5vIQ57IR6uIT8oJM3cJO51JP6wKG5dKH6fKIadKN4oKP6hKR6oKW64KY2dLA70MY63LB5cPM3uLI90SM8qSI8bMT8fMC8hRO7wTR85MD7yMK8uGI81RS7sME8lTC2xMM73NI3lMO65MQ3oMS3ySV2tMF3nNCa5TOaeTV9rNUa3WFafNP5zWS9jPFacVU9pNZ9kPK5ySY5hQA6iPE3hPS5oPY1xTW6rSG6qVI4qUY3xVE2bBB21TF9dBL4mTJ5lLC4pTM55CW2lSX3jVG4vTT4aVC4rUZ6nVA91CC9bCX9aNFa4
+US-PA40,US-HI9w,US-MD40,US-NJ40,US-NC40,US-NY40,US-OH40,US-SC40,US-VA40,US-WV40,US-WY2o,US-CT40,US-MA40,US-ME40,US-NH40,US-RI40,US-VT40,US-DC40,US-DE40,AR-V1v,AR-D1t,AR-B1k,AR-Z1q,AR-R1r,AR-T1u,AR-U1l,AR-M1p,AR-Q1r,AR-C1k,AR-L1r,AR-A1r,AR-J1s,AR-Y1n,AR-K1l,AR-F1o,AU-TAS7k,AU-ACT7n,AU-XX7j,PG-NSB9l,BR-BA1z,BR-RO4b,BR-RN2v,BR-RR25,BR-PI2v,BR-CE2v,BR-AC4h,BR-PB2v,BR-AP22,BR-AL3k,BR-SE3k,CA-NS33,CA-PE33,CD-MO0t,CD-MN0t,CD-BC0t,CD-KN0t,CD-EQ0t,CD-SU0t,CN-656z,CY-015m,CY-035m,MX-BCS3q,RU-PRI71,EC-W9s,ES-CN78,ES-ML0e,CD-KL0t,ID-JB5t,ID-BA67,ID-KU67,ID-KI67,ID-SU5t,ID-JI5t,ID-KB6g,ID-AC5t,ID-KT6g,ID-SN67,ID-SB5t,ID-SA67,ID-BE5t,ID-KR5t,ID-BT5t,ID-LA5t,ID-JK5t,ID-RI5t,ID-NB67,ID-BB5t,ID-SS5t,ID-SG67,ID-ST67,ID-KS67,ID-JA5t,KI-L9x,KZ-KUS6j,KZ-MAN53,KZ-ATY56,KZ-KZY6k,KZ-AKT54,KZ-ZAP6e,KZ-BAY6j,PT-2076,PT-307b,MH-JAB9z,MX-YUC3s,MX-CAM3s,MN-0575r,MY-0662,MY-0162,MY-0862,MY-1462,MY-1062,MY-0462,MY-1662,MY-0562,MY-0262,KI-P9x,PS-GZA5n,PS-KYS5n,PS-RFH5n,FM-PNIa8,FM-KSA9y,RU-ALT5b,RU-ORE74,RU-SAR8s,RU-KGD87,RU-IRK5s,RU-PER74,RU-BU5s,RU-SAM8p,RU-VGG94,RU-TOM6x,RU-NVS6c,RU-TYU74,RU-YEV71,RU-UD8p,RU-SVE74,RU-CHE74,RU-MAG66,RU-ULY8z,RU-BA74,RU-KEM6b,RU-OMS6d,RU-KGN74,RU-TY61,RU-AL5b,UA-408t,UZ-TO6s,RU-KK61,RU-KIR88,UZ-NG6s,UZ-AN6s,UZ-FA6s,UZ-SI6s,VN-RRD5a,VN-NW5a,VN-NE5a,VN-NC5a,ID-SR67,ID-GO67,ID-YO5t,ID-JT5t,MY-1162,MY-0362,MY-0762,MN-0655r,MN-0435r,MN-0465r,MN-0715r
+US-KS:2e0zr0lt2o0zv0lr2e1000ls2o0zp0lq2e0zg0m42e0zi0lu2o0zk0lr2o0zs0lr2o1040lu2e1020mz2e1020mc2e1020lv,US-AK:1g15n07v480y30i8,US-AL:2e0yp0pw400y00qc2e0xn0q92e0y50q42e0xy0qa2e0y20qa400yo0q82e0yh0q32e0yn0q43d0y40qc2e0yl0q82e0y30qa2e0y70qa2e0yp0q62e0yo0q7,US-AZ:480yj0iu2o0xu0jp480xs0jj480y40jj2o0z70jk480z10ja2o0yx0jl480yp0jf2o0z10j2480z00i9480z00iv2o0z60j93i0ys0i6480yv0ie480y30i62o0yu0jd480yr0i62o0yc0jm480yq0j6480xt0jp3i0y80i5480yh0i93i0yp0i6480yg0jd2o0y20jp480yt0i8480y60i7480y80i7480z90j1480yn0ib480yb0jn3i0yv0i5480xz0jm2o0xz0jo3i0z00i5480yx0i7480ye0jp480yn0i8480y60jo480ys0i6480y30jp3i0yg0i8480yd0ia,US-CA:3i0yu0hj480yj0ia3i0y30hw3i0yh0i13i0yo0i63i0yi0i6480y60i2480yp0i63i0y30hy3i0yo0i0480yp0i13i0yc0i33i0y70i2480yf0i73i0yt0i03i0yo0i2480yl0i83i0yd0i6,US-FL:400wy0r62e0xm0py400xi0qj2e0xj0qd400xj0qg400xa0qb2e0xf0q92e0xd0qb,US-GA:400ye0qn2e0y80qc400xx0qh400ya0qk400yd0qb400y80qh400y90qc2e0yd0q5400y60qd2e0xn0qe400xn0qk400xm0qf400xr0qe,US-ID:3i12d0hq2710u0iw2711g0hn3i11q0hq2o11t0i33i10o0hz2711l0hv271120i22710u0i63i11o0hz3i11z0hs2710u0hd2711k0id2711m0hx2710s0ht3i11m0hv3i11g0gu,US-IL:2e10o0p42710p0j3,US-IN:2e10j0pr361030pz2e0zk0pm3610l0qd360zo0px3610j0pz2e0zr0pp2e10l0pw380zt0pp3710f0pv3610b0q5361090pu2e0zu0pp360zv0pq2e1040ps2e0zx0pp360zy0pq380zr0pr3610d0pv2e10d0pt361050pw361060pr3710g0py2e1080pp2e1050pp3610g0q4361020ps3610g0pz3610b0pq2e0zn0pq2e0zk0pv3910f0px360zu0pq3710i0pz3610l0q42e10c0pq3610i0q1380zn0pu3610e0pv3710f0pw3710h0py361090pp361050pp361080ps400zk0q3361040pu2e1020pr361010pq,US-KY:400ze0qi2e0zb0pe2e0zb0q6400zl0q72e0zh0ps400zf0q72e0zf0q12e0zb0qd400z70qk400ze0qb3e0z80qf2e0z70qd2e0zc0q9,US-MI:2p1170q03r11u0pi2p11r0pu2p11x0pd2e11v0p73r11j0po2p1200p62p11v0pm3r11x0oz,US-MT:2o11p0jb3i12d0hs2o1260ig2o12c0hu2o12h0ht3i12i0hs2o12m0i1,US-OR:3i11h0ft2710w0hc3i11d0h63i10r0gk3i10r0h1271180h73i1120h23i1190gv2711i0hk3i11s0hg3i11j0hl3i11j0hb3i1160h4271150h73i1140h63i11a0h6271110h93i10z0h6,US-SD:2e11g0n72o11i0lw2e1160m52o1130lr2e11n0mi2e11q0m02e11f0m72o11r0ln2e11c0ly2o11q0ly2o11d0ls2o11f0lx2e11f0m02e1130lx,US-TX:2e0y40n02o0xu0kh2e0x70lc2e0y50le2e0xt0ky2o0xv0ks2o0y30lf2e0xp0m32e0xu0lk2e0y80ly2e0y30lh2o0z30le2e0yz0lo2o0xv0kz2o0xu0kv3i0yn0hp2e0xt0l82e0xu0l32e0z00lf2e0z50lk2e0xr0kw2e0z20lf2o0xo0kq2e0xj0kw2o0xw0l42o0xr0kt,US-WA:3i11z0he271180hj,US-WI:2e11b0p92p11m0pv2e11i0pm3r11k0pq3r11k0pt,US-CO:2o0zw0ki2e1010lm2o1060ld2o0zg0l72o1000lh2o0zy0ln2o1060ll2o1030lk2e0za0lj2o0ze0ll2o0zb0li,US-NM:2o0y60kz480xr0jr2o0yl0k02o0y40k12o0xv0jq2e0yp0ld2e0ya0ld2o0z90l02o0yt0kv2o0yi0l62o0ys0l72e0yz0ld480xt0jq480y80jt2o0yr0lc2o0y30jq2o0yk0ld2o0y80jy2o0yc0ju2o0y10lc2o0y90l82o0xr0jv2o0z00l52o0z10ld2o0y90lb2o0ya0jr2o0yy0la480xp0jv2o0xu0jq2o0y50ju,US-NV:3i0zs0gy2e10j0nb480ys0i63i0z90hk3i0z20i23i0yu0i3480z10ia3i0zg0ia3i0z80ib3i0z30i7,US-TN:2e0yq0p3400yz0qs2e0yt0pz400yq0qb2e0yu0qa400yu0qi2e0yz0qe400yu0qe2e0yr0q8400z50qi400z00qi400yy0qg2e0z50q92e0yy0qg400yy0qj2e0z30qf2e0yz0qh,US-UT:2o0zn0jm480za0j02o0zc0ij2o0zh0j0480zf0j92o0ze0ja3i0zu0ic2o10c0ix2o0zn0jc2o0zx0iq2o0zt0ii2o0zh0j52o0za0ir2o0zj0jd2o1030if480zh0j73i1010ie2o0zj0j82o1000ij,US-NE:2e10f0n32o10m0lp2e1070m02e10r0m42o10b0lq2e10d0lv2o10d0lt2e10k0lw2o1050ls2o10n0lw2o10k0lr2e10n0m2,US-ND:2e12i0mu2o11z0lr421250ln2o1200l62e11t0m92o1240lk2e11z0m2431230lv2o1270lm2e12c0l82e12l0lv421210lo2e12b0lx2o12i0l52e12l0la2e12c0lj2o11w0ll2e12g0l62e12j0l52e1290lp2o1200lj2o1290l72e1280ln2e1290l82o1250lc,US-U-A:400zh0qq2e0x30md2e1210nn2o1020kx2e0zq0mu2e0zm0p32p11h0qb,AU-WA:7m0kf2dt7j0hs2dn7m0h32b97m0g42d17m0io2c27g0g72dt7j0l42dc7m0l12d67m0hs2cv7m0gv2db7j0hr2d67m0ks2di,AU-NT:7j0i22er7m0kj2e87j0kl2fe7j0lh2ea7j0kz2dz7j0kw2ee7m0kq2dx7h0ij2gi7j0ko2e97h0jp2fz7j0iz2fk7j0k02fn7h0iz2fz7j0ij2fw7m0kn2e47j0jj2fq7j0k42ej7m0jx2ea7j0kj2ee7h0k82fu7m0k62ec7j0kg2ft7h0io2g57j0ka2fq7j0ix2ft7j0kc2eg7h0kd2g17j0iq2g07g0fb2gp7j0j12ee7m0kg2ed7j0j42fx7h0jb2ga7m0je2e47j0kg2ee,AU-SA:7g0f62g17j0hq2e67g0h32fa7h0hl2h27g0hb2gf7i0h72h57j0ho2f17g0hj2f47g0gh2dz7j0hr2fk7g0hr2gq7g0hi2fk7g0ho2fn,AU-NSW:7n0g42jw7h0h22js7n0h12ke7n0gv2j37n0gx2js7i0gg2hs7n0gm2i47h0gy2i67n0fu2hj7i0fw2hl7n0gk2hx7i0gs2hm7n0gx2ik7n0gu2ia7n0fg2it7n0g52i67n0fq2hz7i0fu2hh7i0gm2hs,AU-VIC:7l0ec2hj7g0fj2h97n0go2je7l0fc2hf7g0eq2h97l0eq2hj7l0ex2h97l0ej2h77n0fi2hc,AU-QLD:7h0hi2ke7n0gy2j57h0l12ht7h0hk2h67h0h22jh7i0h52h97h0gz2i87h0hh2ir7h0h32hq7j0k62ei7h0h72hb7h0h72iz7h0jh2gd7h0h22j67n0h12j3,ID-NT:670mq2ci5u0ms2dc,MX-BCN:4t0x20ig3q0ws0i04t0x20h54t0x80hx350x90ia4t0y10i24t0xd0i63q0ws0ii350xx0i24t0xw0i24t0x60i84t0xz0hn4t0xa0i84t0ww0in4t0xz0hz4t0xx0i04t0wv0ic3q0ws0ic,BR-SP:4l0id11e290is0zd4l0j910d4l0iu0zp4l0ir0za4l0it0zh4l0iq0zf,BR-MS:290ig0yu4l0jx0zl290jr0ys290jt0zd290jm0zt4l0ir0ze2k0lp0yz290iu0z64l0ip0z6290ir0z7290j20zi290il0z24l0if0yz290ii0z0290iq0z34l0je0zt4l0jn0zg290iv0zb290jm0z8290ji0zl290jl0ze4l0ij0z14l0j10zj290ij0yz290ih0yx290jf0zr290jo0zm4l0jm0zs290j10zi290if0yy290jn0zf290iq0z44l0jn0zj4l0ja0zo290j20zk4l0jw0zb290jn0zk290jd0zh290jx0z2290jd0zm290jy0z8290jc0zq290jt0z7290jm0zh290j80zn,BR-PR:4l0hx0zx290im0z54l0ib0yx4l0ij0zs4l0if0ze4l0ik0z84l0ih0z24l0io0z8,BR-MG:4l0jf10h290jj0zu4l0jt1044l0jg0zu4l0jj1022k0l90yb4l0jl0zx4l0ji0zw,BR-GO:4l0jx10f2k0ki0zf4l0ki0zi4l0k70z8290jp0zn4l0jr0zl290ju0zc4l0jq0zu2k0k20za4l0ju0zp4l0jz0zi4l0jw0zd290jt0zg4l0k40ze4l0jp0zp,BR-PA:220n50zt3m0ot0xw2k0mf0zm4i0ni0y12k0mj0y74i0ms0yr220ml100220mn0zn220pg0yz4i0p30y84i0mt0ya2k0ml0z63m0o50ya4i0o00yn2k0mf0yq4i0ol0yc250pm0yh2k0mb0zw220mf101220pk0yp4i0pf0yf220mf0zv2k0md0zs4i0o60yg220n10zb2k0mr0y54i0mw0xz220mb0zx220md0zw220ms0z74i0o10yd2k0me0zu3m0o30ye,BR-MT:2k0m50xt4l0kd10b2k0kw0zb4l0ld0zw2k0m40z52k0lt0zn2k0lf0zm4l0kn0zm2k0ll0zu2k0kj0za2k0lg0zv2k0ko0zi4l0ks0zk2k0le0zu2k0l40zq2k0kv0zi4l0l30zu4l0l00zq4l0l70zt2k0kt0zl4l0kt0zl2k0ky0zm2k0l70zr,BR-AM:3m0ng0wg4h0mc0vb3m0n80v14i0nj0xy3m0o60xc3m0n70xe4b0md0vr2s0my0uk3m0o80y53m0mh0va4h0me0v6,BR-TO:1j0mj10j2k0lm0zy1j0lv10f1j0ln104,BR-MA:2v0n810u2k0mj0y3,BR-PE:4f0ml144410nx150,BR-U-A:4l0i910t2k0lo0zr1j0ms10z4l0l511a,CA-QC:4u1220sr331250wv4u12q0wp3v12d0vl2413a0y44u1550v02412y0x54u12e0vp4u12g0uq4u12y0wz2w1480ul4u13n0sv4u13y0tr4u13o0vd2w13f0vr4u1330ux4u12f0vb4u1460u84u13f0wf4u13f0vr,CA-SK:4g12y0kp4y1420ln4g13v0kw2r15i0jr4g15m0lk2r13v0jm4g13k0jt4y12o0lu4g14p0jm2r14x0jq4g12s0lg4g14h0l84g12s0lr4g1460k64g13u0jx4g1400jp4g1480lg4g1520ku4g15h0km2r1430jh4g13o0ll2r15h0k84g14y0k9,CA-ON:4u10w0rj1y12j0on4u12t0po4y12w0np4y12y0ot4y12k0o54u12u0p74u12g0p44y12q0oj4u13n0pf4y13y0p44u12j0ow4y13p0p71y12l0ov4u13v0pe4u14k0pn1y12m0oc4y12u0o5,CA-AB:2r1360ib2n14y0gq2r1410he2r14v0hn2r1590gx2r14x0gz4g1380je2r13d0jb2r12o0j74g12o0jg2r1340j92r1520gt2r14y0gq2n14u0gt2r14i0h92r14p0gx2n14m0gq2r12s0jd4g13b0jb2r14c0gq,CA-MB:4y12v0me4w12i0fc2r13g0j84g14m0lv4y1490ma4y15b0nv4y1500m94g1340lv4y1300m44y14p0m94y1380lu4g1530lr4y14h0lv4y15a0lt,CA-NB:3v11j0vh4u1270uz3v1240v63v1260v13v12a0v53v1280v1,CA-BC:4w13c0g12n14y0ga2r15o0fi4w14x0du2u15h0g84w14m0fg4x1500e22u14x0f54w14q0ey4w14v0e94x15j0ew4x1560d92r1370hm2n1490gi4w12y0ha4w1400fu2j12n0hr2r12w0i32r12r0hx4w12t0hk4w14s0fb4w13t0gm2n14k0g44w14d0ft4w13e0h2,CA-YT:4x1650bt3a1840bt2m18c0b22m17a0b23a1890bh2m17s0b62r15v0f73a17h0c24x15p0e82r16k0du4x16a0cy4x16e0dj2m1700cp2m17d0bw,CA-NU:2818c0l84e17y0pl3b1880sk281840nj4e17d0lx3b1810qv3b1b20os2817k0k02819r0nm1y16u0qu281aw0l93b14p0s03b16u0sr3b19b0qi4e15z0nv,CA-NT:3a18f0di4x1680ee2r16x0jd2r15s0gb2r17c0fd2r1640f24e15r0lj4g15r0ld2r15o0ix,CA-NL:4n12c0yh2w13w0w34n13v0yi241330y32w1420xr4n12s0yf4n13a0yf2w13x0y6,CD-TU:0y0p61k90t0os1kb0t0pa1jq0y0oq1ki,CD-NU:0y0q51k90t0q51je0t0q71ju0t0q11k6,CD-KG:0t0n71is0y0mz1ja0t0mw1j5,CD-TO:0y0oz1l20t0pj1kf0y0pb1kk0y0pl1kh0y0ph1kg,CL-MA:4d0a90ub4j09g0vc4j09v0uv4d0a10uw,CL-VS:4j0fy0u79o0hg0jm,CL-LL:4j0dr0to2i0cw0tr4j0d60to4j0cw0u2,CL-AI:2i0c10tv4j0ct0tj2i0cr0tp,CN-62:6p0z62766z10r24z6p10025h6p10a23y,RU-SA:7118a2gv7218r2dd6618a2mw6616k2hs7115r2g77215j2b5711a22g8661802ia661a62kg7118o2f37217u2e87117r2f2721692e27215g2en7115k2ez7218o2eb,ID-MA:5u0mp2ec670mv2d35u0mr2dj5u0nx2d7,MX-JAL:3t0ux0lp3q0ur0kr3t0ug0la3t0uo0kw3t0us0kv3t0ur0ks,MX-DUR:3w0vs0kv3q0vb0ky3w0vf0kz3q0vv0ke3w0w10kn3w0vx0kg3w0vx0ke3w0vw0kg3q0ve0ky3q0vu0kg3w0vu0kh3w0vw0kc3q0vs0kg3w0vp0kl,MX-SIN:3q0w60k12f0w60k83q0vg0kg3q0vx0k73q0w30k63w0w10k83w0vq0ki3q0w60k72f0w70k63q0vn0kb3q0w70k52f0w80k63w0vx0k93q0wf0jz3q0vn0kg,MX-CHH:2f0wo0kt2g0xs0kg2f0xf0kc2g0xj0kp2f0xl0kg2g0xm0k52f0x90kr350xj0js2g0xl0js450x10ky2f0x30l52f0x90jx3q0we0k02f0wa0k72f0wh0k02f0xg0k1450xp0kf2g0xp0kl2f0xf0kl2f0wc0k22f0x50kv450x70l0450xg0kw450xs0kg450xm0ke2g0xi0ku2f0xg0kt2f0xj0k92f0xj0k42g0xk0k02g0xh0ks2f0wz0l22f0x00ky2f0x30kt2g0xi0jv350wu0js2f0wx0jv2f0wg0k42f0wr0js2f0wu0jt350wq0js2f0wq0jt2f0we0k12g0xq0ki350ws0jr350x10ju350x00ju2f0x20k22f0x30jx2f0x10jv,MX-TAM:3w0vo0mk3p0w60mx3w0vw0mr3w0w10mv3w0w60mr3p0w80mq3w0wc0mg3p0wm0mc3p0w40mo3w0wp0ma3p0w20mw3w0w80mr3w0wa0mm3w0vz0mj,MX-SON:350xb0ip4t0xy0i2350xv0in350xr0ib2g0xk0jp350xj0jp350xp0jn350y00i6350xl0jk2f0wn0k13q0wd0jr350wy0jp350xm0jo350xz0i2350xk0jo,MX-NLE:3w0wf0m63p0w20mn3p0wj0m83w0w10mb3w0wj0m13p0wh0m93w0w70mm3w0vz0mi3p0w70mm3w0wp0m63p0wl0m43w0we0ma3w0w20ml3w0wi0m53p0wo0m53w0wk0m2,MX-COA:3w0w30lm3p0x50lx3w0wy0m32f0x40li3w0wy0ls3p0x90ln3w0x30lw3p0x40lw3p0x50ln3w0x00lo3p0x30lq3w0x20lp2f0x70lj3p0x40lk3w0x10lk3p0x70lk3p0x20lk,MX-COL:3q0u80j73t0ud0l8,MX-ROO:2a0u50ph3t0ue0mg,MX-NAY:3q0uy0kw200us0kr3t0v50l13q0v40kz3q0uy0l33t0uz0l53q0uv0ks3q0uy0l53q0v10l3,PF-U-A:ac0k408g9t0il0cjac0k60bka10mk0b2,NZ-WGN:9m0cp0129k0dk2ql,RU-ZAB:5f12y2aj5s12v2805f1302885s13w29o5f13n2a05f12q2895f1442ad,RU-SAK:6m11y2ho7113s2he661332ld6m1322hn6m13l2hs6m13w2hq,RU-KYA:6114m24k5s16m27d6119c20c5s15e2686116v25u6115s26f611582536117a2796116o26v,RU-AMU:7213g2dg7112l2e87212n2e4,RU-KAM:5x15f2mg661352lj5x13n2le5x13b2lm6b14l21x,RU-TA:8i14i1ro741441su8i14h1t18i14d1sm8i1461so,RU-YAN:7417w1yv8i18s1wl7418q1yi7418g1wz8i18e1x0741811xb6118p1zt8i1841wm7417j1wg,RU-CHU:5217v00d661742ml5x16z2pc5217w2o8,RU-NGR:8i1581mm6c146215,RU-KHM:7415m1x46x15z20a7416a1zh,RU-AST:7q1261rb9412j1qh7q12f1qu,RU-KHA:7113k2fx7213j2f87112m2fb7114z2et711372ex711452fc,UA-43:8t11i1ns8911f1nc8t11j1ng8t11g1nc8t11c1ne`;
+
+let _tzZ = null, _tzCty = null, _tzReg = null, _tzAnc = null;
+function _tzInit() {
+  if (_tzZ) return;
+  _tzZ = []; _tzCty = new Map(); _tzReg = new Map(); _tzAnc = new Map();
+  try {
+    const P = _TZ_TABLE.split('\n');
+    const p36 = t => parseInt(t, 36);
+    _tzZ = P[0].split(' ');
+    for (let i = 0; i + 4 <= P[1].length; i += 4)
+      _tzCty.set(P[1].substr(i, 2), _tzZ[p36(P[1].substr(i + 2, 2))]);
+    for (const t of P[2].split(',')) if (t) _tzReg.set(t.slice(0, -2), _tzZ[p36(t.slice(-2))]);
+    for (const t of P[3].split(',')) {
+      if (!t) continue;
+      const c = t.indexOf(':');
+      if (c < 0) continue;
+      const r = t.slice(0, c), body = t.slice(c + 1), out = [];
+      for (let j = 0; j + 8 <= body.length; j += 8)
+        out.push({ zone: _tzZ[p36(body.substr(j, 2))],
+                   lat : p36(body.substr(j + 2, 3)) / 10 - 90,
+                   lon : p36(body.substr(j + 5, 3)) / 10 - 180 });
+      if (out.length) _tzAnc.set(r, out);
+    }
+  } catch (e) { /* a broken table must never take the map down - zones just go null */ }
+}
+
+// Squared angular distance with longitude scaled by latitude. Used for RANKING
+// only, so the cheap equirectangular form is exact enough and saves a haversine
+// per anchor on a path that runs inside a drag.
+function _tzD2(aLat, aLon, bLat, bLon) {
+  let dLon = aLon - bLon;
+  if (dLon > 180) dLon -= 360; else if (dLon < -180) dLon += 360;
+  const dLat = aLat - bLat, k = Math.cos((aLat + bLat) / 2 * Math.PI / 180);
+  return dLat * dLat + (dLon * k) * (dLon * k);
+}
+
+// IANA zone for an airport record. Needs iso_country / iso_region + position,
+// which every OurAirports-derived record in airportDB carries.
+function _tzZoneForRec(rec) {
+  if (!rec) return null;
+  _tzInit();
+  const reg = rec.iso_region, cty = rec.iso_country;
+  const anchors = reg && _tzAnc.get(reg);
+  if (anchors && isFinite(rec.latitude)) {
+    let best = null, bd = Infinity;
+    for (const c of anchors) {
+      const d = _tzD2(rec.latitude, rec.longitude, c.lat, c.lon);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (best) return best.zone;
+  }
+  if (reg && _tzReg.has(reg)) return _tzReg.get(reg);
+  return _tzCty.get(cty) || null;
+}
+
+// Lazy 1-degree bucket index over airportDB, so an arbitrary map point (a ruler
+// endpoint, which is not an airport) can borrow the iso_country / iso_region of
+// the field nearest to it. airportDB is keyed by BOTH gps_code and ident and
+// stores a separate object per key, so records are de-duplicated by position.
+let _tzApGrid = null;
+function _tzApGridBuild() {
+  if (_tzApGrid) return _tzApGrid;
+  _tzApGrid = new Map();
+  try {
+    const seen = new Set();
+    for (const rec of airportDB.values()) {
+      if (!rec || !isFinite(rec.latitude) || !isFinite(rec.longitude)) continue;
+      const id = rec.latitude.toFixed(4) + ',' + rec.longitude.toFixed(4);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const k = Math.floor(rec.latitude) + ':' + Math.floor(rec.longitude);
+      let a = _tzApGrid.get(k);
+      if (!a) { a = []; _tzApGrid.set(k, a); }
+      a.push(rec);
+    }
+  } catch (e) { /* leave whatever was indexed; callers fall back to local time */ }
+  return _tzApGrid;
+}
+
+// Zone at an arbitrary point, via the nearest airport. Cached per ~0.1-degree
+// cell so dragging a measurement re-uses the answer instead of re-searching
+// every frame.
+const _tzPointCache = new Map();
+function _tzZoneForPoint(lat, lon) {
+  if (!isFinite(lat) || !isFinite(lon)) return null;
+  const ck = Math.round(lat * 10) + ',' + Math.round(lon * 10);
+  if (_tzPointCache.has(ck)) return _tzPointCache.get(ck);
+  let zone = null;
+  try {
+    const grid = _tzApGridBuild();
+    const ilat = Math.floor(lat), ilon = Math.floor(lon);
+    let best = null, bd = Infinity, hitRing = -1;
+    for (let r = 0; r <= 25; r++) {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dy), Math.abs(dx)) !== r) continue;   // ring edge only
+        let gx = ilon + dx;
+        while (gx >  180) gx -= 360;
+        while (gx < -180) gx += 360;
+        const arr = grid.get((ilat + dy) + ':' + gx);
+        if (!arr) continue;
+        for (const rec of arr) {
+          const d = _tzD2(lat, lon, rec.latitude, rec.longitude);
+          if (d < bd) { bd = d; best = rec; }
+        }
+      }
+      // One ring past the first hit: the nearest field can sit in a diagonal
+      // neighbour of the ring that first produced a candidate.
+      if (best) { if (hitRing < 0) hitRing = r; if (r >= hitRing + 1) break; }
+    }
+    if (best) zone = _tzZoneForRec(best);
+  } catch (e) { zone = null; }
+  if (_tzPointCache.size > 4000) _tzPointCache.clear();
+  _tzPointCache.set(ck, zone);
+  return zone;
+}
+
+// Intl formatters are expensive to construct; one per zone, built on demand.
+const _tzFmtCache = new Map();
+function _tzFmtFor(zone) {
+  if (_tzFmtCache.has(zone)) return _tzFmtCache.get(zone);
+  let f = null;
+  try {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch (e) { f = null; }   // runtime does not know this zone
+  _tzFmtCache.set(zone, f);
+  return f;
+}
+
+// Wall-clock fields for `date` as seen in `zone`, plus that zone's UTC offset in
+// minutes (derived by re-reading the formatted wall clock as if it were UTC and
+// diffing -- the standard trick, and the only way to get a DST-correct offset).
+function _tzPartsIn(date, zone) {
+  const f = zone && _tzFmtFor(zone);
+  if (!f) return null;
+  try {
+    const p = {};
+    for (const x of f.formatToParts(date)) p[x.type] = x.value;
+    const hh = (+p.hour) % 24;     // h23 should never emit 24; belt and braces
+    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hh, +p.minute, +p.second);
+    return { y: +p.year, mo: +p.month, d: +p.day, hh, mm: +p.minute,
+             off: Math.round((asUTC - date.getTime()) / 60000) };
+  } catch (e) { return null; }
+}
+
+// The same shape for the browser's own zone, with no Intl round-trip needed.
+function _tzPartsLocal(date) {
+  return { y: date.getFullYear(), mo: date.getMonth() + 1, d: date.getDate(),
+           hh: date.getHours(), mm: date.getMinutes(), off: -date.getTimezoneOffset() };
+}
+
+// Offset in minutes -> "GMT-7" / "GMT+5:30" / "GMT+0". Half- and quarter-hour
+// zones (India, Nepal, Chatham) must keep their minutes.
+function _tzFmtGmt(off) {
+  if (off == null || !isFinite(off)) return '';
+  const sign = off < 0 ? '-' : '+', a = Math.abs(off);
+  const h = Math.floor(a / 60), m = a % 60;
+  return 'GMT' + sign + h + (m ? ':' + String(m).padStart(2, '0') : '');
+}
+
+// -- Arrival-time zone preference (v3.97.0) ----------------------------------
+// 'local' (default, and what v3.96.0 always did) | 'dep' | 'arr'.
+const _AA_TIME_MODE_KEY = 'simfly_aa_time_mode';
+let _aaTimeMode = 'local';
+function _aaLoadTimeMode() {
+  try {
+    const v = localStorage.getItem(_AA_TIME_MODE_KEY);
+    if (v === 'local' || v === 'dep' || v === 'arr') _aaTimeMode = v;
+  } catch (e) {}
+}
+_aaLoadTimeMode();
+function _aaSetTimeMode(m) {
+  if (m !== 'local' && m !== 'dep' && m !== 'arr') return;
+  _aaTimeMode = m;
+  try { localStorage.setItem(_AA_TIME_MODE_KEY, m); } catch (e) {}
+  if (typeof _aaTimeSettingsSync === 'function') _aaTimeSettingsSync();
+  if (typeof _acRefreshFlightTimeLabels === 'function') _acRefreshFlightTimeLabels();
+}
+
+// Resolve the zone at one end of a route or measurement. `ctx` carries whatever
+// the call site knows: ICAO codes when the endpoints really are airports (exact,
+// no search), plain lat/lon otherwise (resolved through the nearest field).
+function _aaCtxZone(ctx, end) {
+  if (!ctx) return null;
+  try {
+    const icao = end === 'dep' ? ctx.depIcao : ctx.arrIcao;
+    if (icao && typeof lookupICAO === 'function') {
+      const rec = lookupICAO(icao);
+      if (rec) { const z = _tzZoneForRec(rec); if (z) return z; }
+    }
+    const lat = end === 'dep' ? ctx.depLat : ctx.arrLat;
+    const lon = end === 'dep' ? ctx.depLon : ctx.arrLon;
+    if (isFinite(lat) && isFinite(lon)) return _tzZoneForPoint(lat, lon);
+  } catch (e) {}
+  return null;
+}
+
+// Arrival time for a flight of `min` minutes departing right now, e.g.
+// "23:11 (GMT-7)". Which clock it is read on depends on the Time Settings
+// choice; `ctx` supplies the two endpoints so 'dep' / 'arr' can be honoured.
+// A later local calendar day is flagged inside the same bracket --
+// "06:40 (GMT+1, +1)" -- so an overnight can never read as tonight.
+// Returns '' when unavailable; callers append nothing.
+function _acEtaStr(min, ctx) {
   if (min == null || !isFinite(min)) return '';
   try {
     const now = new Date();
     const eta = new Date(now.getTime() + Math.round(min) * 60000);
-    // Hours/minutes are assembled by hand rather than via toLocaleTimeString so
-    // the 24-hour clock is guaranteed: `hour12:false` resolves to the h24 cycle
-    // in some ICU builds, which renders midnight as "24:00".
-    const hhmm = String(eta.getHours()).padStart(2, '0') + ':' +
-                 String(eta.getMinutes()).padStart(2, '0');
-    // Day rollover is counted on local calendar days rather than 24-hour blocks
-    // so a DST transition inside the flight can't miscount it.
-    const dayOf = d => Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000);
-    const dDays = dayOf(eta) - dayOf(now);
-    return hhmm + ' L' + (dDays > 0 ? ' (+' + dDays + ')' : '');
+    // The zone is only looked up for the two non-default modes, so a 'local'
+    // user never pays for the airport search or the Intl round-trip.
+    let zone = null;
+    if (_aaTimeMode === 'dep' || _aaTimeMode === 'arr') zone = _aaCtxZone(ctx, _aaTimeMode);
+    let pe = zone ? _tzPartsIn(eta, zone) : null;
+    let pn = zone ? _tzPartsIn(now, zone) : null;
+    // Fall back to system local whenever the chosen mode cannot be honoured --
+    // a plain ruler line with no airport near either end, an unknown zone, a
+    // point mid-ocean. A time is always shown; the bracket says which clock.
+    if (!pe || !pn) { pe = _tzPartsLocal(eta); pn = _tzPartsLocal(now); }
+    const hhmm = String(pe.hh).padStart(2, '0') + ':' + String(pe.mm).padStart(2, '0');
+    // Rollover is counted on calendar days IN THE DISPLAYED ZONE, not on 24-hour
+    // blocks, so a DST transition inside the flight cannot miscount it.
+    const dayOf = p => Math.floor(Date.UTC(p.y, p.mo - 1, p.d) / 86400000);
+    const dDays = dayOf(pe) - dayOf(pn);
+    const gmt = _tzFmtGmt(pe.off);
+    const inner = gmt + (dDays > 0 ? ', +' + dDays : '');
+    return hhmm + (inner ? ' (' + inner + ')' : '');
   } catch (_) { return ''; }
 }
 
 // Ready-to-append label fragment for distanceNm using the selected aircraft,
-// e.g. "1:45 est. · 23:11 L". Empty string when no estimate is available
-// (caller appends nothing, so missing calibration leaves the tooltip
-// untouched). Plain text on purpose -- one caller renders it via textContent.
-function _acFlightTimeStr(distanceNm) {
+// e.g. "1:45 est. · 23:11 (GMT-7)". Empty string when no estimate is
+// available (caller appends nothing, so missing calibration leaves the tooltip
+// untouched). `ctx` is optional: without it the arrival time falls back to
+// system local. Plain text on purpose -- one caller renders it via textContent.
+function _acFlightTimeStr(distanceNm, ctx) {
   const min = _acEstFlightMinutes(distanceNm);
   if (min == null) return '';
-  const eta = _acEtaStr(min);
-  return _fmtHhMm(min) + ' est.' + (eta ? ' · ' + eta : '');
+  const eta = _acEtaStr(min, ctx);
+  return _fmtHhMm(min) + ' est.' + (eta ? ' \u00b7 ' + eta : '');
 }
 
 // Read the four calibration inputs; blank fields come back as null.
@@ -31089,6 +31318,8 @@ const _MSF_FEATURE_LABELS = {
 // _MSF_GROUP_ORDER. Any non-excluded key NOT found here is still saved/loaded;
 // it just shows under "Other settings" with its raw key as the label.
 const _MSF_SETTINGS_REGISTRY = {
+  // v3.97.0 - which clock the arrival time beside a flight-time estimate uses.
+  'simfly_aa_time_mode':              { label:'Arrival time clock (mine / departure / arrival)', group:'Aircraft & calibration' },
   // Appearance
   'simfly_aa_theme':                  { label:'Theme (light / dark)',          group:'Appearance' },
   'simfly_aa_map_layer':              { label:'Map base layer',                group:'Appearance' },
@@ -33861,7 +34092,11 @@ function _rgUpdateMeasure(toLL) {
   const amNote  = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
   // Estimated en-route time for the selected aircraft — shown live as the line
   // is dragged out, matching the finalized label in _rgRedrawMeasureEntry.
-  const ftStr  = _acFlightTimeStr(nm);
+  // A measurement has no ICAOs, so the arrival-time zone (when Time Settings is
+  // set to the start or end location) resolves through the nearest field.
+  const ftStr  = _acFlightTimeStr(nm, {
+    depLat: _rgMeasureOrigin.lat, depLon: _rgMeasureOrigin.lng,
+    arrLat: toLL.lat,             arrLon: toLL.lng });
   const ftPart = ftStr ? ` &nbsp;·&nbsp; <span style="color:#7fe0a8;font-weight:700">${ftStr}</span>` : '';
 
   // While the user is actively dragging the measurement, anchor the label at
@@ -35846,7 +36081,9 @@ function _rgDrawHeroLine() {
   // Midpoint distance badge
   const mid  = L.latLng((dep.lat + arr.lat) / 2, (dep.lng + arr.lng) / 2);
   const amNote = crossesAM ? `<div class="rg-am-note">Crosses antimeridian</div>` : '';
-  const ftStr = _acFlightTimeStr(nm);   // '' when no aircraft / no calibration
+  const ftStr = _acFlightTimeStr(nm, {   // '' when no aircraft / no calibration
+    depLat: dep.lat, depLon: dep.lng,
+    arrLat: arr.lat, arrLon: arr.lng });
   const icon = L.divIcon({
     className: '',
     html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center"><div><span class="rg-hero-lbl">${nm.toLocaleString()} nm &nbsp;·&nbsp; ${km.toLocaleString()} km${ftStr ? ' &nbsp;·&nbsp; ' + ftStr : ''}</span></div>${amNote}</div>`,
@@ -35957,6 +36194,11 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
   // block-level wrapper they sit side-by-side inside the nowrap container.
   // Wrap the info chip in a plain <div> so the amNote falls on a new row,
   // matching the hero-line and measurement label layout.
+  // Computed once here rather than twice inside the template: with Time Settings
+  // on a location mode this does a zone lookup, and the route endpoints are real
+  // ICAOs so it resolves exactly (no nearest-field search).
+  const _riEta = (nm != null)
+    ? _acFlightTimeStr(nm, { depIcao: depIcao, arrIcao: arrIcao }) : '';
   const infoIcon = L.divIcon({
     className: '',
     html: `<div style="position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-align:center;pointer-events:none">` +
@@ -35966,7 +36208,7 @@ function _rgDrawRouteHL(depIcao, arrIcao, nm) {
           `<span class="rg-ri-arrow">→</span>` +
           `<span class="rg-ri-arr">${arrIcao}</span>` +
           `<span class="rg-ri-nm">${nm != null ? '· ' + nm + ' nm' : ''}</span>` +
-          `<span class="rg-ri-eta">${(nm != null && _acFlightTimeStr(nm)) ? '· ' + _acFlightTimeStr(nm) : ''}</span>` +
+          `<span class="rg-ri-eta">${_riEta ? '· ' + _riEta : ''}</span>` +
           `<button class="rg-ri-close" onclick="event.stopPropagation();if(typeof _rgClearDotSel==='function')_rgClearDotSel()" title="Clear route">✕</button>` +
           `</div>` +
           `</div>${lowNote}${amNote}</div>`,
@@ -37134,7 +37376,8 @@ function _rgRandomGenerate() {
   if (typeof _sbPillUpdate === 'function') _sbPillUpdate();
 
   const nm  = Math.round(_haversineNm(dep.rec.latitude, dep.rec.longitude, arr.rec.latitude, arr.rec.longitude));
-  const est = (typeof _acFlightTimeStr === 'function') ? _acFlightTimeStr(nm) : '';
+  const est = (typeof _acFlightTimeStr === 'function')
+    ? _acFlightTimeStr(nm, { depIcao: dep.icao, arrIcao: arr.icao }) : '';
   const bits = ['🎲 ' + dep.icao + ' → ' + arr.icao, nm.toLocaleString() + ' nm'];
   if (est)       bits.push(est);
   if (arr.owner) bits.push(arr.owner);
@@ -37722,7 +37965,9 @@ function _rgRedrawMeasureEntry(i) {
   // ✕ close badge — anchored to the distance label so it tracks the tooltip
   // and never conflicts with the ring, line, pin or edge handle.
   const closeX = `<span class="rg-meas-close" style="border-color:${_rgMeasColorRgba(0.9)}" title="Remove this measurement">✕</span>`;
-  const ftStr = _acFlightTimeStr(nm);   // '' when no aircraft / no calibration
+  const ftStr = _acFlightTimeStr(nm, {   // '' when no aircraft / no calibration
+    depLat: origin.lat, depLon: origin.lng,
+    arrLat: toLL.lat,   arrLon: toLL.lng });
   const ftPart = ftStr ? ` &nbsp;·&nbsp; <span style="color:#7fe0a8;font-weight:700">${ftStr}</span>` : '';
   const html  = `<div style="position:absolute;transform:${wrapTransform};white-space:nowrap;text-align:center">` +
     `<div class="rg-ring-lbl" style="position:relative;font-size:0.94rem;padding:0.22rem 0.7rem;` +
@@ -38093,7 +38338,9 @@ function _rgUpdateRulerTo(ll) {
   const cpt  = _rgMap.latLngToContainerPoint(ll);
   // Append the selected aircraft's estimated en-route time live as the hero
   // line is stretched toward the arrival (plain text — this label is textContent).
-  const ftStr = _acFlightTimeStr(nm);
+  const ftStr = _acFlightTimeStr(nm, {
+    depLat: _rgDepCenter.lat, depLon: _rgDepCenter.lng,
+    arrLat: ll.lat,           arrLon: ll.lng });
   _rgShowNmLabel({ clientX: rect.left + cpt.x, clientY: rect.top + cpt.y },
                  Math.round(nm) + ' nm to arrival' + (ftStr ? ' · ' + ftStr : ''), false);
 }
@@ -42096,6 +42343,98 @@ function _rgRebuildNewAirports() {
   if (btn) btn.style.display = newAirportsDB.size > 0 ? '' : 'none';
   _rgRenderDots();
 }
+// -- Time Settings modal (v3.97.0) -------------------------------------------
+// Chooses which clock the arrival time beside every flight-time estimate is
+// read on. Opened from the Display menu. Deliberately a plain radio list: the
+// three options are mutually exclusive and each needs a sentence of context.
+function _aaTimeSettingsOpen(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  _rgCloseAnyPulldown();
+  const existing = document.getElementById('aaTimeModal');
+  if (existing) { existing.remove(); return; }
+  const OPTS = [
+    ['local', 'My local time',
+     'The clock on this computer, wherever you happen to be.'],
+    ['dep',   'Time at the departure',
+     'The clock at the departure airport, or at the point a measurement starts.'],
+    ['arr',   'Time at the arrival',
+     'The clock at the arrival airport, or at the point a measurement ends.'],
+  ];
+  const rows = OPTS.map(([val, title, desc]) => `
+    <label data-aatm-row="${val}" onclick="_aaSetTimeMode('${val}')" style="display:flex;gap:10px;align-items:flex-start;padding:10px 11px;margin-bottom:7px;border-radius:7px;cursor:pointer;border:1px solid ${_aaTimeMode === val ? '#00c8ff' : 'rgba(255,255,255,0.14)'};background:${_aaTimeMode === val ? 'rgba(0,200,255,0.10)' : 'rgba(255,255,255,0.03)'};transition:background .12s,border-color .12s;">
+      <span data-aatm-dot="${val}" style="flex-shrink:0;width:14px;height:14px;margin-top:2px;border-radius:50%;border:2px solid ${_aaTimeMode === val ? '#00c8ff' : 'rgba(255,255,255,0.35)'};box-shadow:${_aaTimeMode === val ? 'inset 0 0 0 3px #00c8ff' : 'none'};"></span>
+      <span style="display:block;">
+        <span style="display:block;color:#fff;font-size:0.95rem;font-weight:600;line-height:1.25;">${title}</span>
+        <span style="display:block;color:#9fb0c4;font-size:0.8rem;line-height:1.35;margin-top:2px;">${desc}</span>
+      </span>
+    </label>`).join('');
+  const overlay = document.createElement('div');
+  overlay.id = 'aaTimeModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', ev => { if (ev.target === overlay) overlay.remove(); });
+  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:20px 24px;width:400px;max-width:92vw;font-family:Rajdhani,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <span style="font-family:Orbitron,monospace;font-size:0.82rem;letter-spacing:0.1em;color:#fff;text-transform:uppercase;">&#128336; Time Settings</span>
+    <button onclick="document.getElementById('aaTimeModal').remove()" style="background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+  </div>
+  <div style="color:#9fb0c4;font-size:0.82rem;line-height:1.45;margin-bottom:14px;">
+    Every estimated flight time is followed by the time you would land. Choose which clock that arrival time is read on &mdash; the GMT offset shown beside it always tells you which one you are looking at.
+  </div>
+  ${rows}
+  <div id="aaTimeEg" style="margin-top:12px;padding:9px 11px;border-radius:6px;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.09);color:#7fe0a8;font-size:0.9rem;font-weight:700;text-align:center;"></div>
+  <div style="color:#7d8b9c;font-size:0.75rem;line-height:1.4;margin-top:9px;">
+    When a location's zone cannot be worked out &mdash; a ruler line far from any airport, for instance &mdash; the arrival time falls back to your own clock.
+  </div>
+</div>`;
+  document.body.appendChild(overlay);
+  _aaTimeSettingsSync();
+}
+
+// Repaint the modal's selection state and its worked example. Called whenever
+// the mode changes, so clicking a row updates in place instead of reopening.
+function _aaTimeSettingsSync() {
+  const m = document.getElementById('aaTimeModal');
+  if (!m) return;
+  for (const val of ['local', 'dep', 'arr']) {
+    const row = m.querySelector(`[data-aatm-row="${val}"]`);
+    const dot = m.querySelector(`[data-aatm-dot="${val}"]`);
+    const on  = (_aaTimeMode === val);
+    if (row) {
+      row.style.borderColor = on ? '#00c8ff' : 'rgba(255,255,255,0.14)';
+      row.style.background  = on ? 'rgba(0,200,255,0.10)' : 'rgba(255,255,255,0.03)';
+    }
+    if (dot) {
+      dot.style.borderColor = on ? '#00c8ff' : 'rgba(255,255,255,0.35)';
+      dot.style.boxShadow   = on ? 'inset 0 0 0 3px #00c8ff' : 'none';
+    }
+  }
+  // Worked example from the live route when there is one, so the setting can be
+  // judged against a real pair of airports rather than an abstraction.
+  const eg = document.getElementById('aaTimeEg');
+  if (!eg) return;
+  let txt = '';
+  try {
+    const d = (typeof _rgDotSelDep !== 'undefined' && _rgDotSelDep) || (typeof _rgSelDep !== 'undefined' && _rgSelDep) || null;
+    const a = (typeof _rgDotSelArr !== 'undefined' && _rgDotSelArr) || (typeof _rgSelArr !== 'undefined' && _rgSelArr) || null;
+    if (d && a) {
+      const dr = lookupICAO(d), ar = lookupICAO(a);
+      if (dr && ar && dr.latitude != null) {
+        const nm = Math.round(_haversineNm(dr.latitude, dr.longitude, ar.latitude, ar.longitude));
+        const st = _acFlightTimeStr(nm, { depIcao: d, arrIcao: a });
+        txt = st ? (d + ' \u2192 ' + a + '  \u00b7  ' + st)
+                 : (d + ' \u2192 ' + a + '  \u00b7  select and calibrate an aircraft to see an estimate');
+      }
+    }
+    if (!txt) {
+      // No route up: show the current clock in the chosen mode using a nominal
+      // 90-minute leg, so the bracket still demonstrates the setting.
+      const eta = _acEtaStr(90, null);
+      txt = 'Example \u00b7 1:30 est. \u00b7 ' + (eta || '\u2014');
+    }
+  } catch (e) { txt = ''; }
+  eg.textContent = txt;
+}
+
 function _rgNewAirportSettingsModal(e) {
   if (e) { e.preventDefault(); e.stopPropagation(); }
   // v3.19.22 — stamp so the synthesised click that follows a mobile long-press
@@ -47495,7 +47834,7 @@ function rgSendToFlightPlanner() {
             The <strong>Fuel</strong> slider sets fuel load as a percentage of max capacity. The <strong>Payload</strong> slider sets passenger/cargo load as a percentage of max payload. Both sliders feed into the adjusted performance column and affect the suitability check. The stacked <strong>Weights</strong> bar shows OEW, payload, and fuel as proportions of MTOW.<br/><br/>
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
             Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
-            <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Each estimate is followed by the <strong>arrival time on your own clock</strong> — e.g. <strong>1:30 est. &middot; 23:11 L</strong> — read in your computer's time zone on a 24-hour clock, the trailing <strong>L</strong> being the usual aviation mark for local time, with a <strong>(+1)</strong> appended when the flight lands on a later day. It means “if you depart now”, so it refreshes once a minute and again the moment you return to the tab. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate and its arrival time are simply omitted.<br/><br/>
+            <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Each estimate is followed by the <strong>arrival time</strong> — e.g. <strong>1:30 est. &middot; 23:11 (GMT-7)</strong> — on a 24-hour clock, with the <strong>GMT offset</strong> of the time shown beside it and a <strong>, +1</strong> inside the same bracket when the flight lands on a later day. Which clock it is read on is your choice: open <strong>&#128065; Display &rarr; &#128336; Time Settings</strong> and pick <strong>My local time</strong> (the default), <strong>Time at the departure</strong>, or <strong>Time at the arrival</strong> — for a measurement, the point the line starts and the point it ends. Zones are resolved from a built-in table of the international time zone database, so daylight saving is always applied correctly and places that do not observe it (Arizona, Saskatchewan, Queensland) read their true offset; where no zone can be determined — a ruler line far from any airport — the time falls back to your own clock. It means “if you depart now”, so it refreshes once a minute and again the moment you return to the tab. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate and its arrival time are simply omitted.<br/><br/>
             <strong>Improve accuracy with live flight data</strong> (v3.63.0) — turn on the checkbox in the calibration panel and the app learns each aircraft&rsquo;s real performance from the flights you actually fly with <strong>FSUIPC connected</strong>. On every flight it captures the <strong>airborne time</strong> (wheels-up to wheels-down, so taxi is excluded) and the <strong>actual distance flown</strong>, then blends those with your two reference flights to sharpen all the estimates above. If telemetry drops mid-flight (e.g. you open the in-sim menu) the time and distance both pause; a gap longer than five minutes discards that flight. Captured flights are grouped into ~100 nm distance bands &mdash; each band keeps your most recent flights &mdash; so repeated flights at one distance refine that point instead of skewing the line, and your spread of short and long legs is preserved. A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type, or to the selected aircraft when no plan is loaded. The setting is <strong>per aircraft and off by default</strong>; the <strong>View data</strong> button opens a graph of your captured flights with the calculated line drawn through them and a dated table where you can remove an individual flight or reset the aircraft&rsquo;s live data. This feature requires a PC sim with FSUIPC, so it&rsquo;s desktop-only.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
@@ -47995,8 +48334,22 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="feature">
         <div class="release-header">
-          <span class="release-version">v3.96.0</span>
+          <span class="release-version">v3.97.0</span>
           <span class="release-date">Aug 31, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>You can now choose which clock the arrival time is shown on.</strong> A new <strong>&#128336; Time Settings</strong> window in the <strong>&#128065; Display</strong> menu offers three choices: <strong>My local time</strong> (the clock on this computer &mdash; the default, and what the app did before), <strong>Time at the departure</strong>, or <strong>Time at the arrival</strong>. For a measurement rather than a route, &ldquo;departure&rdquo; and &ldquo;arrival&rdquo; mean the point the line starts and the point it ends. The window shows a live example built from your current route, so you can see the effect before you close it, and every flight-time label on the map updates the moment you pick.</li>
+          <li><strong>The arrival time now names its zone as a GMT offset &mdash; <em>23:11 (GMT-7)</em>.</strong> This replaces the plain <strong>L</strong> marker from v3.96.0. Because you can now be looking at three different clocks, the label always tells you which one: the offset shown is the offset of the time displayed. Half-hour and quarter-hour zones keep their minutes, so India reads <strong>(GMT+5:30)</strong> and Nepal <strong>(GMT+5:45)</strong>. An arrival on a later day still says so, now inside the same bracket &mdash; <strong>06:40 (GMT+1, +1)</strong>.</li>
+          <li><strong>Daylight saving is handled properly, everywhere.</strong> The offset is worked out for the actual moment you would land, at that actual place &mdash; so a destination that is on summer time reads its summer offset, and one that never changes its clocks (Arizona, Saskatchewan, Queensland, Yukon) reads its true year-round offset rather than its neighbours&rsquo;.</li>
+          <li><strong>How the app knows the time zone at a place.</strong> The airport data it uses carries no time zone, and the app has to keep working with no internet connection, so it now carries a small built-in table &mdash; about 18&nbsp;KB &mdash; built from the international time zone database. It resolves a zone from the airport&rsquo;s country and state/province, with extra detail for the 94 states and provinces that are genuinely split across two zones (Indiana, Arizona, Western Australia and the like). Checked against all 85,936 airports in the database, it gets the offset right <strong>99.9%</strong> of the time; the handful it misses sit directly on a zone boundary. A measurement endpoint, which is not an airport, borrows the zone of the nearest field.</li>
+          <li><strong>If a zone genuinely cannot be worked out, you still get a time.</strong> A ruler line far out to sea has no airport to borrow from &mdash; in that case the arrival time falls back to your own clock, and the GMT offset beside it quietly tells you that is what happened. The time never simply disappears.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.96.0</span>
+          <span class="release-date">Aug 31, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
@@ -61286,6 +61639,7 @@ function rgSendToFlightPlanner() {
             <button class="rg-btn rg-pulldown-row" id="rgStarFilterBtn" onclick="_rgToggleStarFilter();_rgCloseAnyPulldown()" title="Filter airports by minimum scenery star rating"><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Star Rating</span></button>
             <div class="rg-pulldown-sep"></div>
             <button class="rg-btn rg-pulldown-row" id="rgLayersBtn" onclick="_rgLayersOpenModal();_rgCloseAnyPulldown()" title="Reorder which map layers draw on top of others — drag to set the stacking order"><span class="rg-row-icon">🗂</span><span class="rg-btn-label">Layers…</span></button>
+            <button class="rg-btn rg-pulldown-row" id="rgTimeSettingsBtn" onclick="_aaTimeSettingsOpen(event)" title="Choose which clock the arrival time beside every flight-time estimate is read on — your own, the departure's, or the arrival's"><span class="rg-row-icon">🕐</span><span class="rg-btn-label">Time Settings…</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgAppearanceBtn" onclick="_rgAppearanceToggle();_rgCloseAnyPulldown()" title="Choose how airport dots look — flat, water droplet, or glass — and how airports with scenery in your library are marked"><span class="rg-row-icon">🎨</span><span class="rg-btn-label">Appearance…</span></button>
           </div>
         </div>
