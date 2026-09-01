@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.95.0**
+**Current version: v3.96.0**
 
 ---
 
@@ -69,6 +69,8 @@ Hover the button for the details. An amber tooltip separates genuine **Cautions*
 
 ### Flight Time Calibration
 Calibrate any aircraft with two reference flights — a short one and a long one, each entered as distance (nm) and elapsed time (minutes) read off the SimFly UI — and the app shows an estimated en-route time wherever distance appears: on route lines, the map, measurements, and airport cards. As of v3.59.0 this lives in a clearly highlighted ⏱ card in the aircraft panel (it turns amber until the selected aircraft is calibrated, cyan once it is) since it feeds estimates used throughout the app. Calibration is saved per aircraft in your browser.
+
+**Every estimate now comes with an arrival time (v3.96.0).** Alongside the estimated en-route time you get the time you would land on your own clock — **1:30 est. · 23:11 L** — read in whatever time zone your computer is set to, on a 24-hour clock, with the trailing **L** marking it as local time in the usual aviation shorthand. It appears everywhere the estimate does: the ruler and saved measurements, the Region Mode hero line, the selected route line, the “nm to arrival” readout while you stretch the hero line toward the arrival, and the 🎲 Random Flight result. A flight that lands after midnight reads **06:40 L (+1)** so an overnight is never mistaken for tonight. The time assumes you depart now, so it refreshes once a minute and again the moment you come back to the tab — returning to the app after a while never shows you a stale landing time. As always, no calibrated aircraft means no estimate and no arrival time.
 
 **Improve accuracy with live flight data (v3.63.0).** Turn on the checkbox in the calibration card and the app learns each aircraft's real performance from the flights you actually fly with **FSUIPC connected** — no extra data entry. On every flight it captures the **airborne time** (wheels-up to wheels-down, so taxiing never counts) and the **actual distance flown**, then blends those with your two reference flights to sharpen all the estimates above. If your telemetry drops mid-flight — for example when you open the in-sim menu — the time and distance both pause until it resumes, and a gap longer than five minutes simply discards that flight rather than logging a bad one. Captured flights are grouped into distance bands so flying the same route ten times sharpens that point instead of skewing the whole calibration, while your spread of short and long legs is always kept. A finished flight is matched to your loaded SimBrief plan's aircraft, or to the aircraft you have selected when no plan is loaded. The setting is **per aircraft and off by default**, and a **View data** button opens a graph of your captured flights with the calculated line drawn through them, plus a dated table where you can remove any single flight or reset the aircraft's data. Because it needs a PC simulator with FSUIPC, this feature is desktop-only.
 

@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.95.0';
+const APP_VERSION = '3.96.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10202,12 +10202,39 @@ function _fmtHhMm(min) {
   return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
 }
 
+// Local-clock arrival time for a flight of `min` minutes departing right now,
+// e.g. "23:11 L" (v3.96.0) -- the browser's own time zone, on the aviation
+// convention where a trailing L marks a local time. A "(+1)" suffix is added
+// when the arrival lands on a later local calendar day, so a long haul can
+// never silently read as tonight. Returns '' when unavailable; callers append
+// nothing.
+function _acEtaStr(min) {
+  if (min == null || !isFinite(min)) return '';
+  try {
+    const now = new Date();
+    const eta = new Date(now.getTime() + Math.round(min) * 60000);
+    // Hours/minutes are assembled by hand rather than via toLocaleTimeString so
+    // the 24-hour clock is guaranteed: `hour12:false` resolves to the h24 cycle
+    // in some ICU builds, which renders midnight as "24:00".
+    const hhmm = String(eta.getHours()).padStart(2, '0') + ':' +
+                 String(eta.getMinutes()).padStart(2, '0');
+    // Day rollover is counted on local calendar days rather than 24-hour blocks
+    // so a DST transition inside the flight can't miscount it.
+    const dayOf = d => Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000);
+    const dDays = dayOf(eta) - dayOf(now);
+    return hhmm + ' L' + (dDays > 0 ? ' (+' + dDays + ')' : '');
+  } catch (_) { return ''; }
+}
+
 // Ready-to-append label fragment for distanceNm using the selected aircraft,
-// e.g. "1:45 est.". Empty string when no estimate is available (caller appends
-// nothing, so missing calibration leaves the tooltip untouched).
+// e.g. "1:45 est. · 23:11 L". Empty string when no estimate is available
+// (caller appends nothing, so missing calibration leaves the tooltip
+// untouched). Plain text on purpose -- one caller renders it via textContent.
 function _acFlightTimeStr(distanceNm) {
   const min = _acEstFlightMinutes(distanceNm);
-  return (min == null) ? '' : _fmtHhMm(min) + ' est.';
+  if (min == null) return '';
+  const eta = _acEtaStr(min);
+  return _fmtHhMm(min) + ' est.' + (eta ? ' · ' + eta : '');
 }
 
 // Read the four calibration inputs; blank fields come back as null.
@@ -10321,6 +10348,30 @@ function _acRefreshFlightTimeLabels() {
     }
   } catch(e) { /* never let a label refresh break the UI */ }
 }
+
+// ETA labels read "if you depart now", so they go stale the moment they are
+// drawn (v3.96.0). Re-run the same redraw path once a minute to keep the
+// on-screen figures honest. Deliberately skipped when there is nothing to
+// change: no calibration means every label is estimate-free anyway, a hidden
+// tab has nothing to see (and the redraw forces synchronous layout), and an
+// in-progress measurement drag is already redrawing every frame. A
+// visibilitychange catch-up refreshes the instant the tab comes back, so
+// returning to a backgrounded map never shows a minutes-old arrival time.
+let _acEtaTickTimer = null;
+function _acEtaTick() {
+  try {
+    if (document.hidden) return;
+    if (typeof _rgDragMode !== 'undefined' && _rgDragMode) return;
+    if (_acEstFlightMinutes(100) == null) return;   // no calibrated aircraft → no ETA anywhere
+    _acRefreshFlightTimeLabels();
+  } catch (e) { /* a stale ETA is never worth breaking the map over */ }
+}
+function _acStartEtaTicker() {
+  if (_acEtaTickTimer) return;
+  _acEtaTickTimer = setInterval(_acEtaTick, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _acEtaTick(); });
+}
+_acStartEtaTicker();
 
 // ── Live flight-data calibration (v3.63.0) ───────────────────────────────────
 // Opt-in, per aircraft. When enabled for an aircraft, real flights flown with
@@ -47444,7 +47495,7 @@ function rgSendToFlightPlanner() {
             The <strong>Fuel</strong> slider sets fuel load as a percentage of max capacity. The <strong>Payload</strong> slider sets passenger/cargo load as a percentage of max payload. Both sliders feed into the adjusted performance column and affect the suitability check. The stacked <strong>Weights</strong> bar shows OEW, payload, and fuel as proportions of MTOW.<br/><br/>
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
             Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
-            <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate is simply omitted.<br/><br/>
+            <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Each estimate is followed by the <strong>arrival time on your own clock</strong> — e.g. <strong>1:30 est. &middot; 23:11 L</strong> — read in your computer's time zone on a 24-hour clock, the trailing <strong>L</strong> being the usual aviation mark for local time, with a <strong>(+1)</strong> appended when the flight lands on a later day. It means “if you depart now”, so it refreshes once a minute and again the moment you return to the tab. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate and its arrival time are simply omitted.<br/><br/>
             <strong>Improve accuracy with live flight data</strong> (v3.63.0) — turn on the checkbox in the calibration panel and the app learns each aircraft&rsquo;s real performance from the flights you actually fly with <strong>FSUIPC connected</strong>. On every flight it captures the <strong>airborne time</strong> (wheels-up to wheels-down, so taxi is excluded) and the <strong>actual distance flown</strong>, then blends those with your two reference flights to sharpen all the estimates above. If telemetry drops mid-flight (e.g. you open the in-sim menu) the time and distance both pause; a gap longer than five minutes discards that flight. Captured flights are grouped into ~100 nm distance bands &mdash; each band keeps your most recent flights &mdash; so repeated flights at one distance refine that point instead of skewing the line, and your spread of short and long legs is preserved. A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type, or to the selected aircraft when no plan is loaded. The setting is <strong>per aircraft and off by default</strong>; the <strong>View data</strong> button opens a graph of your captured flights with the calculated line drawn through them and a dated table where you can remove an individual flight or reset the aircraft&rsquo;s live data. This feature requires a PC sim with FSUIPC, so it&rsquo;s desktop-only.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
@@ -47942,10 +47993,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.96.0</span>
+          <span class="release-date">Aug 31, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Estimated flight times now tell you what time you would land.</strong> Everywhere the app shows an estimated en-route time for the selected aircraft, it now shows the arrival time alongside it &mdash; <strong>1:30 est. &middot; 23:11 L</strong>. The clock is your own: whatever time zone your computer is set to, on a 24-hour clock, with a trailing <strong>L</strong> marking it as local time in the usual aviation shorthand. This appears on the <strong>ruler and saved measurements</strong>, the <strong>Region Mode hero line</strong>, the <strong>selected route line</strong>, the <strong>&ldquo;nm to arrival&rdquo; readout</strong> while you stretch the hero line, and in the <strong>random flight</strong> toast. As before, nothing is shown unless you have an aircraft selected and calibrated &mdash; no calibration, no estimate, no arrival time.</li>
+          <li><strong>An arrival on a later day is marked, not hidden.</strong> A long flight that lands after midnight reads <strong>06:40 L (+1)</strong> so an overnight can never be mistaken for tonight. The day count is worked out on calendar days rather than 24-hour blocks, so a daylight-saving change part-way through a flight does not throw it off.</li>
+          <li><strong>The arrival time keeps itself current.</strong> It means &ldquo;if you left now&rdquo;, so a figure drawn ten minutes ago would quietly be ten minutes wrong. On-screen arrival times now refresh once a minute, and refresh immediately when you come back to the tab &mdash; so returning to AA after a while never shows you a stale landing time. The refresh does nothing at all when there is nothing to update: no calibrated aircraft, a hidden tab, or a measurement mid-drag.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.95.0</span>
-          <span class="release-date">Aug 27, 2026 &middot; Current</span>
+          <span class="release-date">Aug 27, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
