@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.97.0';
+const APP_VERSION = '3.98.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20202,6 +20202,7 @@ function _afkHistoryFmtDismissal(entry) {
   const tag = r === 'timer'         ? 'duration timer'
             : r === 'group-cascade' ? 'group cascade'
             : r === 'user'          ? 'user dismissed'
+            : r === 'rearm'         ? 'dismissed + re-armed'
             : (r || 'dismissed');
   const cls = r === 'timer' ? 'afk-hist-pill-timer'
             : r === 'group-cascade' ? 'afk-hist-pill-cascade'
@@ -20389,6 +20390,10 @@ const _afkPhase = (() => {
   const MAX_SAMPLES = 240;          // rolling buffer length (~2 min @ 500ms or 40 min @ 10s)
   const samples = [];               // { t, alt }
   let peakClimbVS = 0;              // max sustained climb VS this flight (fpm)
+  // v3.98.0 — Level-off CONFIRMATION constants. See _levelOffConfirmed().
+  const LEVEL_CONFIRM_SEC = 30;     // how long the altitude trace must stay flat
+  const LEVEL_NET_FPM     = 100;    // max mean VS across that window (= 50 ft net)
+  const LEVEL_SPREAD_FT   = 300;    // max peak-to-peak altitude excursion allowed
   let lastEmittedPhase = null;
   let lastTransition = null;        // { from, to, t }
   let lastChangeAt = 0;
@@ -20483,6 +20488,98 @@ const _afkPhase = (() => {
     return ((newest.alt - oldest.alt) / dtSec) * 60;
   }
 
+  // v3.98.0 — Least-squares altitude slope over the last `ms`, in fpm.
+  //
+  // Deliberately NOT the endpoint difference that fastVSfpm / trendVSfpm use.
+  // An endpoint delta is at the mercy of where the two samples happen to land
+  // on an oscillation: level flight wobbling ±80 ft can show a 320 fpm
+  // "trend" purely from endpoint placement, which would block a legitimate
+  // cruise call for as long as the turbulence lasted. A regression slope
+  // reads the underlying trend and ignores symmetric wobble — exactly the
+  // distinction this test needs: is the aircraft GOING somewhere, or just
+  // moving about while staying put?
+  function windowSlopeFpm(ms) {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    const cutoff = newest.t - ms;
+    let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      if (samples[i].t < cutoff) break;
+      const x = (samples[i].t - newest.t) / 1000;   // seconds, <= 0
+      const y = samples[i].alt;
+      n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
+    }
+    if (n < 3) return 0;
+    const denom = n * sxx - sx * sx;
+    if (Math.abs(denom) < 1e-9) return 0;
+    return ((n * sxy - sx * sy) / denom) * 60;      // ft/s → ft/min
+  }
+
+  // v3.98.0 — Peak-to-peak altitude excursion over the last `ms`.
+  // Catches an oscillating climb whose net displacement averages out but
+  // whose trace is plainly not level.
+  function altSpreadFt(ms) {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    const cutoff = newest.t - ms;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      if (samples[i].t < cutoff) break;
+      if (samples[i].alt < lo) lo = samples[i].alt;
+      if (samples[i].alt > hi) hi = samples[i].alt;
+    }
+    if (!isFinite(lo) || !isFinite(hi)) return 0;
+    return hi - lo;
+  }
+
+  // v3.98.0 — LEVEL-OFF CONFIRMATION (the anti-false-cruise test).
+  //
+  // The pre-v3.98.0 climb -> cruise rule was a single 5 s averaged VS inside
+  // a fixed +/-200 fpm band. Two ways that produced a false CRUISE:
+  //
+  //   1. A genuinely SLOW climb lives inside the band permanently. 200 fpm
+  //      across a 5 s window is ~17 ft of altitude change, so a heavy in the
+  //      last few thousand feet, a loaded piston, or the tail of a step climb
+  //      simply reads as "level" for as long as it keeps climbing.
+  //   2. A normal climb only needed one bad 5 seconds — sinking air, a
+  //      speed-trade pitch-down, an autopilot capture — to flip the phase.
+  //
+  // The Descent Started alarm learned the same lesson in v3.93.0: a RATE test
+  // alone is not evidence, so it also requires a minimum altitude DISPLACEMENT
+  // (params.minDropFt). This is the mirror of that fix for the cruise side.
+  //
+  // A level-off is confirmed only when, across a LEVEL_CONFIRM_SEC window:
+  //   - the mean VS is within +/-LEVEL_NET_FPM (i.e. the aircraft has not
+  //     actually GONE anywhere — 100 fpm over 30 s is only 50 ft), and
+  //   - the peak-to-peak excursion is within LEVEL_SPREAD_FT.
+  //
+  // A 150 fpm slow climb nets 75 ft over the window and is rejected; ALT-hold
+  // wobble and light turbulence net ~0 and are accepted. The test is stateless
+  // — it reads the buffer fresh each tick — so a single noisy sample cannot
+  // restart a confirmation countdown, which is what makes it usable in
+  // turbulence where a dwell timer would never finish.
+  //
+  // Warm-up: with less than LEVEL_CONFIRM_SEC of altitude history (page
+  // reload, crash recovery, unpause) this returns false and the aircraft
+  // stays in CLIMB. That is self-healing — the buffer fills at 1 Hz, so the
+  // wait is bounded at LEVEL_CONFIRM_SEC. Deliberately NOT the "fall back to
+  // the fast window" pattern trendVSfpm uses: falling back here would
+  // reinstate exactly the false positive this function exists to prevent.
+  function levelOffConfirmed() {
+    if (samples.length < 2) return false;
+    const newest = samples[samples.length - 1];
+    const winMs  = LEVEL_CONFIRM_SEC * 1000;
+    // The window must lie ENTIRELY inside the current phase. Without this,
+    // the 30 s window immediately after liftoff still contains flat
+    // ground-elevation samples, which read as a perfect level-off and fire
+    // Cruise Reached on the climbout — the same trap v3.16.1 patched with a
+    // 6 s dwell guard, which is far too short to cover a 30 s window.
+    if ((newest.t - lastChangeAt)  < winMs) return false;
+    if ((newest.t - samples[0].t) < winMs) return false;
+    if (Math.abs(windowSlopeFpm(winMs)) > LEVEL_NET_FPM) return false;
+    return altSpreadFt(winMs) <= LEVEL_SPREAD_FT;
+  }
+
   function _computePhase(altFt, gsKts, gndFlag) {
     // v3.16.0 — Asymmetric two-window bucket model.
     // v3.18.2 — Asymmetric thresholds added alongside the asymmetric
@@ -20554,16 +20651,20 @@ const _afkPhase = (() => {
       // contains flat ground-altitude samples (fastVS ≈ 0 fpm), which
       // would otherwise trigger a false CLIMB→CRUISE in the first tick
       // airborne and fire the Cruise Reached alarm on takeoff.
+      // v3.98.0 — the fast-window rate check is now only the ENTRY GATE.
+      // levelOffConfirmed() is the evidence: 30 s of genuinely flat altitude.
       const climbDwellMs = now - lastChangeAt;
-      if (Math.abs(fastVS) <= LEVEL_THRESH && climbDwellMs >= 6000) {
+      if (Math.abs(fastVS) <= LEVEL_THRESH && climbDwellMs >= 6000 && levelOffConfirmed()) {
         next = 'cruise';
       } else if (trendVS < -EXIT_THRESH) {
         // Direct CLIMB → DESCENT (rare): trend window + exit threshold.
         next = 'descent';
       }
     } else if (prev === 'descent') {
-      // DESCENT → CRUISE uses FAST window at LEVEL_THRESH.
-      if (Math.abs(fastVS) <= LEVEL_THRESH) {
+      // DESCENT → CRUISE uses FAST window at LEVEL_THRESH, plus the same
+      // v3.98.0 displacement confirmation used by CLIMB → CRUISE, so a long
+      // shallow drift-down can no longer be mistaken for a level-off.
+      if (Math.abs(fastVS) <= LEVEL_THRESH && levelOffConfirmed()) {
         next = 'cruise';
       } else if (trendVS > EXIT_THRESH) {
         // Direct DESCENT → CLIMB (rare; e.g. go-around from descent).
@@ -20629,8 +20730,18 @@ const _afkPhase = (() => {
   function vsFpm() { return instantVSfpm(); }
   function lastChange() { return lastTransition; }
   function lastChangeTime() { return lastChangeAt; }
+  // v3.98.0 — exposed so _afkEvalCruise can re-check the level-off evidence
+  // itself rather than trusting the phase label alone (defence in depth).
+  //
+  // levelSlopeFpm deliberately exposes the raw regression slope rather than
+  // levelOffConfirmed's boolean: that boolean is scoped to the CURRENT phase,
+  // so it is false for LEVEL_CONFIRM_SEC after every transition — including
+  // the climb → cruise transition the alarm is waiting on. Handing the alarm
+  // the boolean would make it block itself for 30 s after the phase it needs.
+  function trendVsFpm()   { return trendVSfpm(); }
+  function levelSlopeFpm(){ return windowSlopeFpm(LEVEL_CONFIRM_SEC * 1000); }
 
-  return { reset, update, get, vsFpm, lastChange, lastChangeTime };
+  return { reset, update, get, vsFpm, lastChange, lastChangeTime, trendVsFpm, levelSlopeFpm };
 })();
 
 // ---------------------- HAVERSINE HELPER (nm) -----------------------------
@@ -22050,6 +22161,44 @@ function _afkEvalTimer(alarm) {
   return false;
 }
 
+// v3.98.0 — Planned cruise altitude from the loaded SimBrief OFP, in feet,
+// or 0 when no plan is loaded / the plan carries no usable altitude.
+// Prefers the highest altitude across CRUISE-stage navlog fixes (correct for
+// a stepped plan, where general.initial_altitude is only the FIRST level) and
+// falls back to general.initial_altitude when the navlog has no stage data.
+function _afkPlannedCruiseAltFt() {
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp) return 0;
+  let best = 0;
+  try {
+    const nav = fp.navlog && fp.navlog.fix;
+    const fixes = Array.isArray(nav) ? nav : (nav ? [nav] : []);
+    for (const f of fixes) {
+      const stage = (f.stage || '').toString().toLowerCase();
+      if (stage !== 'cruise' && stage !== 'crz') continue;
+      const a = parseFloat(f.altitude_feet);
+      if (isFinite(a) && a > best) best = a;
+    }
+  } catch (_) {}
+  if (best <= 0) {
+    const ia = parseFloat(fp.general && fp.general.initial_altitude);
+    if (isFinite(ia) && ia > 0) best = ia;
+  }
+  return best > 0 ? best : 0;
+}
+// How far below planned cruise still counts as "this is the real cruise".
+const _AFK_CRUISE_PLAN_TOL_FT = 2000;
+// Escape hatch for the plan guard — after this long genuinely level, the
+// aircraft IS at cruise whatever the flight plan wanted. Prevents the guard
+// from silently swallowing the alarm for a whole flight when ATC keeps you
+// well below planned cruise.
+const _AFK_CRUISE_PLAN_MAX_HOLD_MS = 10 * 60 * 1000;
+// How long the phase must have held CRUISE before the alarm accepts it.
+const _AFK_CRUISE_HOLD_MS = 10000;
+// Backstop only — the detector already required a far tighter slope to call
+// cruise at all. This just refuses to fire on evidence that has since gone stale.
+const _AFK_CRUISE_LEVEL_SLOPE_FPM = 200;
+
 function _afkEvalCruise(alarm, ac) {
   if (alarm.state.fired) return false;
   // v2.87.0 — Defense-in-depth against high-elevation-airport false trips:
@@ -22100,8 +22249,45 @@ function _afkEvalCruise(alarm, ac) {
     alarm.state.prevAlt = ac.alt;
     return false;
   }
-  if (_afkPhase.get() === 'cruise') { alarm.state.fired = true; return true; }
-  return false;
+  // ---- ADAPTIVE MODE -----------------------------------------------------
+  // v3.98.0 — Three-part test, replacing the bare `phase === 'cruise'` check.
+  // The phase detector's own level-off confirmation (30 s of flat altitude)
+  // is the primary defence; these are the belt-and-suspenders layer, so a
+  // future change to the detector cannot quietly re-open the false-cruise
+  // hole on its own.
+  if (_afkPhase.get() !== 'cruise') return false;
+  // (a) The CRUISE label must have HELD, not just appeared this tick.
+  let cruiseHeldMs = Infinity;
+  try {
+    const t0 = _afkPhase.lastChangeTime();
+    if (t0 > 0) cruiseHeldMs = performance.now() - t0;
+  } catch (_) {}
+  if (cruiseHeldMs < _AFK_CRUISE_HOLD_MS) return false;
+  // (b) The altitude trace must STILL be flat right now — re-checked here
+  //     rather than inherited, so a level-off that has already started
+  //     creeping back into a climb does not fire on stale evidence. Uses the
+  //     regression slope (not the phase-scoped boolean, which is false for
+  //     30 s after every transition) at a deliberately loose threshold: the
+  //     detector is the primary test, this is only a sanity backstop.
+  try {
+    const _slope = _afkPhase.levelSlopeFpm();
+    if (isFinite(_slope) && Math.abs(_slope) > _AFK_CRUISE_LEVEL_SLOPE_FPM) return false;
+  } catch (_) {}
+  // (c) Flight-plan corroboration. Levelling thousands of feet below planned
+  //     cruise is an ATC step-off, not cruise. Automates by hand what the
+  //     "Only above" field asks the user to type. Opt-out per alarm, and
+  //     self-releasing after _AFK_CRUISE_PLAN_MAX_HOLD_MS so it can never
+  //     swallow the alarm for an entire flight.
+  if (!alarm.params || alarm.params.planGuard !== false) {
+    const planned = _afkPlannedCruiseAltFt();
+    if (planned > 0 && ac && ac.alt != null && isFinite(ac.alt)
+        && ac.alt < planned - _AFK_CRUISE_PLAN_TOL_FT
+        && cruiseHeldMs < _AFK_CRUISE_PLAN_MAX_HOLD_MS) {
+      return false;
+    }
+  }
+  alarm.state.fired = true;
+  return true;
 }
 
 // v3.93.0 — Minimum altitude loss before a Descent Started alarm can trip.
@@ -23528,6 +23714,50 @@ function _afkDismissOne(id, reason) {
   _afkUpdateBadge();
 }
 
+// v3.98.0 - DISMISS AND RE-ARM. Safety net for the Cruise Reached alarm.
+//
+// The normal dismiss path deliberately does NOT clear state.fired (see the
+// comment in _afkAlarms.dismiss) and additionally disables the alarm, so one
+// false trip costs you the alarm for the whole flight - the very failure this
+// version's detector work is aimed at. This gives the user a one-click
+// alternative: silence it, but put it straight back on watch.
+//
+// waitForNewCruise is set so the alarm cannot immediately re-trip on the very
+// cruise phase it just fired on - it waits for the aircraft to leave cruise
+// (i.e. the climb resumes) and fires on the next level-off. That is exactly
+// the v3.16.0 re-arm mechanism, reused.
+//
+// Standalone alarms only; a grouped alarm keeps its group's dismissal
+// semantics (cascade / concurrent / sequential) and is dismissed normally.
+function _afkDismissOneRearm(id) {
+  const a = _afkAlarms.get(id);
+  if (!a) return;
+  if (a.groupId) { _afkDismissOne(id); return; }
+  try { _afkHistoryMarkDismissed(id, 'rearm'); } catch (_) {}
+  _afkClearAlarmTimer(id);
+  if (a.status === 'tripped') _afkOnDismiss(a);
+  a.state = a.state || {};
+  a.state.fired   = false;
+  a.state.prevAlt = null;
+  if (a.type === 'cruise')  a.state.waitForNewCruise  = true;
+  if (a.type === 'descent') a.state.waitForNewDescent = true;
+  _afkAlarms.update(id, { enabled: true, state: a.state });
+  _afkRenderAlarmList();
+  // Same audio hand-off as _afkDismissOne - swap the tone to the next
+  // still-tripped alarm, or tear the alert chrome down if none remain.
+  const remaining = _afkAlarms.tripped();
+  if (remaining.length > 0) {
+    _afkAudio.play(remaining[0].sound || 'digital-clock', _afkAudioCapSec(remaining[0]));
+  } else {
+    _afkAudio.stop();
+    _afkHideTripOverlay();
+    _afkStopTabFlash();
+  }
+  _afkUpdateBtnState();
+  _afkUpdateBadge();
+  try { _aaRtToast('↻ ' + _afkAlarmTypeLabel(a.type) + ' re-armed — it will fire again on the next detected transition.', 'ok'); } catch (_) {}
+}
+
 function _afkDismissAll() {
   // v2.87.0 — mark each currently-tripped alarm as user-dismissed in the
   // Alert History log BEFORE the dismissAll() wipes their tripped state.
@@ -23884,6 +24114,12 @@ function _afkSyncTripOverlay() {
     return '<li class="afk-trip-item">' +
       '<span class="afk-trip-item-icon">' + icon + '</span>' +
       '<span class="afk-trip-item-text">' + desc + '</span>' +
+      // v3.98.0 - re-arm affordance for the one-shot phase alarms. Dismissing
+      // normally disables them for the rest of the flight; this silences and
+      // re-arms instead, so a false positive costs nothing.
+      ((!a.groupId && (a.type === 'cruise' || a.type === 'descent'))
+        ? '<button class="afk-trip-item-x" onclick="_afkDismissOneRearm(' + a.id + ')" title="Dismiss but keep watching — re-arms for the next detected transition instead of disabling">↻</button>'
+        : '') +
       '<button class="afk-trip-item-x" onclick="_afkDismissOne(' + a.id + ')" title="Dismiss this alarm (others keep sounding)">✕</button>' +
       '</li>';
   }).join('');
@@ -24451,6 +24687,14 @@ function _afkAlarmCardSummary(a) {
     }
     if (a.params && isFinite(parseFloat(a.params.minAltFt)) && a.params.minAltFt > 0) {
       lines.push('Only above: ' + _afkFmtAltDisplay(a.params.minAltFt));
+    }
+    // v3.98.0 - only report the plan check when it is actually doing something
+    // (adaptive mode, guard on, a plan loaded), or when the user turned it off.
+    if (!(a.params && parseFloat(a.params.cruiseAltFt) > 0)) {
+      const _pg = !(a.params && a.params.planGuard === false);
+      const _pa = (typeof _afkPlannedCruiseAltFt === 'function') ? _afkPlannedCruiseAltFt() : 0;
+      if (!_pg) lines.push('Plan check: off');
+      else if (_pa > 0) lines.push('Plan check: on (plan cruise ' + _afkFmtAltDisplay(_pa) + ')');
     }
   } else if (a.type === 'descent') {
     const drop = _afkDescentMinDropFt(a);
@@ -25311,7 +25555,28 @@ function _afkRenderEditor(a) {
           (minAltFt > 0 ? _afkFmtAltDisplay(minAltFt) : '(any altitude)') +
         '</span>' +
       '</div>';
-    body = modeRow + altRow + minAltRow;
+    // v3.98.0 - Flight-plan corroboration toggle. Only meaningful in adaptive
+    // mode (specific-altitude mode is the user's own explicit threshold, so we
+    // never second-guess it) and only when a plan is actually loaded.
+    let planRow = '';
+    if (mode === 'adaptive') {
+      const plannedFt = (typeof _afkPlannedCruiseAltFt === 'function') ? _afkPlannedCruiseAltFt() : 0;
+      const guardOn   = !(a.params && a.params.planGuard === false);
+      planRow =
+        '<div class="afk-edit-row"><span class="afk-edit-label">Plan check</span>' +
+          '<label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;" ' +
+            'title="When a SimBrief plan is loaded, ignore level-offs more than 2,000 ft below the planned cruise altitude — they are ATC step-offs, not cruise. Releases itself after 10 minutes of genuinely level flight, so being held low for the whole flight still fires the alarm.">' +
+            '<input type="checkbox"' + (guardOn ? ' checked' : '') +
+              ' onchange="_afkSetCruisePlanGuard(' + a.id + ', this.checked)">' +
+            '<span style="font-family:Rajdhani,sans-serif;">Only at planned cruise altitude</span>' +
+          '</label>' +
+          '<span class="afk-altmin-hint" style="color:var(--muted);font-family:Rajdhani,sans-serif;font-variant-numeric:tabular-nums;">' +
+            (plannedFt > 0 ? 'plan: ' + _afkFmtAltDisplay(plannedFt)
+                           : '(no flight plan loaded — inactive)') +
+          '</span>' +
+        '</div>';
+    }
+    body = modeRow + altRow + minAltRow + planRow;
   }
   if (a.type === 'descent') {
     // v3.93.0 - Minimum altitude loss gate. See _afkEvalDescent. Reads the
@@ -26017,6 +26282,19 @@ function _afkSetCruiseAlt(id, v) {
       ? _afkFmtAltDisplay(a.params.cruiseAltFt)
       : '(optional — uses phase detector if blank)';
   }
+}
+
+// v3.98.0 — Per-alarm opt-out for the SimBrief cruise-altitude corroboration
+// used by _afkEvalCruise. Stored only when turned OFF is not enough — the
+// evaluator tests `planGuard !== false`, so an alarm created before v3.98.0
+// (no field at all) correctly defaults to guarded.
+function _afkSetCruisePlanGuard(id, on) {
+  const a = _afkAlarms.get(id);
+  if (!a) return;
+  a.params = a.params || {};
+  a.params.planGuard = !!on;
+  _afkAlarms.update(id, { params: a.params });
+  _afkRenderAlarmList();
 }
 
 // v3.16.0 — "Only above X ft" optional filter for Cruise Reached. When set,
@@ -48146,8 +48424,8 @@ function rgSendToFlightPlanner() {
               <li><strong>⏰ Timer</strong> &mdash; a simple clock / countdown timer, independent of aircraft position. Two modes: <em>Countdown</em> (set hours / minutes / seconds; alarm fires after that delay) or <em>At specific time</em> (native time picker for the local clock; if past today, fires tomorrow). Useful for "wake me in 30 minutes" or "alarm me at 14:30". The card readout shows the absolute target time AND the live remaining countdown. Survives a page reload &mdash; if you set a Timer for 14:30 and refresh the page at 14:25, it still fires at 14:30. <strong>Repeat</strong> (v3.18.0, Countdown mode only) &mdash; when the <em>Repeat</em> toggle is on, the alarm auto-dismisses and reschedules after each firing so it repeats at the same interval indefinitely — no manual reset needed. Each cycle plays the full audio/visual alert before auto-dismissing after ~5 seconds. Turn off Repeat (or disable the alarm) to stop the cycle. <strong>v3.94.0:</strong> repeat cycles no longer drift &mdash; each new countdown is measured from when the previous one was <em>due</em> rather than from when it actually fired, so a repeating timer keeps its original schedule instead of sliding a little later every cycle. Timers also fire on time now when AA is sitting in a background tab with no simulator connected (see <em>Timing accuracy</em> below).</li>
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
-              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector (v3.16.0+: fires when the 5-second windowed VS settles within <code>|VS| &le; 200 fpm</code> from a prior CLIMB phase; previously a variable deadband sustained for 35&nbsp;s). <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v2.87.1:</strong> a second structural gate requires <code>peakClimbVS &gt; +200&nbsp;fpm</code> observed in this session before the climb &rarr; cruise transition can happen &mdash; so sustained-level ground operations can&rsquo;t false-trigger cruise. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard. <strong>v3.93.0 &mdash; Min descent:</strong> the rate test alone still let an ATC step-down or a slow drift read as the arrival descent, so the alarm card now carries a <strong>Min descent</strong> field &mdash; how many feet (MSL) below the altitude the descent began at the aircraft must get before the alarm can fire. The loss is measured from the <em>highest</em> altitude seen since the descent started (a balloon at the top does not eat into it), and levelling off resets the measurement so the next descent is judged from its own top. Default <strong>500&nbsp;ft</strong>, which is also what alarms saved before v3.93.0 use, so nothing needs re-creating. Set <strong>0</strong> to fire the moment descent is detected, exactly as it behaved before.</li>
+              <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector. <strong>v3.98.0:</strong> a level-off must now be <em>proved by displacement, not just by rate</em>. The 5-second windowed VS (<code>|VS| &le; 200 fpm</code>) is only the entry gate; the aircraft must additionally show <strong>30&nbsp;s</strong> during which the least-squares altitude slope stays within <code>&plusmn;100 fpm</code> and the peak-to-peak excursion within <code>300 ft</code>. A regression slope rather than an endpoint difference is what lets ALT-hold wobble and turbulence through while still rejecting a genuine slow climb (150&nbsp;fpm gains 75&nbsp;ft over the window). The window is also clamped to the <em>current phase</em>, so it can never include flat ground samples from before lift-off. Practical effect: the alarm sounds roughly <strong>35&ndash;40&nbsp;s</strong> after level-off instead of ~5&nbsp;s, and a sustained climb no longer trips it. Known limit: a climb below ~<strong>60&nbsp;fpm</strong> is genuinely indistinguishable from level flight and still reads as cruise. (Pre-v3.98.0 the whole test was the 5-second reading alone; pre-v3.16.0 it was a variable deadband sustained for 35&nbsp;s.) <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Plan check</strong> (v3.98.0+) &mdash; a tick-box on every Cruise Reached card in <em>Adaptive</em> mode, on by default. When a SimBrief plan is loaded it derives your planned cruise altitude from the navlog (highest CRUISE-stage fix, falling back to <code>initial_altitude</code>) and skips level-offs more than <strong>2,000&nbsp;ft below</strong> it &mdash; automating what <em>Only above</em> asks you to work out by hand. It cannot silently swallow the alarm: after <strong>10&nbsp;minutes</strong> of confirmed level flight the guard releases and the alarm fires regardless, so being held below planned cruise for an entire flight still alerts you. Inert when no plan is loaded, and not applied in <em>At specific altitude</em> mode (that threshold is your own explicit choice).<br/><br/><strong>Dismiss and re-arm</strong> (v3.98.0+) &mdash; the alert window now shows a <strong>&#8635;</strong> button beside the <strong>&#10005;</strong> on standalone Cruise Reached and Descent Started alarms. <strong>&#10005;</strong> dismisses and disables for the rest of the flight, as it always has; <strong>&#8635;</strong> silences the alarm but leaves it enabled and re-armed, so a false trip costs you nothing. The re-armed alarm waits for the aircraft to leave cruise before it can fire again (the same guard used when you re-enable an alarm mid-cruise), so it cannot immediately re-trip on the phase it just fired on. Grouped alarms keep their group's dismissal semantics and show only <strong>&#10005;</strong>.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. v3.18.2+: phase detector promotes to descent when the 30-second trend VS reads <code>&lt; -400&nbsp;fpm</code> (a wider trend window and a higher threshold than the cruise-entry path uses &mdash; extended turbulence with the autopilot engaged cannot fake a sustained 30&nbsp;s, 200&nbsp;ft net altitude loss; v3.16.0 introduced the asymmetric two-window model at 15&nbsp;s / &plusmn;200&nbsp;fpm and v3.18.2 widened both to suppress false TOD calls). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard. <strong>v3.93.0 &mdash; Min descent:</strong> the rate test alone still let an ATC step-down or a slow drift read as the arrival descent, so the alarm card now carries a <strong>Min descent</strong> field &mdash; how many feet (MSL) below the altitude the descent began at the aircraft must get before the alarm can fire. The loss is measured from the <em>highest</em> altitude seen since the descent started (a balloon at the top does not eat into it), and levelling off resets the measurement so the next descent is judged from its own top. Default <strong>500&nbsp;ft</strong>, which is also what alarms saved before v3.93.0 use, so nothing needs re-creating. Set <strong>0</strong> to fire the moment descent is detected, exactly as it behaved before. <strong>v3.98.0:</strong> the DESCENT &rarr; CRUISE transition now requires the same 30-second displacement proof introduced for CLIMB &rarr; CRUISE, so a long shallow drift-down can no longer register as a level-off and reset the descent measurement. Descent Started also gains the <strong>&#8635;</strong> dismiss-and-re-arm button described under Cruise Reached.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>; an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect feed from the SimFly Telemetry Bridge; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
@@ -48332,10 +48610,26 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.98.0</span>
+          <span class="release-date">Sep 6, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Cruise Reached no longer fires during a slow climb.</strong> The app decided you had reached cruise from a single reading: your average climb rate over the previous <strong>5 seconds</strong>, judged against a fixed &plusmn;200&nbsp;ft-per-minute band. Five seconds at 200&nbsp;fpm is about <strong>17 feet</strong> of altitude, so anything climbing gently &mdash; a heavy in its last few thousand feet, a loaded piston, the tail end of a step climb &mdash; simply sat inside that band and read as level for as long as it kept climbing. A normal climb only needed one bad five seconds (sinking air, a moment of trading height for speed, an autopilot capture) to do the same. Now a level-off has to be <em>proved</em>: the app watches <strong>30 seconds</strong> of your altitude trace and only calls it cruise if the aircraft has genuinely not gone anywhere in that time. A 150&nbsp;fpm climb gains 75&nbsp;ft over those 30 seconds and is rejected; sitting at altitude gains nothing and is accepted.</li>
+          <li><strong>Turbulence and altitude-hold wobble no longer confuse it either.</strong> The 30-second check reads the underlying <em>trend</em> of your altitude rather than comparing the first and last readings, so bouncing around a level altitude still reads as level &mdash; it is where the aircraft is going that counts, not how much it is moving about while it stays there. Riding out chop at cruise no longer delays the alarm.</li>
+          <li><strong>It also cannot fire on the climb-out any more.</strong> The 30-second window is only ever read from <em>inside</em> the current phase of flight. Previously a window taken just after lift-off still contained flat readings from sitting on the runway, which look exactly like a perfect level-off.</li>
+          <li><strong>New &mdash; the alarm cross-checks your flight plan.</strong> With a SimBrief plan loaded, a level-off more than <strong>2,000&nbsp;ft below</strong> your planned cruise altitude is treated as an ATC step-off and passed over &mdash; which is what the <strong>Only above</strong> field previously asked you to work out and type in yourself. If ATC keeps you low for the whole flight the alarm is not lost: after <strong>10 minutes</strong> of genuinely level flight it accepts that this <em>is</em> your cruise and fires anyway. A new <strong>Plan check</strong> tick-box on the alarm card turns this off, and it does nothing at all when no flight plan is loaded.</li>
+          <li><strong>New &mdash; a false alarm no longer costs you the real one.</strong> Dismissing a fired Cruise Reached or Descent Started alarm switches it off for the rest of the flight, so one wrong trip meant missing the moment that mattered. Both now carry a second button in the alert window &mdash; <strong>&#8635;</strong>, beside the usual <strong>&#10005;</strong> &mdash; that silences the alarm but puts it straight back on watch for the next level-off. The plain &#10005; still dismisses and disables exactly as before.</li>
+          <li><strong>Descent Started benefits from the same work.</strong> Levelling off out of a descent is judged by the same 30-second proof, so a long shallow drift down can no longer be mistaken for you having levelled out.</li>
+          <li><strong>What this costs.</strong> Cruise Reached now sounds roughly <strong>35&ndash;40 seconds</strong> after you level off, rather than within about 5. That is the price of the evidence, and it is close to how the app behaved before v3.16.0 (35 seconds). One limit remains by design: a climb slower than about <strong>60&nbsp;fpm</strong> &mdash; 30 feet over half a minute &mdash; is genuinely indistinguishable from an aircraft holding altitude, and will still be read as cruise.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.97.0</span>
-          <span class="release-date">Aug 31, 2026 &middot; Current</span>
+          <span class="release-date">Aug 31, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
