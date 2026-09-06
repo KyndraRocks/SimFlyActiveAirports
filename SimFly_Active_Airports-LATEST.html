@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.99.0';
+const APP_VERSION = '3.100.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20404,6 +20404,10 @@ const _afkPhase = (() => {
   const DESC_DEEP_FT  = 400;        // slow path required loss across that window
   const DESC_DEEP_FPM = DESC_DEEP_FT / (DESC_DEEP_SEC / 60);   // = 133 fpm
   const CLIMB_FAST_FPM = 250;       // climb-direction slope threshold (30 s window)
+  // v3.100.0 — descentTopFt() backtrack. Block size matches the fast window so
+  // a shallow descent still reads clearly inside one block (150 fpm = 75 ft).
+  const DESC_BLOCK_MS      = DESC_FAST_SEC * 1000;
+  const DESC_BACKTRACK_FPM = 100;   // a block flatter than this ends the walk
   let lastEmittedPhase = null;
   let lastTransition = null;        // { from, to, t }
   let lastChangeAt = 0;
@@ -20508,14 +20512,14 @@ const _afkPhase = (() => {
   // reads the underlying trend and ignores symmetric wobble — exactly the
   // distinction this test needs: is the aircraft GOING somewhere, or just
   // moving about while staying put?
-  function windowSlopeFpm(ms) {
+  function slopeFpmRange(tFrom, tTo) {
     if (samples.length < 2) return 0;
-    const newest = samples[samples.length - 1];
-    const cutoff = newest.t - ms;
     let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
     for (let i = samples.length - 1; i >= 0; i--) {
-      if (samples[i].t < cutoff) break;
-      const x = (samples[i].t - newest.t) / 1000;   // seconds, <= 0
+      const t = samples[i].t;
+      if (t > tTo) continue;
+      if (t < tFrom) break;
+      const x = (t - tTo) / 1000;                   // seconds, <= 0
       const y = samples[i].alt;
       n++; sx += x; sy += y; sxx += x * x; sxy += x * y;
     }
@@ -20523,6 +20527,61 @@ const _afkPhase = (() => {
     const denom = n * sxx - sx * sx;
     if (Math.abs(denom) < 1e-9) return 0;
     return ((n * sxy - sx * sy) / denom) * 60;      // ft/s → ft/min
+  }
+  function windowSlopeFpm(ms) {
+    if (samples.length < 2) return 0;
+    const newest = samples[samples.length - 1];
+    return slopeFpmRange(newest.t - ms, newest.t);
+  }
+  // Peak altitude between two timestamps (inclusive).
+  function maxAltRange(tFrom, tTo) {
+    let hi = -Infinity;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      const t = samples[i].t;
+      if (t > tTo) continue;
+      if (t < tFrom) break;
+      if (samples[i].alt > hi) hi = samples[i].alt;
+    }
+    return isFinite(hi) ? hi : null;
+  }
+
+  // v3.100.0 — Altitude at the TOP OF THE CURRENT DESCENT.
+  //
+  // _afkEvalDescent's minDropFt is measured from where the aircraft was when
+  // the descent was DETECTED. That was near enough to the real top while
+  // detection took ~10-25 s, but v3.99.0's slow path can take up to ~143 s to
+  // call a shallow descent, by which point ~358 ft has already gone — so the
+  // user's "500 ft" landed ~858 ft below cruise instead of 500.
+  //
+  // The naive repair — seed from the highest altitude in the buffer — is
+  // WRONG, and re-opens exactly what v3.93.0 fixed: an ATC step-down a couple
+  // of minutes earlier sits in that buffer, so its higher pre-step-down cruise
+  // level gets credited as the top and the alarm fires the instant the real
+  // descent is detected.
+  //
+  // So walk BACKWARDS in blocks instead, and stop at the first block that is
+  // not itself descending. Going back in time through a descent, altitude
+  // rises; the moment it stops rising we have reached either the top of
+  // descent (cruise before it) or the level segment separating this descent
+  // from an earlier step-down. Both are the correct place to stop. The
+  // stopping block's own peak IS included — it holds the true top in the
+  // straddling case — but nothing before it is, which is what keeps the
+  // earlier step-down out of the reckoning.
+  function descentTopFt() {
+    if (samples.length < 3) return null;
+    const newest   = samples[samples.length - 1];
+    const earliest = samples[0].t;
+    let top = newest.alt;
+    let end = newest.t;
+    let guard = 0;
+    while (end - DESC_BLOCK_MS >= earliest && guard++ < 40) {
+      const blockStart = end - DESC_BLOCK_MS;
+      const hi = maxAltRange(blockStart, end);
+      if (hi != null && hi > top) top = hi;
+      if (slopeFpmRange(blockStart, end) >= -DESC_BACKTRACK_FPM) break;
+      end = blockStart;
+    }
+    return top;
   }
 
   // v3.98.0 — Peak-to-peak altitude excursion over the last `ms`.
@@ -20819,8 +20878,13 @@ const _afkPhase = (() => {
   // the boolean would make it block itself for 30 s after the phase it needs.
   function trendVsFpm()   { return trendVSfpm(); }
   function levelSlopeFpm(){ return windowSlopeFpm(LEVEL_CONFIRM_SEC * 1000); }
+  // v3.100.0 — used by _afkEvalDescent to seed descTopAlt at the real top of
+  // descent rather than wherever the aircraft had already sunk to by the time
+  // the phase promoted. Returns null when there is too little history.
+  function descentTop()   { return descentTopFt(); }
 
-  return { reset, update, get, vsFpm, lastChange, lastChangeTime, trendVsFpm, levelSlopeFpm };
+  return { reset, update, get, vsFpm, lastChange, lastChangeTime,
+           trendVsFpm, levelSlopeFpm, descentTop };
 })();
 
 // ---------------------- HAVERSINE HELPER (nm) -----------------------------
@@ -22414,7 +22478,22 @@ function _afkEvalDescent(alarm, ac) {
   // Measure from the HIGHEST altitude seen since the descent began, not the
   // first sample: the phase flips several seconds in, and a momentary balloon
   // at the top of descent would otherwise shrink the loss we credit.
-  if (alarm.state.descTopAlt == null || alt > alarm.state.descTopAlt) {
+  // v3.100.0 — On the FIRST tick of a descent, seed from the detector's
+  // backtrack to the actual top of descent rather than from wherever the
+  // aircraft has already sunk to. v3.99.0's slow path can take ~143 s to call
+  // a shallow descent, by which point ~358 ft has gone, so a 500 ft Min
+  // descent was landing ~858 ft below cruise. Seeding at the real top makes
+  // the number mean what the user set it to, at every descent rate.
+  // descentTopFt() stops the walk at the first non-descending block, so an
+  // earlier ATC step-down cannot be credited (see its comment).
+  if (alarm.state.descTopAlt == null) {
+    let seed = alt;
+    try {
+      const top = _afkPhase.descentTop();
+      if (top != null && isFinite(top) && top > seed) seed = top;
+    } catch (_) {}
+    alarm.state.descTopAlt = seed;
+  } else if (alt > alarm.state.descTopAlt) {
     alarm.state.descTopAlt = alt;
   }
   if ((alarm.state.descTopAlt - alt) >= minDrop) { alarm.state.fired = true; return true; }
@@ -31730,6 +31809,7 @@ const _MSF_SETTINGS_REGISTRY = {
   // Tools & misc
   'simfly_aa_random_opts':            { label:'Random flight options',         group:'Tools & misc' },
   'simfly_aa_meas_lockdist':          { label:'Measurement lock-distance mode', group:'Tools & misc' },
+  'simfly_aa_my_pilot':               { label:'My SimFly pilot name',          group:'Tools & misc' },
   'simfly_aa_demo_bar_collapsed':     { label:'Demo control-bar state',        group:'Tools & misc' },
   'simfly_aa_update_dismissed':       { label:'Update banner dismissed',       group:'Tools & misc' },
   'simfly_aa_scenery_prefs':          { label:'Scenery Library view prefs',    group:'Tools & misc' },
@@ -33046,10 +33126,43 @@ function _aaRentIngest(json) {
   }
 }
 
+// v3.100.0 — Your own SimFly pilot name. SimFly does not let you rent your
+// own aircraft, but the public rentable feed carries every plane's `owner`
+// with no notion of who is looking at it, so AA showed your own fleet as
+// available like anyone else's. Set from Display -> My Pilot Name; empty by
+// default, which leaves every behaviour below exactly as it was.
+const _AA_LS_MY_PILOT = 'simfly_aa_my_pilot';
+let _aaMyPilot = (() => {
+  try { return (localStorage.getItem(_AA_LS_MY_PILOT) || '').trim(); } catch (_) { return ''; }
+})();
+// Case-insensitive because the feed's owner strings are free-form display
+// names and the user is typing theirs from memory.
+function _aaRentIsOwnedByMe(p) {
+  if (!p || !p.owner || !_aaMyPilot) return false;
+  return String(p.owner).trim().toLowerCase() === _aaMyPilot.toLowerCase();
+}
+// How many planes in the current feed the configured name matches — powers the
+// modal's live confirmation so a typo is obvious before the window is closed.
+function _aaMyPlaneCount(name) {
+  const n = (name == null ? _aaMyPilot : String(name)).trim().toLowerCase();
+  if (!n || !Array.isArray(_aaRentPlanes)) return 0;
+  let c = 0;
+  for (const p of _aaRentPlanes) {
+    if (p && p.owner && String(p.owner).trim().toLowerCase() === n) c++;
+  }
+  return c;
+}
+
 // True when a plane is rentable RIGHT NOW: not in ground ops (by live clock,
 // not just the stale flag) and not currently rented by someone.
+// v3.100.0 — and not one of yours. Gating here rather than at ingest keeps
+// your fleet visible on the map and in the tables (useful — you still want to
+// see where your aircraft are parked) while making it impossible for one to be
+// counted as available, colour a dot green/blue, or satisfy an availability
+// filter. Exactly the treatment an already-rented plane gets.
 function _aaRentIsAvailableNow(p) {
   if (!p || p.renter) return false;
+  if (_aaRentIsOwnedByMe(p)) return false;
   // until is the ground-ops end time; if present, availability is purely a
   // function of the live clock (so an hourly feed stays accurate). No until =
   // trust the harvest's ground flag.
@@ -40986,6 +41099,7 @@ function _aaRentPlaneRows() {
       const now = _aaRentIsAvailableNow(p);
       let availTxt, availRank, availTs;
       if (now) { availTxt = 'now'; availRank = 0; availTs = 0; }
+      else if (_aaRentIsOwnedByMe(p)) { availTxt = 'yours'; availRank = 2; availTs = Infinity; }
       else if (p.until) {
         const t = Date.parse(p.until);
         if (isFinite(t) && t > Date.now()) { availTxt = _aaRentCountdownStr(t); availRank = 1; availTs = t; }
@@ -41334,6 +41448,7 @@ function _aaListBuildRows() {
     const now = _aaRentIsAvailableNow(p);
     let availTs, availTime;
     if (now) { availTs = 0; availTime = 'Now'; }
+    else if (_aaRentIsOwnedByMe(p)) { availTs = Infinity; availTime = 'Yours'; }
     else if (p.until) { const t = Date.parse(p.until); if (isFinite(t) && t > Date.now()) { availTs = t; availTime = _aaListLocalTime(t); } else { availTs = 0; availTime = 'Now'; } }
     else if (p.renter) { availTs = Infinity; availTime = 'Rented'; }
     else { availTs = Infinity; availTime = '—'; }
@@ -41983,6 +42098,7 @@ function _aaRentBadgeDetailHtml(icao) {
   let rows = '';
   for (const p of all.slice(0, CAP)) {
     const avail = _aaRentIsAvailableNow(p) ? `<span class="aar-bd-now">available</span>`
+                : _aaRentIsOwnedByMe(p) ? '<span class="aar-bd-mine">yours</span>'
                 : (p.until ? `<span class="aar-bd-ground">free ${_aaRentCountdownStr(Date.parse(p.until))}</span>` : '<span class="aar-bd-soon">in use</span>');
     const col = _rgRentColorAtPct(p.payout == null ? 0 : p.payout);
     // Show up to the first 30 characters of the owner name before truncating.
@@ -42700,6 +42816,86 @@ function _rgRebuildNewAirports() {
   if (btn) btn.style.display = newAirportsDB.size > 0 ? '' : 'none';
   _rgRenderDots();
 }
+// -- My Pilot Name modal (v3.100.0) ------------------------------------------
+// SimFly does not let you rent your own aircraft, but the public rentable feed
+// has no idea who is reading it. Telling AA your pilot name lets it stop
+// offering your own fleet back to you. App-wide identity rather than a rentals
+// filter, hence the Display menu next to Time Settings.
+//
+// The card's height is FIXED: the match line below the input is a fixed-height
+// block, so typing can never reflow the modal and shift the input out from
+// under the cursor (CLAUDE.md UI conventions).
+function _aaMyPilotOpen(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  _rgCloseAnyPulldown();
+  const existing = document.getElementById('aaMyPilotModal');
+  if (existing) { existing.remove(); return; }
+  const overlay = document.createElement('div');
+  overlay.id = 'aaMyPilotModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', ev => { if (ev.target === overlay) overlay.remove(); });
+  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:20px 24px;width:420px;max-width:92vw;font-family:Rajdhani,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <span style="font-family:Orbitron,monospace;font-size:0.82rem;letter-spacing:0.1em;color:#fff;text-transform:uppercase;">&#128100; My Pilot Name</span>
+    <button onclick="document.getElementById('aaMyPilotModal').remove()" style="background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+  </div>
+  <div style="color:#9fb0c4;font-size:0.82rem;line-height:1.45;margin-bottom:14px;">
+    Your SimFly pilot name, spelled exactly as it appears on your aircraft in SimFly. AA uses it to stop listing <em>your own</em> aircraft as available to rent &mdash; SimFly does not let you rent from yourself. Leave it blank and nothing changes.
+  </div>
+  <input id="aaMyPilotInput" type="text" spellcheck="false" autocomplete="off" value="${_aaEsc(_aaMyPilot)}" placeholder="e.g. Kyndra"
+    oninput="_aaMyPilotSync()" onkeydown="if(event.key==='Enter'){_aaMyPilotSave();}if(event.key==='Escape'){document.getElementById('aaMyPilotModal').remove();}"
+    style="width:100%;box-sizing:border-box;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-family:Rajdhani,sans-serif;font-size:1rem;padding:9px 11px;outline:none;">
+  <div id="aaMyPilotMatch" style="height:38px;display:flex;align-items:center;color:#9fb0c4;font-size:0.82rem;line-height:1.3;overflow:hidden;"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <button onclick="document.getElementById('aaMyPilotInput').value='';_aaMyPilotSave();" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#c8d4e0;font-family:Rajdhani,sans-serif;font-size:0.9rem;padding:7px 14px;cursor:pointer;">Clear</button>
+    <button onclick="_aaMyPilotSave()" style="background:rgba(0,200,255,0.16);border:1px solid #00c8ff;border-radius:6px;color:#fff;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;padding:7px 18px;cursor:pointer;">Save</button>
+  </div>
+  <div style="color:#7d8b9c;font-size:0.75rem;line-height:1.4;margin-top:11px;">
+    Your aircraft still appear on the map and in the tables &mdash; you can see where they are parked &mdash; but they are marked <strong>yours</strong> instead of available, and never satisfy an &ldquo;available now&rdquo; filter.
+  </div>
+</div>`;
+  document.body.appendChild(overlay);
+  const inp = document.getElementById('aaMyPilotInput');
+  if (inp) { inp.focus(); inp.select(); }
+  _aaMyPilotSync();
+}
+// Live match count as the user types, so a misspelling is caught in the dialog
+// rather than by wondering later why the setting did nothing.
+function _aaMyPilotSync() {
+  const inp = document.getElementById('aaMyPilotInput');
+  const out = document.getElementById('aaMyPilotMatch');
+  if (!inp || !out) return;
+  const v = (inp.value || '').trim();
+  if (!v) { out.textContent = 'No name set \u2014 every aircraft is treated as someone else\u2019s.'; return; }
+  const n = _aaMyPlaneCount(v);
+  out.textContent = n > 0
+    ? '\u2713 Matches ' + n + ' aircraft in the current rentable feed.'
+    : '\u26a0 No aircraft in the current feed are owned by \u201c' + v + '\u201d. Check the spelling, or you may simply have none listed right now.';
+}
+function _aaMyPilotSave() {
+  const inp = document.getElementById('aaMyPilotInput');
+  const v = inp ? (inp.value || '').trim() : '';
+  _aaMyPilot = v;
+  try {
+    if (v) localStorage.setItem(_AA_LS_MY_PILOT, v);
+    else   localStorage.removeItem(_AA_LS_MY_PILOT);
+  } catch (_) {}
+  const m = document.getElementById('aaMyPilotModal');
+  if (m) m.remove();
+  // Repaint everything availability-driven. _aaRentApply is the rentals mode's
+  // own "filters changed" entry point (map dot colours + breadcrumbs); the
+  // listing has _aaListRefreshIfOpen, which no-ops when it isn't open.
+  try { if (typeof _aaRentApply === 'function') _aaRentApply(); } catch (_) {}
+  try { if (typeof _aaRentRefreshPanel === 'function') _aaRentRefreshPanel(); } catch (_) {}
+  try { if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges(); } catch (_) {}
+  try { if (typeof _aaListRefreshIfOpen === 'function') _aaListRefreshIfOpen(); } catch (_) {}
+  try {
+    _aaRtToast(v ? ('\u{1F464} Pilot name set to \u201c' + v + '\u201d \u2014 ' + _aaMyPlaneCount(v) +
+                    ' of your aircraft will no longer show as available to rent.')
+                 : '\u{1F464} Pilot name cleared.', 'ok');
+  } catch (_) {}
+}
+
 // -- Time Settings modal (v3.97.0) -------------------------------------------
 // Chooses which clock the arrival time beside every flight-time estimate is
 // read on. Opened from the Display menu. Deliberately a plain radio list: the
@@ -48504,7 +48700,7 @@ function rgSendToFlightPlanner() {
               <li><strong>⊙ Geofence</strong> &mdash; clicking this closes the modal, hands you a crosshair cursor, and shows a banner across the top of the map. <em>Click and drag</em> on the map to draw a circle (radius shown live in nautical miles), release to confirm, then pick a label, trigger (<em>ENTER</em>, <em>EXIT</em>, or <em>both</em>), and sound in the sub-modal that appears. The orange circle stays visible on the map and re-renders across sessions.</li>
               <li><strong>📍 Waypoint</strong> &mdash; trips at the moment your aircraft passes a chosen waypoint in the loaded SimBrief flight plan. Uses <em>closest-point-of-approach (CPA)</em> detection, so it fires even when your track is a few nm off the planned line. Specifically: it watches the distance to the next un-tripped waypoint each tick, and fires when that distance starts increasing again (the CPA moment) &mdash; provided the closest approach was within 5 nm. Skipped while on the ground (so taxi doesn't trip it), resets on sim restart / new flight load, and cascades tight clusters (two waypoints sitting within 5 nm of each other fire on the same pass). Scope picker: <em>Every waypoint</em>, <em>TOC</em> (top of climb &mdash; first cruise-stage fix), <em>TOD</em> (top of descent &mdash; first descent-stage fix after cruise), or <em>Specific waypoints</em> (multi-select checkbox list). Selected waypoints get a cyan ring overlay on the route plot so you can see where they are.<br/><br/><em>Shortcut:</em> <strong>right-click any waypoint dot on the plotted route</strong> to add a one-off alarm for just that fix &mdash; a small modal opens with the ident, position, and a sound picker.</li>
               <li><strong>─ Cruise Reached</strong> &mdash; one-shot alarm that fires when the aircraft reaches cruise. Two explicit modes (Mode dropdown on the card, v2.90.5+): <strong>Adaptive</strong> &mdash; the default; uses the phase detector. <strong>v3.98.0:</strong> a level-off must now be <em>proved by displacement, not just by rate</em>. The 5-second windowed VS (<code>|VS| &le; 200 fpm</code>) is only the entry gate; the aircraft must additionally show <strong>30&nbsp;s</strong> during which the least-squares altitude slope stays within <code>&plusmn;100 fpm</code> and the peak-to-peak excursion within <code>300 ft</code>. A regression slope rather than an endpoint difference is what lets ALT-hold wobble and turbulence through while still rejecting a genuine slow climb (150&nbsp;fpm gains 75&nbsp;ft over the window). The window is also clamped to the <em>current phase</em>, so it can never include flat ground samples from before lift-off. Practical effect: the alarm sounds roughly <strong>35&ndash;40&nbsp;s</strong> after level-off instead of ~5&nbsp;s, and a sustained climb no longer trips it. Known limit: a climb below ~<strong>60&nbsp;fpm</strong> is genuinely indistinguishable from level flight and still reads as cruise. (Pre-v3.98.0 the whole test was the 5-second reading alone; pre-v3.16.0 it was a variable deadband sustained for 35&nbsp;s.) <strong>At specific altitude</strong> &mdash; switches the trigger to a climbing-through-altitude crossing (accepts <code>35000</code>, <code>35,000</code>, or <code>FL350</code>); the NEXT ALERT countdown also shows live time-to-cruise computed from current altitude and vertical speed. <strong>v2.87.0:</strong> gated on confirmed wheels-up (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) so it cannot fire while still on the ground at high-elevation airports. <strong>v3.16.0:</strong> if you re-enable or add a new Cruise Reached alarm while the aircraft is <em>already in cruise phase</em>, it waits silently for the aircraft to leave cruise and re-enter before firing &mdash; guaranteeing it always fires on a genuine new cruise entry rather than the current one.<br/><br/><strong>Only above</strong> (v3.16.0+) &mdash; an optional &ldquo;Only above&rdquo; altitude field appears on every Cruise Reached card. When set, the alarm skips cruise transitions detected at or below that altitude. This lets you filter out ATC-assigned climb-and-maintain altitudes (e.g. &ldquo;climb and maintain FL240&rdquo;) so the alarm only fires when the aircraft actually settles at your true cruise altitude. Accepts feet or FL form; leave blank to fire at any altitude.<br/><br/><strong>Plan check</strong> (v3.98.0+) &mdash; a tick-box on every Cruise Reached card in <em>Adaptive</em> mode, on by default. When a SimBrief plan is loaded it derives your planned cruise altitude from the navlog (highest CRUISE-stage fix, falling back to <code>initial_altitude</code>) and skips level-offs more than <strong>2,000&nbsp;ft below</strong> it &mdash; automating what <em>Only above</em> asks you to work out by hand. It cannot silently swallow the alarm: after <strong>10&nbsp;minutes</strong> of confirmed level flight the guard releases and the alarm fires regardless, so being held below planned cruise for an entire flight still alerts you. Inert when no plan is loaded, and not applied in <em>At specific altitude</em> mode (that threshold is your own explicit choice).<br/><br/><strong>Dismiss and re-arm</strong> (v3.98.0+) &mdash; the alert window now shows a <strong>&#8635;</strong> button beside the <strong>&#10005;</strong> on standalone Cruise Reached and Descent Started alarms. <strong>&#10005;</strong> dismisses and disables for the rest of the flight, as it always has; <strong>&#8635;</strong> silences the alarm but leaves it enabled and re-armed, so a false trip costs you nothing. The re-armed alarm waits for the aircraft to leave cruise before it can fire again (the same guard used when you re-enable an alarm mid-cruise), so it cannot immediately re-trip on the phase it just fired on. Grouped alarms keep their group's dismissal semantics and show only <strong>&#10005;</strong>.<br/><br/><strong>Step climbs</strong> (v2.90.5+) &mdash; the Cruise Reached alarm is one-shot per flight, so a single alarm cannot re-fire when you level off after a step climb. To handle step climbs, add <em>one Cruise Reached alarm per level-off altitude</em> in <strong>At specific altitude</strong> mode &mdash; e.g. set three alarms at FL210, FL280, and FL380 for a stepped trans-oceanic profile. Each carries its own crossing-detection state, so each fires independently as the aircraft climbs through its threshold. Dismissing one auto-disables only that one; the others stay armed for the next step. Combine with per-alert names (v2.89.0+) like &ldquo;Initial cruise &mdash; FL210&rdquo; / &ldquo;Step climb 1 &mdash; FL280&rdquo; / &ldquo;Step climb 2 &mdash; FL380&rdquo; to keep them straight in the trip overlay, the Alert History log, and on map pins. Leave them ungrouped &mdash; group cascade would defeat the per-step alerting.</li>
-              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. <strong>v3.99.0 &mdash; two detection paths, both least-squares slopes.</strong> <em>Fast:</em> the 30-second altitude slope reads <code>&lt; -250&nbsp;fpm</code>. <em>Slow:</em> the 180-second slope reads <code>&lt; -133&nbsp;fpm</code>, i.e. the aircraft has genuinely lost <strong>400&nbsp;ft across three minutes</strong> &mdash; the descent-side mirror of the cruise-entry displacement proof: depth over time, not rate. This replaced <code>trendVS &lt; -400&nbsp;fpm</code>, an <em>endpoint difference</em> over 30&nbsp;s, which produced a hard cliff at exactly 400&nbsp;fpm: measured against the real detector, a 500&nbsp;fpm descent was caught 25&nbsp;s after TOD, a 400&nbsp;fpm descent took <strong>337&nbsp;s and 2,247&nbsp;ft</strong>, and anything at or below <strong>350&nbsp;fpm was never detected at all</strong> &mdash; a 350&nbsp;fpm drift-down lost 19,250&nbsp;ft in an hour without the alarm ever being able to fire. The blunt threshold existed because the endpoint statistic is noisy (v3.18.2 raised it from 200 to 400&nbsp;fpm precisely to stop turbulence faking a TOD); reading the slope removes that noise and with it the reason for the threshold. Turbulence rejection <em>improved</em> rather than regressed: 45 minutes of level cruise in &plusmn;80&nbsp;ft chop produced 98 phase flips and a false DESCENT before, and 1 flip with no false descent after. Now detects every descent down to ~<strong>150&nbsp;fpm</strong>; below ~133&nbsp;fpm is out of scope by design, being indistinguishable from a cruise-level sag. The climb direction was moved to the same slope test in the same pass (see below). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard. <strong>v3.93.0 &mdash; Min descent:</strong> the rate test alone still let an ATC step-down or a slow drift read as the arrival descent, so the alarm card now carries a <strong>Min descent</strong> field &mdash; how many feet (MSL) below the altitude the descent began at the aircraft must get before the alarm can fire. The loss is measured from the <em>highest</em> altitude seen since the descent started (a balloon at the top does not eat into it), and levelling off resets the measurement so the next descent is judged from its own top. Default <strong>500&nbsp;ft</strong>, which is also what alarms saved before v3.93.0 use, so nothing needs re-creating. Set <strong>0</strong> to fire the moment descent is detected, exactly as it behaved before. <strong>Note on shallow descents (v3.99.0+):</strong> <code>minDropFt</code> is measured from where the aircraft was when the descent was <em>detected</em>, and a very shallow descent takes longer to detect &mdash; so at 150&nbsp;fpm the alarm lands ~343&nbsp;s / 858&nbsp;ft below cruise with the 500&nbsp;ft default, against ~106&nbsp;s / 618&nbsp;ft at 350&nbsp;fpm. Normal descent rates are unaffected (1,500&nbsp;fpm fires 28&nbsp;s / 700&nbsp;ft below cruise, as before). Lower <strong>Min descent</strong> to ~200&nbsp;ft if you want shallow descents called sooner. <strong>v3.98.0:</strong> the DESCENT &rarr; CRUISE transition now requires the same 30-second displacement proof introduced for CLIMB &rarr; CRUISE, so a long shallow drift-down can no longer register as a level-off and reset the descent measurement. Descent Started also gains the <strong>&#8635;</strong> dismiss-and-re-arm button described under Cruise Reached.</li>
+              <li><strong>↘ Descent Started</strong> &mdash; one-shot alarm that fires when sustained descent begins from cruise. <strong>v3.99.0 &mdash; two detection paths, both least-squares slopes.</strong> <em>Fast:</em> the 30-second altitude slope reads <code>&lt; -250&nbsp;fpm</code>. <em>Slow:</em> the 180-second slope reads <code>&lt; -133&nbsp;fpm</code>, i.e. the aircraft has genuinely lost <strong>400&nbsp;ft across three minutes</strong> &mdash; the descent-side mirror of the cruise-entry displacement proof: depth over time, not rate. This replaced <code>trendVS &lt; -400&nbsp;fpm</code>, an <em>endpoint difference</em> over 30&nbsp;s, which produced a hard cliff at exactly 400&nbsp;fpm: measured against the real detector, a 500&nbsp;fpm descent was caught 25&nbsp;s after TOD, a 400&nbsp;fpm descent took <strong>337&nbsp;s and 2,247&nbsp;ft</strong>, and anything at or below <strong>350&nbsp;fpm was never detected at all</strong> &mdash; a 350&nbsp;fpm drift-down lost 19,250&nbsp;ft in an hour without the alarm ever being able to fire. The blunt threshold existed because the endpoint statistic is noisy (v3.18.2 raised it from 200 to 400&nbsp;fpm precisely to stop turbulence faking a TOD); reading the slope removes that noise and with it the reason for the threshold. Turbulence rejection <em>improved</em> rather than regressed: 45 minutes of level cruise in &plusmn;80&nbsp;ft chop produced 98 phase flips and a false DESCENT before, and 1 flip with no false descent after. Now detects every descent down to ~<strong>150&nbsp;fpm</strong>; below ~133&nbsp;fpm is out of scope by design, being indistinguishable from a cruise-level sag. The climb direction was moved to the same slope test in the same pass (see below). Same wheels-up gate as Cruise (v2.87.0+). <strong>v3.16.0:</strong> if you re-enable or add a new Descent Started alarm while the aircraft is <em>already in descent phase</em>, it waits silently for the aircraft to leave descent and re-enter before firing &mdash; mirroring the Cruise Reached re-arm guard. <strong>v3.93.0 &mdash; Min descent:</strong> the rate test alone still let an ATC step-down or a slow drift read as the arrival descent, so the alarm card now carries a <strong>Min descent</strong> field &mdash; how many feet (MSL) below the altitude the descent began at the aircraft must get before the alarm can fire. The loss is measured from the <em>highest</em> altitude seen since the descent started (a balloon at the top does not eat into it), and levelling off resets the measurement so the next descent is judged from its own top. Default <strong>500&nbsp;ft</strong>, which is also what alarms saved before v3.93.0 use, so nothing needs re-creating. Set <strong>0</strong> to fire the moment descent is detected, exactly as it behaved before. <strong>v3.100.0 &mdash; measured from the real top of descent.</strong> <code>minDropFt</code> used to be counted from wherever the aircraft was when the phase promoted, which was close enough while detection took ~10&ndash;25&nbsp;s but not once v3.99.0's slow path could take ~143&nbsp;s (by which point ~358&nbsp;ft had already gone, putting a 500&nbsp;ft setting ~858&nbsp;ft below cruise). <code>_afkPhase.descentTop()</code> now walks the sample buffer backwards in 30&nbsp;s blocks and stops at the first block that is not itself descending, seeding <code>descTopAlt</code> at the actual top. <strong>500&nbsp;ft now means 500&nbsp;ft at every rate</strong> &mdash; from FL350 the alarm fires 500&nbsp;ft below cruise at 1,500&nbsp;fpm and at 150&nbsp;fpm alike. The naive version of this fix &mdash; seeding from the highest altitude in the buffer &mdash; would re-open exactly what v3.93.0 closed, because an ATC step-down two minutes earlier sits in that buffer; stopping the walk at the first level stretch is what keeps it out, since that stretch is either the top of descent or the level segment separating this descent from the step-down. <strong>v3.98.0:</strong> the DESCENT &rarr; CRUISE transition now requires the same 30-second displacement proof introduced for CLIMB &rarr; CRUISE, so a long shallow drift-down can no longer register as a level-off and reset the descent measurement. Descent Started also gains the <strong>&#8635;</strong> dismiss-and-re-arm button described under Cruise Reached.</li>
               <li><strong>↕ Altitude</strong> &mdash; trips when your aircraft <em>crosses through</em> an altitude you set. Pick <strong>Descending through</strong> or <strong>Climbing through</strong>; the alarm only fires when you actually cross the threshold in the chosen direction. <strong>It will NOT fire if you arm the alarm already on the &ldquo;wrong&rdquo; side</strong> &mdash; e.g. if you arm a <em>Descending through FL100</em> alarm while you're at FL080, it waits for you to climb above FL100 and then descend back through. The input box accepts both <em>plain feet</em> (e.g. <code>10000</code> or <code>10,000</code>) and <em>flight levels</em> (e.g. <code>FL350</code>, <code>FL 200</code>). The hint next to the input echoes the parsed value as you type so you can see how it was interpreted. <strong>v2.87.0:</strong> Altitude alarms now auto-rearm when the aircraft returns to the ground (same behaviour as Cruise / Descent), so a single armed alarm can fire across multiple consecutive flights without manually toggling it off and on between segments. <strong>v3.88.0 &mdash; Measure:</strong> a new <em>Measure</em> dropdown chooses which altitude the threshold is tested against &mdash; <strong>Altitude MSL</strong> (above sea level, works from any live source, the default), <strong>Indicated altitude</strong> (the altimeter reading), or <strong>Height above ground (AGL)</strong> (feet above the terrain directly below). An AGL alarm is ideal for terrain- and pattern-relative cues like &ldquo;descending through 1,000&nbsp;ft AGL&rdquo; regardless of field elevation. Indicated and AGL require the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>; an AGL/indicated alarm simply waits without firing on a source that can&rsquo;t supply that value.</li>
               <li><strong>📡 Loss of Telemetry (CTD)</strong> (v2.90.0+, seconds unit added v2.91.0) &mdash; your &ldquo;did MSFS just crash?&rdquo; canary. Fires when <strong>all three</strong> conditions hold simultaneously: <em>FSUIPC Live tracking is ON</em> (with no live source the alarm sits quiet); the aircraft is <em>airborne</em> (any phase except <code>ground</code>); AND <em>no fresh telemetry update has arrived for the configured timeout</em> (default <strong>5 minutes</strong>, range 10 s &ndash; 60 min via the minutes / seconds unit picker). The 5-minute default is sized generously to tolerate normal MSFS pause-menu trips &mdash; opening Map / ATC / Settings (which pauses the sim and freezes FSUIPC pushes) will not false-alarm. Catches the situations where the green aircraft icon would otherwise just go stale silently with no audio cue: MSFS crash-to-desktop, MSFS freeze / hang, FSUIPC server crash, the user accidentally closing FSUIPC mid-flight. <strong>Why a special watchdog?</strong> The regular alarm tick runs inside the live-aircraft fix-arrival path &mdash; a real CTD freezes those fixes, which would freeze the very loop that could detect the freeze. This alarm has a separate 15-second watchdog interval that keeps running independent of fix arrivals, so it can still fire when the telemetry stream is the thing that went silent. Note: the 15 s watchdog interval also sets a floor on detection latency &mdash; a 15 s threshold actually trips somewhere between 15 s and 30 s after onset. Re-arms automatically on the next ground transition.</li>
               <li><strong>🧩 Conditional</strong> (v2.91.0+) &mdash; fire when a custom combination of live telemetry parameters is met. Each alarm carries one or more <em>condition rows</em>; each row picks a <strong>parameter</strong>, a <strong>comparator</strong> (<code>&gt;</code> or <code>&lt;</code>), and a <strong>threshold</strong>. The combinator (top of the editor) chooses <strong>AND</strong> (every enabled row must currently be met) or <strong>OR</strong> (any one enabled row met fires). Available parameters: Altitude (MSL), <strong>Altitude (indicated)</strong> and <strong>Height above ground (AGL)</strong> (both v3.88.0 &mdash; require the SimConnect feed from the SimFly Telemetry Bridge; a condition using either reads &ldquo;awaiting data&rdquo; on sources that can&rsquo;t supply it), IAS, GS, VS (signed fpm), Distance to destination, Distance to waypoint (with a waypoint picker, requires a SimBrief plan), Track miles remaining, <strong>Track deviation</strong> (v3.6.2 &mdash; nm abeam the SimBrief route, default 10 nm), Remaining time, Elapsed time, Alert ETA, <strong>Alert distance</strong> (v3.76.0 &mdash; nautical miles to the closest armed geofence or waypoint alert's trigger point; only meaningful for those two alert types, so it reads &ldquo;awaiting data&rdquo; whenever none is armed even if another alert type is next overall). Time-based fields accept seconds (<code>3600</code>), <code>H:MM:SS</code> / <code>M:SS</code>, or H/M/S token form (<code>1h 30m 22s</code>); altitude accepts feet or FL. Per-row checkbox lets you disable conditions without removing them so you can iterate without losing your setup. <strong>New rows are added in the disabled state</strong> (v2.92.3+) &mdash; configure the parameter, comparator and threshold first, then toggle the row on. This makes it safe to build a conditional alarm mid-flight without it firing the instant you add a row whose default threshold happens to be satisfied by current telemetry. <strong>One-shot per flight</strong> &mdash; fires once, auto-disables on dismiss, auto-rearms on next ground transition. Example: <em>"alert me when GS &gt; 400 kt AND altitude &gt; FL350 AND elapsed &gt; 1h 15m"</em>.</li>
@@ -48550,7 +48746,7 @@ function rgSendToFlightPlanner() {
 
             <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>⤓ Save Log</strong> (v3.17.0+) in the footer saves all entries to a JSON file on disk regardless of the current filter — useful for post-flight review or sharing with someone for troubleshooting. <strong>Clear History</strong> wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
-            <strong>Phase stability in turbulence</strong> (v3.99.0) &mdash; every phase transition now reads a <em>least-squares slope</em> over its window rather than the difference between the first and last altitude samples in it. An endpoint difference is hostage to where those two samples land on an oscillation, so level flight wobbling &plusmn;80&nbsp;ft registered as a sustained &plusmn;320&nbsp;fpm &ldquo;trend&rdquo;: 45 minutes of level cruise in that chop produced <strong>98 phase flips</strong> and at least one false DESCENT. The same 45 minutes now produces <strong>1</strong>. This also matters structurally &mdash; the slow-descent path is clamped to time-in-phase, and a phase clock that resets every 30&nbsp;s in turbulence could never reach the three minutes that path needs, so the climb direction had to move to slopes for the descent fix to work at all. Climb promotion is <code>slope &gt; +250&nbsp;fpm</code> over 30&nbsp;s. There is deliberately <em>no</em> slow/depth path on the climb side: a 50&ndash;100&nbsp;fpm cruise climb as fuel burns off is normal long-haul behaviour and must keep reading as CRUISE, and nothing depends on detecting a slow climb, whereas a missed slow descent costs the alarm entirely.<br/><br/><strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
+            <strong>Your own aircraft in rentals</strong> (v3.100.0) &mdash; SimFly does not permit renting your own aircraft, but the public rentable feed carries each plane's <code>owner</code> with no notion of who is reading it, so AA counted your fleet as available like anyone else's. Set <strong>&#128065; Display &rarr; &#128100; My Pilot Name</strong> to your SimFly pilot name (matched case-insensitively; the dialog shows a live count of matching aircraft so a typo is caught in the dialog). Gating happens at the single chokepoint <code>_aaRentIsAvailableNow</code>, so every consumer moves together &mdash; dot colours, owner-fleet badges, the rentals matrix, the Aircraft Listing and every &ldquo;available now&rdquo; filter. Your aircraft remain <em>visible</em> and are labelled <strong>yours</strong>, exactly as an already-rented plane is handled, so you can still see where your fleet is parked. Blank by default, so behaviour is unchanged until set. Stored as <code>simfly_aa_my_pilot</code> and registered in the Master Save File.<br/><br/><strong>Phase stability in turbulence</strong> (v3.99.0) &mdash; every phase transition now reads a <em>least-squares slope</em> over its window rather than the difference between the first and last altitude samples in it. An endpoint difference is hostage to where those two samples land on an oscillation, so level flight wobbling &plusmn;80&nbsp;ft registered as a sustained &plusmn;320&nbsp;fpm &ldquo;trend&rdquo;: 45 minutes of level cruise in that chop produced <strong>98 phase flips</strong> and at least one false DESCENT. The same 45 minutes now produces <strong>1</strong>. This also matters structurally &mdash; the slow-descent path is clamped to time-in-phase, and a phase clock that resets every 30&nbsp;s in turbulence could never reach the three minutes that path needs, so the climb direction had to move to slopes for the descent fix to work at all. Climb promotion is <code>slope &gt; +250&nbsp;fpm</code> over 30&nbsp;s. There is deliberately <em>no</em> slow/depth path on the climb side: a 50&ndash;100&nbsp;fpm cruise climb as fuel burns off is normal long-haul behaviour and must keep reading as CRUISE, and nothing depends on detecting a slow climb, whereas a missed slow descent costs the alarm entirely.<br/><br/><strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
 
             <strong>Bulletproof on-ground detection</strong> (v3.88.0) &mdash; when you track with the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>, the simulator&rsquo;s own wheels-on-ground signal drives the ground/airborne decision directly, replacing the GS + VS estimate. This removes the two cases the estimate can&rsquo;t tell apart &mdash; a fast taxi or high-speed rejected takeoff misread as airborne, and a slow, near-level pass (gliders, helicopters at a hover, low-and-slow bush flying) misread as on-ground. A new <strong>GROUND</strong> telemetry field (ON&nbsp;GROUND / AIRBORNE) surfaces this ground truth on the data bar, and the SimConnect feed also unlocks the <strong>ALT&nbsp;IND</strong> (indicated) and <strong>ALT&nbsp;AGL</strong> (height above terrain) telemetry fields; all three appear only while the source supplies them.<br/><br/>
 
@@ -48689,10 +48885,24 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.100.0</span>
+          <span class="release-date">Sep 6, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Your own aircraft are no longer offered to you as rentals.</strong> SimFly does not let you rent from yourself, but the rental feed the app reads carries every plane&rsquo;s owner without any notion of who is looking at it &mdash; so your own fleet was counted as available exactly like everyone else&rsquo;s. Tell the app who you are and it stops: open <strong>&#128065; Display &rarr; &#128100; My Pilot Name</strong> and type your SimFly pilot name as it appears on your aircraft. The window confirms how many aircraft in the current feed it matched as you type, so a misspelling is obvious straight away rather than leaving you wondering later why nothing changed.</li>
+          <li><strong>They stay visible &mdash; they just stop counting as available.</strong> Your aircraft still appear on the map and in the rentals table, so you can still see where your fleet is parked. What changes is that they are marked <strong>yours</strong> rather than <em>available</em>, never turn an airport&rsquo;s dot green or blue for availability, and never satisfy an &ldquo;available now&rdquo; filter. It is the same treatment an aircraft someone else has already rented gets.</li>
+          <li><strong>Leave the name blank and nothing changes.</strong> The setting starts empty, so the app behaves exactly as it did before until you fill it in. The name is matched without regard to capitalisation, and it is included in Save / Load All Settings along with everything else.</li>
+          <li><strong>Descent alerts now measure the drop from the real top of descent.</strong> The <strong>Min descent</strong> setting &mdash; how far you must have come down before the alarm sounds &mdash; was counted from wherever the aircraft happened to be when the descent was <em>noticed</em>, not from where it actually began. That was near enough while descents were spotted within seconds, but v3.99.0&rsquo;s shallow-descent detection can take a couple of minutes to be sure, by which time a few hundred feet have already gone &mdash; so a 500&nbsp;ft setting was landing around 858&nbsp;ft below cruise on a gentle descent. The app now traces back to where the descent actually started, and <strong>500&nbsp;ft means 500&nbsp;ft at every descent rate</strong>: measured from FL350, the alarm now sounds 500&nbsp;ft below cruise whether you are coming down at 1,500&nbsp;fpm or 150&nbsp;fpm.</li>
+          <li><strong>An earlier step-down still cannot fool it.</strong> Tracing back to a higher altitude sounds like it would re-open the problem v3.93.0 fixed &mdash; an ATC step-down a couple of minutes earlier being counted as part of the current descent, firing the alarm the instant a real descent begins. It does not, because the trace stops at the first stretch of level flight it meets going backwards. That is either the top of descent itself or the level segment between the step-down and the descent, and both are the right place to stop. Verified against a 1,000&nbsp;ft step-down followed by level flight and then a real descent: the alarm measures from the level-off after the step-down, not from the cruise altitude before it.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.99.0</span>
-          <span class="release-date">Sep 6, 2026 &middot; Current</span>
+          <span class="release-date">Sep 6, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
@@ -62028,6 +62238,7 @@ function rgSendToFlightPlanner() {
             <div class="rg-pulldown-sep"></div>
             <button class="rg-btn rg-pulldown-row" id="rgLayersBtn" onclick="_rgLayersOpenModal();_rgCloseAnyPulldown()" title="Reorder which map layers draw on top of others — drag to set the stacking order"><span class="rg-row-icon">🗂</span><span class="rg-btn-label">Layers…</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgTimeSettingsBtn" onclick="_aaTimeSettingsOpen(event)" title="Choose which clock the arrival time beside every flight-time estimate is read on — your own, the departure's, or the arrival's"><span class="rg-row-icon">🕐</span><span class="rg-btn-label">Time Settings…</span></button>
+        <button class="rg-btn rg-pulldown-row" id="rgMyPilotBtn" onclick="_aaMyPilotOpen(event)" title="Tell AA your SimFly pilot name so it stops listing your own aircraft as available to rent — SimFly does not let you rent from yourself"><span class="rg-row-icon">👤</span><span class="rg-btn-label">My Pilot Name…</span></button>
             <button class="rg-btn rg-pulldown-row" id="rgAppearanceBtn" onclick="_rgAppearanceToggle();_rgCloseAnyPulldown()" title="Choose how airport dots look — flat, water droplet, or glass — and how airports with scenery in your library are marked"><span class="rg-row-icon">🎨</span><span class="rg-btn-label">Appearance…</span></button>
           </div>
         </div>
@@ -62467,6 +62678,7 @@ function rgSendToFlightPlanner() {
         .aar-bd-now { color:#2ecc71; }
         .aar-bd-soon { color:#e0a64a; }
         .aar-bd-ground { color:#ff5a5a; }   /* unavailable — ground-ops timer running */
+        .aar-bd-mine { color:#8fa6bd; }     /* yours — SimFly won't let you rent your own */
         .aar-bd-more { color:#7d8ea3; font-size:1.07rem; margin-top:4px; }
       </style>
       <div id="aaRentPanel" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
