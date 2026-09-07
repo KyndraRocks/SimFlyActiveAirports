@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.100.0';
+const APP_VERSION = '3.101.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -12603,6 +12603,11 @@ function _buildSimbriefTooltip() {
         const hdr = st.level === 'blue' ? '\u2708 Aircraft ready at departure' : '\u2705 Good to go';
         extra += hdrLine(st.level, hdr) +
                  st.ok.map(l => `<span class="tip-line">${esc(l)}</span>`).join('');
+        // Blue outranks amber, so genuine amber concerns would otherwise be
+        // invisible — list them under their own header beneath the blue line.
+        if (st.level === 'blue' && cautions.length)
+          extra += hdrLine('amber', '⚠ Caution') +
+                   cautions.map(l => `<span class="tip-line">${esc(l)}</span>`).join('');
       } else if (cautions.length) {
         // red / amber WITH genuine cautions
         const hdr = st.level === 'red' ? '\u26d4 Not recommended' : '\u26a0 Caution';
@@ -36073,8 +36078,9 @@ function _rgUpdateSimbriefWarn() {
 // ── Stop-sign dynamic color for the File-on-SimBrief buttons (v3.68.0) ───────
 // Both the main-screen #simbriefBtn and the floating route-pill button recolor
 // to a green / amber / red "stop sign" (plus a glowing BLUE upgrade) describing
-// the health of the current dep→arr route for the selected aircraft. Logic is a
-// worst-condition-wins cascade:
+// the health of the current dep→arr route for the selected aircraft. Precedence
+// is RED > BLUE > AMBER > GREEN — worst-condition-wins EXCEPT that blue, the
+// aircraft being rentable right where you are standing, outranks amber:
 //   RED   — dep or arr unsuitable for the aircraft (runway/range/category), OR
 //           either endpoint has 0 weekly rotations left.
 //   AMBER — caution: ≤3 rotations left, non-VFR weather (MVFR/IFR/LIFR), strong/
@@ -36085,8 +36091,10 @@ function _rgUpdateSimbriefWarn() {
 //           a reposition concern; the aircraft at the departure = blue instead).
 //   GREEN — suitability cleared, VFR/no weather concern, rotations available,
 //           and no "owner has it elsewhere" situation.
-//   BLUE  — all GREEN conditions AND the selected aircraft is rentable RIGHT
-//           NOW at the departure (glows/pulses; tooltip says so).
+//   BLUE  — not RED, and the selected aircraft is rentable RIGHT NOW at the
+//           departure (glows/pulses; tooltip says so). Beats AMBER — any amber
+//           cautions still ride along in `cautions[]` and the tooltip lists them
+//           under a ⚠ Caution header below the blue line, so nothing is hidden.
 // Plus: same-airport routes return level null + a sameAirport flag (the button
 // is DISABLED, not coloured), and an endpoint with no runway data adds a neutral
 // "suitability unverified" NOTE so green is never falsely confident. The tooltip
@@ -36321,14 +36329,22 @@ function _sbRouteStopStatus() {
   if (depSuit === null) notes.push(dep + ' suitability unverified (no runway data)');
   if (arrSuit === null) notes.push(arr + ' suitability unverified (no runway data)');
 
-  if (red)   return { level: 'red',   cautions, ok, notes };
-  if (amber) return { level: 'amber', cautions, ok, notes };
+  // Precedence: RED > BLUE > AMBER > GREEN. Red always wins; BLUE (the selected
+  // aircraft is sitting at the DEPARTURE airport, ready to rent) outranks amber
+  // because having the aircraft already under you is the thing worth reading at
+  // a glance. Amber concerns are not lost - they stay in `cautions[]` and are
+  // listed under the blue line in the tooltip.
+  if (red) return { level: 'red', cautions, ok, notes };
 
-  // ── BLUE upgrade / GREEN ──────────────────────────────────────────────────
+  // ── BLUE ─ outranks amber (see above) ────────────────────────────────────────
   if (ac && depHasAc) {
     ok.push('✈ ' + ac + ' is available to rent at ' + dep);
     return { level: 'blue', cautions, ok, notes };
   }
+
+  if (amber) return { level: 'amber', cautions, ok, notes };
+
+  // ── GREEN ─────────────────────────────────────────────────────────────
   if (depSuit === true && arrSuit === true) ok.push('✓ ' + ac + ' suitable at both airports');
   const depWx = _sbWxCat(dep), arrWx = _sbWxCat(arr);
   if (depWx === 'vfr' || arrWx === 'vfr') ok.push('✓ VFR weather');
@@ -48220,9 +48236,10 @@ function rgSendToFlightPlanner() {
             <strong>ⓘ Full airport stats from the map</strong> (v3.45.0+) &mdash; the <strong>ⓘ</strong> button on the pill pops up a panel just above it showing the complete <strong>departure</strong> and <strong>arrival</strong> airport cards side-by-side &mdash; owner, pilot payout, SimFly category &amp; level, rotations remaining, runways, weather, and the <strong>aircraft-suitability verdict</strong> &mdash; the same cards that otherwise appear at the bottom of the main planner. The panel tracks the pill if you drag it and refreshes as you change the route; click ⓘ again, click off the panel, or press <em>Esc</em> to close it.<br/><br/>
             <strong>Stop-sign button color</strong> (v3.68.0+) &mdash; both the main button and the map pill recolor to show the health of the current route for the selected aircraft, so you get a go/no-go read at a glance:<br/>
             &bull; <strong style="color:#34d36b">Green</strong> &mdash; good to go: the aircraft clears suitability at both ends (runway, range, category), the weather is VFR, rotations are available, and the aircraft isn&rsquo;t stranded elsewhere in the owner&rsquo;s fleet.<br/>
-            &bull; <strong style="color:#5fd0ff">Blue (glowing)</strong> &mdash; everything green <em>and</em> your selected aircraft is rentable right now at the departure airport; the button pulses and the tooltip says so.<br/>
+            &bull; <strong style="color:#5fd0ff">Blue (glowing)</strong> &mdash; your selected aircraft is rentable right now at the <strong>departure</strong> airport; the button pulses and the tooltip says so.<br/>
             &bull; <strong style="color:#f5b000">Amber</strong> &mdash; caution: 3 or fewer rotations left at an endpoint, non-VFR (MVFR/IFR) weather, strong or gusting surface wind (&ge;25&nbsp;kt sustained or &ge;30&nbsp;kt gusts), a thin range margin (the route uses 85&ndash;100% of the aircraft&rsquo;s range); the aircraft isn&rsquo;t at your departure but IS at your arrival (the tooltip suggests swapping departure and arrival); or the aircraft isn&rsquo;t at your departure but the departure or arrival owner has it at a third airport (other than this route&rsquo;s departure or arrival). The tooltip says <em>which</em> owner (departure or arrival) and names that airport.<br/>
             &bull; <strong style="color:#ff6b6b">Red</strong> &mdash; not recommended: the aircraft is unsuitable for the departure or arrival, or an endpoint has zero weekly rotations left.<br/>
+            <strong>Which colour wins</strong> (v3.101.0+) &mdash; the order of precedence is <strong style="color:#ff6b6b">Red</strong> &rarr; <strong style="color:#5fd0ff">Blue</strong> &rarr; <strong style="color:#f5b000">Amber</strong> &rarr; <strong style="color:#34d36b">Green</strong>. Red overrides everything, and blue outranks amber &mdash; having your aircraft already sitting under you at the departure is worth knowing at a glance even when the route also carries a caution. Nothing is lost: when a blue route has cautions, the hover tooltip lists them beneath the blue line under a <strong>&#9888; Caution</strong> heading, and the yellow low-rotation badge and the confirmation prompt before filing behave exactly as they do on an amber route.<br/>
             If departure and arrival are the <strong>same airport</strong> the button is simply <strong>disabled</strong> (a zero-distance route can&rsquo;t be filed), and if an airport has no runway data the hover adds a neutral &ldquo;suitability unverified&rdquo; note.<br/>
             Hover the button to see exactly what drove the color &mdash; it names the specific tripped check (e.g. the exact runway shortfall or range overage, the weather&rsquo;s limiting ceiling/visibility, or how many rotations remain), not just a generic &ldquo;unsuitable.&rdquo; Pick an aircraft in the panel for the suitability- and availability-based colors; without one, the color still reflects weather and rotations.
           </div>
@@ -48885,10 +48902,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.101.0</span>
+          <span class="release-date">Sep 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>&ldquo;Your aircraft is already here&rdquo; now outranks a caution on the File on SimBrief button.</strong> The button&rsquo;s colour ranked <strong>red &rarr; amber &rarr; blue &rarr; green</strong>, so the blue &ldquo;the aircraft you have selected is sitting at your departure airport, ready to rent&rdquo; state only ever appeared on an otherwise spotless route. Any caution at all &mdash; marginal weather at either end, a gusty surface wind, three or fewer rotations left, a tight range margin &mdash; painted the button amber instead and the single most useful fact about the route vanished. The order is now <strong>red &rarr; blue &rarr; amber &rarr; green</strong>: red still overrides everything, but blue now wins over amber.</li>
+          <li><strong>Nothing is hidden by the promotion.</strong> When a blue route also has cautions, the hover tooltip lists them underneath the blue line under their own <strong>&#9888; Caution</strong> heading, so the marginal weather or the low rotation count is still spelled out &mdash; it just no longer costs you the colour. The yellow <strong>&#9888;</strong> low-rotation badge on the button and the confirmation prompt before filing are unchanged.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.100.0</span>
-          <span class="release-date">Sep 6, 2026 &middot; Current</span>
+          <span class="release-date">Sep 6, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">

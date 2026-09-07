@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.100.0**
+**Current version: v3.101.0**
 
 ---
 
@@ -71,9 +71,11 @@ The badges behave like airport dots: **hover one** for the standard airport tool
 New in v3.68.0 — both **File on SimBrief** buttons (the one on the main planner and the floating route pill on the map) are now a live "stop-sign" that fills with a high-contrast color showing the health of your current departure → arrival route for the selected aircraft, so you can read the go/no-go at a glance before filing:
 
 - **Green** — good to go: the aircraft clears suitability at both ends (runway length, range, category), the weather is VFR, rotations are available, and the aircraft isn't stranded elsewhere in the owner's fleet.
-- **Blue (glowing)** — everything green *and* your selected aircraft is rentable right now at the departure airport; the button pulses and the tooltip tells you it's waiting there.
+- **Blue (glowing)** — your selected aircraft is rentable right now at the **departure** airport; the button pulses and the tooltip tells you it's waiting there.
 - **Amber** — caution: 3 or fewer rotations left at an endpoint, non-VFR (MVFR/IFR) weather, strong or gusting surface wind, or a thin range margin (the route uses most of the aircraft's range).
 - **Red** — not recommended: the aircraft is unsuitable for the departure or arrival, or an endpoint has zero weekly rotations left.
+
+**Which colour wins** (v3.101.0) — when more than one of these is true at once, the order of precedence is **Red → Blue → Amber → Green**. Red overrides everything, and blue outranks amber: your aircraft already sitting under you at the departure is worth knowing at a glance even when the route also carries a caution. Previously blue needed an otherwise flawless route, so a little marginal weather or a low rotation count hid it. Nothing is lost in the promotion — when a blue route also has cautions, the hover tooltip lists them beneath the blue line under their own **⚠ Caution** heading, and the low-rotation warning badge and the confirmation prompt before filing behave exactly as they would on an amber route.
 
 Hover the button for the details. An amber tooltip separates genuine **Cautions** (weather, wind, low rotations, thin range — each spelled out with the actual numbers, e.g. *route 540 nm exceeds C750 range 150 nm* or *IFR — ceiling 600 ft, vis 2 SM*) from informational **Notes** — handy opportunities like "your aircraft is available at the arrival, consider swapping" or "the arrival airport owner has a C750 at LIRQ." If departure and arrival are the same airport the button simply disables (a zero-distance route can't be filed).
 
