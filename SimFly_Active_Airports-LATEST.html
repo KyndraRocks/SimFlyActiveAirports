@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.102.0';
+const APP_VERSION = '3.103.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -21027,6 +21027,31 @@ const _afkETA = (() => {
   // Thin nm-only wrapper so the existing call sites read unchanged.
   function distToTrigger(alarm, ac) { return distToTriggerEx(alarm, ac).nm; }
 
+  // v3.103.0 — Distance still to cover to reach the destination, feeding the
+  // descent alarm's 3×-rule TOD estimate. Same track-miles-with-fallback
+  // treatment as distToTriggerEx: measured along the loaded route while the
+  // aircraft is within _AFK_TRK_XTK_LIMIT_NM of it, straight great-circle
+  // line otherwise. The destination is by construction the LAST route point,
+  // so its projection is the full route length and the difference is simply
+  // the track miles remaining.
+  function distToDestEx(ac) {
+    const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+    if (!fp || !fp.destination) return _NIL_DIST;
+    if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return _NIL_DIST;
+    const destLat = parseFloat(fp.destination.pos_lat);
+    const destLng = parseFloat(fp.destination.pos_long);
+    if (!isFinite(destLat) || !isFinite(destLng)) return _NIL_DIST;
+    try {
+      const proj = _afkTrackDistToPointNm(ac, fp, destLat, destLng);
+      if (proj && isFinite(proj.nm) && proj.nm > 0 &&
+          proj.acXtkNm <= _AFK_TRK_XTK_LIMIT_NM) {
+        return { nm: proj.nm, mode: 'trk' };
+      }
+    } catch (_) {}
+    const d = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
+    return isFinite(d) ? { nm: d, mode: 'dct' } : _NIL_DIST;
+  }
+
   function compute(alarm, ac) {
     if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
     // Timer alarms are independent of aircraft state — compute first so
@@ -21120,18 +21145,23 @@ const _afkETA = (() => {
       // current GS > 50 kt (sensible value), and the aircraft still > 5000 ft
       // above the destination. Triggered alarm itself remains phase-based —
       // this just powers the NEXT ALARM "IN" countdown.
+      //
+      // v3.103.0 — the distance-to-destination this rests on is now the same
+      // track-miles-with-fallback measure the geofence/waypoint metrics use
+      // (distToDestEx). A straight line to the destination was the wrong
+      // input for a 3×-rule TOD on any route with a dogleg still ahead: it
+      // under-reads the miles left, so the estimated TOD arrives EARLY — and
+      // on a big enough dogleg it can read as already-past-TOD (NaN, no
+      // countdown at all) while there is in fact an hour of cruise to run.
       const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
       if (!fp || !fp.destination) return NaN;
-      const destLat = parseFloat(fp.destination.pos_lat);
-      const destLng = parseFloat(fp.destination.pos_long);
       const destElev = parseFloat(fp.destination.elevation);
-      if (!isFinite(destLat) || !isFinite(destLng)) return NaN;
       if (ac.alt == null || !isFinite(ac.alt))      return NaN;
       const altAGL = ac.alt - (isFinite(destElev) ? destElev : 0);
       if (altAGL <= 5000)                            return NaN; // too low to predict TOD
       const gs = (ac.gs != null && isFinite(ac.gs)) ? ac.gs : 0;
       if (gs < 50)                                   return NaN;
-      const distToDest = _afkDistNm(ac.lat, ac.lng, destLat, destLng);
+      const distToDest = distToDestEx(ac).nm;
       if (!isFinite(distToDest))                     return NaN;
       // 3× rule, with a 1500 ft pattern-altitude buffer that lines up TOD
       // with a typical level-off for the approach intercept.
@@ -21160,6 +21190,11 @@ const _afkETA = (() => {
     let mode = null;
     if (bestAlarm.type === 'geofence' || bestAlarm.type === 'waypoint') {
       try { mode = distToTriggerEx(bestAlarm, ac).mode; } catch (_) {}
+    } else if (bestAlarm.type === 'descent') {
+      // v3.103.0 — the TOD estimate rests on distance-to-destination, so it
+      // carries the suffix too. Reaching here means compute() already got a
+      // finite ETA, so distToDestEx is guaranteed to have produced a mode.
+      try { mode = distToDestEx(ac).mode; } catch (_) {}
     }
     return { alarm: bestAlarm, etaSec: bestEta, mode, location: locationOf(bestAlarm) };
   }
@@ -21208,7 +21243,7 @@ const _afkETA = (() => {
     return null;
   }
 
-  return { compute, next, nextDistance, distToTriggerEx, fmt, locationOf };
+  return { compute, next, nextDistance, distToTriggerEx, distToDestEx, fmt, locationOf };
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
@@ -49026,7 +49061,7 @@ function rgSendToFlightPlanner() {
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
             <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE, and <strong>NEXT</strong> (the ident of the next un-passed waypoint on the loaded SimBrief route; v3.6.0 — shows &mdash; without a plan). A <strong>TRK DEV</strong> field (v3.6.2 — cross-track distance in nm abeam the SimBrief route) is also available but hidden by default; add it from the ⚙ menu under <em>Navigation</em>. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
             <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. <strong>In Flight Demo Mode</strong> (v3.6.5) ELAPSED shows <em>simulated</em> time since takeoff — matching the scrub bar — rather than wall-clock, so a sped-up demo reports the flight time it represents.<br/><br/>
-            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. <strong>v3.102.0:</strong> for <strong>geofence</strong> and <strong>waypoint</strong> alerts the distance behind that countdown is measured in <em>track miles along your loaded SimBrief route</em> &mdash; from your position to the end of the leg you are on, then along every remaining leg, then in to the trigger point &mdash; rather than as a straight line that ignores the route&rsquo;s doglegs. Track miles apply while your track deviation is <strong>3&nbsp;nm or less</strong>; stray wider and both the ETA and the distance revert to the straight great-circle line on their own, switching back once you rejoin. The same fallback covers no plan loaded, a trigger point that is not on the route, and one you have already flown past. The value is suffixed <strong>(TRK)</strong> or <strong>(DCT)</strong> so you can always see which measure is in use. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks. An optional <strong>ALERT DISTANCE</strong> field (v3.75.0, hidden by default &mdash; add it from the ⚙ menu under <em>Alerts</em>) shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point. It's a separate ranking from NEXT ALERT &mdash; NEXT ALERT picks whichever armed alert of <em>any</em> type will trip soonest, while ALERT DISTANCE only ever considers geofence and waypoint alerts (the only types with a fixed trigger point a distance can be measured to), so a fast-approaching timer or altitude alert can be the overall NEXT ALERT without changing what ALERT DISTANCE shows. It uses the same track-miles measure as ALERT ETA and carries the matching <strong>(TRK)</strong> / <strong>(DCT)</strong> suffix, so the two fields always agree about how they were measured. For a geofence the figure counts to the point where your route genuinely crosses the ring &mdash; nearer than the radius alone would suggest when the route only clips the fence&rsquo;s edge. Like NEXT ALERT, the value is clickable to recentre the map on that alert.<br/><br/>
+            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. <strong>v3.102.0:</strong> for <strong>geofence</strong> and <strong>waypoint</strong> alerts the distance behind that countdown is measured in <em>track miles along your loaded SimBrief route</em> &mdash; from your position to the end of the leg you are on, then along every remaining leg, then in to the trigger point &mdash; rather than as a straight line that ignores the route&rsquo;s doglegs. Track miles apply while your track deviation is <strong>3&nbsp;nm or less</strong>; stray wider and both the ETA and the distance revert to the straight great-circle line on their own, switching back once you rejoin. The same fallback covers no plan loaded, a trigger point that is not on the route, and one you have already flown past. The value is suffixed <strong>(TRK)</strong> or <strong>(DCT)</strong> so you can always see which measure is in use. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). <strong>v3.103.0:</strong> the distance-to-destination that estimate rests on is measured in <em>track miles along your route</em> under the same rules as the geofence and waypoint alerts above, and carries the same <strong>(TRK)</strong> / <strong>(DCT)</strong> suffix. It matters more here than elsewhere: the 3&times; rule works backwards from the miles you have left, so a straight line that discounted a dogleg made the estimated top of descent arrive <em>early</em> (measured: 1:28 shown against a true 2:10 on a 90&deg; dogleg at FL350). It could also make the countdown disappear altogether on an arrival that turns away from the field &mdash; if the straight-line distance falls below the 3&times; rule&rsquo;s descent distance while the actual route does not, the app concludes you are past top of descent and shows nothing. Measured: 40&nbsp;nm from the field at FL200 with 100&nbsp;nm of route left, no countdown, 45&nbsp;nm still to run before descent. Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks. An optional <strong>ALERT DISTANCE</strong> field (v3.75.0, hidden by default &mdash; add it from the ⚙ menu under <em>Alerts</em>) shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point. It's a separate ranking from NEXT ALERT &mdash; NEXT ALERT picks whichever armed alert of <em>any</em> type will trip soonest, while ALERT DISTANCE only ever considers geofence and waypoint alerts (the only types with a fixed trigger point a distance can be measured to), so a fast-approaching timer or altitude alert can be the overall NEXT ALERT without changing what ALERT DISTANCE shows. It uses the same track-miles measure as ALERT ETA and carries the matching <strong>(TRK)</strong> / <strong>(DCT)</strong> suffix, so the two fields always agree about how they were measured. For a geofence the figure counts to the point where your route genuinely crosses the ring &mdash; nearer than the radius alone would suggest when the route only clips the fence&rsquo;s edge. Like NEXT ALERT, the value is clickable to recentre the map on that alert.<br/><br/>
             The panel starts collapsed on every page load and auto-expands as soon as live data begins flowing (FSUIPC connected or demo started); it returns to collapsed when the source stops. Click the small <strong>⏷</strong> chevron to toggle it manually at any time. The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
 
             <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Navigation</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
@@ -49102,8 +49137,21 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.102.0</span>
+          <span class="release-version">v3.103.0</span>
           <span class="release-date">Sep 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>The Descent Started countdown now counts track miles too.</strong> v3.102.0 moved geofence and waypoint alerts onto track miles along your SimBrief route but left the <strong>Descent Started</strong> top-of-descent estimate measuring a straight line to the destination. That was the wrong input for it, and in a more damaging direction than elsewhere: the 3&times; rule works backwards from how far you still have to fly, so under-reading the miles left makes the estimated top of descent arrive <em>early</em>. Flying a 90&deg; dogleg at FL350, the countdown read <strong>1:28</strong> where the route actually gave <strong>2:10</strong> &mdash; 42 minutes early. <strong>Worse, on an arrival that turns away from the field the countdown could vanish outright.</strong> Sitting 40&nbsp;nm west of the destination at FL200 on a route that tracks inbound, turns north, and comes back &mdash; 100&nbsp;nm of flying &mdash; the straight line said 40&nbsp;nm against a top of descent 55&nbsp;nm out, so the app concluded you were already past it and showed nothing at all. There were <strong>45&nbsp;nm still to run</strong> before descent.</li>
+          <li><strong>Same rule, same fallback, same label.</strong> The distance is measured along your route while your track deviation is <strong>3&nbsp;nm or less</strong>, and reverts to the straight line by itself when you stray wider or no plan is loaded. The countdown carries the same <strong>(TRK)</strong> / <strong>(DCT)</strong> suffix in <strong>ALERT ETA</strong> as every other alert type, so you can see which measure produced it.</li>
+          <li><strong>The alarm still fires on the real descent.</strong> As before, this changes only the <em>heads-up countdown</em>. Descent Started still trips when a sustained descent actually begins, judged by the phase detector &mdash; the 3&times; rule has never been what fires it, and the estimate stays a rough guide rather than a computed VNAV path.</li>
+          <li><strong>ALERT DISTANCE is deliberately unchanged.</strong> It still lists only geofence and waypoint alerts. Top of descent is a point the app works out from your altitude and speed rather than a fixed place on the map, so there is nothing stable to measure a distance to &mdash; and it has no map location to click through to either.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.102.0</span>
+          <span class="release-date">Sep 7, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
