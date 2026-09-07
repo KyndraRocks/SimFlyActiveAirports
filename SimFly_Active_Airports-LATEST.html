@@ -8982,7 +8982,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.101.0';
+const APP_VERSION = '3.102.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -20964,35 +20964,68 @@ const _afkETA = (() => {
   // distance-to-trigger, or when the geometry can't currently be
   // evaluated (already inside/outside for enter/exit, no live waypoint
   // match yet, no live position, etc).
-  function distToTrigger(alarm, ac) {
-    if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
-    if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return NaN;
+  //
+  // v3.102.0 — the "Ex" form also reports WHICH measure produced the
+  // number: 'trk' when it was measured in track miles along the loaded
+  // SimBrief route, 'dct' for the straight great-circle line, null when
+  // there is no number at all. Track miles are used whenever a route is
+  // loaded, the aircraft's track deviation is <= _AFK_TRK_XTK_LIMIT_NM
+  // (3 nm), and the trigger point actually lies ahead on that route.
+  // Anything else auto-reverts to the direct line, so the metric never
+  // goes blank just because you stepped off the planned track.
+  const _NIL_DIST = { nm: NaN, mode: null };
+  function distToTriggerEx(alarm, ac) {
+    if (!alarm || !alarm.enabled || alarm.status === 'tripped') return _NIL_DIST;
+    if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return _NIL_DIST;
     if (alarm.type === 'geofence') {
       const p = alarm.params;
       const c = (typeof _afkGeofenceCenter === 'function') ? _afkGeofenceCenter(p) : { lat: p.lat, lng: p.lng };
-      if (!c) return NaN;
+      if (!c) return _NIL_DIST;
       const d = _afkDistNm(ac.lat, ac.lng, c.lat, c.lng);
-      if (!isFinite(d)) return NaN;
-      const inside = d < p.radiusNm;
+      if (!isFinite(d)) return _NIL_DIST;
+      const r = parseFloat(p.radiusNm);
+      const inside = d < r;   // the trip test itself stays direct-distance based
+      // Track miles first. null = the route can't answer this one (no plan,
+      // off track, fence not on the route, or the crossing already behind us)
+      // and we fall through to the original direct-distance maths below.
+      let trk = null;
+      try { trk = _afkTrkGeofenceNm(ac, p, c, r, inside); } catch (_) { trk = null; }
+      if (trk != null && isFinite(trk)) return { nm: trk, mode: 'trk' };
       if (p.trigger === 'enter') {
-        if (inside) return NaN; // already inside; can't predict exit
-        return d - p.radiusNm;
+        if (inside) return _NIL_DIST; // already inside; can't predict exit
+        return { nm: d - r, mode: 'dct' };
       } else if (p.trigger === 'exit') {
-        if (!inside) return NaN;
-        return p.radiusNm - d;
+        if (!inside) return _NIL_DIST;
+        return { nm: r - d, mode: 'dct' };
       } else { // both
-        return Math.abs(d - p.radiusNm);
+        return { nm: Math.abs(d - r), mode: 'dct' };
       }
     }
     if (alarm.type === 'waypoint') {
       const wp = _wpForAlarm(alarm);
-      if (!wp) return NaN;
-      const d = _afkDistNm(ac.lat, ac.lng, parseFloat(wp.fix.pos_lat), parseFloat(wp.fix.pos_long));
-      if (!isFinite(d)) return NaN;
-      return d;
+      if (!wp) return _NIL_DIST;
+      const wLat = parseFloat(wp.fix.pos_lat), wLng = parseFloat(wp.fix.pos_long);
+      const d = _afkDistNm(ac.lat, ac.lng, wLat, wLng);
+      if (!isFinite(d)) return _NIL_DIST;
+      // A waypoint alarm always has a plan loaded (_wpForAlarm reads it), and
+      // its target IS a route fix — so TRK is the normal case here. DCT only
+      // shows up on a big track deviation, or for a fix the projection puts
+      // behind the aircraft (overflown but still un-tripped).
+      try {
+        const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+        const proj = fp ? _afkTrackDistToPointNm(ac, fp, wLat, wLng) : null;
+        if (proj && isFinite(proj.nm) && proj.nm > 0 &&
+            proj.acXtkNm     <= _AFK_TRK_XTK_LIMIT_NM &&
+            proj.targetXtkNm <= _AFK_TRK_XTK_LIMIT_NM) {
+          return { nm: proj.nm, mode: 'trk' };
+        }
+      } catch (_) {}
+      return { nm: d, mode: 'dct' };
     }
-    return NaN;
+    return _NIL_DIST;
   }
+  // Thin nm-only wrapper so the existing call sites read unchanged.
+  function distToTrigger(alarm, ac) { return distToTriggerEx(alarm, ac).nm; }
 
   function compute(alarm, ac) {
     if (!alarm || !alarm.enabled || alarm.status === 'tripped') return NaN;
@@ -21121,7 +21154,14 @@ const _afkETA = (() => {
       if (isFinite(e) && e < bestEta) { bestEta = e; bestAlarm = a; }
     });
     if (!bestAlarm) return null;
-    return { alarm: bestAlarm, etaSec: bestEta, location: locationOf(bestAlarm) };
+    // v3.102.0 — surface which distance measure fed the ETA, but only for the
+    // geo-bound types where the distinction exists at all (a timer or
+    // altitude alarm's ETA has no distance behind it to measure either way).
+    let mode = null;
+    if (bestAlarm.type === 'geofence' || bestAlarm.type === 'waypoint') {
+      try { mode = distToTriggerEx(bestAlarm, ac).mode; } catch (_) {}
+    }
+    return { alarm: bestAlarm, etaSec: bestEta, mode, location: locationOf(bestAlarm) };
   }
 
   // v3.75.0 — Closest geo-bound (geofence/waypoint) alarm by raw distance,
@@ -21131,15 +21171,15 @@ const _afkETA = (() => {
   // can beat a far-off geofence on ETA, but ALERT DISTANCE only has a
   // meaning for geo-bound alarms, so it ranks within that subset alone.
   function nextDistance(ac) {
-    let bestDist = Infinity, bestAlarm = null;
+    let bestDist = Infinity, bestAlarm = null, bestMode = null;
     _afkAlarms.list().forEach(a => {
       if (!a.enabled || a.status === 'tripped') return;
       if (a.type !== 'geofence' && a.type !== 'waypoint') return;
-      const d = distToTrigger(a, ac);
-      if (isFinite(d) && d < bestDist) { bestDist = d; bestAlarm = a; }
+      const r = distToTriggerEx(a, ac);
+      if (isFinite(r.nm) && r.nm < bestDist) { bestDist = r.nm; bestAlarm = a; bestMode = r.mode; }
     });
     if (!bestAlarm) return null;
-    return { alarm: bestAlarm, distNm: bestDist, location: locationOf(bestAlarm) };
+    return { alarm: bestAlarm, distNm: bestDist, mode: bestMode, location: locationOf(bestAlarm) };
   }
 
   // Resolve a map location for an alarm so the data panel can offer a
@@ -21168,7 +21208,7 @@ const _afkETA = (() => {
     return null;
   }
 
-  return { compute, next, nextDistance, fmt, locationOf };
+  return { compute, next, nextDistance, distToTriggerEx, fmt, locationOf };
 })();
 
 // ---------------------- ALARM REGISTRY ------------------------------------
@@ -27513,6 +27553,158 @@ function _afkCrossTrackNm(ac, fp) {
 }
 
 // =====================================================================
+// v3.102.0 - ALONG-TRACK ("track miles") GEOMETRY
+//
+// The alert ETA / ALERT DISTANCE metrics used to measure a straight
+// great-circle line from the aircraft to a geofence centre or waypoint,
+// which over-reads badly on any route with a dogleg between you and the
+// trigger point. These helpers project both the aircraft and the target
+// onto the loaded SimBrief route so the distance can instead be measured
+// ALONG the planned track.
+//
+// Track miles are only trustworthy while the aircraft is actually flying
+// the route, so every caller gates on _AFK_TRK_XTK_LIMIT_NM: at or under
+// that many nm of track deviation the along-track figure is used (TRK);
+// stray further and the metric auto-reverts to the straight line (DCT).
+//
+// Declared with `var` (not `const`/`let`) purely so there is no temporal
+// dead zone - _afkETA lives thousands of lines earlier in the file.
+// =====================================================================
+var _AFK_TRK_XTK_LIMIT_NM = 3;
+
+// One-line explanation of the (TRK) / (DCT) suffix, appended to the
+// ALERT ETA / ALERT DISTANCE tooltips. Empty for alert types where no
+// distance measure applies (timer, altitude, phase change, ...).
+function _afkTrkModeTip(mode) {
+  if (mode === 'trk') return '\n\nTRK \u2014 track miles measured along the loaded SimBrief route.';
+  if (mode === 'dct') return '\n\nDCT \u2014 straight great-circle line. Track miles need a loaded route, the aircraft within '
+                             + _AFK_TRK_XTK_LIMIT_NM + ' nm of it, and the trigger point ahead on it.';
+  return '';
+}
+
+// Ordered route point list [origin, ...navlog fixes, destination] plus the
+// running cumulative distance to each point. One-entry memo keyed on the
+// flight-plan object identity - _sbOfpLastData is replaced wholesale when a
+// new plan loads, so reference equality is a safe cache key.
+var _afkRouteGeomCache = null;
+function _afkRouteGeometry(fp) {
+  if (!fp || !fp.origin || !fp.destination) return null;
+  if (_afkRouteGeomCache && _afkRouteGeomCache.fp === fp) return _afkRouteGeomCache.geom;
+  let geom = null;
+  const oLat = parseFloat(fp.origin.pos_lat),      oLng = parseFloat(fp.origin.pos_long);
+  const dLat = parseFloat(fp.destination.pos_lat), dLng = parseFloat(fp.destination.pos_long);
+  if (isFinite(oLat) && isFinite(oLng) && isFinite(dLat) && isFinite(dLng)) {
+    const fixesRaw = fp.navlog && fp.navlog.fix;
+    const fixes    = !fixesRaw ? [] : (Array.isArray(fixesRaw) ? fixesRaw : [fixesRaw]);
+    const pts = [[oLat, oLng]];
+    fixes.forEach(f => {
+      const la = parseFloat(f.pos_lat), ln = parseFloat(f.pos_long);
+      if (isFinite(la) && isFinite(ln)) pts.push([la, ln]);
+    });
+    pts.push([dLat, dLng]);
+    if (pts.length >= 2) {
+      const cum = [0];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const d = _afkDistNm(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+        cum.push(cum[i] + (isFinite(d) ? d : 0));
+      }
+      geom = { pts, cum };
+    }
+  }
+  _afkRouteGeomCache = { fp, geom };
+  return geom;
+}
+
+// Project one point onto the route. Returns the cumulative along-route
+// distance of its closest point (nm from the origin) and the perpendicular
+// offset from the track. Leg selection is by SMALLEST CLAMPED OFFSET rather
+// than the "sum of endpoint distances" heuristic _afkTrackMilesRemaining
+// uses: a target can sit anywhere (including abeam a leg's midpoint), and
+// the offset is the quantity the 3 nm gate and the fence-chord maths both
+// need, so it is the honest thing to minimise. Ties keep the EARLIER leg.
+function _afkRouteProject(geom, lat, lng) {
+  if (!geom || !isFinite(lat) || !isFinite(lng)) return null;
+  const R = 3440.065;
+  const pts = geom.pts, cum = geom.cum;
+  let best = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i], B = pts[i + 1];
+    const legLen = cum[i + 1] - cum[i];
+    if (!(legLen > 0)) continue;
+    const d13 = _afkDistNm(A[0], A[1], lat, lng) / R; // angular distance A -> point
+    if (!isFinite(d13)) continue;
+    const th13 = _afkBearingRad(A[0], A[1], lat, lng);
+    const th12 = _afkBearingRad(A[0], A[1], B[0], B[1]);
+    const xt = Math.asin(Math.max(-1, Math.min(1, Math.sin(d13) * Math.sin(th13 - th12)))) * R;
+    if (!isFinite(xt)) continue;
+    // Along-track distance from A to the foot of the perpendicular.
+    let at = Math.acos(Math.max(-1, Math.min(1, Math.cos(d13) / Math.cos(xt / R)))) * R;
+    if (!isFinite(at)) continue;
+    // acos is always positive - recover the sign from the bearing split.
+    let dth = th13 - th12;
+    while (dth >  Math.PI) dth -= 2 * Math.PI;
+    while (dth < -Math.PI) dth += 2 * Math.PI;
+    if (Math.abs(dth) > Math.PI / 2) at = -at;
+    // Clamp into the leg; beyond either end the true offset is the distance
+    // to that endpoint, not the (infinite-line) perpendicular.
+    let off;
+    if (at < 0)           off = _afkDistNm(lat, lng, A[0], A[1]);
+    else if (at > legLen) off = _afkDistNm(lat, lng, B[0], B[1]);
+    else                  off = Math.abs(xt);
+    if (!isFinite(off)) continue;
+    if (!best || off < best.offsetNm) {
+      best = { legIdx: i, alongNm: cum[i] + Math.max(0, Math.min(legLen, at)), offsetNm: off };
+    }
+  }
+  return best;
+}
+
+// Along-track distance from the aircraft to an arbitrary target point,
+// following the route. `nm` is POSITIVE when the target lies ahead of the
+// aircraft along the track and negative when it is behind. Also reports how
+// far off-track each end is, which is what the callers gate on.
+function _afkTrackDistToPointNm(ac, fp, tLat, tLng) {
+  if (!ac || !isFinite(ac.lat) || !isFinite(ac.lng)) return null;
+  const geom = _afkRouteGeometry(fp);
+  if (!geom) return null;
+  const pa = _afkRouteProject(geom, ac.lat, ac.lng);
+  const pt = _afkRouteProject(geom, tLat, tLng);
+  if (!pa || !pt) return null;
+  return { nm: pt.alongNm - pa.alongNm, acXtkNm: pa.offsetNm, targetXtkNm: pt.offsetNm };
+}
+
+// Track-miles distance to a geofence's TRIGGER CROSSING, or null when the
+// route cannot answer (caller then falls back to the straight line).
+//
+// The route enters/leaves the fence along a chord, so the crossings sit a
+// half-chord either side of the centre's projection - sqrt(r^2 - xt^2),
+// where xt is how far abeam the track the fence centre is. Using the raw
+// radius instead would over-read whenever the route clips the fence off to
+// one side rather than through the middle.
+function _afkTrkGeofenceNm(ac, p, c, r, inside) {
+  const fp = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  if (!fp || !isFinite(r) || r <= 0) return null;
+  const proj = _afkTrackDistToPointNm(ac, fp, c.lat, c.lng);
+  if (!proj) return null;
+  if (!(proj.acXtkNm <= _AFK_TRK_XTK_LIMIT_NM)) return null; // strayed off track -> DCT
+  // The planned track has to actually pass through the fence, otherwise
+  // projecting the fence onto it produces a crossing that never happens.
+  if (!(proj.targetXtkNm < r)) return null;
+  const half    = Math.sqrt(Math.max(0, r * r - proj.targetXtkNm * proj.targetXtkNm));
+  const centre  = proj.nm;        // along-track nm to the fence centre's projection
+  const enterAt = centre - half;  // along-track nm to the entry crossing
+  const exitAt  = centre + half;  // along-track nm to the exit crossing
+  if (inside) {
+    if (p.trigger === 'enter') return null; // already inside - nothing to predict
+    if (!(exitAt > 0)) return null;         // chord disagrees with the direct test
+    return exitAt;                          // 'exit' and 'both'
+  }
+  if (p.trigger === 'exit') return null;    // outside - nothing to predict
+  if (!(enterAt > 0)) return null;          // entry crossing is behind us
+  return enterAt;                           // 'enter' and 'both'
+}
+
+// =====================================================================
 // Customisable data panel (v2.80.0)
 //
 // Registry of every available field — id → { label, group, valueId,
@@ -27567,13 +27759,16 @@ const _AFK_DP_ELEMENTS = {
   xtk:       { label:'TRK DEV',       group:'Navigation', valueId:'afkDpXtk',     minWidth:'5.0em',
                title:'Track deviation — perpendicular distance abeam the loaded SimBrief route (nm). Requires a SimBrief flight plan.' },
   nextAlarm: { label:'NEXT ALERT',   group:'Alerts',    valueId:'afkDpNextAlarm', minWidth:'9.5em', maxWidth:'18em' },
-  nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'5.0em' },
+  // v3.102.0 — the value carries a (TRK) / (DCT) suffix on geofence and
+  // waypoint alerts, so the field is widened to hold it without reflowing.
+  nextEta:   { label:'ALERT ETA',    group:'Alerts',    valueId:'afkDpNextEta',   minWidth:'8.5em',
+               title:'Time until the soonest-tripping armed alert. On geofence and waypoint alerts the suffix says how the distance behind it was measured — (TRK) in track miles along the loaded SimBrief route, (DCT) as a straight great-circle line.' },
   // v3.75.0 — nm to the closest geofence/waypoint alarm's trigger point.
   // Hidden by default; toggle on via the ⚙ menu. Lives in Alerts (not
   // Distance) since it tracks a specific armed alarm, same as NEXT ALERT /
   // ALERT ETA, rather than a fixed point like DIST TO DEST.
-  alertDist: { label:'ALERT DISTANCE', group:'Alerts',  valueId:'afkDpAlertDist', minWidth:'5.5em',
-               title:'Nautical miles to the trigger point of the closest armed geofence or waypoint alert. Only alerts with a fixed map location have a distance to show — timer, altitude, and other non-geographic alerts are excluded.' },
+  alertDist: { label:'ALERT DISTANCE', group:'Alerts',  valueId:'afkDpAlertDist', minWidth:'9.0em',
+               title:'Nautical miles to the trigger point of the closest armed geofence or waypoint alert. Only alerts with a fixed map location have a distance to show — timer, altitude, and other non-geographic alerts are excluded. The (TRK) / (DCT) suffix says how it was measured: track miles along the loaded SimBrief route, or a straight great-circle line.' },
 };
 
 const _AFK_DP_DEFAULT_CONFIG = [
@@ -28299,7 +28494,9 @@ function _afkUpdateDataPanel(ac) {
     // ALARM") works too, not just the value.
     _afkDpSetTitle('afkDpNextAlarm', detailTip || null);
     if (nextEtaEl) {
-      nextEtaEl.textContent = _afkETA.fmt(nx.etaSec);
+      // v3.102.0 — (TRK) / (DCT) says whether the distance behind this ETA
+      // was measured along the SimBrief route or as a straight line.
+      nextEtaEl.textContent = _afkETA.fmt(nx.etaSec) + (nx.mode ? ' (' + nx.mode.toUpperCase() + ')' : '');
       nextEtaEl.className = 'afk-dp-value' + (nx.etaSec < 60 ? ' next-alarm-soon' : '');
       // v2.88.0 — hover shows the predicted trip time in local + Zulu form.
       if (isFinite(nx.etaSec)) {
@@ -28308,7 +28505,7 @@ function _afkUpdateDataPanel(ac) {
         const utc = String(trip.getUTCHours()).padStart(2, '0') + ':' +
                     String(trip.getUTCMinutes()).padStart(2, '0') + ':' +
                     String(trip.getUTCSeconds()).padStart(2, '0') + 'Z';
-        _afkDpSetTitle('afkDpNextEta', 'Predicted trip time: ' + lcl + ' local · ' + utc + ' Zulu.');
+        _afkDpSetTitle('afkDpNextEta', 'Predicted trip time: ' + lcl + ' local · ' + utc + ' Zulu.' + _afkTrkModeTip(nx.mode));
       } else {
         _afkDpSetTitle('afkDpNextEta', null);
       }
@@ -28334,13 +28531,14 @@ function _afkUpdateDataPanel(ac) {
   if (distEl2) {
     const nd = _afkETA.nextDistance(ac);
     if (nd) {
-      distEl2.textContent = nd.distNm.toFixed(1) + ' nm';
+      distEl2.textContent = nd.distNm.toFixed(1) + ' nm' + (nd.mode ? ' (' + nd.mode.toUpperCase() + ')' : '');
       distEl2.className = 'afk-dp-value' + (nd.location ? ' is-link' : '');
       const typeLbl = _afkAlarmTypeLabel(nd.alarm.type);
       const userName = (nd.alarm.params && nd.alarm.params.label) ? String(nd.alarm.params.label).trim() : '';
       const wpLeg = (nd.alarm.type === 'waypoint' && nd.location && nd.location.label) ? ' (' + nd.location.label + ')' : '';
       const label = (userName ? userName + ' (' + typeLbl + ')' : typeLbl) + wpLeg;
-      const tip = 'Closest geo-bound alert: ' + label + (nd.location ? '\n\nClick to centre the map on this alert.' : '');
+      const tip = 'Closest geo-bound alert: ' + label + _afkTrkModeTip(nd.mode)
+                + (nd.location ? '\n\nClick to centre the map on this alert.' : '');
       _afkSetTitleSafe(distEl2, tip);
       distEl2.onclick = nd.location ? (() => _afkRecentreOnAlarm(nd.location)) : null;
       _afkDpSetTitle('afkDpAlertDist', tip);
@@ -48828,7 +49026,7 @@ function rgSendToFlightPlanner() {
             A persistent strip at the bottom of the map that streams live flight parameters in real time. Three sections separated by vertical dividers:<br/><br/>
             <strong>Position &amp; motion</strong> &mdash; LAT, LON, HDG, <strong>ALT MSL</strong>, GS, IAS, VS, PHASE, and <strong>NEXT</strong> (the ident of the next un-passed waypoint on the loaded SimBrief route; v3.6.0 — shows &mdash; without a plan). A <strong>TRK DEV</strong> field (v3.6.2 — cross-track distance in nm abeam the SimBrief route) is also available but hidden by default; add it from the ⚙ menu under <em>Navigation</em>. <strong>ALT MSL</strong> is the true altitude above mean sea level (FSUIPC offset <code>0x0574</code>). <em>IND ALT was attempted in v2.79.1 / v2.80.1 and removed in v2.80.2</em> &mdash; FSUIPC offset <code>0x6020</code> didn't return usable values through Paul Henty's WebSocket on real-world setups (both <code>type:'double'</code> and bytearray decode left the field at <code>&mdash;</code>); a SimVar-passthrough approach is the likely path forward if this is ever revisited. <em>AGL was removed in v2.76.1</em> because the FSUIPC offset it relied on (<code>0x0B4C</code>) frequently returns the nearest-airport reference elevation rather than the actual terrain under the aircraft &mdash; readings were unreliable over hills, lakes, or anywhere away from a runway. Vertical speed is computed locally from a rolling altitude buffer (so it works the same for FSUIPC and STKP) and shown with a directional arrow + magnitude. PHASE is sourced from STKP when present, otherwise computed locally by the same adaptive detector used by the alarms.<br/><br/>
             <strong>Flight progress</strong> &mdash; ELAPSED (clock time since takeoff &mdash; detected when GS first exceeds 40&nbsp;kt sustained for 10&nbsp;s; resets on landing or when a new SimBrief flight plan is loaded on the ground). <em>As of v2.78.0 the wheels-up timestamp persists to <code>localStorage</code></em> so ELAPSED survives browser reloads mid-flight &mdash; the new-flight detector clears it cleanly when you load a fresh SimBrief plan with the aircraft on the ground. <strong>DIST TO DEST</strong> (great-circle nm directly to the destination &mdash; straight line, ignores any planned dogleg) and <strong>TRK MILES REM</strong> (track miles remaining along the SimBrief route &mdash; current position to the next un-passed fix + every remaining leg through the destination). REMAINING and ETA LOCAL / ETA UTC are computed from <em>track miles</em>, so a route that doglegs around a TMA reports the time you'll actually fly rather than the straight-line under-read. Falls back to the great-circle figure when the plan has no navlog fixes. Requires a SimBrief flight plan for the destination-relative fields; ELAPSED works without one. <strong>In Flight Demo Mode</strong> (v3.6.5) ELAPSED shows <em>simulated</em> time since takeoff — matching the scrub bar — rather than wall-clock, so a sped-up demo reports the flight time it represents.<br/><br/>
-            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks. An optional <strong>ALERT DISTANCE</strong> field (v3.75.0, hidden by default &mdash; add it from the ⚙ menu under <em>Alerts</em>) shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point. It's a separate ranking from NEXT ALERT &mdash; NEXT ALERT picks whichever armed alert of <em>any</em> type will trip soonest, while ALERT DISTANCE only ever considers geofence and waypoint alerts (the only types with a fixed trigger point a distance can be measured to), so a fast-approaching timer or altitude alert can be the overall NEXT ALERT without changing what ALERT DISTANCE shows. Like NEXT ALERT, the value is clickable to recentre the map on that alert.<br/><br/>
+            <strong>Next alarm</strong> &mdash; shows which armed alarm will trip soonest and how long until it does (<strong>H:MM:SS</strong>), computed each tick from current position and ground speed. <strong>v3.102.0:</strong> for <strong>geofence</strong> and <strong>waypoint</strong> alerts the distance behind that countdown is measured in <em>track miles along your loaded SimBrief route</em> &mdash; from your position to the end of the leg you are on, then along every remaining leg, then in to the trigger point &mdash; rather than as a straight line that ignores the route&rsquo;s doglegs. Track miles apply while your track deviation is <strong>3&nbsp;nm or less</strong>; stray wider and both the ETA and the distance revert to the straight great-circle line on their own, switching back once you rejoin. The same fallback covers no plan loaded, a trigger point that is not on the route, and one you have already flown past. The value is suffixed <strong>(TRK)</strong> or <strong>(DCT)</strong> so you can always see which measure is in use. Geofence, waypoint, TOC, TOD, and Altitude alarms are ETA-predictable; the <strong>Cruise Reached</strong> alarm is predictable when you've set a target cruise altitude (climb-through ETA from current alt + VS); the <strong>Descent Started</strong> alarm is predictable when a SimBrief plan is loaded and you're well above the destination (rough-guess ETA-to-TOD using the classic "3× rule": descent distance in nm &asymp; altitude-to-lose in thousands of feet &times; 3, with a 1,500&nbsp;ft pattern buffer &mdash; works across light singles through heavy jets without per-aircraft tuning). Phase Change alarms remain non-predictable. The countdown pulses red when under 60 seconds. <strong>Geofence and waypoint next-alarm names are clickable</strong> &mdash; click the name (dotted underline) to smooth-fly the map to that alarm's location; the click also turns Follow A/C off so the recentre actually sticks. An optional <strong>ALERT DISTANCE</strong> field (v3.75.0, hidden by default &mdash; add it from the ⚙ menu under <em>Alerts</em>) shows the nautical-mile distance to the closest armed geofence or waypoint alert's trigger point. It's a separate ranking from NEXT ALERT &mdash; NEXT ALERT picks whichever armed alert of <em>any</em> type will trip soonest, while ALERT DISTANCE only ever considers geofence and waypoint alerts (the only types with a fixed trigger point a distance can be measured to), so a fast-approaching timer or altitude alert can be the overall NEXT ALERT without changing what ALERT DISTANCE shows. It uses the same track-miles measure as ALERT ETA and carries the matching <strong>(TRK)</strong> / <strong>(DCT)</strong> suffix, so the two fields always agree about how they were measured. For a geofence the figure counts to the point where your route genuinely crosses the ring &mdash; nearer than the radius alone would suggest when the route only clips the fence&rsquo;s edge. Like NEXT ALERT, the value is clickable to recentre the map on that alert.<br/><br/>
             The panel starts collapsed on every page load and auto-expands as soon as live data begins flowing (FSUIPC connected or demo started); it returns to collapsed when the source stops. Click the small <strong>⏷</strong> chevron to toggle it manually at any time. The panel renders in Rajdhani with tabular-numeric digits, and every value column has a per-field <em>min-width</em> sized to its worst-case readout, so the layout stays rock-steady even as units, signs, and digit counts change.<br/><br/>
 
             <strong>⚙ Customise the panel</strong> (v2.80.0+) &mdash; click the gear icon next to the ⏷ chevron to open a small popover with checkboxes for every field, grouped by category (<em>Alerts</em>, <em>Altitude</em>, <em>Distance</em>, <em>Navigation</em>, <em>Position</em>, <em>Speed</em>, <em>Status</em>, <em>Time</em>) and alphabetised within each group. Tick or untick any box to show/hide that field on the bar. The popover also has <strong>+ Add Spacer</strong> to drop another vertical-bar divider in (you can add as many as you want), and <strong>Reset to Default</strong> to restore the original layout. <strong>Drag to reorder</strong> &mdash; hover any field and a small <code>⋮⋮</code> grip fades in above it; grab it and drag left/right to move the field anywhere. Spacers are draggable too. Your layout persists to <code>localStorage</code> and is restored every time the map loads.<br/><br/>
@@ -48904,8 +49102,22 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="improved">
         <div class="release-header">
-          <span class="release-version">v3.101.0</span>
+          <span class="release-version">v3.102.0</span>
           <span class="release-date">Sep 7, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Alert ETA and Alert distance now count track miles along your SimBrief route.</strong> Both figures used to measure a straight line from the aircraft to the alert&rsquo;s trigger point, as though you were going to fly directly at it. On any route with a turn between you and that point the number was simply too small &mdash; on a test route with a single dogleg, an arrival geofence 1,051 track miles ahead was being reported as 737&nbsp;nm, a 42% under-read, and the countdown was wrong by the same proportion. The distance is now measured the way you will actually fly it: from your position to the end of the leg you are on, then along every remaining leg, then in to the trigger point. This applies to <strong>geofence</strong> and <strong>waypoint</strong> alerts &mdash; the only kinds with a fixed point on the ground to measure to.</li>
+          <li><strong>Stray more than 3&nbsp;nm off the route and it switches back to a straight line by itself.</strong> Track miles only mean anything while you are actually flying the plan. As long as your track deviation is <strong>3&nbsp;nm or less</strong> the along-route figure is used; go wider than that &mdash; a vector from ATC, a diversion, free flight with a plan still loaded &mdash; and both metrics fall back to the straight-line distance automatically, so they never go blank or freeze on a stale number. They switch back on their own the moment you rejoin. The same fallback covers every other case the route cannot answer: no plan loaded, an alert whose trigger point is not on the route, or a trigger point you have already flown past.</li>
+          <li><strong>The panel tells you which one you are looking at.</strong> <strong>ALERT ETA</strong> and <strong>ALERT DISTANCE</strong> now carry a <strong>(TRK)</strong> or <strong>(DCT)</strong> suffix &mdash; track miles or direct &mdash; so a number that suddenly grows or shrinks explains itself instead of looking like a glitch. Hovering either field spells out what the suffix means and what track miles need in order to apply. The suffix appears only on geofence and waypoint alerts; a timer or altitude alert has no distance behind its countdown either way, so it shows no suffix at all. Both fields are a little wider to make room without shifting the buttons beside them.</li>
+          <li><strong>A geofence is measured to the boundary you will actually cross.</strong> If your route clips the edge of a fence rather than passing through its middle, the crossing is nearer than the fence radius suggests &mdash; the app now works out where the route genuinely cuts the circle and counts to that point. If your route misses the fence altogether, there is no crossing to predict and the metric reverts to the straight line. An entry crossing you have already flown through does the same.</li>
+          <li><strong>What has not changed:</strong> when an alert actually <em>fires</em>. Triggering is still decided by your true distance from the fence centre, exactly as before &mdash; this release changes only how far away the app tells you the trigger is, and when. The conditional-alert building blocks <em>Alert ETA</em> and <em>Alert distance</em> read the improved figures automatically, with no change to how you set them up.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.101.0</span>
+          <span class="release-date">Sep 7, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
