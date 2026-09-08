@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.103.0**
+**Current version: v3.104.0**
 
 ---
 
@@ -158,14 +158,31 @@ The text search box matches the full airport name, the add-on title, and the **S
 
 **Unsaved-changes backup banner** — when the library has pending changes, a yellow banner appears showing **"N unsaved change(s)"** alongside two buttons. **💾 Save** downloads a JSON backup of the library and dismisses the banner without closing the modal so you can keep editing. **Close** dismisses the modal while preserving the unsaved-changes state — the banner reappears next time you open the modal until you actually export.
 
-**Display modes** — the **⬤ Scenery** split button in the toolbar cycles through three states:
+**Display modes** — the **⬤ Scenery** split button in the toolbar cycles through these states:
 - **Off** — no scenery indicators shown
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
 - **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
+- **GSX** — narrows the map and matrix further, to just the airports you have a GSX profile for (see *GSX Profiles* below). This step only appears once you have tagged at least one airport, so the button keeps its familiar three-state cycle until you start using it.
 
-**Backup & restore** — use **⤓ Save Scenery** in the footer to download your library (ratings, store, and developer included) as a JSON file. **⤒ Load Scenery** reads a backup file back in, merging into your existing entries. Both buttons are always visible in the footer alongside **⚙ Developer Stats**. Less-frequent operations — **📍 Add from map**, **📂 Scan folder**, **Paste ICAOs**, **🛠 Stores & Developers**, **📥 FS Addon Compare**, **Import scenery config**, and **Clear all** — are accessible via the **🛠 Manage ▾** dropdown. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button shows a yellow numeric badge counting how many airports have pending changes as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the badge persists on the button and the banner reappears the next time you open the modal, until you actually save. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
+**Backup & restore** — use **⤓ Save Scenery** in the footer to download your library (ratings, store, and developer included) as a JSON file. **⤒ Load Scenery** reads a backup file back in, merging into your existing entries. Both buttons are always visible in the footer alongside **⚙ Developer Stats**. Less-frequent operations — **📍 Add from map**, **📂 Scan folder**, **🛠 Scan GSX profiles**, **Paste ICAOs**, **🛠 Stores & Developers**, **📥 FS Addon Compare**, **Import scenery config**, and **Clear all** — are accessible via the **🛠 Manage ▾** dropdown. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button shows a yellow numeric badge counting how many airports have pending changes as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the badge persists on the button and the banner reappears the next time you open the modal, until you actually save. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
 
 **Recently-touched airports float to the top** (v3.14.0) — when the library has unsaved changes, every airport you added, rated, or had its store / developer edited this session appears at the top of the list under whatever sort is active. The common workflow is right-clicking a handful of map dots to set their star ratings, then opening the Scenery Library to fill in Store / Developer info — the rows you just touched are right at the top instead of scattered alphabetically. The float-to-top behaviour resets on Save, Load, or Clear all, so it only applies to genuine unsaved edits.
+
+### GSX Profiles (v3.104.0)
+
+If you use FSDreamTeam's **GSX** ground-handling add-on, Active Airports can now keep track of which airports you have a **GSX profile** for — the file that tells GSX where an airport's jetways, stands, pushback paths and marshaller belong.
+
+A GSX profile only ever exists for an airport that has add-on scenery, so the tag lives on the airport's **Scenery Library** entry rather than in a separate list. That means it is saved, loaded and backed up with everything else you already track — **⤤ Save Scenery**, **⤥ Load Scenery**, and *Save / Load All Settings* all carry it, with nothing new to remember. A library with no GSX tags saves exactly as it always did, so older backups still load fine.
+
+**Tag an airport by hand.** Right-click (or long-press) any airport dot and choose **⭐ Scenery / rate** — the popover has a **GSX** row with a *🛠 GSX profile installed* tick. Ticking an airport that isn't in your library yet adds it, exactly as setting a star rating does. Inside the Scenery Library panel, every row carries a **🛠 GSX** chip beside its Store and Dev values; click it to tag or untag. Untagging never removes the airport — the scenery is still installed, only the profile is gone.
+
+**Or scan your whole GSX folder at once.** In the library's **🛠 Manage** menu, **🛠 Scan GSX profiles** asks you to pick a folder and works out which airports you have profiles for. GSX keeps them in `%APPDATA%\Virtuali\GSX\MSFS` — paste that straight into the folder picker's address bar to jump there. The results appear in the same checkbox preview the regular folder scan uses: airports you have already tagged start unticked, so a re-scan after installing a few new profiles shows you exactly what's new, and confirming tags them all in one go — adding any that weren't in your library yet.
+
+**Only file names are read.** The scan looks at the names of the files in the folder and nothing else. No profile is ever opened, and nothing leaves your machine. Chrome and Edge open a native folder picker; other browsers — and the app opened straight from a downloaded file rather than a web address — fall back to the standard folder-upload dialog, which works just as well.
+
+**Seeing them on the map.** A tagged airport draws its scenery marker in a distinct colour — violet by default — so *has scenery* and *has scenery and a GSX profile* are one glance apart. Change the colour, or switch the distinction off entirely, under **👁 Display → 🎨 Appearance → Scenery marker → GSX color**. Hovering a tagged dot adds a **🛠 GSX profile** badge to its tooltip.
+
+**Finding them.** The **⬤ Scenery** button's new **GSX** step filters the map and the distance matrix to airports with a profile, and the library panel's **Show** dropdown gains *Has GSX profile* and *No GSX profile* — the second being the one that answers "which airport should I build a profile for next?"
 
 ### Basemaps (v3.95.0)
 
@@ -260,7 +277,7 @@ This is the permanent way to settle any "which label covers which" question — 
 ### 🎨 Appearance
 Open the **👁 Display** menu and click **🎨 Appearance** to customize how the map's airport dots look. It's a draggable floating panel (with its own opacity slider, like the Aircraft panels), and a live preview shows your choices over real street and satellite imagery. Everything applies instantly, saves in your browser, and travels in Save / Load All Settings — and the defaults reproduce the classic look exactly, so nothing changes unless you choose it.
 
-The settings are grouped into collapsible sections. **Airport dots** picks the dot style — *Flat* (the classic solid dot), *Water droplet*, or *Glass* (translucent, glossy beads that let the map show through) — plus sliders for dot opacity and dot size, while the rotation gauge and level badges keep working as before. **Basemap** has a *Map dim* slider that darkens the basemap behind the dots so they pop, especially on bright satellite imagery. **Scenery marker** controls how airports in your Scenery Library are flagged — a center *Dot*, a *Ring*, an off-center *Corner pip*, or a *Star* — with sliders for the marker's size and its color (any color you like, or *Auto* for the classic black dot / gold ring). The map's scenery legend updates to match whichever marker you pick.
+The settings are grouped into collapsible sections. **Airport dots** picks the dot style — *Flat* (the classic solid dot), *Water droplet*, or *Glass* (translucent, glossy beads that let the map show through) — plus sliders for dot opacity and dot size, while the rotation gauge and level badges keep working as before. **Basemap** has a *Map dim* slider that darkens the basemap behind the dots so they pop, especially on bright satellite imagery. **Scenery marker** controls how airports in your Scenery Library are flagged — a center *Dot*, a *Ring*, an off-center *Corner pip*, or a *Star* — with sliders for the marker's size and its color (any color you like, or *Auto* for the classic black dot / gold ring). The map's scenery legend updates to match whichever marker you pick. A separate **GSX color** (v3.104.0) paints that same marker in a second colour on airports you have tagged with a **GSX profile**, so the two read apart at a glance; the leftmost swatch turns the distinction off. See *GSX Profiles* above.
 
 ### Map Scale Ruler
 A live scale bar sits in the bottom-right corner of the map, just above the credit line, and updates as you pan and zoom. It shows the current scale in both **nautical miles and kilometers**, and automatically switches to **feet and meters** when you zoom in tighter than about 5 nm across — so you always have a sense of real-world distance.
