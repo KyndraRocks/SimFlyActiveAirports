@@ -5423,7 +5423,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      the scenery marker keeps its own colour and GSX adds a concentric ring, so
      the two are told apart by SHAPE and not only by hue. Uses ::before (the
      marker rules above own ::after) with an inset box-shadow ring. */
-  .rg-sl-dot-icon--gsx::before { content:''; position:absolute; inset:20%; border-radius:50%; border:1.5px solid var(--aa-gsx-color, #ffffff); box-shadow:0 0 0 0.5px rgba(10,15,20,0.8); }
+  .rg-sl-dot-icon--gsx::before { content:''; position:absolute; inset:20%; border-radius:50%; border:1px solid var(--aa-gsx-color, #ffffff); box-shadow:0 0 0 0.5px rgba(10,15,20,0.8); }
   /* v3.19.26 — `overflow: visible` (was `overflow: hidden`) so the
      sl-dirty-badge positioned at top:-7px;right:-7px isn't clipped to
      just a 1/4 sliver. The original overflow:hidden was there to keep
@@ -9019,7 +9019,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.105.0';
+const APP_VERSION = '3.105.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -36510,12 +36510,20 @@ function _rgPaintSceneryMarker(ctx, p, R, scale, gsx) {
   // laid down first so the ring separates from whatever it crosses - the
   // corner pip is the only marker it can overlap. Drawn BEFORE the scenery
   // marker so the marker always sits on top and is never obscured.
+  // v3.105.1 - ring narrowed from 2.2 px to 1.2 px (casing 3.8 px -> 2.4 px
+  // overall). At the original weight a white ring swallowed enough of the dot
+  // to make a light fill - yellow especially - hard to read behind it, and the
+  // fill colour is the primary signal on this map. A ring only has to be
+  // CONTINUOUS to register as a shape; it does not have to be heavy.
+  const _GSX_RING_W    = 1.2;   // the accent stroke itself
+  const _GSX_RING_CASE = 1.2;   // extra width of the dark casing under it
   if (gsxCol) {
     const gr = R * 0.58;
+    const w  = _GSX_RING_W * scale * sf;
     ctx.beginPath(); ctx.arc(p.x, p.y, gr, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(10,15,20,0.85)'; ctx.lineWidth = (2.2 * scale * sf) + 1.6; ctx.stroke();
+    ctx.strokeStyle = 'rgba(10,15,20,0.85)'; ctx.lineWidth = w + _GSX_RING_CASE; ctx.stroke();
     ctx.beginPath(); ctx.arc(p.x, p.y, gr, 0, Math.PI * 2);
-    ctx.strokeStyle = gsxCol; ctx.lineWidth = 2.2 * scale * sf; ctx.stroke();
+    ctx.strokeStyle = gsxCol; ctx.lineWidth = w; ctx.stroke();
   }
   if (m === 'ring') {                                            // accent rim — no centre mark
     ctx.beginPath(); ctx.arc(p.x, p.y, R - 0.6, 0, Math.PI * 2);
@@ -49649,8 +49657,18 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.105.0</span>
+          <span class="release-version">v3.105.1</span>
           <span class="release-date">Sep 8, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>The GSX ring is thinner, so the dot's own colour still reads behind it.</strong> At the weight it shipped with in v3.105.0 a white ring swallowed enough of the dot that a light fill &mdash; yellow worst of all &mdash; became hard to make out, and the fill colour is the <em>primary</em> signal on this map: it is what carries payout, category or rental status. The ring is now <strong>1.2&nbsp;px</strong> instead of 2.2&nbsp;px, and its dark casing narrows with it, taking the whole marking from 3.8&nbsp;px down to 2.4&nbsp;px across. A ring only has to be <em>continuous</em> to register as a shape &mdash; it never had to be heavy &mdash; so GSX is still told apart by shape rather than colour alone, and still reads in greyscale. It keeps scaling with the hover-grow and with your <em>Marker size</em> slider, and the matching ring on the scenery legend glyph was thinned to match.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.105.0</span>
+          <span class="release-date">Sep 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">

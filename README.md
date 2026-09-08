@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.105.0**
+**Current version: v3.105.1**
 
 ---
 
@@ -182,7 +182,7 @@ A GSX profile only ever exists for an airport that has add-on scenery, so the ta
 
 **Nothing is uploaded.** Only the first few KB of each file is read, inside the page, and then discarded. Nothing about your GSX configuration leaves your machine.
 
-**Seeing them on the map.** A tagged airport gets a **ring drawn around** its scenery marker — white by default — so *has scenery* and *has scenery and a GSX profile* are told apart by **shape**, not just colour. That matters if you have any form of colour-deficient vision, and it keeps the two distinguishable even in greyscale. The scenery marker itself (Dot, Ring, Corner pip or Star) keeps its own colour and meaning; GSX simply adds a second, independently readable fact. Change the ring's colour, or switch it off, under **👁 Display → 🎨 Appearance → Scenery marker → GSX ring**. Hovering a tagged dot adds a **🛠 GSX profile** badge to its tooltip.
+**Seeing them on the map.** A tagged airport gets a **ring drawn around** its scenery marker — white by default — so *has scenery* and *has scenery and a GSX profile* are told apart by **shape**, not just colour. That matters if you have any form of colour-deficient vision, and it keeps the two distinguishable even in greyscale. The scenery marker itself (Dot, Ring, Corner pip or Star) keeps its own colour and meaning; GSX simply adds a second, independently readable fact. The ring is deliberately fine (v3.105.1) so the dot's own colour — which carries payout, category or rental status — still reads clearly behind it. Change the ring's colour, or switch it off, under **👁 Display → 🎨 Appearance → Scenery marker → GSX ring**. Hovering a tagged dot adds a **🛠 GSX profile** badge to its tooltip.
 
 **Finding them.** The **⬤ Scenery** button's new **GSX** step filters the map and the distance matrix to airports with a profile, and the library panel's **Show** dropdown gains *Has GSX profile* and *No GSX profile* — the second being the one that answers "which airport should I build a profile for next?"
 
