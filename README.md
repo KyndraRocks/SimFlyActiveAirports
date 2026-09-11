@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.105.1**
+**Current version: v3.106.0**
 
 ---
 
@@ -162,7 +162,10 @@ The text search box matches the full airport name, the add-on title, and the **S
 - **Off** — no scenery indicators shown
 - **Highlight** — all airports remain visible; scenery airports gain a black center dot on the map
 - **Only** — the map, the owner distance matrix, and the Select Regions matrix all filter to scenery-library airports only
-- **GSX** — narrows the map and matrix further, to just the airports you have a GSX profile for (see *GSX Profiles* below). This step only appears once you have tagged at least one airport, so the button keeps its familiar three-state cycle until you start using it.
+- **GSX** — narrows the map and both matrices further, to just the airports you have a GSX profile for (see *GSX Profiles* below).
+- **No GSX** (v3.106.0) — the opposite: only the scenery airports that *don't* have a GSX profile yet, which is the list to work from when deciding what to build or download next.
+
+The two GSX steps only appear once you have tagged at least one airport, so the button keeps its familiar three-state cycle until you start using them. The scenery chip in the map's breadcrumb strip mirrors the button — it names the current mode, clicking it cycles to the next one, and hovering either GSX chip tells you what the next click does.
 
 **Backup & restore** — use **⤓ Save Scenery** in the footer to download your library (ratings, store, and developer included) as a JSON file. **⤒ Load Scenery** reads a backup file back in, merging into your existing entries. Both buttons are always visible in the footer alongside **⚙ Developer Stats**. Less-frequent operations — **📍 Add from map**, **📂 Scan folder**, **🛠 Scan GSX profiles**, **Paste ICAOs**, **🛠 Stores & Developers**, **📥 FS Addon Compare**, **Import scenery config**, and **Clear all** — are accessible via the **🛠 Manage ▾** dropdown. If you have unsaved changes — including via shift-click on the map — the **⬤ Scenery** button shows a yellow numeric badge counting how many airports have pending changes as a reminder. Opening the modal shows the unsaved-changes banner at the top, and the ✕ close button is suppressed until you choose to download or dismiss. Choosing **Close anyway** closes the modal but keeps the dirty state: the badge persists on the button and the banner reappears the next time you open the modal, until you actually save. The banner shows the exact number of pending changes (e.g. *7 unsaved changes — download a backup before closing?*).
 
@@ -184,7 +187,7 @@ A GSX profile only ever exists for an airport that has add-on scenery, so the ta
 
 **Seeing them on the map.** A tagged airport gets a **ring drawn around** its scenery marker — white by default — so *has scenery* and *has scenery and a GSX profile* are told apart by **shape**, not just colour. That matters if you have any form of colour-deficient vision, and it keeps the two distinguishable even in greyscale. The scenery marker itself (Dot, Ring, Corner pip or Star) keeps its own colour and meaning; GSX simply adds a second, independently readable fact. The ring is deliberately fine (v3.105.1) so the dot's own colour — which carries payout, category or rental status — still reads clearly behind it. Change the ring's colour, or switch it off, under **👁 Display → 🎨 Appearance → Scenery marker → GSX ring**. Hovering a tagged dot adds a **🛠 GSX profile** badge to its tooltip.
 
-**Finding them.** The **⬤ Scenery** button's new **GSX** step filters the map and the distance matrix to airports with a profile, and the library panel's **Show** dropdown gains *Has GSX profile* and *No GSX profile* — the second being the one that answers "which airport should I build a profile for next?"
+**Finding them.** The **⬤ Scenery** button's **GSX** step filters the map and both distance matrices to airports with a profile, and its **No GSX** step (v3.106.0) does the reverse — only the scenery airports still missing one, so the map itself answers "which airport should I build a profile for next?" The breadcrumb chip reads *Airports w Scenery, No GSX Profile* while it's on. The library panel's **Show** dropdown offers the same split as *Has GSX profile* and *No GSX profile*.
 
 ### Basemaps (v3.95.0)
 

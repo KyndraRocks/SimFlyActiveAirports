@@ -9019,7 +9019,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.105.1';
+const APP_VERSION = '3.106.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -14049,11 +14049,12 @@ function renderDistMatrix() {
   let depAirports = resolvedDep.airports.slice();
   let arrAirports = resolvedArr.airports.slice();
 
-  // When Only-scenery mode is active, hide airports not in the library —
-  // mirrors the map-dot filter so the matrix matches exactly what is visible.
-  if (_rgOnlyScenery) {
-    depAirports = depAirports.filter(a => _slHas(a.icao));
-    arrAirports = arrAirports.filter(a => _slHas(a.icao));
+  // When a scenery-only mode (Only / GSX / No GSX) is active, hide airports it
+  // excludes — mirrors the map-dot filter so the matrix matches exactly what is
+  // visible. Was Only-only until v3.106.0, so the GSX step never reached here.
+  if (_rgAnySceneryOnlyMode()) {
+    depAirports = depAirports.filter(a => _rgSceneryGate(a.icao));
+    arrAirports = arrAirports.filter(a => _rgSceneryGate(a.icao));
   }
 
   if (_rgStarFilterMode && _rgStarFilter > 0) {
@@ -30841,6 +30842,19 @@ function _slSetNotes(icao, val) {
 function _slHasGsx(icao) { const e = _slGet(icao); return !!(e && e.gsx); }
 function _slAnyGsx() { return _slLoad().some(e => !!e.gsx); }
 
+// v3.106.0 — the ONE scenery-mode gate. Every place that hides airports by
+// scenery state (the map-filter chokepoint, both region-map highlight loops
+// and both distance matrices) asks this instead of testing the mode flags
+// itself, so a new mode is wired in exactly once. Only / GSX / No GSX are
+// mutually exclusive — _slCycleMode never leaves two of them set.
+function _rgSceneryGate(icao) {
+  if (_rgOnlyScenery && !_slHas(icao)) return false;
+  if (_rgOnlyGsx     && !_slHasGsx(icao)) return false;
+  if (_rgOnlyNoGsx   && (!_slHas(icao) || _slHasGsx(icao))) return false;
+  return true;
+}
+function _rgAnySceneryOnlyMode() { return _rgOnlyScenery || _rgOnlyGsx || _rgOnlyNoGsx; }
+
 // Tag / untag one airport. Mirrors _slSetStore's semantics: tagging an airport
 // that isn't in the library yet ADDS it (a GSX profile implies scenery) and
 // turns on the Highlight overlay so the marker appears immediately. Untagging
@@ -31757,6 +31771,9 @@ function _slUpdateToggles() {
   if (hasEntries && _rgOnlyGsx) {
     lbl.innerHTML = _rgSceneryIconHtml(true) + '<span class="rg-sl-mode-text">GSX</span>';
     wrap.classList.add('sl-only-active');
+  } else if (hasEntries && _rgOnlyNoGsx) {
+    lbl.innerHTML = _rgSceneryIconHtml() + '<span class="rg-sl-mode-text">No GSX</span>';
+    wrap.classList.add('sl-only-active');
   } else if (hasEntries && _rgOnlyScenery) {
     lbl.innerHTML = _rgSceneryIconHtml() + '<span class="rg-sl-mode-text">Only</span>';
     wrap.classList.add('sl-only-active');
@@ -31771,11 +31788,19 @@ function _slUpdateToggles() {
 
 function _slCycleMode() {
   if (!_slLoad().length) { openSceneryModal(); return; }
-  // Scenery -> Highlight -> Only -> GSX only -> off. The GSX step is skipped
-  // entirely when nothing in the library is tagged, so a user who never touches
-  // GSX keeps exactly the three-state cycle this button has always had.
+  // Scenery -> Highlight -> Only -> GSX only -> No GSX -> off. Both GSX steps
+  // are skipped entirely when nothing in the library is tagged, so a user who
+  // never touches GSX keeps exactly the three-state cycle this button has
+  // always had. v3.106.0 added No GSX: the scenery airports that still need a
+  // profile. If every tag was removed while GSX was showing, No GSX would just
+  // be Only again, so the cycle falls straight through to off instead.
   const anyGsx = _slAnyGsx();
-  if (_rgOnlyGsx)          { _rgShowScenery = false; _rgOnlyScenery = false; _rgOnlyGsx = false; }
+  if (_rgOnlyNoGsx)        { _rgShowScenery = false; _rgOnlyScenery = false; _rgOnlyGsx = false; _rgOnlyNoGsx = false; }
+  else if (_rgOnlyGsx) {
+    _rgOnlyGsx = false;
+    if (anyGsx)            { _rgOnlyNoGsx = true; }
+    else                   { _rgShowScenery = false; }
+  }
   else if (_rgOnlyScenery) {
     if (anyGsx)            { _rgOnlyScenery = false; _rgOnlyGsx = true; _rgShowScenery = true; }
     else                   { _rgShowScenery = false; _rgOnlyScenery = false; }
@@ -34357,6 +34382,7 @@ let _rgSelOverlayLayer  = null;   // lightweight ring overlay for selected backg
 let _rgShowScenery      = true;   // "Highlight scenery airports" toggle
 let _rgOnlyScenery      = false;  // "Show only scenery airports" toggle
 let _rgOnlyGsx          = false;  // v3.104.0 "Show only airports with a GSX profile" - 4th state of the scenery cycle
+let _rgOnlyNoGsx        = false;  // v3.106.0 "Show only scenery airports WITHOUT a GSX profile" - 5th state of the scenery cycle
 let _rgUniqArrMode      = 'off';  // "Unique Arrivals" — 'off' | 'far' | 'near'. Hides arr-column airports that also appear in the dep region (asymmetric: dep rows untouched, map dots untouched). 'far'/'near' picks which end of the arr-region distance order the Max-per-region cap is applied from.
 
 // Category filter (dep and arr are independent)
@@ -37478,7 +37504,7 @@ function _rgHighlightDots() {
       if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
       if (_rgExcludedStores.size && _rgExcludedStores.has(_rgStoreOf(a.icao))) continue;
     }
-    if (_rgOnlyScenery && !_slHas(a.icao)) continue;
+    if (!_rgSceneryGate(a.icao)) continue;
     if (_slDeveloperFilter) {
       const slE = _slGet(a.icao);
       if (slE && (slE.developer || '') !== _slDeveloperFilter) continue;
@@ -37554,7 +37580,7 @@ function _rgHighlightDots() {
       if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(a.icao))) continue;
       if (_rgExcludedStores.size && _rgExcludedStores.has(_rgStoreOf(a.icao))) continue;
     }
-    if (_rgOnlyScenery && !_slHas(a.icao)) continue;
+    if (!_rgSceneryGate(a.icao)) continue;
     if (_slDeveloperFilter) {
       const slE = _slGet(a.icao);
       if (slE && (slE.developer || '') !== _slDeveloperFilter) continue;
@@ -40581,11 +40607,10 @@ function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
     if (_rgExcludedDevelopers.size && _rgExcludedDevelopers.has(_rgDevOf(icao))) return false;
     if (_rgExcludedStores.size    && _rgExcludedStores.has(_rgStoreOf(icao))) return false;
   }
-  // Scenery-only mode
-  if (_rgOnlyScenery && !_slHas(icao)) return false;
-  // GSX-only mode (v3.104.0). A GSX profile only exists where scenery does, so
-  // this is strictly narrower than Scenery-only and the two never both apply.
-  if (_rgOnlyGsx && !_slHasGsx(icao)) return false;
+  // Scenery-only / GSX-only / No-GSX modes — one shared gate (v3.106.0). A GSX
+  // profile only exists where scenery does, so GSX and No GSX are each strictly
+  // narrower than Scenery-only, and no two of the three ever apply together.
+  if (!_rgSceneryGate(icao)) return false;
   // Scenery developer filter (Scenery Library modal's single-value dropdown
   // — separate from _rgMapDeveloperFilter which is the search-driven Set).
   if (_slDeveloperFilter) {
@@ -44529,9 +44554,9 @@ function _rgRenderMatrix() {
     arr = arr.filter(a => !depSet.has(a.icao));
   }
 
-  if (_rgOnlyScenery) {
-    dep = dep.filter(a => _slHas(a.icao));
-    arr = arr.filter(a => _slHas(a.icao));
+  if (_rgAnySceneryOnlyMode()) {
+    dep = dep.filter(a => _rgSceneryGate(a.icao));
+    arr = arr.filter(a => _rgSceneryGate(a.icao));
   }
 
   if (_rgPayoutFilter > 0 && payoutDB) {
@@ -45400,7 +45425,11 @@ function _rgUpdateBreadcrumbs() {
 
   // 3. Scenery mode — always shown
   if (_rgOnlyGsx) {
-    container.appendChild(mkChip('Airports w GSX Profile Only', _slCycleMode, null));
+    container.appendChild(mkChip('Airports w GSX Profile Only', _slCycleMode, null,
+      { title: 'Only airports you have a GSX profile for. Click to show the scenery airports still missing one.' }));
+  } else if (_rgOnlyNoGsx) {
+    container.appendChild(mkChip('Airports w Scenery, No GSX Profile', _slCycleMode, null,
+      { title: 'Only scenery airports that do not have a GSX profile yet. Click to turn the scenery indicator off.' }));
   } else if (_rgOnlyScenery) {
     container.appendChild(mkChip('Airports w Scenery Only', _slCycleMode, null));
   } else if (_rgShowScenery && _slLoad().length > 0) {
@@ -49359,7 +49388,7 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">Scenery Library</div>
           <div class="help-feature-desc">
-            The <strong>⬤ Scenery</strong> split button in the map header controls your personal scenery library — a list of airports you have high-detail scenery for. Click the left area to cycle display modes: <strong>Highlight</strong> (black dot on each scenery airport), <strong>Only</strong> (filter the map to scenery airports only), and off. Click the <strong>⚙</strong> gear icon on the right to open the library panel. When the library has unsaved changes, a yellow numeric badge on the button shows the count of pending changes; both halves of the button show the count in their tooltip.<br/><br/>
+            The <strong>⬤ Scenery</strong> split button in the map header controls your personal scenery library — a list of airports you have high-detail scenery for. Click the left area to cycle display modes: <strong>Highlight</strong> (black dot on each scenery airport), <strong>Only</strong> (filter the map to scenery airports only), then &mdash; once any airport carries a GSX tag &mdash; <strong>GSX</strong> and <strong>No GSX</strong> (see <em>GSX Profiles</em> below), and off. Click the <strong>⚙</strong> gear icon on the right to open the library panel. When the library has unsaved changes, a yellow numeric badge on the button shows the count of pending changes; both halves of the button show the count in their tooltip.<br/><br/>
             <strong>Adding airports from the map (fastest):</strong> <strong>Shift+click</strong> any airport dot at any time to instantly toggle it in or out of your library — no panel needed. Or click <strong>📍 Add from map</strong> in the library footer to enter paint mode, where every dot click toggles scenery. A blue banner confirms the mode; click <strong>✕ Done</strong> or press Escape to exit.<br/><br/>
             <strong>Folder scan</strong> (Chrome/Edge only): click <strong>📂 Scan folder</strong>, point at your MSFS Community or X-Plane Custom Scenery folder, and the app detects airport codes from add-on subfolder names. A checkbox preview lets you confirm before importing.<br/><br/>
             <strong>GSX profile scan</strong> (⋯ menu, v3.104.0): click <strong>🛠 Scan GSX profiles</strong> and point at your GSX profile folder — normally <code>%APPDATA%\Virtuali\GSX\MSFS</code>. Every airport you have a profile for is listed in the same checkbox preview, and confirming tags them all in one pass. See the <em>GSX Profiles</em> section below.<br/><br/>
@@ -49392,7 +49421,7 @@ function rgSendToFlightPlanner() {
             <strong>Scan your whole GSX folder.</strong> In the library's <strong>🛠 Manage</strong> menu, <strong>🛠 Scan GSX profiles</strong> asks for a folder. GSX stores one profile per airport as <code>&lt;ICAO&gt;-&lt;author&gt;.ini</code> / <code>.py</code> in <code>%APPDATA%\Virtuali\GSX\MSFS</code> — paste that into the folder picker's address bar to jump straight there. You can also pick a parent folder such as <code>Virtuali</code> or <code>GSX</code>; the scan finds the <code>MSFS</code> folder inside it and ignores everything else. The result lands in the same checkbox preview the folder scan uses: airports already tagged start unticked, everything else is ticked, and confirming tags them all at once — adding any that weren't in your library yet.<br/><br/>
             <strong>Every airport is double-checked</strong> (v3.105.0). The airport code comes from the file name, and then the start of each <code>.ini</code> is read and searched for that same code — profiles often name their airport in a <code>scenario</code> line, an <code>afcad_path</code>, or a jetway setting. Rows confirmed that way are marked <strong>✓ verified</strong>; the rest are marked <strong>name only</strong>. <em>Name only is completely normal</em> — about a third of profiles never mention their own airport anywhere, so it means &ldquo;no evidence either way&rdquo;, not &ldquo;probably wrong&rdquo;. The file name stays the source of truth in every case, because it is right essentially all of the time and profile text occasionally isn't (one real profile carries a typo'd code in its own description). <em>Nothing is uploaded — only the first few KB of each file is read, inside the page, and then discarded.</em><br/><br/>
             <strong>Seeing them on the map.</strong> A tagged airport gets a <strong>ring around its scenery marker</strong> — white by default — so it reads as different in shape, not just in colour. Change the colour, or switch the ring off, under <strong>👁 Display → 🎨 Appearance → Scenery marker → GSX ring</strong>. Hovering the dot shows a <strong>🛠 GSX profile</strong> badge in the tooltip.<br/><br/>
-            <strong>Filtering.</strong> The <strong>⬤ Scenery</strong> split button in the map header gains a fourth step once anything is tagged: <em>Highlight → Only → GSX → off</em>, where <strong>GSX</strong> narrows the map (and the distance matrix) to airports with a profile. The breadcrumb strip shows an <em>Airports w GSX Profile Only</em> chip while it's on. Inside the library panel, the <strong>Show</strong> dropdown gains <em>Has GSX profile</em> and <em>No GSX profile</em> — the second is the useful one when you're deciding which airport to build a profile for next.
+            <strong>Filtering.</strong> The <strong>⬤ Scenery</strong> split button in the map header gains two extra steps once anything is tagged: <em>Highlight → Only → GSX → No GSX → off</em>. <strong>GSX</strong> narrows the map and both distance matrices to airports with a profile; <strong>No GSX</strong> (v3.106.0) is its opposite &mdash; the scenery airports that <em>don't</em> have a profile yet, which is the list to work from when deciding what to build or download next. The breadcrumb strip shows an <em>Airports w GSX Profile Only</em> or <em>Airports w Scenery, No GSX Profile</em> chip while either is on, and clicking that chip cycles the mode exactly like the button does. Inside the library panel, the <strong>Show</strong> dropdown gains <em>Has GSX profile</em> and <em>No GSX profile</em> — the second is the useful one when you're deciding which airport to build a profile for next.
           </div>
         </div>
       </div>
@@ -49655,10 +49684,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.106.0</span>
+          <span class="release-date">Sep 11, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>New scenery display mode: No GSX.</strong> The scenery breadcrumb chip (and the <strong>⬤ Scenery</strong> button it mirrors) gains a fifth step, <em>Highlight → Only → GSX → No GSX → off</em>. <strong>No GSX</strong> shows only the airports that are in your Scenery Library but do <em>not</em> carry a GSX profile tag &mdash; the exact opposite of the GSX step, and the list you want when deciding which airport to build or download a profile for next. The map, both distance matrices and the airport listing all follow it, the breadcrumb reads <em>Airports w Scenery, No GSX Profile</em> while it's on, and both GSX chips now carry a tooltip saying what the next click does. Like the GSX step it only appears once at least one airport is tagged, so an untagged library keeps the familiar three-step cycle.</li>
+          <li><strong>The owner distance matrix now honours the GSX step.</strong> Since v3.104.0 the main-screen owner matrix tested only the <em>Only</em> flag, so switching to <em>GSX</em> narrowed the map and the region matrix but left the owner matrix showing every scenery airport. All five places that hide airports by scenery mode now ask one shared gate, so every mode &mdash; including the new one &mdash; reaches every view.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.105.1</span>
-          <span class="release-date">Sep 8, 2026 &middot; Current</span>
+          <span class="release-date">Sep 8, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
