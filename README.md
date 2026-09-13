@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.106.0**
+**Current version: v3.107.0**
 
 ---
 
@@ -175,9 +175,11 @@ The two GSX steps only appear once you have tagged at least one airport, so the 
 
 If you use FSDreamTeam's **GSX** ground-handling add-on, Active Airports can now keep track of which airports you have a **GSX profile** for — the file that tells GSX where an airport's jetways, stands, pushback paths and marshaller belong.
 
-A GSX profile only ever exists for an airport that has add-on scenery, so the tag lives on the airport's **Scenery Library** entry rather than in a separate list. That means it is saved, loaded and backed up with everything else you already track — **⤤ Save Scenery**, **⤥ Load Scenery**, and *Save / Load All Settings* all carry it, with nothing new to remember. A library with no GSX tags saves exactly as it always did, so older backups still load fine.
+The tag lives on the airport's **Scenery Library** entry rather than in a separate list, so it is saved, loaded and backed up with everything else you already track — **⤤ Save Scenery**, **⤥ Load Scenery**, and *Save / Load All Settings* all carry it, with nothing new to remember. A library with no GSX tags saves exactly as it always did, so older backups still load fine.
 
-**Tag an airport by hand.** Right-click (or long-press) any airport dot and choose **⭐ Scenery / rate** — the popover has a **GSX** row with a *🛠 GSX profile installed* tick. Ticking an airport that isn't in your library yet adds it, exactly as setting a star rating does. Inside the Scenery Library panel, every row carries a **🛠 GSX** chip beside its Store and Dev values; click it to tag or untag. Untagging never removes the airport — the scenery is still installed, only the profile is gone.
+**A profile does not mean add-on scenery** (v3.107.0). GSX ships default profiles, and you can build one for an airport you fly with the sim's stock scenery, so tagging an airport with a GSX profile never assumes anything about scenery. An airport that reaches the library only through a GSX tag is recorded as **stock scenery**: it gets the GSX ring on the map but not the scenery marker, its tooltip shows the GSX badge without *Detailed scenery*, and it is left out of the *Only* and *No GSX* scenery modes (while still counting for *GSX*). When the add-on scenery is actually installed, tick **⬤ Add-on scenery installed** in the popover or click the **⬤ Scenery** chip on its library row. Adding the same airport from a Community-folder scan, a scenery config, a FlightSim.to import or a typed ICAO counts as scenery and clears the stock flag automatically. The library's **Show** dropdown gains *Stock scenery (GSX only)* to list exactly these airports.
+
+**Tag an airport by hand.** Right-click (or long-press) any airport dot and choose **⭐ Scenery / rate** — the popover has an **Installed** group with two independent ticks, *⬤ Add-on scenery installed* and *🛠 GSX profile installed*. Ticking GSX on an airport that isn't in your library yet adds it as stock scenery. Inside the Scenery Library panel, every row carries a **⬤ Scenery** chip and a **🛠 GSX** chip beside its Store and Dev values; click either to flip that one fact. Untagging GSX never removes the airport — only the profile is gone. **Shift-click** on a map dot now toggles the add-on-scenery fact: an airport that also carries a GSX tag is kept as stock scenery rather than removed, so the tag survives.
 
 **Or scan your whole GSX folder at once.** In the library's **🛠 Manage** menu, **🛠 Scan GSX profiles** asks you to pick a folder and works out which airports you have profiles for. GSX keeps them in `%APPDATA%\Virtuali\GSX\MSFS` — paste that straight into the folder picker's address bar to jump there. You can also pick a parent folder such as `Virtuali` or `GSX`; the scan finds the `MSFS` folder inside your selection and ignores everything else. The results appear in the same checkbox preview the regular folder scan uses: airports you have already tagged start unticked, so a re-scan after installing a few new profiles shows you exactly what's new, and confirming tags them all in one go — adding any that weren't in your library yet.
 

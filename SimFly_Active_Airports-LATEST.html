@@ -5077,6 +5077,12 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   .sl-gsx-chip.on { border-color:var(--aa-gsx-badge); color:var(--aa-gsx-badge); background:rgba(255,255,255,0.07); }
   body.light-mode .sl-gsx-chip.on { background:rgba(0,0,0,0.05); }
   .sl-gsx-chip:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  /* v3.107.0 — scenery chip shares the GSX chip's shell; only the ON colour differs
+     (the library's active yellow rather than the GSX violet). */
+  .sl-scn-chip:hover { border-color:#e8e000; }
+  .sl-scn-chip.on { border-color:#e8e000; color:#e8e000; }
+  body.light-mode .sl-scn-chip:hover { border-color:#8a8200; }
+  body.light-mode .sl-scn-chip.on { border-color:#8a8200; color:#6a6400; }
   /* Content-confirmation chip on a GSX scan row (v3.105.0). "name only" is
      ordinary information, not a warning, so it stays muted rather than amber. */
   .sl-scan-chk { flex:0 0 auto; font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:600; letter-spacing:0.03em; padding:0.05rem 0.45rem; border-radius:3px; border:1px solid var(--border); color:var(--muted); white-space:nowrap; }
@@ -5365,6 +5371,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   /* GSX tick in the Quick-Rate popover (v3.104.0). */
   .rg-gsx-toggle { display:inline-flex; align-items:center; gap:0.42rem; font-family:'Rajdhani',sans-serif; font-size:1.06rem; font-weight:600; color:var(--text); cursor:pointer; user-select:none; }
   .rg-gsx-toggle input { accent-color:var(--aa-gsx-badge); width:1rem; height:1rem; cursor:pointer; margin:0; flex-shrink:0; }
+  .rg-gsx-toggle.rg-scn-toggle input { accent-color:#e8e000; }
+  .rg-rate-installed { display:flex; flex-direction:column; gap:0.3rem; }
   .rg-rate-field-inp { flex:1; min-width:0; background:rgba(255,255,255,0.07); border:1px solid rgba(0,200,255,0.18); border-radius:5px; color:var(--text); font-family:'Rajdhani',sans-serif; font-size:1.0rem; padding:0.22rem 0.45rem; outline:none; }
   .rg-rate-field-inp:focus { border-color:rgba(0,200,255,0.5); background:rgba(255,255,255,0.11); }
   body.light-mode .rg-rate-field-inp { background:rgba(0,0,0,0.04); border-color:rgba(0,80,160,0.22); }
@@ -9019,7 +9027,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.106.0';
+const APP_VERSION = '3.107.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -30705,6 +30713,12 @@ function _slGet(icao) {
   return _slLoad().find(e => e.icao.toUpperCase() === u) || null;
 }
 function _slHas(icao) { return !!_slGet(icao); }
+// v3.107.0 — "in the library" and "has add-on scenery" are no longer the same
+// question. An entry carrying `stock: true` is an airport you track for its GSX
+// profile (or a rating / note) but fly with the sim's default scenery. Every
+// scenery indicator — the map marker, the Only / No GSX modes, the tooltip's
+// Detailed-scenery badge — asks THIS, never bare membership.
+function _slHasScenery(icao) { const e = _slGet(icao); return !!(e && !e.stock); }
 function _slAdd(entry) {
   const arr = _slLoad();
   const u = (entry.icao || '').toUpperCase();
@@ -30725,6 +30739,11 @@ function _slAdd(entry) {
   // gsx preserved like store/developer/notes so a partial _slAdd (a shift-click
   // add, a JSON restore, a folder scan) never silently drops a GSX tag.
   const gsx       = (entry.gsx       !== undefined ? !!entry.gsx      : !!(prev && prev.gsx));
+  // stock is the one field NOT preserved by default: every _slAdd caller except
+  // the JSON loader (which passes it explicitly) is evidence that add-on scenery
+  // IS installed — a Community-folder scan, a scenery.cfg import, a typed ICAO —
+  // so an add clears a GSX-only entry's stock flag rather than carrying it over.
+  const stock     = (entry.stock     !== undefined ? !!entry.stock    : false);
   const norm = {
     icao: u,
     addon: entry.addon || '',
@@ -30737,6 +30756,7 @@ function _slAdd(entry) {
   // Written only when true - an untagged library exports byte-identically to a
   // pre-v3.104.0 one, so old backups and old app versions round-trip unchanged.
   if (gsx) norm.gsx = true;
+  if (stock) norm.stock = true;
   if (idx >= 0) arr[idx] = norm; else arr.push(norm);
   _slSave(arr);
   _slDirty++;
@@ -30830,9 +30850,10 @@ function _slSetNotes(icao, val) {
 
 // -- GSX profiles (v3.104.0) ------------------------------------------
 // A GSX profile customises FSDreamTeam's GSX ground handling (jetways, stands,
-// pushback, marshaller) for one airport, and only ever exists where add-on
-// scenery does - so the flag lives ON the Scenery Library entry rather than in
-// a key of its own. That means it rides the library's JSON Save / Load and the
+// pushback, marshaller) for one airport. The flag lives ON the Scenery Library
+// entry rather than in a key of its own (v3.107.0: a profile does NOT imply
+// add-on scenery - see `stock` / _slHasScenery - but one record per airport is
+// still the right shape). That means it rides the library's JSON Save / Load and the
 // Master Save File with no extra plumbing, and there is exactly one record per
 // airport instead of two that can drift apart.
 //
@@ -30848,9 +30869,9 @@ function _slAnyGsx() { return _slLoad().some(e => !!e.gsx); }
 // itself, so a new mode is wired in exactly once. Only / GSX / No GSX are
 // mutually exclusive — _slCycleMode never leaves two of them set.
 function _rgSceneryGate(icao) {
-  if (_rgOnlyScenery && !_slHas(icao)) return false;
+  if (_rgOnlyScenery && !_slHasScenery(icao)) return false;
   if (_rgOnlyGsx     && !_slHasGsx(icao)) return false;
-  if (_rgOnlyNoGsx   && (!_slHas(icao) || _slHasGsx(icao))) return false;
+  if (_rgOnlyNoGsx   && (!_slHasScenery(icao) || _slHasGsx(icao))) return false;
   return true;
 }
 function _rgAnySceneryOnlyMode() { return _rgOnlyScenery || _rgOnlyGsx || _rgOnlyNoGsx; }
@@ -30858,9 +30879,13 @@ function _rgAnySceneryOnlyMode() { return _rgOnlyScenery || _rgOnlyGsx || _rgOnl
 // Tag / untag one airport. Mirrors _slSetStore's semantics: tagging an airport
 // that isn't in the library yet ADDS it (a GSX profile implies scenery) and
 // turns on the Highlight overlay so the marker appears immediately. Untagging
-// never removes the entry - the scenery is still installed, only the profile is
-// gone. `quiet` suppresses the toast + map repaint for callers that batch.
-// Returns true when something actually changed.
+// never removes the entry - only the profile is gone. `quiet` suppresses the
+// toast + map repaint for callers that batch. Returns true when something
+// actually changed.
+// v3.107.0 - an airport added THIS way is stamped `stock: true`: a GSX profile
+// does not imply add-on scenery (GSX ships default profiles, and you can build
+// one for a stock airport), so nothing about scenery is assumed. Tick "Add-on
+// scenery" in the popover / library row when it is actually installed.
 function _slSetGsx(icao, on, quiet) {
   const arr = _slLoad();
   const u   = (icao || '').toUpperCase();
@@ -30869,9 +30894,9 @@ function _slSetGsx(icao, on, quiet) {
   const idx = arr.findIndex(e => e.icao.toUpperCase() === u);
   if (idx < 0) {
     if (!val) return false;          // untagging an airport we don't track is a no-op
-    arr.push({ icao: u, addon: '', type: '', sim: '', notes: '', rating: 0, store: '', developer: '', gsx: true });
+    arr.push({ icao: u, addon: '', type: '', sim: '', notes: '', rating: 0, store: '', developer: '', gsx: true, stock: true });
     if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
-    if (!quiet) { _slShowToast(u + ' added to Scenery Library'); _slUpdateToggles(); }
+    if (!quiet) { _slShowToast(u + ' tagged with a GSX profile \u00b7 no add-on scenery assumed'); _slUpdateToggles(); }
   } else {
     if (!!arr[idx].gsx === val) return false;   // already in the requested state
     const next = { ...arr[idx] };
@@ -30901,7 +30926,7 @@ function _slBulkSetGsx(icaos) {
     if (!u) continue;
     const ex = byIcao.get(u);
     if (!ex) {
-      const norm = { icao: u, addon: '', type: '', sim: 'MSFS', notes: '', rating: 0, store: '', developer: '', gsx: true };
+      const norm = { icao: u, addon: '', type: '', sim: 'MSFS', notes: '', rating: 0, store: '', developer: '', gsx: true, stock: true };
       arr.push(norm); byIcao.set(u, norm);
       addedNew++; tagged++; _slDirtyIcaos.add(u);
     } else if (!ex.gsx) {
@@ -30915,6 +30940,70 @@ function _slBulkSetGsx(icaos) {
     if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
   }
   return { tagged, addedNew };
+}
+
+// v3.107.0 - set / clear the "add-on scenery installed" fact on one airport.
+// ON: adds the airport if it is not tracked yet, or clears `stock` on a GSX-only
+// entry. OFF: keeps the entry (its GSX tag, rating, store, notes) and marks it
+// `stock: true` - EXCEPT from a shift-click (`opts.removeIfBare`), which keeps
+// its classic behaviour of removing an entry that has nothing else worth
+// keeping (no GSX tag). Returns true when something actually changed.
+function _slSetScenery(icao, on, opts) {
+  opts = opts || {};
+  const arr = _slLoad();
+  const u   = (icao || '').toUpperCase();
+  const val = !!on;
+  if (!u) return false;
+  const idx = arr.findIndex(e => e.icao.toUpperCase() === u);
+  if (idx < 0) {
+    if (!val) return false;
+    arr.push({ icao: u, addon: '', type: '', sim: '', notes: '', rating: 0, store: '', developer: '' });
+    if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
+    if (!opts.quiet) _slShowToast(u + ' added to Scenery Library');
+  } else if (val) {
+    if (!arr[idx].stock) return false;
+    const next = { ...arr[idx] }; delete next.stock; arr[idx] = next;
+    if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
+    if (!opts.quiet) _slShowToast(u + ' marked as having add-on scenery');
+  } else {
+    if (arr[idx].stock) return false;
+    if (opts.removeIfBare && !arr[idx].gsx) {
+      arr.splice(idx, 1);
+      if (!opts.quiet) _slShowToast(u + ' removed from Scenery Library');
+    } else {
+      arr[idx] = { ...arr[idx], stock: true };
+      if (!opts.quiet) _slShowToast(u + ' marked as stock scenery' + (arr[idx].gsx ? ' \u00b7 GSX profile kept' : ''));
+    }
+  }
+  _slSave(arr);
+  _slDirty++;
+  _slDirtyIcaos.add(u);
+  _slSetBannerVisible(_slDirty);
+  if (!opts.quiet) {
+    _slUpdateToggles();
+    if (_rgMap) {
+      if (_rgTipHtmlCache) _rgTipHtmlCache.clear();   // the tooltip carries the scenery badge
+      _rgApplySceneryState();
+    }
+  }
+  return true;
+}
+
+// Row chip in the Scenery Library list - the scenery twin of the GSX chip.
+function _slRowToggleScenery(btn) {
+  const icao = (btn && btn.dataset) ? btn.dataset.icao : '';
+  if (!icao) return;
+  const on = !_slHasScenery(icao);
+  _slSetScenery(icao, on);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = _slSceneryChipTitle(on);
+  if (_slFilterMode === 'stock')
+    _slRenderList(document.getElementById('slSearch')?.value || '');
+}
+function _slSceneryChipTitle(on) {
+  return on ? 'Add-on scenery installed for this airport - click to mark it as stock scenery'
+            : 'Stock (default) scenery - click when you have add-on scenery installed';
 }
 
 // Row chip in the Scenery Library list - both the indicator and the control.
@@ -31161,9 +31250,9 @@ function _slDoClose() {
 // reloads and new sessions. _slLoadPrefs() runs at module init below.
 const _SL_PREFS_KEY = 'simfly_aa_scenery_prefs';
 const _SL_SORT_VALID   = ['icao', 'rating', 'name'];
-const _SL_FILTER_VALID = ['all', 'owned', 'rated', 'unrated', 'gsx', 'nogsx'];
+const _SL_FILTER_VALID = ['all', 'owned', 'rated', 'unrated', 'gsx', 'nogsx', 'stock'];
 let _slSortMode   = 'icao';   // icao | rating | name
-let _slFilterMode = 'all';    // all | owned | rated | unrated | gsx | nogsx
+let _slFilterMode = 'all';    // all | owned | rated | unrated | gsx | nogsx | stock (v3.107.0)
 // Developer filter: '' = all developers, otherwise a single developer name.
 // Filter is applied both to the modal list AND to the region map (drives a
 // breadcrumb chip + hides library airports whose developer doesn't match).
@@ -31286,6 +31375,8 @@ function _slRenderList(query) {
     items = items.filter(e => !!e.gsx);
   } else if (_slFilterMode === 'nogsx') {
     items = items.filter(e => !e.gsx);
+  } else if (_slFilterMode === 'stock') {
+    items = items.filter(e => !!e.stock);
   }
   // Developer filter (single value, '' = all)
   if (_slDeveloperFilter) {
@@ -31393,6 +31484,12 @@ function _slRenderList(query) {
           // v3.104.0 - the GSX chip lives in the META row, not the header: the
           // header collapses to a fixed 4-cell grid on mobile and a fifth child
           // would land in the wrong cell.
+          // v3.107.0 - scenery chip: the row exists either way; this says whether
+          // add-on scenery is actually installed or the airport is GSX-only.
+          `<button type="button" class="sl-gsx-chip sl-scn-chip${e.stock ? '' : ' on'}" data-icao="${e.icao}" ` +
+            `aria-pressed="${e.stock ? 'false' : 'true'}" ` +
+            `title="${_slSceneryChipTitle(!e.stock)}" ` +
+            `onclick="_slRowToggleScenery(this)">\u2b24 Scenery</button>` +
           `<button type="button" class="sl-gsx-chip${e.gsx ? ' on' : ''}" data-icao="${e.icao}" ` +
             `aria-pressed="${e.gsx ? 'true' : 'false'}" ` +
             `title="${e.gsx ? 'GSX profile installed for this airport - click to untag' : 'No GSX profile recorded - click to tag one'}" ` +
@@ -31642,20 +31739,15 @@ function _slRefreshDatalists() {
 }
 
 function _slToggleFromMap(icao) {
-  const lib = _slLoad();
-  const exists = lib.some(e => e.icao.toUpperCase() === icao.toUpperCase());
-  if (exists) {
-    _slSave(lib.filter(e => e.icao.toUpperCase() !== icao.toUpperCase()));
-    _slShowToast(icao + ' removed from Scenery Library');
-  } else {
-    lib.push({ icao: icao.toUpperCase(), rating: 0 });
-    _slSave(lib);
-    _slShowToast(icao + ' added to Scenery Library');
-    // Auto-enable Highlight so the black dot appears on the map immediately
-    if (!_rgShowScenery && !_rgOnlyScenery) _rgShowScenery = true;
-  }
-  _slDirty++;
-  _slDirtyIcaos.add(icao.toUpperCase());
+  // v3.107.0 - shift-click toggles the SCENERY fact, not bare membership: an
+  // entry that also carries a GSX tag is kept (marked stock) rather than
+  // deleted, and a GSX-only entry gains its scenery instead of being removed.
+  // An entry with nothing else to keep is removed exactly as before.
+  const on = !_slHasScenery(icao);
+  _slSetScenery(icao, on, { quiet: true, removeIfBare: true });
+  const e = _slGet(icao);
+  _slShowToast(!on ? (e ? icao + ' marked as stock scenery \u00b7 GSX profile kept' : icao + ' removed from Scenery Library')
+                   : icao + ' added to Scenery Library');
   _slSetBannerVisible(_slDirty);  // apply glow immediately (modal may be closed)
   _slUpdateToggles();
   if (document.getElementById('sceneryModal')?.classList.contains('open'))
@@ -31952,6 +32044,7 @@ function _slReadJsonFile(file) {
           store:     item.store     || '',
           developer: item.developer || '',
           gsx:       !!item.gsx,
+          stock:     !!item.stock,
         });
         added++;
       }
@@ -32055,6 +32148,7 @@ function _slFstoIngest(data) {
       if (!String(ex.store     || '').trim() && store)     { ex.store     = store;                    changed = true; }
       if (!String(ex.developer || '').trim() && developer) { ex.developer = developer;                changed = true; }
       if (!(+ex.rating || 0) && rating)                    { ex.rating    = _slClampRating(rating);   changed = true; }
+      if (ex.stock)                                        { delete ex.stock;                          changed = true; }   // a FlightSim.to download IS add-on scenery
       if (changed) { filled++; touched.push(icao); } else { unchanged++; }
     }
   }
@@ -33076,7 +33170,7 @@ function _slScanImport() {
   if (gsx) {
     _slShowToast(res.tagged
       ? `🛠 ${res.tagged} airport${res.tagged === 1 ? '' : 's'} tagged with a GSX profile` +
-        (res.addedNew ? ` · ${res.addedNew} new to the library` : '')
+        (res.addedNew ? ` · ${res.addedNew} new to the library as stock scenery` : '')
       : 'Nothing to tag — everything selected already had a GSX profile');
   }
 }
@@ -36175,8 +36269,10 @@ function _rgDotTipHtml(icao, rec, ownerName) {
     const parts = [idents, len, surf + lit].filter(Boolean);
     rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
   }
+  // v3.107.0 - a stock (GSX-only) entry gets the GSX badge and nothing else:
+  // "Detailed scenery" is only ever claimed when add-on scenery is installed.
   const sceneryHtml = slEntry
-    ? `<span class="rg-dt-scenery">Detailed scenery${slEntry.addon ? ' · ' + slEntry.addon : ''}</span>` +
+    ? (slEntry.stock ? '' : `<span class="rg-dt-scenery">Detailed scenery${slEntry.addon ? ' · ' + slEntry.addon : ''}</span>`) +
       (slEntry.gsx ? `<span class="rg-dt-gsx">🛠 GSX profile</span>` : '')
     : '';
   const ratingHtml = slRating > 0 ? _slStarsHtml(slRating, { interactive: false }) : '';
@@ -36260,7 +36356,7 @@ function _rgBindDotTip(marker, icao, rec, ownerName) {
   // The owner-fleet rental line (v3.53.0) varies with the selected aircraft, so
   // the aircraft code is always part of the key — switching aircraft rebuilds it.
   const cacheKey   = ((slEntry || wxEntry)
-    ? icaoUpper + '●' + slRating + '●' + slDev + '●' + wxStamp + '●' + (slEntry && slEntry.gsx ? 'G' : '')
+    ? icaoUpper + '●' + slRating + '●' + slDev + '●' + wxStamp + '●' + (slEntry && slEntry.gsx ? 'G' : '') + (slEntry && slEntry.stock ? 'S' : '')
     : icaoUpper) + '◆' + (_acSelectedCode || '');
   let html = _rgTipHtmlCache.get(cacheKey);
   if (!html) {
@@ -36514,7 +36610,11 @@ function _rgPaintDotBody(ctx, p, R, fillColor, style) {
 }
 // Paint the scenery-library indicator. Drawn inside _updatePath so it scales
 // with the hover-grown dot and layers over the body, regardless of dot style.
-function _rgPaintSceneryMarker(ctx, p, R, scale, gsx) {
+// v3.107.0 - `scenery` (default true) gates the marker itself; a GSX-only
+// airport (stock scenery) gets just the ring, so the marker never claims add-on
+// scenery that is not there.
+function _rgPaintSceneryMarker(ctx, p, R, scale, gsx, scenery) {
+  if (scenery === undefined) scenery = true;
   const m  = (typeof _rgSceneryMarker !== 'undefined') ? _rgSceneryMarker : 'dot';
   const cc = (typeof _rgSceneryColor  !== 'undefined') ? _rgSceneryColor  : 'auto';
   const custom = /^#[0-9a-fA-F]{6}$/.test(cc) ? cc : null;     // null = 'auto' (classic per-marker colors)
@@ -36551,6 +36651,7 @@ function _rgPaintSceneryMarker(ctx, p, R, scale, gsx) {
     ctx.beginPath(); ctx.arc(p.x, p.y, gr, 0, Math.PI * 2);
     ctx.strokeStyle = gsxCol; ctx.lineWidth = w; ctx.stroke();
   }
+  if (!scenery) { ctx.restore(); return; }
   if (m === 'ring') {                                            // accent rim — no centre mark
     ctx.beginPath(); ctx.arc(p.x, p.y, R - 0.6, 0, Math.PI * 2);
     ctx.strokeStyle = accent; ctx.lineWidth = 2.6 * scale * sf; ctx.stroke();
@@ -36677,7 +36778,7 @@ function _rgCoronaMarker(latlng, opts) {
         // ── Scenery marker (v3.70.0) ─────────────────────────────────────
         // Drawn over the body + gauge, under the corona. The chosen marker
         // (black/white dot, gold ring, corner pip, or star) is global per-user.
-        if (this.options.hasScenery) _rgPaintSceneryMarker(ctx, p, this._radius, scale, this.options.hasGsx);
+        if (this.options.hasScenery || this.options.hasGsx) _rgPaintSceneryMarker(ctx, p, this._radius, scale, this.options.hasGsx, this.options.hasScenery);
         // ── Level corona ─────────────────────────────────────────────────
         const lvl = this.options.coronaLevel | 0;
         if (lvl < 1) return;
@@ -37176,7 +37277,7 @@ function _rgRenderDots() {
       color: 'rgba(0,0,0,0.55)', fillColor, fillOpacity, interactive: true,
       coronaLevel: _rgLevelOf(ap.icao),
       gaugeFrac: _rgRotationFrac(ap.icao),
-      hasScenery: _rgShowScenery && _slHas(ap.icao),
+      hasScenery: _rgShowScenery && _slHasScenery(ap.icao),
       hasGsx:     _rgShowScenery && _slHasGsx(ap.icao),
     });
     _rgBindDotTip(m, ap.icao, rec, ownerName);
@@ -37230,7 +37331,7 @@ function _rgRenderDots() {
       color: 'rgba(0,0,0,0.55)', fillColor: '#7a7a90', fillOpacity: Math.min(1, 0.75 * _rgDotOpacity / 100), interactive: true,
       coronaLevel: _rgLevelOf(icaoUp),
       gaugeFrac: _rgRotationFrac(icaoUp),
-      hasScenery: _rgShowScenery && _slHas(icaoUp),
+      hasScenery: _rgShowScenery && _slHasScenery(icaoUp),
       hasGsx:     _rgShowScenery && _slHasGsx(icaoUp),
     });
     _rgBindDotTip(m, icaoUp, rec, null);
@@ -37519,7 +37620,7 @@ function _rgHighlightDots() {
       fillColor: fill, fillOpacity: Math.min(1, (sel ? 1 : ((_rgAircraftMode || _rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75))) * _rgDotOpacity / 100), interactive: true,
       coronaLevel: _rgLevelOf(a.icao),
       gaugeFrac: sel ? null : _rgRotationFrac(a.icao),
-      hasScenery: _rgShowScenery && _slHas(a.icao),
+      hasScenery: _rgShowScenery && _slHasScenery(a.icao),
       hasGsx:     _rgShowScenery && _slHasGsx(a.icao),
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -37595,7 +37696,7 @@ function _rgHighlightDots() {
       fillColor: fill, fillOpacity: Math.min(1, (sel ? 1 : ((_rgAircraftMode || _rgPayoutMode || _rgOwnerColorsActive) ? 1 : (_rgMapSat ? 0.88 : 0.75))) * _rgDotOpacity / 100), interactive: true,
       coronaLevel: _rgLevelOf(a.icao),
       gaugeFrac: sel ? null : _rgRotationFrac(a.icao),
-      hasScenery: _rgShowScenery && _slHas(a.icao),
+      hasScenery: _rgShowScenery && _slHasScenery(a.icao),
       hasGsx:     _rgShowScenery && _slHasGsx(a.icao),
     });
     _rgBindDotTip(m, a.icao, a.rec, _rgOwnerMap.get(a.icao.toUpperCase()));
@@ -37953,6 +38054,7 @@ function _rgRefreshRatePopover() {
   // exists, so saved notes are visible without a click; empty stays collapsed.
   const notesOpen = !!(notes && notes.trim());
   const hasGsx    = !!(slEntry && slEntry.gsx);
+  const hasScn    = !!(slEntry && !slEntry.stock);   // v3.107.0 - add-on scenery, not bare membership
   const isOwned = _slGetOwnedIcaos().has(icao);
   const extSvg  = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6.5,1.5 10.5,1.5 10.5,5.5"/><line x1="10.5" y1="1.5" x2="5" y2="7"/><polyline points="5,2.5 1.5,2.5 1.5,10.5 9.5,10.5 9.5,7"/></svg>`;
   const storeSugg = _slGetStoreSuggestions().map(v => `<option value="${esc(v)}"></option>`).join('');
@@ -37980,22 +38082,31 @@ function _rgRefreshRatePopover() {
     `<div class="rg-rate-hdr aa-chip-draghandle" onpointerdown="_aaChipDragFromHandle(event,'rgRatePopover')" title="Drag to move this popover"><span class="aa-chip-grip" aria-hidden="true">⠿</span>${hdrInner}</div>` +
     rotLine +
     saleLink +
-    (!inLib ? `<div class="rg-rate-hint">Setting a rating will add this airport to your Scenery Library.</div>` : '') +
+    (!inLib ? `<div class="rg-rate-hint">Setting a rating, or ticking Add-on scenery or GSX profile, will add this airport to your Scenery Library.</div>` : '') +
     _slStarsHtml(rating, { interactive: true, icao, keyboard: true }) +
-    `<div class="rg-rate-status">${inLib ? '✓ In Scenery Library' : 'Not yet in library'}</div>` +
+    `<div class="rg-rate-status">${!inLib ? 'Not yet in library' : hasScn ? '✓ In Scenery Library' : '✓ In library · stock scenery, GSX profile only'}</div>` +
     `<div class="rg-rate-fields">` +
       `<datalist id="rgPopStoreOpts">${storeSugg}</datalist>` +
       `<datalist id="rgPopDevOpts">${devSugg}</datalist>` +
       // v3.104.0 - GSX tag. Deferred refresh (setTimeout 0): _rgRefreshRatePopover
       // replaces the popover's innerHTML, so rebuilding it synchronously from an
       // onchange would destroy the element still dispatching the event.
+      // v3.107.0 - two independent facts, two ticks. Scenery and GSX no longer
+      // imply each other: a GSX tick on an untracked airport adds it as STOCK.
       `<div class="rg-rate-field-row rg-rate-gsx-row">` +
-        `<label class="rg-rate-field-lbl" for="rgRateGsx">GSX</label>` +
-        `<label class="rg-gsx-toggle" title="Tick when you have a GSX profile installed for this airport. Tagging an airport that is not in your Scenery Library yet adds it.">` +
-          `<input type="checkbox" id="rgRateGsx"${hasGsx ? ' checked' : ''} ` +
-            `onchange="_slSetGsx('${icao}',this.checked);_rgUpdatePopoverDisk();setTimeout(_rgRefreshRatePopover,0)">` +
-          `<span>🛠 GSX profile installed</span>` +
-        `</label>` +
+        `<label class="rg-rate-field-lbl" for="rgRateScn">Installed</label>` +
+        `<div class="rg-rate-installed">` +
+          `<label class="rg-gsx-toggle rg-scn-toggle" title="Tick when you have add-on (detailed) scenery installed for this airport. Unticking keeps the airport in your library as stock scenery.">` +
+            `<input type="checkbox" id="rgRateScn"${hasScn ? ' checked' : ''} ` +
+              `onchange="_slSetScenery('${icao}',this.checked);_rgUpdatePopoverDisk();setTimeout(_rgRefreshRatePopover,0)">` +
+            `<span>\u2b24 Add-on scenery installed</span>` +
+          `</label>` +
+          `<label class="rg-gsx-toggle" title="Tick when you have a GSX profile installed for this airport. Tagging an airport that is not in your Scenery Library yet adds it as stock scenery - nothing about add-on scenery is assumed.">` +
+            `<input type="checkbox" id="rgRateGsx"${hasGsx ? ' checked' : ''} ` +
+              `onchange="_slSetGsx('${icao}',this.checked);_rgUpdatePopoverDisk();setTimeout(_rgRefreshRatePopover,0)">` +
+            `<span>🛠 GSX profile installed</span>` +
+          `</label>` +
+        `</div>` +
       `</div>` +
       `<div class="rg-rate-field-row">` +
         `<label class="rg-rate-field-lbl">Store</label>` +
@@ -49389,7 +49500,7 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Scenery Library</div>
           <div class="help-feature-desc">
             The <strong>⬤ Scenery</strong> split button in the map header controls your personal scenery library — a list of airports you have high-detail scenery for. Click the left area to cycle display modes: <strong>Highlight</strong> (black dot on each scenery airport), <strong>Only</strong> (filter the map to scenery airports only), then &mdash; once any airport carries a GSX tag &mdash; <strong>GSX</strong> and <strong>No GSX</strong> (see <em>GSX Profiles</em> below), and off. Click the <strong>⚙</strong> gear icon on the right to open the library panel. When the library has unsaved changes, a yellow numeric badge on the button shows the count of pending changes; both halves of the button show the count in their tooltip.<br/><br/>
-            <strong>Adding airports from the map (fastest):</strong> <strong>Shift+click</strong> any airport dot at any time to instantly toggle it in or out of your library — no panel needed. Or click <strong>📍 Add from map</strong> in the library footer to enter paint mode, where every dot click toggles scenery. A blue banner confirms the mode; click <strong>✕ Done</strong> or press Escape to exit.<br/><br/>
+            <strong>Adding airports from the map (fastest):</strong> <strong>Shift+click</strong> any airport dot at any time to instantly toggle its add-on scenery in or out of your library &mdash; no panel needed. An airport that also carries a GSX profile tag is kept as <em>stock scenery</em> rather than removed, so the tag survives (v3.107.0). Or click <strong>📍 Add from map</strong> in the library footer to enter paint mode, where every dot click toggles scenery. A blue banner confirms the mode; click <strong>✕ Done</strong> or press Escape to exit.<br/><br/>
             <strong>Folder scan</strong> (Chrome/Edge only): click <strong>📂 Scan folder</strong>, point at your MSFS Community or X-Plane Custom Scenery folder, and the app detects airport codes from add-on subfolder names. A checkbox preview lets you confirm before importing.<br/><br/>
             <strong>GSX profile scan</strong> (⋯ menu, v3.104.0): click <strong>🛠 Scan GSX profiles</strong> and point at your GSX profile folder — normally <code>%APPDATA%\Virtuali\GSX\MSFS</code>. Every airport you have a profile for is listed in the same checkbox preview, and confirming tags them all in one pass. See the <em>GSX Profiles</em> section below.<br/><br/>
             <strong>Scenery config import</strong> (⋯ menu): import an X-Plane <code>scenery_packs.ini</code> or MSFS/P3D <code>scenery.cfg</code> directly — same checkbox preview as the folder scan. You can also <strong>drag and drop</strong> any of these files (or a <code>.json</code> backup) straight onto the modal.<br/><br/>
@@ -49416,12 +49527,12 @@ function rgSendToFlightPlanner() {
         <div class="help-feature-body">
           <div class="help-feature-title">GSX Profiles</div>
           <div class="help-feature-desc">
-            A <strong>GSX profile</strong> customises FSDreamTeam's <em>GSX</em> ground-handling add-on for one airport — where the jetways, stands, pushback paths and marshaller live. Profiles only exist for airports that have add-on scenery, so Active Airports tracks the tag on your <strong>Scenery Library</strong> entry rather than as a separate list. It saves, loads and backs up with everything else in the library.<br/><br/>
+            A <strong>GSX profile</strong> customises FSDreamTeam's <em>GSX</em> ground-handling add-on for one airport &mdash; where the jetways, stands, pushback paths and marshaller live. Active Airports tracks the tag on your <strong>Scenery Library</strong> entry rather than as a separate list, so it saves, loads and backs up with everything else in the library. <strong>A profile does not imply add-on scenery</strong> (v3.107.0): GSX ships default profiles, and you can build one for an airport you fly with the sim's stock scenery. An airport added to the library by a GSX tag is therefore recorded as <em>stock scenery</em> &mdash; it gets the GSX ring on the map but <em>not</em> the scenery marker, the tooltip shows the GSX badge without <em>Detailed scenery</em>, and it is left out of the <em>Only</em> and <em>No GSX</em> scenery modes. Tick <strong>⬤ Add-on scenery installed</strong> in the Quick-Rate popover, or click the <strong>⬤ Scenery</strong> chip on its library row, once the scenery is actually installed. Adding the same airport from a Community-folder scan, a scenery config, a FlightSim.to import or a typed ICAO also counts as scenery and clears the stock flag automatically.<br/><br/>
             <strong>Tag one airport by hand.</strong> Right-click (or long-press) an airport dot and choose <strong>⭐ Scenery / rate</strong>; the Quick-Rate popover now has a <strong>GSX</strong> row with a <em>🛠 GSX profile installed</em> tick. Ticking an airport that isn't in your library yet adds it, exactly like setting a rating does. Inside the Scenery Library panel each row carries a <strong>🛠 GSX</strong> chip beside its Store and Dev values — click it to tag or untag. Untagging never removes the airport; the scenery is still installed, only the profile is gone.<br/><br/>
             <strong>Scan your whole GSX folder.</strong> In the library's <strong>🛠 Manage</strong> menu, <strong>🛠 Scan GSX profiles</strong> asks for a folder. GSX stores one profile per airport as <code>&lt;ICAO&gt;-&lt;author&gt;.ini</code> / <code>.py</code> in <code>%APPDATA%\Virtuali\GSX\MSFS</code> — paste that into the folder picker's address bar to jump straight there. You can also pick a parent folder such as <code>Virtuali</code> or <code>GSX</code>; the scan finds the <code>MSFS</code> folder inside it and ignores everything else. The result lands in the same checkbox preview the folder scan uses: airports already tagged start unticked, everything else is ticked, and confirming tags them all at once — adding any that weren't in your library yet.<br/><br/>
             <strong>Every airport is double-checked</strong> (v3.105.0). The airport code comes from the file name, and then the start of each <code>.ini</code> is read and searched for that same code — profiles often name their airport in a <code>scenario</code> line, an <code>afcad_path</code>, or a jetway setting. Rows confirmed that way are marked <strong>✓ verified</strong>; the rest are marked <strong>name only</strong>. <em>Name only is completely normal</em> — about a third of profiles never mention their own airport anywhere, so it means &ldquo;no evidence either way&rdquo;, not &ldquo;probably wrong&rdquo;. The file name stays the source of truth in every case, because it is right essentially all of the time and profile text occasionally isn't (one real profile carries a typo'd code in its own description). <em>Nothing is uploaded — only the first few KB of each file is read, inside the page, and then discarded.</em><br/><br/>
             <strong>Seeing them on the map.</strong> A tagged airport gets a <strong>ring around its scenery marker</strong> — white by default — so it reads as different in shape, not just in colour. Change the colour, or switch the ring off, under <strong>👁 Display → 🎨 Appearance → Scenery marker → GSX ring</strong>. Hovering the dot shows a <strong>🛠 GSX profile</strong> badge in the tooltip.<br/><br/>
-            <strong>Filtering.</strong> The <strong>⬤ Scenery</strong> split button in the map header gains two extra steps once anything is tagged: <em>Highlight → Only → GSX → No GSX → off</em>. <strong>GSX</strong> narrows the map and both distance matrices to airports with a profile; <strong>No GSX</strong> (v3.106.0) is its opposite &mdash; the scenery airports that <em>don't</em> have a profile yet, which is the list to work from when deciding what to build or download next. The breadcrumb strip shows an <em>Airports w GSX Profile Only</em> or <em>Airports w Scenery, No GSX Profile</em> chip while either is on, and clicking that chip cycles the mode exactly like the button does. Inside the library panel, the <strong>Show</strong> dropdown gains <em>Has GSX profile</em> and <em>No GSX profile</em> — the second is the useful one when you're deciding which airport to build a profile for next.
+            <strong>Filtering.</strong> The <strong>⬤ Scenery</strong> split button in the map header gains two extra steps once anything is tagged: <em>Highlight → Only → GSX → No GSX → off</em>. <strong>GSX</strong> narrows the map and both distance matrices to airports with a profile; <strong>No GSX</strong> (v3.106.0) is its opposite &mdash; the scenery airports that <em>don't</em> have a profile yet, which is the list to work from when deciding what to build or download next. The breadcrumb strip shows an <em>Airports w GSX Profile Only</em> or <em>Airports w Scenery, No GSX Profile</em> chip while either is on, and clicking that chip cycles the mode exactly like the button does. Inside the library panel, the <strong>Show</strong> dropdown gains <em>Has GSX profile</em>, <em>No GSX profile</em> — the useful one when you're deciding which airport to build a profile for next — and <em>Stock scenery (GSX only)</em>, the airports you track only for their profile.
           </div>
         </div>
       </div>
@@ -49684,10 +49795,25 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.107.0</span>
+          <span class="release-date">Sep 13, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>A GSX profile no longer implies detailed scenery.</strong> Since v3.104.0, tagging an airport with a GSX profile silently added it to the Scenery Library <em>as a scenery airport</em> &mdash; it got the scenery marker, the <em>Detailed scenery</em> tooltip badge, and a place in the <em>Only</em> and <em>No GSX</em> modes &mdash; even when you fly it with the sim's stock scenery. GSX ships default profiles and you can build one for any airport, so that assumption was simply wrong. A library entry can now be <strong>stock scenery</strong>: it is tracked for its GSX profile (or a rating or note) but claims no add-on scenery. Stock entries get the GSX ring on the map and nothing else, the tooltip shows the GSX badge without <em>Detailed scenery</em>, and they are left out of <em>Only</em> and <em>No GSX</em> while still counting for <em>GSX</em>.</li>
+          <li><strong>Tagging GSX adds an airport as stock scenery, not as scenery.</strong> Ticking the GSX box in the Quick-Rate popover, clicking the row chip, or confirming a GSX folder scan on an airport that was not in the library yet now records it as stock &mdash; nothing about scenery is assumed. The scan's toast says how many arrived that way.</li>
+          <li><strong>New Add-on scenery tick and ⬤ Scenery row chip.</strong> The popover's GSX row becomes an <em>Installed</em> group with two independent ticks, <em>⬤ Add-on scenery installed</em> and <em>🛠 GSX profile installed</em>; every library row gains a <strong>⬤ Scenery</strong> chip beside the GSX chip. Either flips the scenery fact without touching the rest of the entry, and the popover's status line now reads <em>In library &middot; stock scenery, GSX profile only</em> for a stock entry.</li>
+          <li><strong>Shift-click keeps a GSX-tagged airport.</strong> Shift-clicking a dot toggles the add-on-scenery fact rather than bare membership: an entry that also carries a GSX tag is marked stock instead of deleted, and shift-clicking a stock entry gives it its scenery back. An entry with nothing else to keep is removed exactly as before.</li>
+          <li><strong>Scenery evidence clears the stock flag.</strong> Adding the same airport from a Community-folder scan, a scenery config import, a FlightSim.to import, or a typed ICAO marks it as having add-on scenery automatically. The flag is written only when set, rides the library JSON and the Master Save File untouched, and an older version of the app simply ignores it.</li>
+          <li><strong>Library Show filter gains <em>Stock scenery (GSX only)</em></strong> so you can list exactly the airports you track only for their profile.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.106.0</span>
-          <span class="release-date">Sep 11, 2026 &middot; Current</span>
+          <span class="release-date">Sep 11, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
@@ -62297,6 +62423,7 @@ function rgSendToFlightPlanner() {
           <option value="unrated">Unrated only</option>
           <option value="gsx">Has GSX profile</option>
           <option value="nogsx">No GSX profile</option>
+          <option value="stock">Stock scenery (GSX only)</option>
         </select>
         <label class="sl-ctrl-lbl" for="slSortMode">Sort</label>
         <select id="slSortMode" class="sl-select" onchange="_slSetSortMode(this.value)" title="Sort the list">
