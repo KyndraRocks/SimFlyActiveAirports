@@ -8892,7 +8892,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
                 <span class="ac-ft-unit">min</span>
               </div>
               <div class="ac-ft-live-row">
-                <label class="ac-ft-live-toggle" id="acFtLiveToggle" title="When on, real flights flown with FSUIPC connected are captured (airborne time + actual distance flown) and blended with your reference flights to sharpen estimates for this aircraft.">
+                <label class="ac-ft-live-toggle" id="acFtLiveToggle" title="When on, real flights flown with FSUIPC or the SimFly Telemetry Bridge connected are captured (airborne time + actual distance flown) and blended with your reference flights to sharpen estimates for this aircraft.">
                   <input type="checkbox" id="acFtLiveChk" onchange="_acftToggleOptIn()">
                   <span>Improve accuracy with live flight data</span>
                 </label>
@@ -9027,7 +9027,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.107.0';
+const APP_VERSION = '3.107.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -10576,7 +10576,7 @@ function _acFtUpdateHint() {
     el.textContent = optedIn
       ? (liveCount
           ? 'Collecting live flights — ' + liveCount + ' logged so far. Fly a few more at different distances, or enter two reference flights above, to start estimating.'
-          : 'Live flight data is on. Fly with FSUIPC connected, or enter two reference flights above, to start estimating.')
+          : 'Live flight data is on. Fly with FSUIPC or the Telemetry Bridge connected, or enter two reference flights above, to start estimating.')
       : 'Enter a short and a long flight (distance + time) to show estimated en-route time on measurements, region lines, and routes.';
     return;
   }
@@ -10649,7 +10649,7 @@ _acStartEtaTicker();
 
 // ── Live flight-data calibration (v3.63.0) ───────────────────────────────────
 // Opt-in, per aircraft. When enabled for an aircraft, real flights flown with
-// FSUIPC connected are captured (airborne time + actual distance flown, taxi
+// FSUIPC or the Telemetry Bridge connected are captured (airborne time + actual distance flown, taxi
 // excluded via the on-ground flag) and blended with the two manual reference
 // flights to produce a better-calibrated en-route-time line.
 //
@@ -10942,7 +10942,7 @@ function _acftRenderDataModal() {
   if (tb) {
     if (!flights.length) {
       tb.innerHTML = '<tr><td colspan="4" class="acft-empty">No live flights captured yet.' +
-        (_acftIsOptedIn(code) ? ' Fly with FSUIPC connected to start banking flights.' : ' Turn on “Improve accuracy with live flight data” first.') + '</td></tr>';
+        (_acftIsOptedIn(code) ? ' Fly with FSUIPC or the Telemetry Bridge connected to start banking flights.' : ' Turn on “Improve accuracy with live flight data” first.') + '</td></tr>';
     } else {
       tb.innerHTML = flights.map(f => {
         const ds = new Date(f.d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -49281,7 +49281,7 @@ function rgSendToFlightPlanner() {
             When an aircraft is selected, the <strong>Filter airports unsuitable for aircraft</strong> button appears below the matrix. Click it to dim any airport the selected aircraft cannot use — based on runway length, surface type (paved vs. unpaved), SimFly category limits, and whether the destination is within range from the current departure. The filter re-evaluates automatically whenever you change the departure airport or adjust the fuel or payload sliders.<br/><br/>
             Your selection is <strong>remembered between sessions</strong> — the aircraft, fuel%, and payload% are saved to <code>localStorage</code> the moment you change them, so the app opens with your last setup intact. Launching from the Recip Tracker (Plan Flight or Send N to AA) still overrides the saved state for that session.<br/><br/>
             <strong>Flight time calibration</strong> — the <strong>Flight time calibration</strong> panel near the bottom of the spec strip turns measured distances into estimated en-route times. Enter your <strong>shortest</strong> and <strong>longest</strong> flight in the selected airframe, each as a distance in nautical miles and an elapsed time in minutes (both read straight off the SimFly UI). The app fits a straight line through those two points to estimate time for any distance, and appends an <strong>H:MM est.</strong> figure to the ruler/measurement tooltip, the Region Mode hero line, and the selected route line — updating live as you drag the measurement or stretch the hero line toward the arrival. Each estimate is followed by the <strong>arrival time</strong> — e.g. <strong>1:30 est. &middot; 23:11 (GMT-7)</strong> — on a 24-hour clock, with the <strong>GMT offset</strong> of the time shown beside it and a <strong>, +1</strong> inside the same bracket when the flight lands on a later day. Which clock it is read on is your choice: open <strong>&#128065; Display &rarr; &#128336; Time Settings</strong> and pick <strong>My local time</strong> (the default), <strong>Time at the departure</strong>, or <strong>Time at the arrival</strong> — for a measurement, the point the line starts and the point it ends. Zones are resolved from a built-in table of the international time zone database, so daylight saving is always applied correctly and places that do not observe it (Arizona, Saskatchewan, Queensland) read their true offset; where no zone can be determined — a ruler line far from any airport — the time falls back to your own clock. It means “if you depart now”, so it refreshes once a minute and again the moment you return to the tab. Calibration is saved per aircraft in <code>localStorage</code>; if the current aircraft has no calibration (or none is selected) the estimate and its arrival time are simply omitted.<br/><br/>
-            <strong>Improve accuracy with live flight data</strong> (v3.63.0) — turn on the checkbox in the calibration panel and the app learns each aircraft&rsquo;s real performance from the flights you actually fly with <strong>FSUIPC connected</strong>. On every flight it captures the <strong>airborne time</strong> (wheels-up to wheels-down, so taxi is excluded) and the <strong>actual distance flown</strong>, then blends those with your two reference flights to sharpen all the estimates above. If telemetry drops mid-flight (e.g. you open the in-sim menu) the time and distance both pause; a gap longer than five minutes discards that flight. Captured flights are grouped into ~100 nm distance bands &mdash; each band keeps your most recent flights &mdash; so repeated flights at one distance refine that point instead of skewing the line, and your spread of short and long legs is preserved. A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type, or to the selected aircraft when no plan is loaded. The setting is <strong>per aircraft and off by default</strong>; the <strong>View data</strong> button opens a graph of your captured flights with the calculated line drawn through them and a dated table where you can remove an individual flight or reset the aircraft&rsquo;s live data. This feature requires a PC sim with FSUIPC, so it&rsquo;s desktop-only.<br/><br/>
+            <strong>Improve accuracy with live flight data</strong> (v3.63.0) — turn on the checkbox in the calibration panel and the app learns each aircraft&rsquo;s real performance from the flights you actually fly with <strong>FSUIPC or the Telemetry Bridge connected</strong>. On every flight it captures the <strong>airborne time</strong> (wheels-up to wheels-down, so taxi is excluded) and the <strong>actual distance flown</strong>, then blends those with your two reference flights to sharpen all the estimates above. If telemetry drops mid-flight (e.g. you open the in-sim menu) the time and distance both pause; a gap longer than five minutes discards that flight. Captured flights are grouped into ~100 nm distance bands &mdash; each band keeps your most recent flights &mdash; so repeated flights at one distance refine that point instead of skewing the line, and your spread of short and long legs is preserved. A finished flight is credited to your loaded SimBrief plan&rsquo;s aircraft type, or to the selected aircraft when no plan is loaded. The setting is <strong>per aircraft and off by default</strong>; the <strong>View data</strong> button opens a graph of your captured flights with the calculated line drawn through them and a dated table where you can remove an individual flight or reset the aircraft&rsquo;s live data. This feature requires a PC sim with FSUIPC, so it&rsquo;s desktop-only.<br/><br/>
             <strong>Density-altitude correction</strong> — required runway distance is automatically scaled for density altitude using a per-category factor (light pistons feel DA the most, jets the least). When you've fetched weather, the airport's METAR temperature and altimeter setting drive the calculation; otherwise the app falls back to ISA conditions from the field elevation alone. The suitability tooltip shows the DA used and its source — e.g. <em>DA 11,400 ft (METAR, 14:30Z)</em> or <em>DA 9,228 ft (ISA — fetch weather for accuracy)</em>. Cold or low-pressure airports never reduce required distance below book numbers.
           </div>
         </div>
@@ -49797,8 +49797,18 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v3.107.1</span>
+          <span class="release-date">Oct 3, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Live flight-time calibration now says it works with the Telemetry Bridge.</strong> The &ldquo;Improve accuracy with live flight data&rdquo; option, its hint line, the View data empty state and the integrated help all told you to fly &ldquo;with FSUIPC connected&rdquo;, even though the SimConnect Telemetry Bridge has captured airborne time and distance flown identically since v3.90.0. The wording now names both sources; capture behaviour is unchanged.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v3.107.0</span>
-          <span class="release-date">Sep 13, 2026 &middot; Current</span>
+          <span class="release-date">Sep 13, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
