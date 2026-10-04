@@ -9027,7 +9027,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.107.1';
+const APP_VERSION = '3.107.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15920,6 +15920,11 @@ function _sfbScheduleRetry() {
     _sfbSetWanted(false);
     if (_liveAcSource === 'bridge') _liveAcSource = null;
     _sfbUpdateButtonState(false);
+    // v3.107.2 - hand over to the quiet probe instead of going dead. Giving up on a reload
+    // auto-resume used to leave the bridge unreachable until the next flight plan loaded, so
+    // starting MSFS after opening AA never connected. The probe keeps watching and connects
+    // the moment the bridge answers.
+    try { _sfbStartAutoProbe(); } catch (_) {}
     return;
   }
 
@@ -15938,7 +15943,7 @@ function _sfbScheduleRetry() {
 // Same triggers as FSUIPC's: armed when a flight plan loads, plus the reload
 // auto-resume. Deliberately NOT armed on every map open — auto-starting live
 // tracking without any signal of intent would be a surprising behaviour change.
-const _SFB_PROBE_INTERVAL = 60000;
+const _SFB_PROBE_INTERVAL = 20000;   // v3.107.2 - was 60 s; a refused loopback connect is ~1 ms and a hit is the whole point
 let _sfbProbeTmr       = 0;
 let _sfbProbeActive    = false;
 let _sfbProbeBusy      = false;
@@ -15950,7 +15955,10 @@ function _sfbStartAutoProbe() {
   // Desktop only, and for the same reason as the FSUIPC probe: gate on
   // (hover:none) rather than _aaIsTouchDevice(), so a touchscreen Windows
   // laptop — exactly the kind of machine that runs the bridge — still probes.
-  if (window.matchMedia && window.matchMedia('(hover: none)').matches) return;
+  // v3.107.2 - any-hover, not hover: `(hover: none)` describes only the PRIMARY input, so a
+  // touch-primary Windows PC / 2-in-1 that still has a mouse was wrongly treated as a phone and
+  // never probed. any-hover:none is true only when NO attached input can hover.
+  if (window.matchMedia && window.matchMedia('(any-hover: none)').matches) return;
   if (typeof WebSocket === 'undefined') return;
   if (_sfbUserActive || _liveAcSource) return;
   _sfbProbeActive  = true;
@@ -23198,6 +23206,59 @@ function _afkUpdateDefaultsUI() {
   if (chk)     chk.checked = autoOn;
 }
 
+// v3.107.2 - Fix-continuity guard. While MSFS loads (or a flight is swapped / teleported) the
+// sim streams fixes whose altitude and position are not yet the real aircraft's. Altitude
+// alarms are crossing detectors, so a jump from ~0 ft to FL350 reads as "climbed through
+// 10,000" and "reached cruise", and any ground speed >= 58 kt is taken as proof the flight is
+// already underway. Judge each fix against the previous one: an altitude change or position
+// move no aircraft can make in the elapsed time is a discontinuity, and every alarm that
+// remembers a previous sample is re-seeded and held until the feed has been continuous for
+// _AFK_FIX_SETTLE_MS. A normal climb / descent never comes near the limits (500 ft/s = 30,000
+// fpm; 0.5 nm/s = 1,800 kt).
+const _AFK_FIX_ALT_BASE_FT    = 800;
+const _AFK_FIX_ALT_PER_SEC_FT = 500;
+const _AFK_FIX_POS_BASE_NM    = 3;
+const _AFK_FIX_POS_PER_SEC_NM = 0.5;
+const _AFK_FIX_SETTLE_MS      = 8000;
+let _afkFixPrev        = null;   // { t, alt, lat, lng } of the previous fix
+let _afkFixSettleUntil = 0;      // performance.now() before which alarm evaluation is held
+
+function _afkFixReseed() {
+  // Forget every "previous sample" so the first trusted fix re-seeds instead of crossing.
+  try { _afkPhase.reset(); } catch (_) {}
+  _afkAlarms.list().forEach(a => {
+    if (!a.state) return;
+    let touched = false;
+    if ((a.type === 'alt-min' || a.type === 'cruise') && a.state.prevAlt != null) { a.state.prevAlt = null; touched = true; }
+    if (a.type === 'geofence' && a.state.wasInside != null) { a.state.wasInside = null; touched = true; }
+    if (touched) _afkAlarms.update(a.id, { state: a.state });
+  });
+}
+
+// Returns true while the feed is untrusted (alarm evaluation must be skipped).
+function _afkFixGuard(data) {
+  const now = performance.now();
+  const alt = (data.alt != null && isFinite(data.alt)) ? +data.alt : null;
+  const lat = parseFloat(data.lat), lng = parseFloat(data.lng);
+  const prev = _afkFixPrev;
+  _afkFixPrev = { t: now, alt, lat, lng };
+  if (prev) {
+    const dt = Math.min(Math.max((now - prev.t) / 1000, 0), 60);
+    let bad = false;
+    if (alt != null && prev.alt != null &&
+        Math.abs(alt - prev.alt) > _AFK_FIX_ALT_BASE_FT + _AFK_FIX_ALT_PER_SEC_FT * dt) bad = true;
+    if (!bad && isFinite(lat) && isFinite(lng) && isFinite(prev.lat) && isFinite(prev.lng) &&
+        _afkDistNm(prev.lat, prev.lng, lat, lng) > _AFK_FIX_POS_BASE_NM + _AFK_FIX_POS_PER_SEC_NM * dt) bad = true;
+    if (bad) {
+      _afkFixSettleUntil = now + _AFK_FIX_SETTLE_MS;
+      _afkFixReseed();
+    }
+  }
+  const hold = now < _afkFixSettleUntil;
+  if (hold) _afkFixReseed();     // keep re-seeding each held tick so nothing carries a stale sample out
+  return hold;
+}
+
 function _afkTick(data) {
   if (!data) return;
   // v3.93.1 — telemetry arrives over a WebSocket, which browsers do NOT
@@ -23226,8 +23287,9 @@ function _afkTick(data) {
     _afkRenderGeofenceVisuals();
     _afkLastSbFingerprint = fpFp;
   }
+  const _fixHold = _afkFixGuard(data);
   const _prevPhase = _afkPhase.get();
-  _afkPhase.update(data);
+  if (!_fixHold) _afkPhase.update(data);
   const _curPhase  = _afkPhase.get();
   // Auto-rearm one-shot cruise/descent/alt-min alarms when the aircraft
   // returns to the ground — so the next flight starts with a fresh set of
@@ -23295,6 +23357,9 @@ function _afkTick(data) {
   const newTrips = [];
   const pendingGroupGroups = new Set(); // group ids whose member tripped this tick (concurrent / sequential)
   _afkAlarms.list().forEach(a => {
+    // Held while the feed is settling after a discontinuity (see _afkFixGuard). The
+    // telemetry-loss alarm watches for the ABSENCE of fixes, so it is never held.
+    if (_fixHold && a.type !== 'telemetry-loss') return;
     if (_afkEvaluate(a, ac)) {
       _afkAlarms.trip(a.id);
       const gMode = a.groupId ? _afkGroupMode(a.groupId) : 'cascade';
@@ -23321,7 +23386,7 @@ function _afkTick(data) {
     });
   });
   // Track takeoff for ELAPSED
-  _afkTakeoffTrack(ac);
+  if (!_fixHold) _afkTakeoffTrack(ac);
   if (newTrips.length > 0) _afkOnTripped(newTrips);
   // v2.92.0 — A non-cascade group having a member just trip silently
   // changes the ✓ pip state on that card. Cheap to re-render the
@@ -36069,6 +36134,11 @@ async function _rgInitMap() {
   // preference to FSUIPC when the user was on it (never both — _liveAcStopOthers
   // would immediately tear one down).
   try { _liveAutoResume(); } catch (_) {}
+  // v3.107.2 - also arm the quiet bridge probe whenever the map opens with no live source.
+  // It was armed only by loading a SimBrief plan, so opening AA first and starting the sim
+  // afterwards never connected on its own. Bridge only: an answering bridge is an explicit
+  // signal the pilot runs it, whereas FSUIPC's probe stays plan-gated as before.
+  try { if (!_liveAcSource && !_sfbUserActive && !_fsuipcUserActive) _sfbStartAutoProbe(); } catch (_) {}
   // Restore alarm visuals — geofence rings + labels, and waypoint highlight
   // rings. Alarms persist via _afkAlarms' _load() at DOMContentLoaded time,
   // but the map didn't exist then, so _afkRenderGeofenceVisuals() returned
@@ -49797,8 +49867,19 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v3.107.2</span>
+          <span class="release-date">Oct 4, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>No more false alerts while MSFS loads.</strong> While a flight loads (or an aircraft is swapped or teleported) the sim streams altitude and position values that are not yet the real aircraft, and the altitude alerts read that as a genuine climb &mdash; <em>Climbing through 10,000 ft</em> and <em>Cruise altitude reached</em> both fired on load. Each fix is now checked against the one before it; a change no aircraft could make in that time (a big altitude jump, or a move of many miles in seconds) is treated as a discontinuity. Every alert that remembers a previous reading is reset and held until the feed has been steady for 8 seconds, and a stray ground-speed reading during load can no longer start the flight timer. Normal climbs, descents and sim-rate changes are nowhere near the limits. The Loss of Telemetry alert is never held.</li>
+          <li><strong>The Telemetry Bridge now connects on its own far more reliably.</strong> The background check for the bridge only started after a SimBrief plan loaded, ran once a minute, and after a reload gave up for good after two minutes &mdash; so opening AA first and starting MSFS later often never connected. It now starts whenever the map opens with no live source, checks every 20 seconds, and takes over again instead of giving up. It also no longer mistakes a touchscreen PC that has a mouse for a phone.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v3.107.1</span>
-          <span class="release-date">Oct 3, 2026 &middot; Current</span>
+          <span class="release-date">Oct 3, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
