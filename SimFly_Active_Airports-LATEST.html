@@ -9032,7 +9032,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.108.0';
+const APP_VERSION = '3.108.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -44213,6 +44213,10 @@ let _rgOwnerLegendInteractive = false;   // opened from the chip: rows are hover
 let _rgOwnerLegendPinned      = false;   // a row has been hovered: stays until dismissed
 let _rgOwnerLegendTimer       = 0;
 let _rgOwnerLegendBound       = false;
+// v3.108.1 - set when a click dismisses the list. Dismissing redraws the map, which rebuilds the chip
+// under the parked pointer; the browser then fires a fresh mouseenter that would instantly reopen the
+// list. Hover is ignored until the pointer has really left the chips (a click still reopens it).
+let _rgOwnerLegendNoHover     = false;
 
 function _rgShowOwnerLegend(anchor, interactive) {
   const el = document.getElementById('rgOwnerLegend');
@@ -44341,7 +44345,11 @@ function _rgOwnerLegendBind(el) {
   document.addEventListener('click', ev => {
     if (!_rgOwnerLegendInteractive) return;
     if (el.contains(ev.target)) return;
+    _rgOwnerLegendNoHover = true;
     setTimeout(_rgHideOwnerLegend, 0);
+  }, true);
+  document.addEventListener('mousemove', ev => {
+    if (_rgOwnerLegendNoHover && !(ev.target && ev.target.closest && ev.target.closest('.rg-bc'))) _rgOwnerLegendNoHover = false;
   }, true);
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && _rgOwnerLegendInteractive) _rgHideOwnerLegend();
@@ -45803,8 +45811,15 @@ function _rgUpdateBreadcrumbs() {
     // Rich tooltip: anchor the owner-color legend popover under the chip so the
     // user sees each owner with their color swatch (same widget as hovering the
     // Airport Owners dropdown). Title attribute removed — the popover replaces it.
-    ownerChip.addEventListener('mouseenter', () => _rgShowOwnerLegend(ownerChip, true));
-    ownerChip.addEventListener('mouseleave', () => _rgOwnerLegendGraceHide());
+    ownerChip.addEventListener('mouseenter', () => { if (!_rgOwnerLegendNoHover) _rgShowOwnerLegend(ownerChip, true); });
+    ownerChip.addEventListener('mouseleave', () => { _rgOwnerLegendNoHover = false; _rgOwnerLegendGraceHide(); });
+    // v3.108.1 - the click that dismisses the list leaves the pointer parked on the chip, so no fresh
+    // mouseenter fires and hovering alone cannot reopen it. A click on the chip while the list is
+    // closed therefore reopens it. While it is open the click is the dismissal (document handler).
+    ownerChip.addEventListener('click', e => {
+      if (e.target.classList && e.target.classList.contains('rg-bc-x')) return;
+      if (!_rgOwnerLegendInteractive) { _rgOwnerLegendNoHover = false; _rgShowOwnerLegend(ownerChip, true); }
+    });
     container.appendChild(ownerChip);
   }
 
@@ -49965,10 +49980,20 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.108.1</span>
+          <span class="release-date">Oct 5, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>The N Owners Displayed list can be reopened by clicking the chip.</strong> Clicking the chip closes the list, but the map redraw rebuilt the chip under the stationary pointer, which made the list pop straight back open &mdash; so your next click closed it again and it looked as if the chip would not reopen it. Hovering no longer reopens the list until the pointer has actually left the chip, and clicking the chip while the list is closed reopens it straight away; clicking it while the list is open still closes it.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.108.0</span>
-          <span class="release-date">Oct 5, 2026 &middot; Current</span>
+          <span class="release-date">Oct 5, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
