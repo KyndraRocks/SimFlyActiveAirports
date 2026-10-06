@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.107.2**
+**Current version: v3.108.0**
 
 ---
 
@@ -330,7 +330,7 @@ A row of chips overlaid on the map to the right of the search bar shows every ac
 | **🏷 For Sale** | The For Sale Only filter is on (v3.28.0+) | ✕ turns it off |
 | **🔄 Rotations Left** | The Rotations Left Only filter is on (v3.35.0+) | ✕ turns it off |
 | **🔄 Rotation Gauge** | The rotation gauge is being shown on airport dots (v3.35.2+) | ✕ hides the gauge (or middle-click the map) |
-| **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners; hover to see names + airport counts |
+| **N Owners Displayed** | Airport Owners filter active | ✕ shows all owners; hover to list the owners with airport counts, then hover any owner to filter the map to just their airports (v3.108.0) — the list and view stay until you click the map, an airport, a menu or modal, or press Esc |
 | **[Country name]** / **N Countries** | Country filter active (via search) | ✕ clears country filter; hover "N Countries" to see list |
 | **[Continent name]** / **N Continents** | Continent filter active (via search) | ✕ clears continent filter; hover "N Continents" to see list |
 | **[ICAO]** / **N Pinned** | Specific airport(s) pinned via ICAO search | ✕ clears pinned airports |

@@ -4743,6 +4743,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
      Displayed" breadcrumb chip on hover). */
   .rg-owner-legend { display:none; position:fixed; top:0; left:0; min-width:200px; max-width:340px; padding:0.5rem 0.7rem; background:var(--surface); border:1px solid var(--border); border-radius:5px; box-shadow:0 4px 18px rgba(0,0,0,0.5); z-index:9600; pointer-events:none; font-family:'Rajdhani',sans-serif; font-size:0.98rem; max-height:60vh; overflow-y:auto; }
   .rg-owner-legend.visible { display:block; }
+  /* v3.108.0 - popover behind the N Owners Displayed chip: rows are hoverable and isolate that owner on the map. */
+  .rg-owner-legend.interactive { pointer-events:auto; }
+  .rg-owner-legend.interactive .rg-owner-legend-row { cursor:default; padding:0.12rem 0.35rem; margin:0 -0.35rem; border-radius:3px; }
+  .rg-owner-legend.interactive .rg-owner-legend-row:hover,
+  .rg-owner-legend.interactive .rg-owner-legend-row.active { background:rgba(0,200,255,0.18); }
   .rg-owner-legend-row { display:flex; align-items:center; gap:0.5rem; padding:0.12rem 0; color:var(--text); white-space:nowrap; }
   .rg-owner-legend-swatch { width:0.95em; height:0.95em; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.35); }
   /* Owner name expands to fill the row; long names truncate with an ellipsis
@@ -9027,7 +9032,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.107.2';
+const APP_VERSION = '3.108.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34564,6 +34569,10 @@ let _globalLevelFilter = new Map();
 let _rgDepOwnerFilter = null;
 let _rgArrOwnerFilter = null;
 let _rgMapOwnerFilter   = null; // map-wide owner filter — Set of owner names, null = show all
+// v3.108.0 - hover preview from the "N Owners Displayed" popover: while non-null the map shows ONLY this
+// owner's airports (still subject to every other filter). Never persisted; the real filter is untouched.
+let _rgOwnerPreview = null;
+let _rgOwnerPreviewRaf = 0;
 let _rgMapCountryFilter = null; // map-wide country filter — Set of ISO codes, null = show all
 
 // ── Owner Groups panel (v3.77.0) — floating panel replacing the old Airport
@@ -40706,6 +40715,8 @@ function _rgMapCompoundAppend(tuple) {
 
 function _rgDotPassesMapFilters(icao, rec, ownerName, ignoreLevel) {
   if (!rec) return false;
+  // v3.108.0 - owner hover preview narrows the map to one owner. Pinned airports obey it too.
+  if (_rgOwnerPreview !== null && (ownerName || '') !== _rgOwnerPreview) return false;
   const icaoUp = icao.toUpperCase();
   const isPinned = _rgPinnedIcaos && _rgPinnedIcaos.has(icaoUp);
   // Global category filter (1–7). Airports without a known category number
@@ -44198,9 +44209,22 @@ function _rgCycleColorMode() {
 // to the Airport Owners dropdown button (so the popover left-aligns under it).
 // The "N Owners Displayed" breadcrumb chip passes itself as the anchor to get
 // the same rich legend instead of a plain title-attribute tooltip.
-function _rgShowOwnerLegend(anchor) {
+let _rgOwnerLegendInteractive = false;   // opened from the chip: rows are hoverable
+let _rgOwnerLegendPinned      = false;   // a row has been hovered: stays until dismissed
+let _rgOwnerLegendTimer       = 0;
+let _rgOwnerLegendBound       = false;
+
+function _rgShowOwnerLegend(anchor, interactive) {
   const el = document.getElementById('rgOwnerLegend');
   if (!el) return;
+  // A hover on the Airport Owners / colour buttons must not stomp an interactive popover.
+  if (!interactive && _rgOwnerLegendInteractive) return;
+  if (interactive) {
+    if (_rgOwnerLegendTimer) { clearTimeout(_rgOwnerLegendTimer); _rgOwnerLegendTimer = 0; }
+    _rgOwnerLegendBind(el);
+  }
+  _rgOwnerLegendInteractive = !!interactive;
+  el.classList.toggle('interactive', !!interactive);
   if (!_rgMapOwnerFilter || _rgMapOwnerFilter.size === 0) {
     el.classList.remove('visible');
     el.style.display = 'none';
@@ -44220,6 +44244,8 @@ function _rgShowOwnerLegend(anchor) {
   const ownerSet = new Set(owners);
   const ownerData = _getOwnerData();
   const counted = new Set();
+  // Counts describe the real filter, never the hover preview (which would zero every other owner).
+  const _pv = _rgOwnerPreview; _rgOwnerPreview = null;
   if (ownerData) {
     for (const owner of ownerData) {
       if (!ownerSet.has(owner.name)) continue;
@@ -44234,16 +44260,20 @@ function _rgShowOwnerLegend(anchor) {
       visCount.set(owner.name, n);
     }
   }
+  _rgOwnerPreview = _pv;
   const rows = owners.map(name => {
     const col = (_rgOwnerColorAssignment && _rgOwnerColorAssignment.get(name)) || _rgOwnerColor(name);
     const count = visCount.get(name) || 0;
-    return `<div class="rg-owner-legend-row">` +
+    const attr = esc(name).replace(/"/g, '&quot;');
+    return `<div class="rg-owner-legend-row${_rgOwnerPreview === name ? ' active' : ''}" data-owner="${attr}">` +
              `<span class="rg-owner-legend-swatch" style="background:${col}"></span>` +
              `<span class="rg-owner-legend-name">${esc(name)}</span>` +
              `<span class="rg-owner-legend-count">${count}</span>` +
            `</div>`;
   }).join('');
-  el.innerHTML = (note || '<div class="rg-owner-legend-hdr">Owner colors</div>') + rows;
+  el.innerHTML = (interactive
+    ? '<div class="rg-owner-legend-hdr">Hover an owner to isolate · click away to close</div>'
+    : (note || '<div class="rg-owner-legend-hdr">Owner colors</div>')) + rows;
   // Resolve anchor element — explicit param wins, else default to the Airport
   // Owners dropdown button (which left-aligns the popover under that button).
   const anchorEl = (anchor && anchor.getBoundingClientRect) ? anchor
@@ -44261,11 +44291,81 @@ function _rgShowOwnerLegend(anchor) {
   el.style.left = left + 'px';
   el.style.top  = (r.bottom + 6) + 'px';
 }
+// Hard hide: closes the popover and ends any hover preview (restoring the real filter).
 function _rgHideOwnerLegend() {
+  if (_rgOwnerLegendTimer) { clearTimeout(_rgOwnerLegendTimer); _rgOwnerLegendTimer = 0; }
+  _rgOwnerLegendInteractive = false;
+  _rgOwnerLegendPinned = false;
+  _rgOwnerPreviewClear();
   const el = document.getElementById('rgOwnerLegend');
   if (!el) return;
   el.classList.remove('visible');
+  el.classList.remove('interactive');
   el.style.display = 'none';
+}
+// Soft hide: for the plain hover-only legend on the Airport Owners / colour buttons.
+// An interactive (chip) popover is left alone - it is dismissed by clicking away.
+function _rgHideOwnerLegendSoft() {
+  if (_rgOwnerLegendInteractive) return;
+  _rgHideOwnerLegend();
+}
+
+// v3.108.0 - interactive popover behind the "N Owners Displayed" chip. Hovering a row narrows the
+// map to that owner (instantly, following the pointer up and down the list); the popover and the
+// preview then stay put even when the pointer leaves, until the user clicks anywhere else.
+function _rgOwnerLegendGraceHide() {
+  if (_rgOwnerLegendPinned) return;
+  if (_rgOwnerLegendTimer) clearTimeout(_rgOwnerLegendTimer);
+  _rgOwnerLegendTimer = setTimeout(() => {
+    _rgOwnerLegendTimer = 0;
+    if (!_rgOwnerLegendPinned) _rgHideOwnerLegend();
+  }, 400);
+}
+function _rgOwnerLegendBind(el) {
+  if (_rgOwnerLegendBound) return;
+  _rgOwnerLegendBound = true;
+  el.addEventListener('mouseenter', () => {
+    if (_rgOwnerLegendTimer) { clearTimeout(_rgOwnerLegendTimer); _rgOwnerLegendTimer = 0; }
+  });
+  el.addEventListener('mouseleave', () => { if (_rgOwnerLegendInteractive) _rgOwnerLegendGraceHide(); });
+  el.addEventListener('mouseover', ev => {
+    if (!_rgOwnerLegendInteractive) return;
+    const row = ev.target && ev.target.closest ? ev.target.closest('.rg-owner-legend-row') : null;
+    if (!row || !el.contains(row) || row.dataset.owner == null) return;
+    _rgOwnerLegendPinned = true;
+    _rgOwnerPreviewSet(row.dataset.owner);
+    el.querySelectorAll('.rg-owner-legend-row').forEach(r => r.classList.toggle('active', r === row));
+  });
+  // Any click outside the popover (map, an airport, another menu or modal) dismisses it. Deferred a
+  // tick so the click still reaches its target BEFORE the dots are redrawn underneath it.
+  document.addEventListener('click', ev => {
+    if (!_rgOwnerLegendInteractive) return;
+    if (el.contains(ev.target)) return;
+    setTimeout(_rgHideOwnerLegend, 0);
+  }, true);
+  document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && _rgOwnerLegendInteractive) _rgHideOwnerLegend();
+  }, true);
+}
+function _rgOwnerPreviewRender() {
+  try {
+    _rgRenderDots();
+    _rgHighlightDots();
+    if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges();
+  } catch (e) { console.warn('[owner-preview] redraw failed', e); }
+}
+function _rgOwnerPreviewSet(name) {
+  const n = (name == null) ? null : String(name);
+  if (_rgOwnerPreview === n) return;
+  _rgOwnerPreview = n;
+  if (_rgOwnerPreviewRaf) return;          // coalesce a fast sweep down the list into one redraw per frame
+  _rgOwnerPreviewRaf = requestAnimationFrame(() => { _rgOwnerPreviewRaf = 0; _rgOwnerPreviewRender(); });
+}
+function _rgOwnerPreviewClear() {
+  if (_rgOwnerPreview === null) return;
+  _rgOwnerPreview = null;
+  if (_rgOwnerPreviewRaf) { cancelAnimationFrame(_rgOwnerPreviewRaf); _rgOwnerPreviewRaf = 0; }
+  _rgOwnerPreviewRender();
 }
 
 // Hover-only popover listing a simple set of names — used by the country /
@@ -45703,8 +45803,8 @@ function _rgUpdateBreadcrumbs() {
     // Rich tooltip: anchor the owner-color legend popover under the chip so the
     // user sees each owner with their color swatch (same widget as hovering the
     // Airport Owners dropdown). Title attribute removed — the popover replaces it.
-    ownerChip.addEventListener('mouseenter', () => _rgShowOwnerLegend(ownerChip));
-    ownerChip.addEventListener('mouseleave', () => _rgHideOwnerLegend());
+    ownerChip.addEventListener('mouseenter', () => _rgShowOwnerLegend(ownerChip, true));
+    ownerChip.addEventListener('mouseleave', () => _rgOwnerLegendGraceHide());
     container.appendChild(ownerChip);
   }
 
@@ -49659,7 +49759,7 @@ function rgSendToFlightPlanner() {
             <strong>Category Filtering</strong> — appears when at least one of the seven map categories is hidden. Click <strong>&times;</strong> to restore all categories.<br/><br/>
             <strong>🔄 Rotation Gauge</strong> — appears whenever the rotation gauge is being shown on airport dots. Click <strong>&times;</strong> to hide the gauge (you can also middle-click the map to toggle it).<br/><br/>
             <strong>🏷 For Sale</strong> — appears when the <em>🏷 For Sale Only</em> toggle in the 👁 Display menu is on, restricting the map (and matrix) to airports currently listed for sale. Click <strong>&times;</strong> to turn it off.<br/><br/>
-            <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Click <strong>&times;</strong> to show all owners.<br/><br/>
+            <strong>N Owners Displayed</strong> — appears when the Airport Owners filter is active and shows how many owners&rsquo; airports are currently visible. Hover the chip to list those owners with their airport counts; <strong>hover any owner in that list to instantly filter the map to just that owner&rsquo;s airports</strong>, and slide the pointer up and down to flip between owners. The list and the filtered view stay put even when you move the pointer away &mdash; click the map, an airport, or any other menu or modal (or press <strong>Esc</strong>) to close the list and restore the full filter. Click <strong>&times;</strong> to show all owners.<br/><br/>
             <strong>Pilot Payout &ge; N%</strong> — appears when Payout mode is on and a minimum payout threshold is set above 0%. Click <strong>&times;</strong> to clear the threshold (the mode stays on).<br/><br/>
             <strong>Rating &ge; N stars</strong> — appears when the Scenery Rating filter is active with a threshold above zero. Click <strong>&times;</strong> to turn the filter off entirely.<br/><br/>
             <strong>✈ Flight Plan</strong> / <strong>Aircraft Track</strong> (v3.5.0) &mdash; two chips at the end of the strip. The <em>✈ Flight Plan</em> chip appears whenever a SimBrief flight plan is plotted; the green <em>Aircraft Track</em> chip appears whenever a live breadcrumb trail is on the map. <strong>Click the chip body</strong> (v3.6.1) to zoom the map so that route or track fills about 90% of the viewport; click the <strong>&times;</strong> to clear that layer in one step &mdash; the same as the clear actions in the <strong>🔌 Live</strong> menu, but reachable without opening it. They appear / disappear automatically as the plan and track come and go.<br/><br/>
@@ -49865,10 +49965,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.108.0</span>
+          <span class="release-date">Oct 5, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Hover an owner to isolate them on the map.</strong> The list that drops down from the <em>N Owners Displayed</em> chip used to vanish the moment the pointer left the chip, so you could never actually reach an owner in it. The list is now hoverable: as the pointer passes over any owner, the map instantly shows only that owner&rsquo;s airports (still honouring every other filter), and it follows the pointer up and down the list. The counts in the list always describe your real filter, not the preview.</li>
+          <li><strong>The list and the preview stay until you dismiss them.</strong> Once you have hovered an owner, moving the pointer away from the chip and list leaves both exactly as they are. Clicking the map, an airport, or any other menu or modal closes the list and restores the full owner filter; <strong>Esc</strong> does the same. Your real owner filter is never changed by hovering.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.107.2</span>
-          <span class="release-date">Oct 4, 2026 &middot; Current</span>
+          <span class="release-date">Oct 4, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
@@ -63433,10 +63544,10 @@ function rgSendToFlightPlanner() {
         <span class="rg-hdr-flex-spacer"></span>
         <div class="rg-owner-wrap">
           <button id="rgMapOwnerBtn" class="rg-owner-btn" onclick="_ogpTogglePanel()"
-                  onmouseenter="_rgShowOwnerLegend(this)" onmouseleave="_rgHideOwnerLegend()"
+                  onmouseenter="_rgShowOwnerLegend(this)" onmouseleave="_rgHideOwnerLegendSoft()"
                   title="Airport Owners — filter the map by owner, or apply a saved group" tabindex="-1"><span class="aa-owner-prefix">Airport&nbsp;</span>Owners<span id="rgMapOwnerBtnLabel"></span> ▾</button>
           <button id="rgOwnerColorBtn" class="rg-owner-color-btn disabled" onclick="_rgToggleOwnerColorMode()"
-                  onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegend()"
+                  onmouseenter="_rgShowOwnerLegend(document.getElementById('rgMapOwnerBtn'))" onmouseleave="_rgHideOwnerLegendSoft()"
                   disabled title="Color map dots by owner — enabled when the Airport Owners filter is active" tabindex="-1">🎨</button>
           <div id="rgOwnerLegend" class="rg-owner-legend"></div>
           <div id="rgDeveloperLegend" class="rg-owner-legend"></div>
