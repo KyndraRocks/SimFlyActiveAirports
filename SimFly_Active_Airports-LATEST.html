@@ -9036,7 +9036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.109.1';
+const APP_VERSION = '3.109.2';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -16283,6 +16283,10 @@ function _fsuipcOpenWs() {
     const d = msg.data || {};
     const lat = parseFloat(d.lat), lng = parseFloat(d.lon);
     if (!isFinite(lat) || !isFinite(lng)) return;
+    // v3.109.2 - Skip the sim's null-island parked state (main menu / loading), as the
+    // Telemetry Bridge path already does. FSUIPC reports 0,0 with "airborne" flags until a
+    // flight is loaded.
+    if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
     // Convert raw FSUIPC values: heading 0x0580 (uint, * 4294967296/360) → deg;
     // ground speed 0x02B4 (uint, * 65536 m/s) → kt (× 3600 / (65536 * 1852)).
     const hdgRaw = parseFloat(d.hdg);
@@ -23226,11 +23230,20 @@ function _afkUpdateDefaultsUI() {
 // remembers a previous sample is re-seeded and held until the feed has been continuous for
 // _AFK_FIX_SETTLE_MS. A normal climb / descent never comes near the limits (500 ft/s = 30,000
 // fpm; 0.5 nm/s = 1,800 kt).
-const _AFK_FIX_ALT_BASE_FT    = 800;
-const _AFK_FIX_ALT_PER_SEC_FT = 500;
+const _AFK_FIX_ALT_BASE_FT    = 400;
+const _AFK_FIX_ALT_PER_SEC_FT = 150;     // 9,000 fpm - above any real climb or descent
 const _AFK_FIX_POS_BASE_NM    = 3;
 const _AFK_FIX_POS_PER_SEC_NM = 0.5;
 const _AFK_FIX_SETTLE_MS      = 8000;
+// v3.109.2 - A feed that went quiet for this long cannot be compared with the fix before it. MSFS
+// stops streaming for the minute-plus it takes to load a flight, and the old dt cap (60 s) let a
+// 30,000 ft jump after that gap look like a legal climb. Normal cadence is 0.5-1 s.
+const _AFK_FIX_GAP_MS         = 30000;
+// v3.109.2 - A fix claiming "airborne" (gnd === false) with no airspeed and no height is the
+// sim's not-loaded state, not a flight. Fixed-wing can't hold below ~30 kt; a hover is the one
+// real case, and it shows height above ground (when the feed supplies it).
+const _AFK_FIX_AIRBORNE_MIN_GS_KT  = 30;
+const _AFK_FIX_AIRBORNE_MIN_AGL_FT = 100;
 let _afkFixPrev        = null;   // { t, alt, lat, lng } of the previous fix
 let _afkFixSettleUntil = 0;      // performance.now() before which alarm evaluation is held
 
@@ -23253,17 +23266,27 @@ function _afkFixGuard(data) {
   const lat = parseFloat(data.lat), lng = parseFloat(data.lng);
   const prev = _afkFixPrev;
   _afkFixPrev = { t: now, alt, lat, lng };
+  let bad = false;
+  // v3.109.2 - the first fix of a session (page load, tracking just switched on, MSFS just
+  // started) has nothing to be judged against, so it is not trusted until the feed has settled.
+  if (!prev) bad = true;
+  // v3.109.2 - "airborne" with no speed and no height is load garbage, not a flight.
+  const gs  = (data.gs  != null && isFinite(data.gs))  ? +data.gs  : null;
+  const agl = (data.agl != null && isFinite(data.agl)) ? +data.agl : null;
+  if (data.gnd === false && gs != null && gs < _AFK_FIX_AIRBORNE_MIN_GS_KT &&
+      !(agl != null && agl >= _AFK_FIX_AIRBORNE_MIN_AGL_FT)) bad = true;
   if (prev) {
-    const dt = Math.min(Math.max((now - prev.t) / 1000, 0), 60);
-    let bad = false;
-    if (alt != null && prev.alt != null &&
+    const gapMs = Math.max(now - prev.t, 0);
+    const dt = gapMs / 1000;
+    if (gapMs > _AFK_FIX_GAP_MS) bad = true;
+    if (!bad && alt != null && prev.alt != null &&
         Math.abs(alt - prev.alt) > _AFK_FIX_ALT_BASE_FT + _AFK_FIX_ALT_PER_SEC_FT * dt) bad = true;
     if (!bad && isFinite(lat) && isFinite(lng) && isFinite(prev.lat) && isFinite(prev.lng) &&
         _afkDistNm(prev.lat, prev.lng, lat, lng) > _AFK_FIX_POS_BASE_NM + _AFK_FIX_POS_PER_SEC_NM * dt) bad = true;
-    if (bad) {
-      _afkFixSettleUntil = now + _AFK_FIX_SETTLE_MS;
-      _afkFixReseed();
-    }
+  }
+  if (bad) {
+    _afkFixSettleUntil = now + _AFK_FIX_SETTLE_MS;
+    _afkFixReseed();
   }
   const hold = now < _afkFixSettleUntil;
   if (hold) _afkFixReseed();     // keep re-seeding each held tick so nothing carries a stale sample out
@@ -49986,10 +50009,23 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.109.2</span>
+          <span class="release-date">Oct 9, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>No more false Climb / Cruise alerts while MSFS is loading.</strong> You can now start AA, load a plan, switch on SimConnect or FSUIPC tracking, and only then launch MSFS. A fix that claims the aircraft is airborne with no airspeed and no height is the sim&rsquo;s not-loaded state, so it is now ignored until a real flight is flying.</li>
+          <li><strong>A long silence in the feed is no longer trusted.</strong> MSFS stops streaming for the minute or more it takes to load a flight; the first fix after a gap of 30 s or more, and the first fix of any session, is now held for 8 s and every altitude alert is re-seeded, instead of treating the jump to the real altitude as a climb.</li>
+          <li><strong>Tighter physical limit on altitude jumps.</strong> The impossible-climb threshold dropped from 30,000 fpm to 9,000 fpm.</li>
+          <li><strong>FSUIPC now ignores the 0,0 &ldquo;null island&rdquo; position</strong> the sim reports at the main menu, as the Telemetry Bridge path already did.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.109.1</span>
-          <span class="release-date">Oct 6, 2026 &middot; Current</span>
+          <span class="release-date">Oct 6, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
