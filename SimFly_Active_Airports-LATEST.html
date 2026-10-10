@@ -9036,7 +9036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.109.3';
+const APP_VERSION = '3.110.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15708,7 +15708,10 @@ async function _stkpFetchOnce() {
 // the same short range. Keep in sync with BridgeConfig.DefaultPort/PortScanRange.
 const _SFB_PORT_BASE   = 8975;
 const _SFB_PORT_SCAN   = 3;
-const _SFB_RECONNECT   = 15000;   // silent retry cadence while the button is armed
+const _SFB_RECONNECT   = 5000;    // v3.110.0 - silent retry cadence while armed (was 15 s; a refused loopback connect costs ~1 ms)
+const _SFB_STALE_MS    = 10000;   // v3.110.0 - bridge heartbeats at least every 2 s; silence this long = dead socket
+const _SFB_CONNECT_MS  = 8000;    // v3.110.0 - a socket still CONNECTING after this long is abandoned
+const _SFB_WATCH_MS    = 2000;    // v3.110.0 - watchdog cadence
 const _SFB_DEBUG       = false;   // true to log every frame to the console
 // NOTE (v3.92.0): there is deliberately no download link or update check here. The SimFly
 // Telemetry Bridge is a personal-use companion app and is not publicly distributed — the MSFS SDK
@@ -15727,6 +15730,10 @@ let _sfbAutoResume      = false;
 let _sfbAutoResumeStart = 0;
 let _sfbPortIdx         = 0;      // which port in the scan range we are currently trying
 let _sfbInfo            = null;   // last "hello" payload (version / field list)
+let _sfbWatchTmr        = 0;      // v3.110.0 - watchdog interval handle
+let _sfbLastMsgAt       = 0;      // v3.110.0 - Date.now() of the last frame of ANY kind
+let _sfbConnStartAt     = 0;      // v3.110.0 - Date.now() when the current socket was created
+let _sfbDropFresh       = false;  // v3.110.0 - last socket was open and just dropped: retry the SAME port first
 
 function _sfbUrl(idx) { return 'ws://127.0.0.1:' + (_SFB_PORT_BASE + (idx || 0)) + '/'; }
 
@@ -15777,7 +15784,63 @@ function _sfbStart(auto) {
   _sfbAutoResumeStart = auto ? Date.now() : 0;
   _sfbUpdateButtonState(true);
   if (!auto) _aaRtToast('🛰 Connecting to the SimFly Telemetry Bridge…', 'ok');
+  _sfbDetach();                 // v3.110.0 - never leave an earlier socket (or its retry timer) running beside the new one
+  _sfbStartWatchdog();
   _sfbOpenWs();
+}
+
+// v3.110.0 - Drop the current socket WITHOUT letting its events act. Handlers are nulled first so
+// a late onclose from the abandoned socket can no longer null the replacement or queue a retry.
+function _sfbDetach() {
+  if (_sfbReconnectTmr) { clearTimeout(_sfbReconnectTmr); _sfbReconnectTmr = 0; }
+  const ws = _sfbWs;
+  _sfbWs = null;
+  if (!ws) return;
+  ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+  try { ws.close(); } catch (_) {}
+}
+
+// v3.110.0 - Watchdog. A TCP socket can die silently (bridge killed, sleep/wake, a hung connect)
+// without onclose ever firing, and the old code then sat on "Tracking..." forever. The bridge
+// sends a frame at least every 2 s, so silence is proof the link is dead.
+function _sfbStartWatchdog() {
+  if (_sfbWatchTmr) return;
+  _sfbWatchTmr = setInterval(_sfbWatchTick, _SFB_WATCH_MS);
+  _sfbBindWake();
+}
+function _sfbStopWatchdog() {
+  if (_sfbWatchTmr) { clearInterval(_sfbWatchTmr); _sfbWatchTmr = 0; }
+}
+function _sfbWatchTick() {
+  if (!_sfbUserActive) { _sfbStopWatchdog(); return; }
+  const ws = _sfbWs, now = Date.now();
+  if (!ws) {
+    // Armed but no socket and no retry pending (timer lost): restart the loop.
+    if (!_sfbReconnectTmr) _sfbScheduleRetry();
+    return;
+  }
+  const dead =
+    (ws.readyState === 0 && now - _sfbConnStartAt > _SFB_CONNECT_MS) ||
+    (ws.readyState === 1 && _sfbLastMsgAt && now - _sfbLastMsgAt > _SFB_STALE_MS) ||
+    (ws.readyState >= 2);
+  if (dead) { _sfbDetach(); _sfbSocketGone(ws); }
+}
+let _sfbWakeBound = false;
+function _sfbBindWake() {
+  if (_sfbWakeBound) return;
+  _sfbWakeBound = true;
+  // Background tabs throttle timers to ~1/min, so a pending retry can be minutes late exactly while
+  // the user is in the sim. Re-check the instant the tab is seen again or the network returns.
+  const wake = () => {
+    if (!_sfbUserActive || document.visibilityState === 'hidden') return;
+    _sfbWatchTick();
+    if (!_sfbWs && _sfbReconnectTmr) { clearTimeout(_sfbReconnectTmr); _sfbReconnectTmr = 0; _sfbOpenWs(); }
+  };
+  try {
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+  } catch (_) {}
 }
 
 function _sfbStop() {
@@ -15785,11 +15848,8 @@ function _sfbStop() {
   _sfbAutoResume  = false;
   _sfbStopAutoProbe();
   _sfbSetWanted(false);         // an explicit disconnect stays disconnected across reloads
-  if (_sfbReconnectTmr) { clearTimeout(_sfbReconnectTmr); _sfbReconnectTmr = 0; }
-  if (_sfbWs) {
-    try { _sfbWs.close(); } catch (_) {}
-    _sfbWs = null;
-  }
+  _sfbStopWatchdog();
+  _sfbDetach();
   _sfbRetryCount = 0;
   if (_liveAcSource === 'bridge') _liveAcClear();
   _sfbUpdateButtonState(false);
@@ -15816,17 +15876,25 @@ function _sfbUpdateButtonState(active, mode) {
 }
 
 function _sfbOpenWs() {
+  if (!_sfbUserActive) return;
+  _sfbDetach();                 // v3.110.0 - exactly one socket at a time
+  let ws;
   try {
-    _sfbWs = new WebSocket(_sfbUrl(_sfbPortIdx));
+    ws = _sfbWs = new WebSocket(_sfbUrl(_sfbPortIdx));
+    _sfbConnStartAt = Date.now();
+    _sfbLastMsgAt   = 0;
   } catch (err) {
     if (!_sfbAutoResume && _sfbRetryCount === 0) {
-      _aaRtToast('✕ Could not reach the SimFly Telemetry Bridge. Retrying every 15 s in the background.', 'err');
+      _aaRtToast('✕ Could not reach the SimFly Telemetry Bridge. Retrying every 5 s in the background.', 'err');
     }
     _sfbScheduleRetry();
     return;
   }
 
-  _sfbWs.onopen = () => {
+  ws.onopen = () => {
+    if (_sfbWs !== ws) return;
+    ws._sfbOpened = true;
+    _sfbLastMsgAt = Date.now();
     const _wasRetry = _sfbRetryCount > 0;
     _sfbRetryCount    = 0;
     _sfbEverConnected = true;
@@ -15844,7 +15912,9 @@ function _sfbOpenWs() {
     if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(true);
   };
 
-  _sfbWs.onmessage = (ev) => {
+  ws.onmessage = (ev) => {
+    if (_sfbWs !== ws) return;
+    _sfbLastMsgAt = Date.now();      // v3.110.0 - any frame, heartbeat included, proves the link is alive
     let msg;
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (_SFB_DEBUG) console.log('[bridge]', msg);
@@ -15906,20 +15976,28 @@ function _sfbOpenWs() {
     });
   };
 
-  _sfbWs.onerror = () => {
+  ws.onerror = () => {
     // onclose fires immediately after onerror; report from onclose so we don't
     // double-toast.
   };
 
-  _sfbWs.onclose = () => {
-    _sfbWs = null;
-    if (!_sfbUserActive) return;
-    _sfbUpdateButtonState(false, 'retrying');
-    if (!_sfbAutoResume && !_liveAcMarker && _sfbRetryCount === 0 && !_sfbEverConnected) {
-      _aaRtToast('✕ No SimFly Telemetry Bridge found. Is it installed and running? Retrying every 15 s in the background.', 'warn');
-    }
-    _sfbScheduleRetry();
-  };
+  ws.onclose = () => { if (_sfbWs === ws) _sfbSocketGone(ws); };
+}
+
+// v3.110.0 - One place that handles "this socket is gone", whether onclose reported it or the
+// watchdog did. A stale socket (not the current one) is ignored.
+function _sfbSocketGone(ws) {
+  if (_sfbWs && _sfbWs !== ws) return;
+  _sfbWs = null;
+  if (!_sfbUserActive) return;
+  // A socket that had been open just dropped (bridge restarted, MSFS cycled): the bridge is almost
+  // certainly back on the SAME port within a second or two, so try that first.
+  _sfbDropFresh = !!ws._sfbOpened;
+  _sfbUpdateButtonState(false, 'retrying');
+  if (!_sfbAutoResume && !_liveAcMarker && _sfbRetryCount === 0 && !_sfbEverConnected) {
+    _aaRtToast('✕ No SimFly Telemetry Bridge found. Is it installed and running? Retrying every 5 s in the background.', 'warn');
+  }
+  _sfbScheduleRetry();
 }
 
 function _sfbScheduleRetry() {
@@ -15928,7 +16006,10 @@ function _sfbScheduleRetry() {
   // Walk the port scan range before backing off, so a bridge that landed on
   // 8976 (because something else held 8975) is still found. Cycling is cheap —
   // a refused loopback connection settles in about a millisecond.
-  _sfbPortIdx = (_sfbPortIdx + 1) % _SFB_PORT_SCAN;
+  // v3.110.0 - except straight after a live link drops: that first retry stays on the same port.
+  const _sameFirst = _sfbDropFresh;
+  _sfbDropFresh = false;
+  if (!_sameFirst) _sfbPortIdx = (_sfbPortIdx + 1) % _SFB_PORT_SCAN;
 
   // Same give-up rule as FSUIPC: a reload-initiated auto-resume that still
   // hasn't connected after 2 minutes stops and clears the persisted intent, so
@@ -15937,6 +16018,8 @@ function _sfbScheduleRetry() {
     _sfbAutoResume  = false;
     _sfbUserActive  = false;
     _sfbSetWanted(false);
+    _sfbStopWatchdog();
+    _sfbDetach();
     if (_liveAcSource === 'bridge') _liveAcSource = null;
     _sfbUpdateButtonState(false);
     // v3.107.2 - hand over to the quiet probe instead of going dead. Giving up on a reload
@@ -15949,7 +16032,7 @@ function _sfbScheduleRetry() {
 
   // Retry immediately while still walking the port range; only wait the full
   // 15 s once we've been round the whole range and come up empty.
-  const delay = _sfbPortIdx === 0 ? _SFB_RECONNECT : 250;
+  const delay = _sameFirst ? 1000 : (_sfbPortIdx === 0 ? _SFB_RECONNECT : 250);
   _sfbReconnectTmr = setTimeout(() => {
     _sfbReconnectTmr = 0;
     if (!_sfbUserActive) return;
@@ -16084,7 +16167,10 @@ const _FSUIPC_GROUP     = 'simflyPos';
 const _FSUIPC_INTERVAL_GROUND = 500;
 const _FSUIPC_INTERVAL_FLIGHT = 1000;
 const _FSUIPC_INTERVAL_INITIAL = _FSUIPC_INTERVAL_GROUND; // safe default before phase is known
-const _FSUIPC_RECONNECT = 15000;      // v2.88.0 — silent retry every 15 s while button is active (was 10 s)
+const _FSUIPC_RECONNECT = 5000;       // v3.110.0 - silent retry every 5 s while button is active (was 15 s)
+const _FSUIPC_STALE_MS   = 15000;    // v3.110.0 - the server pushes every 0.5-1 s; this much silence = dead socket
+const _FSUIPC_CONNECT_MS = 8000;     // v3.110.0 - a socket still CONNECTING after this long is abandoned
+const _FSUIPC_WATCH_MS   = 2000;     // v3.110.0 - watchdog cadence
 const _FSUIPC_DEBUG     = true;       // set false to silence the console log on each push
 // v3.1.0 — Auto-resume across reloads. _FSUIPC_WANTED_LS persists the
 // user's connect-intent so a page refresh / crash recovery can silently
@@ -16101,6 +16187,9 @@ let _fsuipcRetryCount     = 0;          // how many silent retries since the las
 let _fsuipcEverConnected  = false;      // true after first successful open; gates stale failure toasts
 let _fsuipcAutoResume      = false;   // v3.1.0 — true during a reload-initiated reconnect, until first success or the 2-min cap
 let _fsuipcAutoResumeStart = 0;       // v3.1.0 — Date.now() when the current auto-resume began
+let _fsuipcWatchTmr     = 0;          // v3.110.0 - watchdog interval handle
+let _fsuipcLastMsgAt    = 0;          // v3.110.0 - Date.now() of the last frame of ANY kind
+let _fsuipcConnStartAt  = 0;          // v3.110.0 - Date.now() when the current socket was created
 
 // v3.1.0 — Persisted connect-intent helpers. Written '1' on _fsuipcStart,
 // removed on _fsuipcStop and when the auto-resume cap is hit. Read at
@@ -16138,7 +16227,58 @@ function _fsuipcStart(auto) {
   _fsuipcAutoResumeStart = auto ? Date.now() : 0;
   _fsuipcUpdateButtonState(true);
   if (!auto) _aaRtToast('🔌 Connecting to FSUIPC at ' + _FSUIPC_WS_URL + '…', 'ok');
+  _fsuipcDetach();              // v3.110.0 - never leave an earlier socket (or its retry timer) running beside the new one
+  _fsuipcStartWatchdog();
   _fsuipcOpenWs();
+}
+
+// v3.110.0 - see _sfbDetach / _sfbStartWatchdog; the two sources share the design and the bugs
+// it fixes (late onclose from an abandoned socket clobbering the live one, silent dead sockets,
+// hung connects, retries stalled by background-tab timer throttling).
+function _fsuipcDetach() {
+  if (_fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; }
+  const ws = _fsuipcWs;
+  _fsuipcWs = null;
+  _fsuipcCurInterval = 0;
+  if (!ws) return;
+  ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+  try { ws.close(); } catch (_) {}
+}
+function _fsuipcStartWatchdog() {
+  if (_fsuipcWatchTmr) return;
+  _fsuipcWatchTmr = setInterval(_fsuipcWatchTick, _FSUIPC_WATCH_MS);
+  _fsuipcBindWake();
+}
+function _fsuipcStopWatchdog() {
+  if (_fsuipcWatchTmr) { clearInterval(_fsuipcWatchTmr); _fsuipcWatchTmr = 0; }
+}
+function _fsuipcWatchTick() {
+  if (!_fsuipcUserActive) { _fsuipcStopWatchdog(); return; }
+  const ws = _fsuipcWs, now = Date.now();
+  if (!ws) {
+    if (!_fsuipcReconnectTmr) _fsuipcScheduleRetry();
+    return;
+  }
+  const dead =
+    (ws.readyState === 0 && now - _fsuipcConnStartAt > _FSUIPC_CONNECT_MS) ||
+    (ws.readyState === 1 && _fsuipcLastMsgAt && now - _fsuipcLastMsgAt > _FSUIPC_STALE_MS) ||
+    (ws.readyState >= 2);
+  if (dead) { _fsuipcDetach(); _fsuipcSocketGone(ws); }
+}
+let _fsuipcWakeBound = false;
+function _fsuipcBindWake() {
+  if (_fsuipcWakeBound) return;
+  _fsuipcWakeBound = true;
+  const wake = () => {
+    if (!_fsuipcUserActive || document.visibilityState === 'hidden') return;
+    _fsuipcWatchTick();
+    if (!_fsuipcWs && _fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; _fsuipcOpenWs(); }
+  };
+  try {
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
+  } catch (_) {}
 }
 
 function _fsuipcStop() {
@@ -16146,12 +16286,8 @@ function _fsuipcStop() {
   _fsuipcAutoResume = false;
   _fsuipcStopAutoProbe(); // v3.32.0 — an explicit Stop also cancels the flight-plan auto-probe (don't re-connect a minute later)
   _fsuipcSetWanted(false); // v3.1.0 — explicit user disconnect: do not auto-resume on the next reload
-  if (_fsuipcReconnectTmr) { clearTimeout(_fsuipcReconnectTmr); _fsuipcReconnectTmr = 0; }
-  if (_fsuipcWs) {
-    try { _fsuipcWs.close(); } catch (_) {}
-    _fsuipcWs = null;
-  }
-  _fsuipcCurInterval = 0;
+  _fsuipcStopWatchdog();
+  _fsuipcDetach();
   _fsuipcRetryCount  = 0;
   if (_liveAcSource === 'fsuipc') _liveAcClear();
   _fsuipcUpdateButtonState(false);
@@ -16201,19 +16337,27 @@ function _fsuipcMaybeSwitchInterval() {
 }
 
 function _fsuipcOpenWs() {
+  if (!_fsuipcUserActive) return;
+  _fsuipcDetach();              // v3.110.0 - exactly one socket at a time
+  let ws;
   try {
-    _fsuipcWs = new WebSocket(_FSUIPC_WS_URL, _FSUIPC_WS_PROTO);
+    ws = _fsuipcWs = new WebSocket(_FSUIPC_WS_URL, _FSUIPC_WS_PROTO);
+    _fsuipcConnStartAt = Date.now();
+    _fsuipcLastMsgAt   = 0;
   } catch (err) {
     // v2.88.0 — silent retry: only the very first attempt may toast (handled
     // in _fsuipcStart's connecting toast). Subsequent failures schedule a
     // background retry without surfacing a toast on each one.
     if (!_fsuipcAutoResume && _fsuipcRetryCount === 0) {
-      _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'err');
+      _aaRtToast('✕ FSUIPC WebSocket failed to open: ' + (err && err.message ? err.message : err) + '. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 5 s in the background.', 'err');
     }
     _fsuipcScheduleRetry();
     return;
   }
-  _fsuipcWs.onopen = () => {
+  ws.onopen = () => {
+    if (_fsuipcWs !== ws) return;
+    ws._fsuipcOpened = true;
+    _fsuipcLastMsgAt = Date.now();
     // Declare the offset group, then subscribe with interval+changesOnly.
     // 'lat'/'lon' types yield decimal degrees direct (server does the FSUIPC
     // bit-twiddling). 'int' on 0x0574 returns altitude in metres direct.
@@ -16253,15 +16397,16 @@ function _fsuipcOpenWs() {
       ],
     };
     try {
-      _fsuipcWs.send(JSON.stringify(declare));
+      ws.send(JSON.stringify(declare));
       // changesOnly:true was suppressing pushes in v2.67.0 for users whose aircraft
       // wasn't actively moving (parked, taxiing slowly). Removed in v2.67.1 — the
       // server now pushes at every interval regardless. Bandwidth impact is
       // negligible (one small JSON per 500 ms over loopback).
       _fsuipcCurInterval = _FSUIPC_INTERVAL_INITIAL;
-      _fsuipcWs.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: _fsuipcCurInterval }));
+      ws.send(JSON.stringify({ command: 'offsets.read', name: _FSUIPC_GROUP, interval: _fsuipcCurInterval }));
     } catch (e) {
       _aaRtToast('✕ FSUIPC handshake failed: ' + e.message, 'err');
+      try { ws.close(); } catch (_) {}   // v3.110.0 - a half-open socket used to be left dangling; closing it feeds the retry loop
       return;
     }
     const _wasRetry = _fsuipcRetryCount > 0;
@@ -16282,7 +16427,9 @@ function _fsuipcOpenWs() {
     }
     if (typeof _afkDataPanelSetVisible === 'function') _afkDataPanelSetVisible(true);
   };
-  _fsuipcWs.onmessage = (ev) => {
+  ws.onmessage = (ev) => {
+    if (_fsuipcWs !== ws) return;
+    _fsuipcLastMsgAt = Date.now();   // v3.110.0 - any frame proves the link is alive
     let msg;
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (_FSUIPC_DEBUG) console.log('[fsuipc]', msg);
@@ -16330,11 +16477,17 @@ function _fsuipcOpenWs() {
     // fix. Sends a new offsets.read only when the interval actually changes.
     _fsuipcMaybeSwitchInterval();
   };
-  _fsuipcWs.onerror = () => {
+  ws.onerror = () => {
     // onclose fires immediately after onerror; report from onclose so we
     // don't double-toast.
   };
-  _fsuipcWs.onclose = () => {
+  ws.onclose = () => { if (_fsuipcWs === ws) _fsuipcSocketGone(ws); };
+}
+
+// v3.110.0 - One place that handles "this socket is gone", from onclose or the watchdog.
+function _fsuipcSocketGone(ws) {
+  if (_fsuipcWs && _fsuipcWs !== ws) return;
+  {
     _fsuipcWs = null;
     _fsuipcCurInterval = 0;
     if (!_fsuipcUserActive) return;
@@ -16352,10 +16505,10 @@ function _fsuipcOpenWs() {
     // after an established session shouldn't re-fire the initial "can't reach"
     // toast, which would reset the 4 s dismiss and keep it stuck on screen.
     if (!_fsuipcAutoResume && !_liveAcMarker && _fsuipcRetryCount === 0 && !_fsuipcEverConnected) {
-      _aaRtToast('✕ FSUIPC WebSocket couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 15 s in the background.', 'warn');
+      _aaRtToast('✕ FSUIPC WebSocket couldn\'t reach localhost:2048. Is FSUIPC7 running with the Paul Henty WebSocket Server add-on? Retrying every 5 s in the background.', 'warn');
     }
     _fsuipcScheduleRetry();
-  };
+  }
 }
 
 // v2.88.0 — Schedule the next silent reconnect attempt. Lives at module
@@ -16374,9 +16527,13 @@ function _fsuipcScheduleRetry() {
     _fsuipcAutoResume = false;
     _fsuipcUserActive = false;
     _fsuipcSetWanted(false);
-    _fsuipcCurInterval = 0;
+    _fsuipcStopWatchdog();
+    _fsuipcDetach();
     if (_liveAcSource === 'fsuipc') _liveAcSource = null;
     _fsuipcUpdateButtonState(false);
+    // v3.110.0 - hand over to the quiet probe instead of going dead (as the bridge already does).
+    // Starting MSFS more than 2 minutes after a reload used to leave FSUIPC unreachable for good.
+    try { _fsuipcStartAutoProbe(); } catch (_) {}
     return;
   }
   _fsuipcReconnectTmr = setTimeout(() => {
@@ -16398,7 +16555,7 @@ function _fsuipcScheduleRetry() {
 // explicit Stop cancels it. Each minute it opens a THROWAWAY trial socket so a
 // failed tick never flickers the FSUIPC button to "Tracking…"; only a genuine
 // connection flips it.
-const _FSUIPC_PROBE_INTERVAL = 60000;   // 1 minute
+const _FSUIPC_PROBE_INTERVAL = 20000;   // v3.110.0 - was 1 min; a refused loopback connect is ~1 ms
 let _fsuipcProbeTmr       = 0;          // setInterval handle for the probe loop
 let _fsuipcProbeActive    = false;      // true while the flight-plan probe loop runs
 let _fsuipcProbeAnnounced = false;      // one-time heads-up toast, per loop, on first miss
@@ -16494,8 +16651,8 @@ function _fsuipcProbeMiss() {
   // looked for, so a bridge-only user is never told FSUIPC is missing.
   const alsoBridge = (typeof _sfbProbeActive !== 'undefined') && _sfbProbeActive;
   _aaRtToast(alsoBridge
-    ? '🛰 No live telemetry source detected yet — I’ll keep checking every minute and connect automatically once the SimFly Telemetry Bridge or FSUIPC is available.'
-    : '🔌 FSUIPC not detected yet — I’ll keep checking every minute and connect automatically once it’s available.', 'ok');
+    ? '🛰 No live telemetry source detected yet — I’ll keep checking every 20 seconds and connect automatically once the SimFly Telemetry Bridge or FSUIPC is available.'
+    : '🔌 FSUIPC not detected yet — I’ll keep checking every 20 seconds and connect automatically once it’s available.', 'ok');
 }
 
 /* ===========================================================================
@@ -50018,10 +50175,26 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.110.0</span>
+          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>SimConnect and FSUIPC reconnect is now self-healing.</strong> A watchdog notices a link that has gone silent (no frame from the bridge for 10 s, or from FSUIPC for 15 s) or a connection attempt that hangs for more than 8 s, drops that socket, and reconnects. Before, a socket that died without closing cleanly left the button on &ldquo;Tracking&hellip;&rdquo; with nothing flowing, for ever.</li>
+          <li><strong>Faster retries.</strong> Both sources now retry every 5 s instead of every 15 s, and the quiet auto-detect probes check every 20 s instead of every minute for FSUIPC.</li>
+          <li><strong>Bridge reconnects to the same port first.</strong> After a live connection dropped, the bridge reconnect used to try the next port and then wait about 15 s to come back round to the right one. It now retries the same port after 1 s.</li>
+          <li><strong>No more tangled sockets.</strong> A late &ldquo;closed&rdquo; event from an abandoned connection could wipe out the live one or start a second retry loop. Each connection now ignores events unless it is the current one, and only one connection can exist at a time.</li>
+          <li><strong>Retries no longer stall in the background.</strong> Browsers slow timers in hidden tabs to roughly one tick a minute, which delayed reconnects exactly while you were in the sim. Returning to the tab, or the network coming back, now triggers an immediate attempt.</li>
+          <li><strong>FSUIPC no longer goes dead after a reload.</strong> If FSUIPC auto-resume gave up after 2 minutes, it stayed off until the next flight plan loaded. It now hands over to the quiet probe, as the bridge already did, so starting MSFS late still connects.</li>
+          <li><strong>A failed FSUIPC handshake now retries</strong> instead of leaving a half-open connection behind.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.109.3</span>
-          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-date">Oct 10, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
