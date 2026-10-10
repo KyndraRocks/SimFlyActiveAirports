@@ -9036,7 +9036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.109.2';
+const APP_VERSION = '3.109.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15184,6 +15184,14 @@ function _acSlideSnap(lat, lng, hdg) {
   _acApplyIconRotation(_acDispHdg);
 }
 
+// v3.109.3 - MSFS parks the aircraft at 0,0 (Gulf of Guinea) or 0,90E (Indian Ocean) while it is
+// at the main menu or loading a flight, and streams normal-looking fixes from there. Nothing at
+// either spot is a real flight, so every fix within 1 degree of them is ignored outright.
+function _aaIsSimLimboPos(lat, lng) {
+  lat = +lat; lng = +lng;
+  if (!isFinite(lat) || !isFinite(lng)) return false;
+  return Math.abs(lat) < 1 && (Math.abs(lng) < 1 || Math.abs(lng - 90) < 1);
+}
 function _liveAcRenderMarker(d, snap) {
   if (!_rgMap) return;
   const lat = parseFloat(d.lat), lng = parseFloat(d.lng);
@@ -15191,7 +15199,7 @@ function _liveAcRenderMarker(d, snap) {
   // Skip the literal (0,0) — common when the sim is at the main menu with no
   // flight loaded. Real flights near the equator/prime-meridian land outside
   // this 10-metre window.
-  if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
+  if (_aaIsSimLimboPos(lat, lng)) return;
   const hdg = isFinite(parseFloat(d.hdg)) ? parseFloat(d.hdg) : 0;
   _liveAcLastData   = d;
   _liveAcLastUpdate = performance.now();
@@ -15856,7 +15864,7 @@ function _sfbOpenWs() {
     const lat = +d.lat, lng = +d.lon;
     if (!isFinite(lat) || !isFinite(lng)) return;
     // Skip the sim's null-island parked state (main menu, no flight loaded).
-    if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
+    if (_aaIsSimLimboPos(lat, lng)) return;
 
     // Shaped to match the FSUIPC fix exactly, so the whole downstream pipeline
     // treats it identically. Units already match — the bridge requests degrees,
@@ -16286,7 +16294,7 @@ function _fsuipcOpenWs() {
     // v3.109.2 - Skip the sim's null-island parked state (main menu / loading), as the
     // Telemetry Bridge path already does. FSUIPC reports 0,0 with "airborne" flags until a
     // flight is loaded.
-    if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return;
+    if (_aaIsSimLimboPos(lat, lng)) return;
     // Convert raw FSUIPC values: heading 0x0580 (uint, * 4294967296/360) → deg;
     // ground speed 0x02B4 (uint, * 65536 m/s) → kt (× 3600 / (65536 * 1852)).
     const hdgRaw = parseFloat(d.hdg);
@@ -23270,6 +23278,7 @@ function _afkFixGuard(data) {
   // v3.109.2 - the first fix of a session (page load, tracking just switched on, MSFS just
   // started) has nothing to be judged against, so it is not trusted until the feed has settled.
   if (!prev) bad = true;
+  if (_aaIsSimLimboPos(lat, lng)) bad = true;
   // v3.109.2 - "airborne" with no speed and no height is load garbage, not a flight.
   const gs  = (data.gs  != null && isFinite(data.gs))  ? +data.gs  : null;
   const agl = (data.agl != null && isFinite(data.agl)) ? +data.agl : null;
@@ -50011,8 +50020,18 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
+          <span class="release-version">v3.109.3</span>
+          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>MSFS &ldquo;limbo&rdquo; positions are ignored.</strong> While MSFS is at the main menu or loading a flight it parks the aircraft at 0&deg;N 0&deg;E (Gulf of Guinea) or 0&deg;N 90&deg;E (Indian Ocean) and streams normal-looking data from there, which could trip Cruise and altitude alerts on the map screen before the flight began. Every fix within 1&deg; of either spot is now discarded on both the SimConnect and FSUIPC paths, and never reaches the marker or the alerts.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
           <span class="release-version">v3.109.2</span>
-          <span class="release-date">Oct 9, 2026 &middot; Current</span>
+          <span class="release-date">Oct 9, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
