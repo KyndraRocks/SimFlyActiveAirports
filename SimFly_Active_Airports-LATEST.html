@@ -9036,7 +9036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.110.0';
+const APP_VERSION = '3.110.3';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15186,11 +15186,11 @@ function _acSlideSnap(lat, lng, hdg) {
 
 // v3.109.3 - MSFS parks the aircraft at 0,0 (Gulf of Guinea) or 0,90E (Indian Ocean) while it is
 // at the main menu or loading a flight, and streams normal-looking fixes from there. Nothing at
-// either spot is a real flight, so every fix within 1 degree of them is ignored outright.
+// either spot is a real flight, so every fix within 0.25 degree (15 nm) of them is ignored outright.
 function _aaIsSimLimboPos(lat, lng) {
   lat = +lat; lng = +lng;
   if (!isFinite(lat) || !isFinite(lng)) return false;
-  return Math.abs(lat) < 1 && (Math.abs(lng) < 1 || Math.abs(lng - 90) < 1);
+  return Math.abs(lat) < 0.25 && (Math.abs(lng) < 0.25 || Math.abs(lng - 90) < 0.25);
 }
 function _liveAcRenderMarker(d, snap) {
   if (!_rgMap) return;
@@ -20662,6 +20662,16 @@ const _afkPhase = (() => {
     lastTransition = null;
     lastChangeAt = 0;
   }
+  // v3.110.1 - Forget the altitude HISTORY but keep the phase LABEL. Used when the feed is
+  // discontinuous: the old samples no longer describe the aircraft, but the label is still the best
+  // statement of what it was doing, and everything downstream keys off it (the post-landing
+  // re-arm needs the previous phase to be non-null; the waitForNewCruise/Descent flags clear when
+  // the label leaves cruise/descent). reset() wiped the label and broke all three.
+  function flush() {
+    samples.length = 0;
+    peakClimbVS = 0;
+    lastChangeAt = performance.now();   // in-phase windows re-warm from here
+  }
 
   function pushSample(altFt) {
     const now = performance.now();
@@ -21127,7 +21137,7 @@ const _afkPhase = (() => {
   // the phase promoted. Returns null when there is too little history.
   function descentTop()   { return descentTopFt(); }
 
-  return { reset, update, get, vsFpm, lastChange, lastChangeTime,
+  return { reset, flush, update, get, vsFpm, lastChange, lastChangeTime,
            trendVsFpm, levelSlopeFpm, descentTop };
 })();
 
@@ -23393,28 +23403,44 @@ function _afkUpdateDefaultsUI() {
 // already underway. Judge each fix against the previous one: an altitude change or position
 // move no aircraft can make in the elapsed time is a discontinuity, and every alarm that
 // remembers a previous sample is re-seeded and held until the feed has been continuous for
-// _AFK_FIX_SETTLE_MS. A normal climb / descent never comes near the limits (500 ft/s = 30,000
-// fpm; 0.5 nm/s = 1,800 kt).
+// _AFK_FIX_SETTLE_MS.
+//
+// v3.110.1 - narrowed after v3.109.2 over-reached and made real alerts unreliable:
+//  * A QUIET FEED IS NOT A BAD FEED. v3.109.2 treated any gap > 30 s as untrusted, which re-seeded
+//    the crossing detectors and so missed a threshold crossed during a reconnect. Now a gap only
+//    widens the allowance (up to a cap), and a consistent fix after it still straddles the threshold.
+//  * The "airborne but stationary" test only applies when no plausible airborne fix has been seen
+//    recently, so it catches load garbage but never slow / low flight (helicopters, gliders, short
+//    final, FSUIPC which supplies no AGL).
+//  * A hold flushes the phase's altitude history but keeps its LABEL (see _afkPhase.flush).
+//  * Demo fixes bypass the guard: demo emits one fix per real second but advances up to 25 s of
+//    sim time per fix, which no physical limit can accommodate.
 const _AFK_FIX_ALT_BASE_FT    = 400;
 const _AFK_FIX_ALT_PER_SEC_FT = 150;     // 9,000 fpm - above any real climb or descent
+const _AFK_FIX_ALT_DT_CAP_S   = 120;     // allowance stops growing here (18,400 ft)
 const _AFK_FIX_POS_BASE_NM    = 3;
-const _AFK_FIX_POS_PER_SEC_NM = 0.5;
+const _AFK_FIX_POS_PER_SEC_NM = 0.5;     // 1,800 kt - no aircraft, however long the gap
+const _AFK_FIX_POS_DT_CAP_S   = 600;
 const _AFK_FIX_SETTLE_MS      = 8000;
-// v3.109.2 - A feed that went quiet for this long cannot be compared with the fix before it. MSFS
-// stops streaming for the minute-plus it takes to load a flight, and the old dt cap (60 s) let a
-// 30,000 ft jump after that gap look like a legal climb. Normal cadence is 0.5-1 s.
-const _AFK_FIX_GAP_MS         = 30000;
-// v3.109.2 - A fix claiming "airborne" (gnd === false) with no airspeed and no height is the
-// sim's not-loaded state, not a flight. Fixed-wing can't hold below ~30 kt; a hover is the one
-// real case, and it shows height above ground (when the feed supplies it).
+// A fix claiming "airborne" (gnd === false) with no airspeed and no height is the sim's
+// not-loaded state, not a flight - but ONLY when nothing has looked like real flight lately.
 const _AFK_FIX_AIRBORNE_MIN_GS_KT  = 30;
 const _AFK_FIX_AIRBORNE_MIN_AGL_FT = 100;
+const _AFK_FIX_AIRBORNE_MEMORY_MS  = 600000;
+const _AFK_FIX_GROUND_ALT_FT       = 400;    // max altitude change between two on-ground fixes
+const _AFK_FIX_LIFTOFF_WINDOW_MS   = 120000; // 'recently on the ground' = still a lift-off, not a placeholder
+const _AFK_FIX_LIFTOFF_ALT_FT      = 150;    // a real lift-off is within this of the last ground fix; placeholders are not
+const _AFK_FIX_GAP_S               = 30;     // after a silence this long ...
+const _AFK_FIX_GAP_JUMP_FT         = 3000;   // ... an altitude jump this big needs positive evidence of flight
 let _afkFixPrev        = null;   // { t, alt, lat, lng } of the previous fix
 let _afkFixSettleUntil = 0;      // performance.now() before which alarm evaluation is held
+let _afkFixAirborneOkAt = -Infinity;   // performance.now() of the last plausibly-airborne fix
+let _afkFixGroundAt     = -Infinity;   // performance.now() of the last on-ground fix
 
 function _afkFixReseed() {
-  // Forget every "previous sample" so the first trusted fix re-seeds instead of crossing.
-  try { _afkPhase.reset(); } catch (_) {}
+  // Forget every "previous sample" so the first trusted fix re-seeds instead of crossing. The phase
+  // keeps its label (flush, not reset) so landing re-arm and the waitForNew* flags still work.
+  try { _afkPhase.flush(); } catch (_) {}
   _afkAlarms.list().forEach(a => {
     if (!a.state) return;
     let touched = false;
@@ -23430,25 +23456,46 @@ function _afkFixGuard(data) {
   const alt = (data.alt != null && isFinite(data.alt)) ? +data.alt : null;
   const lat = parseFloat(data.lat), lng = parseFloat(data.lng);
   const prev = _afkFixPrev;
-  _afkFixPrev = { t: now, alt, lat, lng };
+  _afkFixPrev = { t: now, alt, lat, lng, gnd: data.gnd === true ? true : (data.gnd === false ? false : null) };
   let bad = false;
-  // v3.109.2 - the first fix of a session (page load, tracking just switched on, MSFS just
-  // started) has nothing to be judged against, so it is not trusted until the feed has settled.
+  // The first fix of a session (page load, tracking just switched on, MSFS just started) has
+  // nothing to be judged against, so it is not trusted until the feed has settled.
   if (!prev) bad = true;
   if (_aaIsSimLimboPos(lat, lng)) bad = true;
-  // v3.109.2 - "airborne" with no speed and no height is load garbage, not a flight.
   const gs  = (data.gs  != null && isFinite(data.gs))  ? +data.gs  : null;
   const agl = (data.agl != null && isFinite(data.agl)) ? +data.agl : null;
-  if (data.gnd === false && gs != null && gs < _AFK_FIX_AIRBORNE_MIN_GS_KT &&
-      !(agl != null && agl >= _AFK_FIX_AIRBORNE_MIN_AGL_FT)) bad = true;
-  if (prev) {
-    const gapMs = Math.max(now - prev.t, 0);
-    const dt = gapMs / 1000;
-    if (gapMs > _AFK_FIX_GAP_MS) bad = true;
+  const plausiblyAirborne = data.gnd === false &&
+    ((gs != null && gs >= _AFK_FIX_AIRBORNE_MIN_GS_KT) || (agl != null && agl >= _AFK_FIX_AIRBORNE_MIN_AGL_FT));
+  if (plausiblyAirborne) _afkFixAirborneOkAt = now;
+  else if (data.gnd === false && gs != null && gs < _AFK_FIX_AIRBORNE_MIN_GS_KT &&
+           !(agl != null && agl >= _AFK_FIX_AIRBORNE_MIN_AGL_FT) &&
+           // Straight after an on-ground fix this is a LIFT-OFF, which is genuine unless the altitude
+           // also jumped (every flight starts "cold", so the memory test must not apply here).
+           // Anywhere else it is the not-loaded-sim state unless a real flight was seen recently.
+           (prev && (now - _afkFixGroundAt) < _AFK_FIX_LIFTOFF_WINDOW_MS
+              ? (alt != null && prev.alt != null && Math.abs(alt - prev.alt) > _AFK_FIX_LIFTOFF_ALT_FT)
+              : (now - _afkFixAirborneOkAt) > _AFK_FIX_AIRBORNE_MEMORY_MS)) bad = true;
+  if (data.gnd === true) _afkFixGroundAt = now;
+  if (prev && !bad) {
+    // Demo emits one fix per real second but advances _demoSpeed sim-seconds per fix (up to 25), so
+    // its elapsed time is scaled; a scrub is still a jump far beyond that allowance and is held.
+    const _spd = (data.source === 'demo' && typeof _demoSpeed === 'number' && _demoSpeed > 1) ? _demoSpeed : 1;
+    const dt = Math.max(now - prev.t, 0) / 1000 * _spd;
+    // An aircraft that is on the ground now AND was on the ground at the last fix has not climbed
+    // thousands of feet, however long the feed was silent. This is what a not-yet-loaded sim looks
+    // like when it reports "on ground" with a placeholder altitude after a long load gap.
+    if (data.gnd === true && prev.gnd === true && alt != null && prev.alt != null &&
+        Math.abs(alt - prev.alt) > _AFK_FIX_GROUND_ALT_FT) bad = true;
+    // After a long silence, a big altitude change is believed only if the fix positively shows flight
+    // (airborne AND moving). An unknown / zero-speed / on-ground fix with a placeholder altitude is
+    // the not-yet-loaded sim, whatever the allowance below would let through.
+    if (!bad && dt > _AFK_FIX_GAP_S && alt != null && prev.alt != null &&
+        Math.abs(alt - prev.alt) > _AFK_FIX_GAP_JUMP_FT &&
+        !(data.gnd !== true && gs != null && gs >= _AFK_FIX_AIRBORNE_MIN_GS_KT)) bad = true;   // gnd unknown + real speed still counts as flight
     if (!bad && alt != null && prev.alt != null &&
-        Math.abs(alt - prev.alt) > _AFK_FIX_ALT_BASE_FT + _AFK_FIX_ALT_PER_SEC_FT * dt) bad = true;
+        Math.abs(alt - prev.alt) > _AFK_FIX_ALT_BASE_FT + _AFK_FIX_ALT_PER_SEC_FT * Math.min(dt, _AFK_FIX_ALT_DT_CAP_S)) bad = true;
     if (!bad && isFinite(lat) && isFinite(lng) && isFinite(prev.lat) && isFinite(prev.lng) &&
-        _afkDistNm(prev.lat, prev.lng, lat, lng) > _AFK_FIX_POS_BASE_NM + _AFK_FIX_POS_PER_SEC_NM * dt) bad = true;
+        _afkDistNm(prev.lat, prev.lng, lat, lng) > _AFK_FIX_POS_BASE_NM + _AFK_FIX_POS_PER_SEC_NM * Math.min(dt, _AFK_FIX_POS_DT_CAP_S)) bad = true;
   }
   if (bad) {
     _afkFixSettleUntil = now + _AFK_FIX_SETTLE_MS;
@@ -50175,10 +50222,48 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.110.3</span>
+          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Slow lift-offs keep their low-altitude alerts.</strong> v3.110.2 could hold alerts for about 8 s after a slow lift-off (a Cub in a headwind, a glider), swallowing a crossing such as 500 ft AGL. The &ldquo;airborne but stationary right after parking&rdquo; test now applies only when the altitude also jumped, which a real lift-off never does.</li>
+          <li><strong>Placeholder altitudes after a long silence are caught whatever the sim reports.</strong> After 30 s or more without data, an altitude change of 3,000 ft or more is now believed only if the aircraft is positively airborne and moving. Unreadable or zero-speed placeholders (including an AGL placeholder) no longer trip a climb alert.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.110.2</span>
+          <span class="release-date">Oct 10, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Load garbage after a long silence is caught again.</strong> A not-yet-loaded sim that reports &ldquo;on ground&rdquo; with a placeholder altitude (or &ldquo;airborne&rdquo; at zero speed straight after being parked) could still trip a climb alert after a gap of 80 s or more. Two aircraft on the ground cannot be thousands of feet apart, and nothing goes from parked to airborne-and-stationary, whatever the gap.</li>
+          <li><strong>Demo scrubbing is guarded again.</strong> v3.110.1 exempted demo mode altogether, so dragging the demo timeline across a threshold fired a false altitude alert. Demo now uses the same checks with its elapsed time scaled by the playback speed, so fast playback is fine and a scrub is held.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.110.1</span>
+          <span class="release-date">Oct 10, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Alerts fire reliably again.</strong> The v3.109.2 &ldquo;untrusted feed&rdquo; guard was too aggressive and could suppress or lose real alerts. Five defects were found by an independent adversarial test pass and fixed.</li>
+          <li><strong>A quiet feed no longer loses a threshold.</strong> A gap in telemetry over 30 s (a reconnect, a hiccup) used to wipe each altitude alert&rsquo;s memory, so a level crossed during the gap was never reported. Only a physically impossible jump now counts as a bad feed.</li>
+          <li><strong>Slow and low flight keeps its alerts.</strong> The &ldquo;airborne but stationary&rdquo; filter silenced every alert for helicopters, gliders, slow GA and short finals (and for all FSUIPC aircraft below 30 kt, since FSUIPC has no AGL). It now applies only when nothing has looked like real flight in the last 10 minutes.</li>
+          <li><strong>Alerts re-arm after landing again.</strong> A bad tick just before touchdown erased the flight phase, so one-shot Cruise, Descent and Altitude alerts stayed spent for the next flight. The guard now keeps the phase and only clears its altitude history.</li>
+          <li><strong>No spurious &ldquo;Cruise Reached&rdquo;, no late Descent.</strong> The same phase wipe made a Cruise alert armed mid-cruise fire about 48 s after any gap, and delayed Descent Started by 30&ndash;40 s.</li>
+          <li><strong>Demo mode is exempt.</strong> At high speed multipliers the guard treated normal demo climbs as impossible and suppressed alerts.</li>
+          <li><strong>MSFS &ldquo;limbo&rdquo; filter narrowed to 0.25&deg;</strong> (15 nm) around 0&deg;/0&deg; and 0&deg;/90&deg;E, so a real flight near them is no longer dropped.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.110.0</span>
-          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-date">Oct 10, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <ul class="release-notes">
