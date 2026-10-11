@@ -9036,7 +9036,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.110.3';
+const APP_VERSION = '3.110.4';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -19739,9 +19739,55 @@ const _afkAudio = (() => {
 
   function unlock() { _ensureCtx(); }
   function currentId() { return activeSoundId; }
+  // v3.110.4 - 'running' | 'suspended' | 'closed' | 'none' (no context yet).
+  function state() { return ctx ? ctx.state : 'none'; }
 
-  return { play, stop, preview, unlock, currentId };
+  return { play, stop, preview, unlock, currentId, state };
 })();
+
+// v3.110.4 - Arm the alert sound on ANY user gesture. Chrome's autoplay policy keeps an
+// AudioContext suspended until the page has had a gesture, and AA used to unlock it only from a
+// handful of buttons (opening Alerts, adding an alert). With alerts restored from storage and
+// tracking auto-resumed, the context was first created at the moment of the trip - in a hidden tab,
+// with no gesture - so it stayed suspended: the tones sat queued on a frozen audio clock and only
+// sounded when the user came back and clicked. That reads as "alerts only work when the tab has
+// focus". Creating the context inside a real gesture (and re-resuming it on every later one)
+// removes the dependency; once running it keeps running in a hidden tab.
+(function () {
+  const arm = () => { try { _afkAudio.unlock(); } catch (_) {} };
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => {
+    try { window.addEventListener(ev, arm, { capture: true, passive: true }); } catch (_) {}
+  });
+  try { document.addEventListener('visibilitychange', () => { if (!document.hidden) arm(); }); } catch (_) {}
+})();
+
+// v3.110.4 - Diagnostics for "an alert did not sound": _afkDiag() in the console. Records, per trip,
+// whether the tab was hidden/unfocused and what state the audio context was in, plus the longest gap
+// between telemetry fixes seen while the tab was hidden (a large number means the browser is
+// throttling or freezing the page - add AA to Chrome's "Always keep these sites active").
+const _afkDiagState = { trips: [], maxHiddenGapMs: 0, hiddenFixes: 0, lastFixAt: 0 };
+function _afkDiagFix() {
+  const n = performance.now();
+  if (_afkDiagState.lastFixAt && document.hidden) {
+    _afkDiagState.hiddenFixes++;
+    const g = n - _afkDiagState.lastFixAt;
+    if (g > _afkDiagState.maxHiddenGapMs) _afkDiagState.maxHiddenGapMs = Math.round(g);
+  }
+  _afkDiagState.lastFixAt = n;
+}
+function _afkDiagTrip(alarms) {
+  const st = { at: new Date().toISOString(), hidden: document.hidden, focused: document.hasFocus(),
+               audio: _afkAudio.state(), alarms: (alarms || []).map(a => a.type + '#' + a.id) };
+  _afkDiagState.trips.push(st);
+  if (_afkDiagState.trips.length > 30) _afkDiagState.trips.shift();
+  return st;
+}
+function _afkDiag() {
+  return { pageLoadedAt: new Date(performance.timeOrigin).toISOString(), wasDiscarded: !!document.wasDiscarded,
+           audioNow: _afkAudio.state(), hiddenNow: document.hidden, focusedNow: document.hasFocus(),
+           maxHiddenGapMs: _afkDiagState.maxHiddenGapMs, hiddenFixes: _afkDiagState.hiddenFixes,
+           trips: _afkDiagState.trips.slice(), source: (typeof _liveAcSource !== 'undefined') ? _liveAcSource : null };
+}
 
 function _afkPreviewSelectedSound(selectId) {
   const sel = document.getElementById(selectId);
@@ -23508,6 +23554,7 @@ function _afkFixGuard(data) {
 
 function _afkTick(data) {
   if (!data) return;
+  try { _afkDiagFix(); } catch (_) {}
   // v3.93.1 — telemetry arrives over a WebSocket, which browsers do NOT
   // throttle the way they throttle setTimeout in a hidden tab. Piggy-back the
   // auto-dismiss catch-up on it so an overdue dismissal lands within ~1 s.
@@ -24042,6 +24089,8 @@ function _afkStopTelemetryLossWatchdog() {
 try { _afkStartTelemetryLossWatchdog(); } catch (_) {}
 
 function _afkOnTripped(newTrips) {
+  let _diagTrip = null;
+  try { _diagTrip = _afkDiagTrip(newTrips); } catch (_) {}
   // Play sound of the HIGHEST-PRIORITY tripped alarm (top of the list).
   // The user can re-order alarms by dragging cards up/down — list order
   // drives sound priority. Latest trips at lower priority just queue silently
@@ -24150,6 +24199,12 @@ function _afkOnTripped(newTrips) {
   _afkShowTripOverlay();
   _afkStartTabFlash();
   _afkUpdateBtnState();
+  // v3.110.4 - If the browser is still refusing audio, say so rather than failing silently.
+  try {
+    if (_afkAudio.state() !== 'running') {
+      _aaRtToast('🔇 Alert sound is blocked by the browser. Click anywhere on this page once to enable it.', 'warn');
+    }
+  } catch (_) {}
 }
 
 function _afkOnDismiss(alarm) {
@@ -50224,8 +50279,20 @@ function rgSendToFlightPlanner() {
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
       <div class="release" data-tag="fix">
         <div class="release-header">
-          <span class="release-version">v3.110.3</span>
+          <span class="release-version">v3.110.4</span>
           <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Alert sounds no longer wait for the tab to be focused.</strong> The browser keeps audio muted until the page has had a click or keypress, and AA only unlocked it from a few buttons. With alerts restored from storage and tracking auto-resumed, the audio system was first created at the moment an alert tripped &mdash; in a hidden tab &mdash; so it stayed muted and the tones played only once you returned and clicked. Any click or key press anywhere on the page now arms the sound, and it keeps working while the tab is hidden.</li>
+          <li><strong>A blocked alert sound now says so.</strong> If the browser is still refusing audio when an alert trips, a warning appears instead of the alert failing silently.</li>
+          <li><strong>New diagnostics.</strong> Type <code>_afkDiag()</code> in the browser console after a missed alert to see, for each recent alert, whether the tab was hidden or unfocused and the state of the audio system, plus the longest gap between telemetry fixes seen while hidden, when the page was last loaded, and whether the browser discarded and reloaded it.</li>
+        </ul>
+      </div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.110.3</span>
+          <span class="release-date">Oct 10, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
