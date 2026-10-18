@@ -2541,6 +2541,15 @@
   .rgrand-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,200,255,0.16); }
   .rgrand-dash { color:var(--muted); }
   .rgrand-unit { font-family:'Courier New',monospace; font-size:0.8rem; color:var(--muted); }
+  /* v3.111.0 — flight-time entry format (min | h:mm). A two-segment switch: both
+     choices are always visible and the lit one is the format in use now. */
+  .rgrand-fmt { display:inline-flex; border:1px solid rgba(255,255,255,0.18); border-radius:5px; overflow:hidden; }
+  .rgrand-fmt-btn { background:transparent; border:0; color:var(--muted); font-family:'Courier New',monospace; font-size:0.8rem; padding:4px 9px; cursor:pointer; transition:all 0.12s; }
+  .rgrand-fmt-btn + .rgrand-fmt-btn { border-left:1px solid rgba(255,255,255,0.18); }
+  .rgrand-fmt-btn:hover { color:var(--text); }
+  .rgrand-fmt-btn.active { background:var(--accent); color:#05000c; }
+  body.light-mode .rgrand-fmt, body.light-mode .rgrand-fmt-btn + .rgrand-fmt-btn { border-color:rgba(0,0,0,0.18); }
+  .rgrand-input.invalid, .rgrand-input.invalid:focus { border-color:#ff4d4d; box-shadow:0 0 0 2px rgba(255,77,77,0.18); }
   .rgrand-note { font-family:'Rajdhani',sans-serif; font-size:0.82rem; color:var(--muted); margin:8px 0 0; }
   /* Category pills */
   .rgrand-cats { display:flex; gap:8px; flex-wrap:wrap; }
@@ -9036,7 +9045,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.110.4';
+const APP_VERSION = '3.111.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -38848,6 +38857,10 @@ function _rgRandLoadOpts() {
     configured: !!o.configured,
     minNm:  num(o.minNm),  maxNm:  num(o.maxNm),
     minMin: num(o.minMin), maxMin: num(o.maxMin),
+    // v3.111.0 — how the flight-time fields are TYPED ('min' | 'hm'). Display
+    // only: minMin / maxMin are always stored in minutes, so an older payload
+    // (no timeFmt) simply opens in minutes, exactly as before.
+    timeFmt: o.timeFmt === 'hm' ? 'hm' : 'min',
     visibleOnly: !!o.visibleOnly,
     // v3.86.0 — owner pairing mode: 'off' | 'diff' | 'same'. Absent (every
     // pre-3.86.0 saved payload) falls back to 'diff', which is exactly what the
@@ -39271,7 +39284,8 @@ function _rgRandOpenModal() {
   const opts = _rgRandLoadOpts();
   const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
   setV('rgRandMinNm', opts.minNm);  setV('rgRandMaxNm', opts.maxNm);
-  setV('rgRandMinMin', opts.minMin); setV('rgRandMaxMin', opts.maxMin);
+  _rgRandSetTimeFmt(opts.timeFmt, false);
+  _rgRandSetTimeVal('rgRandMinMin', opts.minMin); _rgRandSetTimeVal('rgRandMaxMin', opts.maxMin);
   const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = !!opts.visibleOnly;
   _rgRandSetOwnerMatch(opts.ownerMatch);
 
@@ -39361,6 +39375,80 @@ function _rgRandReadNum(id) {
   const n = parseFloat(v);
   return (isFinite(n) && n >= 0) ? n : null;
 }
+// ── v3.111.0 — flight-time entry format: total minutes or hours:minutes ──
+// The stored value is ALWAYS minutes; the format only changes how the two
+// fields are typed and shown. In 'hm' mode the fields become text inputs
+// (a number input rejects "1:30") and accept 1:30, 1 or 1.5 (hours), 1h30,
+// 1h or 90m. The choice persists on its own the moment it is clicked, so a
+// Cancel keeps the preferred format even though it discards the filters.
+let _rgRandTimeFmt = 'min';
+function _rgRandFmtHM(m) {
+  m = Math.round(m);
+  return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
+}
+// Minutes for a typed value: null = blank (no limit), NaN = not understood.
+function _rgRandParseTime(v, fmt) {
+  v = String(v == null ? '' : v).trim().toLowerCase();
+  if (v === '') return null;
+  let m;
+  if (fmt !== 'hm') {
+    const n = parseFloat(v);
+    return (isFinite(n) && n >= 0) ? n : NaN;
+  }
+  if ((m = v.match(/^(\d+):([0-5]?\d)$/)))                      return +m[1] * 60 + +m[2];
+  if ((m = v.match(/^(\d+(?:\.\d+)?)$/)))                      return Math.round(+m[1] * 60);
+  if ((m = v.match(/^(\d+(?:\.\d+)?)\s*h(?:\s*([0-5]?\d)\s*m?)?$/))) return Math.round(+m[1] * 60) + (m[2] ? +m[2] : 0);
+  if ((m = v.match(/^(\d+)\s*m(?:in)?$/)))                       return +m[1];
+  return NaN;
+}
+function _rgRandSetTimeVal(id, minutes) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = (minutes == null) ? '' : (_rgRandTimeFmt === 'hm' ? _rgRandFmtHM(minutes) : String(Math.round(minutes)));
+  el.classList.remove('invalid');
+  el.title = '';
+}
+function _rgRandCheckTime(el) {
+  if (!el) return;
+  const bad = Number.isNaN(_rgRandParseTime(el.value, _rgRandTimeFmt));
+  el.classList.toggle('invalid', bad);
+  el.title = bad ? (_rgRandTimeFmt === 'hm' ? 'Type hours:minutes, e.g. 1:30' : 'Type whole minutes, e.g. 90') : '';
+}
+function _rgRandReadMinutes(id) {
+  const el = document.getElementById(id);
+  return el ? _rgRandParseTime(el.value, _rgRandTimeFmt) : null;
+}
+// Switch the entry format. `fromUser` converts whatever is already typed into
+// the new format (a value that cannot be read is cleared) and persists the
+// choice; opening the modal passes false and just applies the saved format.
+function _rgRandSetTimeFmt(fmt, fromUser) {
+  fmt = fmt === 'hm' ? 'hm' : 'min';
+  const ids = ['rgRandMinMin', 'rgRandMaxMin'];
+  const vals = fromUser ? ids.map(id => _rgRandReadMinutes(id)) : null;
+  _rgRandTimeFmt = fmt;
+  const hm = fmt === 'hm';
+  ids.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.type = hm ? 'text' : 'number';
+    el.inputMode = hm ? 'text' : 'numeric';
+    el.placeholder = hm ? 'h:mm' : (i ? 'max' : 'min');
+    el.setAttribute('aria-label', (i ? 'Maximum' : 'Minimum') + ' flight time in ' + (hm ? 'hours and minutes' : 'minutes'));
+    if (fromUser) { const v = vals[i]; _rgRandSetTimeVal(id, Number.isNaN(v) ? null : v); }
+  });
+  document.querySelectorAll('#rgRandTimeFmt .rgrand-fmt-btn').forEach(b => {
+    const on = b.dataset.fmt === fmt;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  if (fromUser) {
+    try {
+      const o = JSON.parse(localStorage.getItem(_RG_RAND_LS) || '{}') || {};
+      o.timeFmt = fmt;
+      localStorage.setItem(_RG_RAND_LS, JSON.stringify(o));
+    } catch (_) {}
+  }
+}
 // Clear every in-modal field — distance, flight time, scope toggle, and the
 // category / continent / country / owner selections on BOTH the departure and
 // arrival working sets — back to its default (no limit), AND persist that
@@ -39370,7 +39458,7 @@ function _rgRandReadNum(id) {
 function _rgRandReset() {
   const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   setV('rgRandMinNm', '');  setV('rgRandMaxNm', '');
-  setV('rgRandMinMin', ''); setV('rgRandMaxMin', '');
+  _rgRandSetTimeVal('rgRandMinMin', null); _rgRandSetTimeVal('rgRandMaxMin', null);
   const vis = document.getElementById('rgRandVisible'); if (vis) vis.checked = false;
   // Owner pairing goes back to its default ('diff' — another pilot's airport),
   // not to 'off': Reset restores defaults, and 'diff' is the default.
@@ -39381,6 +39469,7 @@ function _rgRandReset() {
   _rgRandSaveOpts({
     configured: _rgRandLoadOpts().configured,
     minNm: null, maxNm: null, minMin: null, maxMin: null,
+    timeFmt: _rgRandTimeFmt,   // a display preference, not a filter — Reset keeps it
     visibleOnly: false,
     ownerMatch: 'diff',
     dep: _rgRandEmptyEp(), arr: _rgRandEmptyEp(),
@@ -39388,12 +39477,22 @@ function _rgRandReset() {
 }
 
 function _rgRandSaveAndGenerate() {
+  // An unreadable flight time blocks the save rather than silently becoming
+  // "no limit" — the field is outlined red and focused so it can be fixed.
+  for (const id of ['rgRandMinMin', 'rgRandMaxMin']) {
+    if (Number.isNaN(_rgRandReadMinutes(id))) {
+      const el = document.getElementById(id);
+      if (el) { _rgRandCheckTime(el); el.focus(); }
+      return;
+    }
+  }
   _rgRandSnapshotTab();   // capture the endpoint currently on screen into its working set
   const visEl = document.getElementById('rgRandVisible');
   const o = {
     configured: true,
     minNm:  _rgRandReadNum('rgRandMinNm'),  maxNm:  _rgRandReadNum('rgRandMaxNm'),
-    minMin: _rgRandReadNum('rgRandMinMin'), maxMin: _rgRandReadNum('rgRandMaxMin'),
+    minMin: _rgRandReadMinutes('rgRandMinMin'), maxMin: _rgRandReadMinutes('rgRandMaxMin'),
+    timeFmt: _rgRandTimeFmt,
     visibleOnly: !!(visEl && visEl.checked),
     ownerMatch: _rgRandGetOwnerMatch(),
     dep: _rgRandCleanEp(_rgRandWork.dep),
@@ -49224,10 +49323,13 @@ function rgSendToFlightPlanner() {
       <div class="rgrand-section" id="rgRandTimeRow">
         <div class="rgrand-section-title">Flight time</div>
         <div class="rgrand-row">
-          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMinMin" placeholder="min" aria-label="Minimum flight time in minutes">
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMinMin" placeholder="min" aria-label="Minimum flight time in minutes" oninput="_rgRandCheckTime(this)">
           <span class="rgrand-dash">&ndash;</span>
-          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMaxMin" placeholder="max" aria-label="Maximum flight time in minutes">
-          <span class="rgrand-unit">min</span>
+          <input type="number" min="0" step="1" inputmode="numeric" class="rgrand-input" id="rgRandMaxMin" placeholder="max" aria-label="Maximum flight time in minutes" oninput="_rgRandCheckTime(this)">
+          <div class="rgrand-fmt" id="rgRandTimeFmt" role="group" aria-label="Flight time format">
+            <button type="button" class="rgrand-fmt-btn active" data-fmt="min" aria-pressed="true" onclick="_rgRandSetTimeFmt('min', true)" title="Enter flight times as total minutes (e.g. 90)">min</button>
+            <button type="button" class="rgrand-fmt-btn" data-fmt="hm" aria-pressed="false" onclick="_rgRandSetTimeFmt('hm', true)" title="Enter flight times as hours:minutes (e.g. 1:30)">h:mm</button>
+          </div>
         </div>
         <div class="rgrand-note" id="rgRandTimeNote"></div>
       </div>
@@ -49633,7 +49735,7 @@ function rgSendToFlightPlanner() {
             For when you just want to fly somewhere new. In the map's <strong>🛠 Tools</strong> menu, <strong>🎲 Create Random Route</strong> picks a random departure and a random destination at another pilot's SimFly-owned airport (the default &mdash; the <strong>Airport owners</strong> filter can relax or invert that rule), draws the route, frames it on the map, and shows the <strong>File on SimBrief</strong> button so you can fly it immediately.<br/><br/>
             If you've already selected a departure airport (click a dot on the map), the item becomes <strong>🎲 Choose Random Destination</strong> — it keeps your departure fixed and re-rolls only the destination each time you click. Clear the route (the ✕ on the route chip) to go back to fully random routes.<br/><br/>
             After your first roll, a <strong>🎲 Re-roll</strong> button appears in the map header for one-click re-rolls with the same filters (right-click / long-press it to edit them). Click the small <strong>✕</strong> on its right to dismiss it; it returns the next time you create a random flight.<br/><br/>
-            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); an <strong>Airport owners</strong> rule (v3.86.0) comparing the two ends &mdash; <strong>Must be different</strong> (the default: a route to another pilot's airport), <strong>Must be the same</strong> (both ends owned by the same pilot), or <strong>Ignore owners</strong> (any pairing); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range in minutes. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click — and saves that cleared state immediately, so it sticks even if you close the window without generating. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
+            <strong>Right-click the menu item</strong> (long-press on touch) to set filters — they all <strong>stack</strong>, so combine as many as you like: restrict to airports <strong>currently shown on the map</strong> (honours every active map filter); an <strong>Airport owners</strong> rule (v3.86.0) comparing the two ends &mdash; <strong>Must be different</strong> (the default: a route to another pilot's airport), <strong>Must be the same</strong> (both ends owned by the same pilot), or <strong>Ignore owners</strong> (any pairing); <strong>airport categories</strong> (colour-coded pills) and <strong>continents</strong>; multi-select <strong>countries</strong> and <strong>owners</strong> (searchable, with All / None — the count beside each updates live to reflect your other filters); a <strong>distance</strong> range in nautical miles; and — only when the selected aircraft has <em>flight-time calibration</em> — a <strong>flight-time</strong> range, typed either as minutes or as hours:minutes &mdash; the <strong>min | h:mm</strong> switch beside the fields picks the format (in h:mm, <code>1:30</code>, <code>1.5</code> and <code>1h30</code> all mean 90 minutes), converts anything already typed, and is remembered. In <em>Create Random Route</em> mode a <strong>Departure / Arrival</strong> toggle lets you filter each end of the route independently. Category, continent and country options only list values that have an owned airport. Leave any field blank, list empty, or toggle off for no limit. The <strong>↺ Reset</strong> button in the bottom-left clears every filter on both panels back to its default in one click — and saves that cleared state immediately, so it sticks even if you close the window without generating. Filters are saved in your browser, so the first use opens the filter dialog to set your preferences and every click after that generates a new flight instantly. Any existing route is always cleared first, so the map never shows more than one random route.
           </div>
         </div>
       </div>
@@ -50277,10 +50379,22 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.111.0</span>
+          <span class="release-date">Oct 18, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Random Flight time range in hours:minutes.</strong> The flight-time filter in the Random Flight options now has a <strong>min | h:mm</strong> switch, so a long-haul range can be typed as <code>4:00 &ndash; 6:30</code> instead of working out 240 &ndash; 390 minutes. In h:mm mode <code>1:30</code>, <code>1.5</code> and <code>1h30</code> all mean 90 minutes.</li>
+          <li><strong>Switching format converts what you typed.</strong> Flipping the switch rewrites any values already in the fields into the other format, and the chosen format is remembered for next time. Saved ranges are still stored in minutes, so existing filters open unchanged.</li>
+          <li><strong>An unreadable flight time is flagged instead of ignored.</strong> A value the field cannot understand is outlined in red and Save &amp; Generate waits for it to be fixed, rather than quietly treating it as no limit.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.110.4</span>
-          <span class="release-date">Oct 10, 2026 &middot; Current</span>
+          <span class="release-date">Oct 10, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
