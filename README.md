@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.112.0**
+**Current version: v3.112.1**
 
 ---
 
@@ -37,6 +37,8 @@ After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'
 
 ### Supporting Active Airports (v3.112.0)
 Every few days a short thank-you note appears when the app opens, however you launch it, with a link to **Buy Me a Coffee**. The coffee link works straight away; *Maybe later* becomes available after a short pause. After supporting, your Buy Me a Coffee thank-you page shows a **supporter code** — enter it in the note, or under **☕ Support** (next to *Help* on the planner, or **🛠 Tools → Support Active Airports…** on the map), and the note never appears again in that browser. Your supporter status is included in **Save / Load All Settings**, so it moves with you to a new computer.
+
+Please keep a copy of your supporter code somewhere safe. If you lose it, open **☕ Support** in any browser where you have already entered it — the window shows your code with a **Copy** button (v3.112.1). If you ever run into a problem, send Kyndra a DM on the SimFly forum.
 
 ### Aircraft Rentals
 New in v3.50.0 — turn on **Aircraft Rentals** from the map menu to see where SimFly's rentable aircraft are, refreshed automatically from a live feed. Every airport's dot recolors by the best **pilot payout** available there — the cut the renting pilot keeps, from 0% up to 60% — and a Rentals panel opens for filtering.

@@ -9076,7 +9076,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.112.0';
+const APP_VERSION = '3.112.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -44302,6 +44302,22 @@ function _aaSupCodeOk(raw) {
   const norm = _aaSupNorm(raw);
   return norm.length >= 8 && _AA_SUP_CODE_HASHES.includes(_aaSupSha256('simfly-aa-support:v1:' + norm));
 }
+// Stored codes are normalised (A-Z0-9 only); show them grouped as issued.
+function _aaSupFmt(norm) { return (String(norm || '').match(/.{1,4}/g) || []).join('-'); }
+function _aaSupportCopy() {
+  const inp = document.getElementById('aaSupportSaved');
+  const btn = document.getElementById('aaSupportCopy');
+  if (!inp) return;
+  const done = ok => { if (btn) { btn.textContent = ok ? 'Copied \u2713' : 'Ctrl+C'; setTimeout(() => { if (btn) btn.textContent = 'Copy'; }, 2000); } };
+  inp.focus(); inp.select();
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inp.value).then(() => done(true), () => done(false));
+      return;
+    }
+  } catch (e) {}
+  done(false);
+}
 // The ONLY supporter test — re-derives status from the stored code every time.
 function _aaSupIsSupporter(st) { return !!(st && st.code && _aaSupCodeOk(st.code)); }
 function _aaSupLoad() {
@@ -44348,8 +44364,25 @@ function _aaSupportOpen(opts) {
   overlay.addEventListener('click', ev => { if (ev.target === overlay) _aaSupportClose(false); });
   const btn = 'border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.95rem;font-weight:600;padding:8px 14px;cursor:pointer;';
   const isSup = _aaSupIsSupporter(st);
+  // Supporters already gave: thank them, remind them to keep the code safe and
+  // where to get help, and keep the coffee link for anyone who wants to give again.
+  const bodyHtml = isSup
+    ? `<p style="margin:0 0 10px;">Thank you for supporting Active Airports &mdash; it genuinely helps cover the time that goes into keeping it running.</p>
+    <p style="margin:0 0 10px;color:#9fb0c4;font-size:0.92rem;">Please keep a copy of your supporter code somewhere safe in case you need it later. If you ever run into a problem, send me a DM on the SimFly forum.</p>
+    <p style="margin:0 0 14px;color:#9fb0c4;">&mdash; Kyndra</p>
+    <div style="display:flex;justify-content:center;margin-bottom:12px;">
+      <a class="aa-bmc-link" href="${_AA_SUP_URL}" target="_blank" rel="noopener" title="Opens Buy Me a Coffee in a new tab">&#9749; Buy me another coffee</a>
+    </div>`
+    : null;
   const codeBlock = isSup
-    ? `<div style="height:96px;display:flex;align-items:center;justify-content:center;color:#7ee2a8;font-size:0.95rem;text-align:center;">&#10003; You&rsquo;re a supporter &mdash; thank you! The reminder is off in this browser.</div>`
+    ? `<div style="height:96px;">
+    <label for="aaSupportSaved" style="display:block;color:#7ee2a8;padding-top:22px;font-size:0.85rem;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">&#10003; Your supporter code (use it in other browsers):</label>
+    <div style="display:flex;gap:8px;">
+      <input id="aaSupportSaved" type="text" readonly value="${_aaEsc(_aaSupFmt(st.code))}" onfocus="this.select()"
+        style="flex:1;min-width:0;box-sizing:border-box;background:rgba(0,0,0,0.3);border:1px solid rgba(126,226,168,0.45);border-radius:6px;color:#fff;font-family:'Courier New',monospace;font-size:1rem;letter-spacing:0.08em;padding:7px 10px;outline:none;">
+      <button id="aaSupportCopy" onclick="_aaSupportCopy()" style="${btn}background:rgba(126,226,168,0.14);border:1px solid #7ee2a8;color:#fff;min-width:78px;">Copy</button>
+    </div>
+  </div>`
     : `<div id="aaSupportCodeBlock" style="height:96px;">
     <label for="aaSupportCode" style="display:block;color:#9fb0c4;font-size:0.8rem;margin-bottom:5px;">Already supported? Enter the supporter code from your thank-you page:</label>
     <div style="display:flex;gap:8px;">
@@ -44361,17 +44394,17 @@ function _aaSupportOpen(opts) {
     </div>
     <div id="aaSupportMsg" style="height:30px;display:flex;align-items:center;font-size:0.82rem;line-height:1.25;overflow:hidden;"></div>
   </div>`;
-  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,221,0,0.35);border-radius:12px;padding:22px 26px;width:440px;max-width:92vw;height:430px;max-height:92vh;box-sizing:border-box;display:flex;flex-direction:column;font-family:Rajdhani,sans-serif;box-shadow:0 12px 48px rgba(0,0,0,0.6);">
+  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,221,0,0.35);border-radius:12px;padding:22px 26px;width:440px;max-width:92vw;height:460px;max-height:92vh;box-sizing:border-box;display:flex;flex-direction:column;font-family:Rajdhani,sans-serif;box-shadow:0 12px 48px rgba(0,0,0,0.6);">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
     <span id="aaSupportTitle" style="font-family:Orbitron,monospace;font-size:0.86rem;letter-spacing:0.08em;color:#fff;text-transform:uppercase;">&#9749; Thanks for using Active Airports</span>
     <button id="aaSupportX" onclick="_aaSupportClose(false)" aria-label="Close" style="background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
   </div>
   <div id="aaSupportBody" style="flex:1;overflow-y:auto;color:#d6e2ef;font-size:1.02rem;line-height:1.5;">
-    <p style="margin:0 0 10px;">Active Airports is a one-person, donation-supported project. If it&rsquo;s made your flying easier, a coffee is a lovely way to say so &mdash; and a way to help cover the time that goes into keeping it running.</p>
+    ${bodyHtml || `    <p style="margin:0 0 10px;">Active Airports is a one-person, donation-supported project. If it&rsquo;s made your flying easier, a coffee is a lovely way to say so &mdash; and a way to help cover the time that goes into keeping it running.</p>
     <p style="margin:0 0 16px;color:#9fb0c4;">&mdash; Kyndra</p>
     <div style="display:flex;justify-content:center;margin-bottom:18px;">
       <a class="aa-bmc-link" href="${_AA_SUP_URL}" target="_blank" rel="noopener" title="Opens Buy Me a Coffee in a new tab">&#9749; Buy me a coffee</a>
-    </div>
+    </div>`}
   </div>
   ${codeBlock}
   <div style="display:flex;justify-content:flex-end;margin-top:6px;">
@@ -44430,7 +44463,8 @@ function _aaSupportApply() {
     body.innerHTML =
       '<div style="width:64px;height:64px;border-radius:50%;border:2px solid #7ee2a8;background:rgba(126,226,168,0.12);display:flex;align-items:center;justify-content:center;color:#7ee2a8;font-size:2rem;line-height:1;">&#10003;</div>' +
       '<div style="color:#7ee2a8;font-size:1.35rem;font-weight:700;line-height:1.3;">Thank you for supporting<br>Active Airports!</div>' +
-      '<div style="color:#9fb0c4;font-size:0.95rem;">The reminder is off for good in this browser.</div>';
+      '<div style="color:#9fb0c4;font-size:0.95rem;">The reminder is off for good in this browser.</div>' +
+      '<div style="color:#7d8b9c;font-size:0.85rem;max-width:330px;line-height:1.4;">Please keep a copy of your code somewhere safe in case you need it later &mdash; you can also see or copy it any time under &#9749; Support. Any problems? Send me a DM on the SimFly forum.</div>';
   }
   const block = document.getElementById('aaSupportCodeBlock');
   if (block) block.style.display = 'none';
@@ -49882,7 +49916,8 @@ function rgSendToFlightPlanner() {
           <div class="help-feature-title">Supporting Active Airports</div>
           <div class="help-feature-desc">
             Active Airports is free, donation-supported software built and maintained by one person. A short <strong>thank-you note</strong> appears on launch about once every three days, with a link to <strong>Buy Me a Coffee</strong>. The coffee link works straight away; <em>Maybe later</em> becomes available after 20 seconds.<br/><br/>
-            <strong>Turn the reminder off for good</strong> &mdash; after supporting, your Buy Me a Coffee thank-you page shows a <strong>supporter code</strong>. Enter it in the reminder, or open <strong>&#9749; Support</strong> (next to <em>Help</em> on the planner, or <strong>&#128736; Tools &rarr; Support Active Airports&hellip;</strong> on the map). The reminder never appears again in that browser, and your supporter status travels with <strong>Save / Load All Settings</strong>.
+            <strong>Turn the reminder off for good</strong> &mdash; after supporting, your Buy Me a Coffee thank-you page shows a <strong>supporter code</strong>. Enter it in the reminder, or open <strong>&#9749; Support</strong> (next to <em>Help</em> on the planner, or <strong>&#128736; Tools &rarr; Support Active Airports&hellip;</strong> on the map). The reminder never appears again in that browser, and your supporter status travels with <strong>Save / Load All Settings</strong>.<br/><br/>
+            <strong>Keep your code safe.</strong> Save a copy somewhere you&rsquo;ll find it later. If you lose it, open <strong>&#9749; Support</strong> in any browser where you have already entered it &mdash; the window shows your code with a <strong>Copy</strong> button, so you can use it in another browser or on a new computer. Any problems? Send Kyndra a DM on the SimFly forum.
           </div>
         </div>
       </div>
@@ -50681,10 +50716,25 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="improved">
+        <div class="release-header">
+          <span class="release-version">v3.112.1</span>
+          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-tag improved">Improved</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>See and copy your supporter code any time.</strong> Once you have entered your supporter code, opening &#9749; Support shows it with a Copy button, so you never need to dig out the original email to use it in another browser or on a new computer.</li>
+          <li><strong>The thank-you screen tells you where to find your code.</strong> After entering it, a note asks you to keep a copy somewhere safe, says it can always be seen under &#9749; Support, and that you can DM Kyndra on the SimFly forum if anything goes wrong.</li>
+          <li><strong>A supporter&rsquo;s &#9749; Support window says thank you.</strong> Once you have supported, the window thanks you instead of asking again, with the same keep-it-safe and forum note. The coffee link stays, as &ldquo;Buy me another coffee&rdquo;.</li>
+        </ul>
+      </div>
+
+
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.112.0</span>
-          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-date">Oct 30, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <div class="release-divider"></div>
