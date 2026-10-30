@@ -1185,6 +1185,28 @@
     box-shadow: var(--glow);
   }
 
+  /* v3.112.0 — Settings and Support had no theme class and fell back to the
+     browser's light-grey button face. Same tinted-outline recipe as Help/Reset. */
+  .btn-settings {
+    background: rgba(200,212,226,0.06);
+    border-color: rgba(200,212,226,0.45);
+    color: #c8d4e2;
+  }
+  .btn-settings:hover {
+    background: rgba(200,212,226,0.14);
+    border-color: #c8d4e2;
+    box-shadow: 0 0 12px rgba(200,212,226,0.18);
+  }
+  .btn-support {
+    background: rgba(255,221,0,0.08);
+    border-color: #ffdd00;
+    color: #ffdd00;
+  }
+  .btn-support:hover {
+    background: rgba(255,221,0,0.18);
+    box-shadow: 0 0 12px rgba(255,221,0,0.28);
+  }
+
   .btn-import-download {
     background: rgba(0,255,157,0.1);
     border-color: var(--green);
@@ -7127,6 +7149,9 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     // _aaChoiceShowIfNeeded is defined further down in the main script and
     // decides whether to display the dual-choice or bypass it based on URL params.
     try { if (typeof window._aaChoiceShowIfNeeded === 'function') window._aaChoiceShowIfNeeded(); } catch(e){}
+    // v3.112.0 — support reminder. Runs on EVERY entry path (choice screen,
+    // ?mode=, RT/RM handoff) because they all funnel through here.
+    try { if (typeof window._aaSupportOnBoot === 'function') window._aaSupportOnBoot(); } catch(e){}
   }
   var _origDone = done;
   done = function(){ var f=finished; if(!f) afterDone(); _origDone(); };
@@ -7197,7 +7222,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
       </button>
     </div>
     <div class="aa-choice-bmc">
-      <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="KyndraRocks" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
+      <!-- v3.112.0 — a plain link, not the BMC widget script: blockers hid the script button entirely. -->
+      <a class="aa-bmc-link" href="https://buymeacoffee.com/KyndraRocks" target="_blank" rel="noopener" title="Support Active Airports on Buy Me a Coffee (opens in a new tab)">&#9749; Buy me a coffee</a>
     </div>
   </div>
 </div>
@@ -7246,7 +7272,11 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
     color:#7da2c8;font-family:'Rajdhani',sans-serif;font-size:.95rem;letter-spacing:.04em;
     padding:.4rem .8rem;border-radius:6px;transition:color .18s ease, background .18s ease;}
   .aa-choice-skip:hover, .aa-choice-skip:focus-visible{color:#eaf4ff;background:rgba(0,200,255,.08);outline:none;}
-  .aa-choice-bmc{margin-top:1.6rem;display:flex;justify-content:center;transform:scale(0.69);transform-origin:center top;white-space:nowrap;}
+  .aa-choice-bmc{margin-top:1.6rem;display:flex;justify-content:center;white-space:nowrap;}
+  .aa-bmc-link{display:inline-flex;align-items:center;gap:.4rem;background:#FFDD00;color:#000;border:1px solid #000;border-radius:8px;
+    padding:.45rem 1.1rem;font-family:Rajdhani,sans-serif;font-weight:700;font-size:1rem;text-decoration:none;letter-spacing:.02em;
+    box-shadow:0 2px 10px rgba(255,221,0,.18);transition:transform .12s,box-shadow .12s;}
+  .aa-bmc-link:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(255,221,0,.32);}
   .aa-choice-simbrief-row{display:flex;justify-content:center;margin-bottom:clamp(.8rem,2vw,1.4rem);}
   .aa-choice-simbrief-row .aa-choice-card{width:calc(50% - clamp(.4rem,1vw,.7rem));text-align:left;}
   @media (prefers-reduced-motion: reduce){
@@ -8775,7 +8805,8 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.35rem;justify-self:end;">
           <div style="display:flex;gap:0.5rem;">
             <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;background:rgba(0,200,255,0.08);border-color:var(--accent);color:var(--accent);" onclick="openRegionModal()" aria-label="Open interactive map" title="Open the interactive map — explore airports, search by owner / country / region / continent / developer, draw region circles for cross-region distance matrix planning" tabindex="-1">⊙ Map</button>
-            <button class="btn-action" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="_msfOpenChooser()" aria-label="Save or load all settings" title="Save or restore all settings — back up everything (Scenery Library, Alerts, and all preferences) to a single master save file, or load one back" tabindex="-1">⚙ Settings</button>
+            <button class="btn-action btn-settings" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="_msfOpenChooser()" aria-label="Save or load all settings" title="Save or restore all settings — back up everything (Scenery Library, Alerts, and all preferences) to a single master save file, or load one back" tabindex="-1">⚙ Settings</button>
+            <button class="btn-action btn-support" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="_aaSupportOpen()" aria-label="Support Active Airports" title="Support Active Airports &mdash; buy the developer a coffee, or enter your supporter code" tabindex="-1">&#9749; Support</button>
             <button class="btn-action btn-help" onclick="openHelp()" aria-label="Help" title="How to use this tool" tabindex="-1">? Help</button>
             <button class="btn-action btn-clear" style="font-size:0.78rem;padding:0.25rem 0.7rem;" onclick="clearDist()" aria-label="Reset flight planner" tabindex="-1">✕ Reset</button>
           </div>
@@ -9045,7 +9076,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.111.1';
+const APP_VERSION = '3.112.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -32710,6 +32741,7 @@ const _MSF_SETTINGS_REGISTRY = {
   'simfly_aa_random_opts':            { label:'Random flight options',         group:'Tools & misc' },
   'simfly_aa_meas_lockdist':          { label:'Measurement lock-distance mode', group:'Tools & misc' },
   'simfly_aa_my_pilot':               { label:'My SimFly pilot name',          group:'Tools & misc' },
+  'simfly_aa_support':                { label:'Supporter status & reminder',   group:'Tools & misc' },
   'simfly_aa_demo_bar_collapsed':     { label:'Demo control-bar state',        group:'Tools & misc' },
   'simfly_aa_update_dismissed':       { label:'Update banner dismissed',       group:'Tools & misc' },
   'simfly_aa_scenery_prefs':          { label:'Scenery Library view prefs',    group:'Tools & misc' },
@@ -36665,13 +36697,18 @@ function _rgDotTipHtml(icao, rec, ownerName) {
   const catNum = +(categoryDB && categoryDB.get(icaoUpper)) || null;
   const catCol = _rgCatOf(icao) || '#aaaaaa';
   let rwyHtml = '';
-  const rwys = runwayDB ? runwayDB.get(icaoUpper) : null;
+  // v3.111.2 — runway corrections (runwaySupplementDB) win over OurAirports,
+  // same resolution as the info panel; this read used to skip them.
+  const rwKey = (rec && rec.icao && rec.icao.toUpperCase() !== icaoUpper) ? rec.icao.toUpperCase() : icaoUpper;
+  const rwys = (runwaySupplementDB && runwaySupplementDB.get(icaoUpper))
+            || (runwayDB && (runwayDB.get(rwKey) || runwayDB.get(icaoUpper))) || null;
   if (rwys && rwys.length) {
     const best = rwys.reduce((a, b) => ((b.lengthFt || 0) > (a.lengthFt || 0) ? b : a));
     const idents = [best.leIdent, best.heIdent].filter(Boolean).join('/');
     const len   = best.lengthFt ? best.lengthFt.toLocaleString() + ' ft' : '';
     const surf  = best.surface  ? best.surface.charAt(0).toUpperCase() + best.surface.slice(1).toLowerCase() : '';
-    const lit   = best.lighted  ? ' · Lighted' : '';
+    // lighted is the string '0'/'1' — '0' is truthy, so test the value.
+    const lit   = (best.lighted === '1' || best.lighted === 1 || best.lighted === true) ? ' · Lighted' : '';
     const parts = [idents, len, surf + lit].filter(Boolean);
     rwyHtml = `<span class="rg-dt-rwy">${parts.join(' · ')}</span>`;
   }
@@ -44192,6 +44229,227 @@ function _rgRebuildNewAirports() {
   if (btn) btn.style.display = newAirportsDB.size > 0 ? '' : 'none';
   _rgRenderDots();
 }
+// -- Support reminder (v3.112.0) --------------------------------------------
+// A gentle Buy Me a Coffee reminder. First shown on launch _AA_SUP_FIRST,
+// then at most every _AA_SUP_EVERY_MS; the auto-shown dialog can't be closed
+// for _AA_SUP_WAIT_MS (the donate link works immediately). A supporter code —
+// given to donors in the BMC thank-you message — turns it off for good in this
+// browser.
+//
+// Only a SHA-256 of the code lives here, never the code. Supporter status is
+// NOT a stored yes/no flag: the normalised code itself is stored and re-hashed
+// on every check, so flipping a value in DevTools does nothing — you need the
+// real code (or to edit this file). To rotate, add the new code's hash to
+// _AA_SUP_CODE_HASHES and keep the old ones so existing supporters stay
+// unlocked. Hash = sha256('simfly-aa-support:v1:' + CODE_A_Z_0_9_UPPERCASE).
+// State: simfly_aa_support {launches, lastShown, code} (MSF-registered).
+const _AA_SUP_KEY         = 'simfly_aa_support';
+const _AA_SUP_URL         = 'https://buymeacoffee.com/KyndraRocks';
+const _AA_SUP_FIRST       = 1;
+const _AA_SUP_EVERY_MS    = 3 * 24 * 3600 * 1000;
+const _AA_SUP_WAIT_MS     = 20000;
+const _AA_SUP_CODE_HASHES = ['b655d7ac6f152217beb420e4946f3237db9315c26ab1980999321aaf8330d466'];
+let _aaSupTimer = null;
+
+// Synchronous SHA-256 (ASCII input — codes are normalised to A-Z0-9 first).
+// Not crypto.subtle: that is async and only exists in a secure context, and
+// AA must work from file:// as well as https.
+function _aaSupSha256(msg) {
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const bytes = [];
+  for (let i = 0; i < msg.length; i++) bytes.push(msg.charCodeAt(i) & 0xff);
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  for (let s = 56; s >= 0; s -= 8) bytes.push(s >= 32 ? 0 : (bitLen >>> s) & 0xff);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const W = new Array(64);
+  for (let off = 0; off < bytes.length; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      W[i] = (bytes[off + 4*i] << 24) | (bytes[off + 4*i + 1] << 16) | (bytes[off + 4*i + 2] << 8) | bytes[off + 4*i + 3];
+    }
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i-15], 7) ^ rotr(W[i-15], 18) ^ (W[i-15] >>> 3);
+      const s1 = rotr(W[i-2], 17) ^ rotr(W[i-2], 19) ^ (W[i-2] >>> 10);
+      W[i] = (W[i-16] + s0 + W[i-7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[i] + W[i]) | 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const mj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + mj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  return H.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
+function _aaSupNorm(raw) { return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+function _aaSupCodeOk(raw) {
+  const norm = _aaSupNorm(raw);
+  return norm.length >= 8 && _AA_SUP_CODE_HASHES.includes(_aaSupSha256('simfly-aa-support:v1:' + norm));
+}
+// The ONLY supporter test — re-derives status from the stored code every time.
+function _aaSupIsSupporter(st) { return !!(st && st.code && _aaSupCodeOk(st.code)); }
+function _aaSupLoad() {
+  try { const o = JSON.parse(localStorage.getItem(_AA_SUP_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }
+  catch(e) { return {}; }
+}
+function _aaSupSave(o) { try { localStorage.setItem(_AA_SUP_KEY, JSON.stringify(o)); } catch(e) {} }
+
+window._aaSupportOnBoot = function _aaSupportOnBoot() {
+  const st = _aaSupLoad();
+  st.launches = (+st.launches || 0) + 1;
+  const due = !_aaSupIsSupporter(st) && st.launches >= _AA_SUP_FIRST && (Date.now() - (+st.lastShown || 0)) >= _AA_SUP_EVERY_MS;
+  if (due) st.lastShown = Date.now();
+  _aaSupSave(st);
+  // Wait for the boot splash to finish fading (~870 ms after done()).
+  if (due) setTimeout(() => _aaSupportOpen({ auto: true }), 950);
+};
+
+function _aaSupportClose(force) {
+  const ov = document.getElementById('aaSupportModal');
+  if (!ov) return;
+  if (!force && ov.dataset.locked === '1') return;
+  if (_aaSupTimer) { clearInterval(_aaSupTimer); _aaSupTimer = null; }
+  document.removeEventListener('keydown', _aaSupportKey, true);
+  ov.remove();
+}
+function _aaSupportKey(e) {
+  if (e.key === 'Escape') { e.stopPropagation(); _aaSupportClose(false); }
+}
+
+// opts.auto — the timed reminder; the menu / ☕ button open it with no wait.
+// Fixed card height + fixed-height status line under the code field, so the
+// field never moves while typing (CLAUDE.md UI conventions).
+function _aaSupportOpen(opts) {
+  const auto = !!(opts && opts.auto);
+  _aaSupportClose(true);
+  const st = _aaSupLoad();
+  const overlay = document.createElement('div');
+  overlay.id = 'aaSupportModal';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'aaSupportTitle');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:100020;display:flex;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', ev => { if (ev.target === overlay) _aaSupportClose(false); });
+  const btn = 'border-radius:6px;font-family:Rajdhani,sans-serif;font-size:0.95rem;font-weight:600;padding:8px 14px;cursor:pointer;';
+  const isSup = _aaSupIsSupporter(st);
+  const codeBlock = isSup
+    ? `<div style="height:96px;display:flex;align-items:center;justify-content:center;color:#7ee2a8;font-size:0.95rem;text-align:center;">&#10003; You&rsquo;re a supporter &mdash; thank you! The reminder is off in this browser.</div>`
+    : `<div id="aaSupportCodeBlock" style="height:96px;">
+    <label for="aaSupportCode" style="display:block;color:#9fb0c4;font-size:0.8rem;margin-bottom:5px;">Already supported? Enter the supporter code from your thank-you page:</label>
+    <div style="display:flex;gap:8px;">
+      <input id="aaSupportCode" type="text" spellcheck="false" autocomplete="off" placeholder="XXXX-XXXX-XXXX"
+        onkeydown="if(event.key==='Enter'){_aaSupportApply();}"
+        oninput="document.getElementById('aaSupportMsg').textContent=''"
+        style="flex:1;min-width:0;box-sizing:border-box;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-family:Rajdhani,sans-serif;font-size:1rem;letter-spacing:0.06em;padding:8px 10px;outline:none;">
+      <button onclick="_aaSupportApply()" style="${btn}background:rgba(0,200,255,0.16);border:1px solid #00c8ff;color:#fff;">Apply</button>
+    </div>
+    <div id="aaSupportMsg" style="height:30px;display:flex;align-items:center;font-size:0.82rem;line-height:1.25;overflow:hidden;"></div>
+  </div>`;
+  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,221,0,0.35);border-radius:12px;padding:22px 26px;width:440px;max-width:92vw;height:430px;max-height:92vh;box-sizing:border-box;display:flex;flex-direction:column;font-family:Rajdhani,sans-serif;box-shadow:0 12px 48px rgba(0,0,0,0.6);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <span id="aaSupportTitle" style="font-family:Orbitron,monospace;font-size:0.86rem;letter-spacing:0.08em;color:#fff;text-transform:uppercase;">&#9749; Thanks for using Active Airports</span>
+    <button id="aaSupportX" onclick="_aaSupportClose(false)" aria-label="Close" style="background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+  </div>
+  <div id="aaSupportBody" style="flex:1;overflow-y:auto;color:#d6e2ef;font-size:1.02rem;line-height:1.5;">
+    <p style="margin:0 0 10px;">Active Airports is a one-person, donation-supported project. If it&rsquo;s made your flying easier, a coffee is a lovely way to say so &mdash; and a way to help cover the time that goes into keeping it running.</p>
+    <p style="margin:0 0 16px;color:#9fb0c4;">&mdash; Kyndra</p>
+    <div style="display:flex;justify-content:center;margin-bottom:18px;">
+      <a class="aa-bmc-link" href="${_AA_SUP_URL}" target="_blank" rel="noopener" title="Opens Buy Me a Coffee in a new tab">&#9749; Buy me a coffee</a>
+    </div>
+  </div>
+  ${codeBlock}
+  <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+    <button id="aaSupportLater" onclick="_aaSupportClose(false)" style="${btn}background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);color:#c8d4e2;min-width:140px;font-variant-numeric:tabular-nums;">${auto ? 'Maybe later' : 'Close'}</button>
+  </div>
+</div>`;
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown', _aaSupportKey, true);
+
+  if (auto && !isSup) {
+    // Wall-clock countdown: a throttled background tab can't stretch it.
+    overlay.dataset.locked = '1';
+    const until = Date.now() + _AA_SUP_WAIT_MS;
+    const later = document.getElementById('aaSupportLater');
+    const x     = document.getElementById('aaSupportX');
+    const tick = () => {
+      const left = Math.ceil((until - Date.now()) / 1000);
+      if (left <= 0 || overlay.dataset.locked !== '1') {
+        overlay.dataset.locked = '0';
+        if (later) { later.disabled = false; later.style.opacity = '1'; later.style.cursor = 'pointer'; later.textContent = 'Maybe later'; }
+        if (x) x.style.visibility = 'visible';
+        if (_aaSupTimer) { clearInterval(_aaSupTimer); _aaSupTimer = null; }
+        return;
+      }
+      if (later) { later.disabled = true; later.style.opacity = '0.55'; later.style.cursor = 'default'; later.textContent = 'Maybe later (' + left + ')'; }
+      if (x) x.style.visibility = 'hidden';
+    };
+    tick();
+    _aaSupTimer = setInterval(tick, 250);
+  }
+}
+
+function _aaSupportApply() {
+  const inp = document.getElementById('aaSupportCode');
+  const msg = document.getElementById('aaSupportMsg');
+  if (!inp || !msg) return;
+  if (!_aaSupCodeOk(inp.value)) {
+    msg.style.color = '#ffb35c';
+    msg.textContent = '⚠ That code doesn’t match — check it against your thank-you page.';
+    return;
+  }
+  const st = _aaSupLoad();
+  st.code = _aaSupNorm(inp.value);   // status is re-derived from this on every check
+  delete st.supporter;               // pre-release flag; no longer trusted
+  _aaSupSave(st);
+  // Stop the countdown FIRST — its unlock tick would otherwise rewrite the
+  // button back to "Maybe later" on its next run.
+  if (_aaSupTimer) { clearInterval(_aaSupTimer); _aaSupTimer = null; }
+  const ov = document.getElementById('aaSupportModal');
+  if (ov) ov.dataset.locked = '0';
+  // Success takes over the card: thank-you front and centre, code block gone.
+  // The card's height is fixed, so nothing around it moves.
+  const body = document.getElementById('aaSupportBody');
+  if (body) {
+    body.style.cssText = 'flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:10px;';
+    body.innerHTML =
+      '<div style="width:64px;height:64px;border-radius:50%;border:2px solid #7ee2a8;background:rgba(126,226,168,0.12);display:flex;align-items:center;justify-content:center;color:#7ee2a8;font-size:2rem;line-height:1;">&#10003;</div>' +
+      '<div style="color:#7ee2a8;font-size:1.35rem;font-weight:700;line-height:1.3;">Thank you for supporting<br>Active Airports!</div>' +
+      '<div style="color:#9fb0c4;font-size:0.95rem;">The reminder is off for good in this browser.</div>';
+  }
+  const block = document.getElementById('aaSupportCodeBlock');
+  if (block) block.style.display = 'none';
+  const later = document.getElementById('aaSupportLater');
+  if (later) {
+    later.disabled = false;
+    later.style.opacity = '1';
+    later.style.cursor = 'pointer';
+    later.style.background = 'rgba(126,226,168,0.16)';
+    later.style.borderColor = '#7ee2a8';
+    later.style.color = '#fff';
+    later.textContent = 'Thank you!';
+    if (later.parentElement) later.parentElement.style.justifyContent = 'center';
+    later.focus();
+  }
+  const x = document.getElementById('aaSupportX');
+  if (x) x.style.visibility = 'visible';
+}
+
 // -- My Pilot Name modal (v3.100.0) ------------------------------------------
 // SimFly does not let you rent your own aircraft, but the public rentable feed
 // has no idea who is reading it. Telling AA your pilot name lets it stop
@@ -49619,6 +49877,17 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature">
+        <div class="help-feature-icon">&#9749;</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Supporting Active Airports</div>
+          <div class="help-feature-desc">
+            Active Airports is free, donation-supported software built and maintained by one person. A short <strong>thank-you note</strong> appears on launch about once every three days, with a link to <strong>Buy Me a Coffee</strong>. The coffee link works straight away; <em>Maybe later</em> becomes available after 20 seconds.<br/><br/>
+            <strong>Turn the reminder off for good</strong> &mdash; after supporting, your Buy Me a Coffee thank-you page shows a <strong>supporter code</strong>. Enter it in the reminder, or open <strong>&#9749; Support</strong> (next to <em>Help</em> on the planner, or <strong>&#128736; Tools &rarr; Support Active Airports&hellip;</strong> on the map). The reminder never appears again in that browser, and your supporter status travels with <strong>Save / Load All Settings</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature">
         <div class="help-feature-icon">🛩</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Aircraft Rentals</div>
@@ -50411,10 +50680,41 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.112.0</span>
+          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>A short thank-you note now appears from time to time.</strong> Active Airports is a one-person, donation-supported project. A note with a Buy Me a Coffee link now appears on launch about once every three days, however you open the app. The coffee link works immediately; <em>Maybe later</em> unlocks after 20 seconds.</li>
+          <li><strong>Supporter code turns the note off for good.</strong> Supporters receive a code on their Buy Me a Coffee thank-you page. Entering it once switches the note off in that browser, and it carries over with Save / Load All Settings.</li>
+          <li><strong>New &#9749; Support button.</strong> Next to Help on the flight planner, and as <em>Support Active Airports&hellip;</em> in the map&rsquo;s &#128736; Tools menu, so you can support the project or enter your code whenever you like.</li>
+          <li><strong>The &#9881; Settings button matches the rest of the header.</strong> It was drawn as a plain light-grey browser button among the app&rsquo;s tinted outline buttons. It now has the same outline style, in a muted steel blue.</li>
+          <li><strong>The Buy Me a Coffee button on the startup screen always shows now.</strong> It used to be drawn by a script from Buy Me a Coffee&rsquo;s servers, which ad and tracker blockers often hid completely. It is now a plain link that always appears.</li>
+        </ul>
+      </div>
+
+
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.111.2</span>
+          <span class="release-date">Oct 30, 2026</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Airport hover popups now show corrected runway data.</strong> When a runway has been corrected in the KML Generator (for example RJNS, lengthened from 7,218 ft to 8,202 ft), the info panel showed the correction but the popup you get by hovering an airport dot still showed the original OurAirports length. Both now show the corrected runway.</li>
+          <li><strong>Unlit runways no longer show as &ldquo;Lighted&rdquo; in hover popups.</strong> The popup added &ldquo;&middot; Lighted&rdquo; to almost every runway, lit or not. It now matches the info panel and only says Lighted for runways that are.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="fix">
         <div class="release-header">
           <span class="release-version">v3.111.1</span>
-          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-date">Oct 30, 2026</span>
           <span class="release-tag fix">Fix</span>
         </div>
         <ul class="release-notes">
@@ -64023,6 +64323,8 @@ function rgSendToFlightPlanner() {
             <!-- v3.65.0 — Master Save File: back up / restore ALL settings at once -->
             <button class="rg-btn rg-pulldown-row" onclick="openMsfSave();_rgCloseAnyPulldown()" title="Save every setting on this device — including the Scenery Library and Alerts — to a single master save file on disk"><span class="rg-row-icon">💾</span><span class="rg-btn-label">Save All Settings…</span></button>
             <button class="rg-btn rg-pulldown-row" onclick="openMsfLoad();_rgCloseAnyPulldown()" title="Restore settings from a master save file — choose exactly what to load, and review what each setting will overwrite first"><span class="rg-row-icon">📂</span><span class="rg-btn-label">Load All Settings…</span></button>
+            <div class="rg-pulldown-sep"></div>
+            <button class="rg-btn rg-pulldown-row" id="rgSupportBtn" onclick="_rgCloseAnyPulldown();_aaSupportOpen()" title="Support Active Airports &mdash; buy the developer a coffee, or enter your supporter code"><span class="rg-row-icon">&#9749;</span>Support Active Airports&hellip;</button>
           </div>
         </div>
 

@@ -4,13 +4,23 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.111.1**
+**Current version: v3.112.0**
 
 ---
 
 ## Download
 
 Grab the latest release from the [Releases](https://github.com/KyndraRocks/SimFlyActiveAirports/releases) page. Download `SimFly_Active_Airports-LATEST.html`, open it in your browser, and you're ready to go.
+
+---
+
+## Support
+
+Active Airports is free, donation-supported software, built and maintained by one person in their spare time — every feature, every fix, and the data feeds that refresh every hour. If it has made your flying easier, a coffee is a lovely way to say so, and a way to help cover the time that goes into keeping it running.
+
+☕ **[Buy me a coffee](https://buymeacoffee.com/KyndraRocks)**
+
+Thank you! — Kyndra
 
 ---
 
@@ -24,6 +34,9 @@ On launch (v3.4.0+) a splash screen shows a **progress bar** and the name of eac
 
 ### Startup Choice — Owner View, Explore Map, or SimBrief
 After the loading splash fades (v3.7.0+) a friendly choice screen asks what you'd like to do. **Show airports by Owner** takes you to the classic distance matrix — pick this when you already know which pilots own the airports you want for departure and arrival. **Explore map** opens the interactive map for browsing by location, payout, region, continent, developer, drawing region circles, tracking live flights, and setting up in-flight alerts. **Load SimBrief Flight Plan** (v3.21.0+) opens the map and immediately fetches and plots your most recent SimBrief flight plan — your Pilot ID is saved on first use, so subsequent launches go straight to the route with one click. This is the fastest path from app open to flight plan on the map. When Default Alerts are saved (see *Default Alerts* in the Alerts section), an **Auto-load default alerts** checkbox appears on this card — checking it enables automatic queue replacement on every plan load. A small *Skip* link (or pressing **Esc**) dismisses the choice and drops you on the matrix. The choice is **bypassed automatically** when Recip Tracker or Relationship Manager Lite launches AA with a specific intent: a `dep` / `arr` / `depOwner` / `arrOwner` URL parameter sends you straight to the matrix with the route prefilled, and a `pilots=` and/or `groups=` parameter opens the map pre-filtered to those owners — `pilots=` takes a comma-separated list of owner names, `groups=` (new in v3.83.0) takes a comma-separated list of saved Owner Group names, and the two can be combined in the same link. You can also drop straight into a mode yourself by adding `?mode=owner`, `?mode=map`, `?mode=simbrief`, or (new in v3.74.0) `?mode=rentals` to the app's address — the last one opens the map with **Aircraft Rentals** already active and its panel open, so a bookmarked or shared link can take a pilot directly into rental-hunting mode. The choice only appears on a plain startup with no parameters — so cross-app shortcuts still go direct. The app version number is shown beneath the heading on the choice screen (v3.15.3+). On mobile the **Explore map** card shows a shorter description — flight tracking and in-flight alerts are omitted since both require a simulator connection and are hidden on mobile.
+
+### Supporting Active Airports (v3.112.0)
+Every few days a short thank-you note appears when the app opens, however you launch it, with a link to **Buy Me a Coffee**. The coffee link works straight away; *Maybe later* becomes available after a short pause. After supporting, your Buy Me a Coffee thank-you page shows a **supporter code** — enter it in the note, or under **☕ Support** (next to *Help* on the planner, or **🛠 Tools → Support Active Airports…** on the map), and the note never appears again in that browser. Your supporter status is included in **Save / Load All Settings**, so it moves with you to a new computer.
 
 ### Aircraft Rentals
 New in v3.50.0 — turn on **Aircraft Rentals** from the map menu to see where SimFly's rentable aircraft are, refreshed automatically from a live feed. Every airport's dot recolors by the best **pilot payout** available there — the cut the renting pilot keeps, from 0% up to 60% — and a Rentals panel opens for filtering.
