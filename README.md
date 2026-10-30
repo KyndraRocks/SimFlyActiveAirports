@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.111.0**
+**Current version: v3.111.1**
 
 ---
 
@@ -42,7 +42,9 @@ SimFly does not let you rent your own aircraft, but the rental data the app read
 
 Open **👁 Display → 👤 My Pilot Name** and enter your SimFly pilot name, spelled as it appears on your aircraft. The window confirms how many aircraft in the current feed it matched as you type, so a misspelling shows up straight away instead of leaving you wondering later why nothing changed. Capitalisation does not matter.
 
-Your aircraft stay visible on the map and in the rentals table — you can still see where your fleet is parked — but they are marked **yours** rather than *available*, never turn an airport's dot green or blue for availability, and never satisfy an "available now" filter. It is the same treatment an aircraft someone else has already rented gets.
+Your aircraft stay visible on the map and in the rentals table — you can still see where your fleet is parked — but they are marked **yours** rather than *available*, never turn an airport's dot green or blue for availability, and never satisfy an "available now" filter. It is the same treatment an aircraft someone else has already rented gets. The **File on SimBrief** button and its owner-fleet badges update the moment you save the name.
+
+The name is kept in your browser, so it starts out blank on a new computer, a new browser profile, or a different copy of the app (the GitHub Pages site and a downloaded file each keep their own). While it is blank the menu row reads **My Pilot Name… not set**, the Rentals panel shows a reminder you can click to set it, and the File on SimBrief tooltip warns when an available aircraft it reports might be yours.
 
 Leave the name blank and nothing changes: the setting starts empty and the app behaves exactly as it did before until you fill it in. It is saved with everything else by Save / Load All Settings.
 

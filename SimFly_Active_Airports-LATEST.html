@@ -9045,7 +9045,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.111.0';
+const APP_VERSION = '3.111.1';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -34231,6 +34231,7 @@ function _aaRentIngest(json) {
     }
     if (p.owner) _aaRentOwnerCounts.set(p.owner, (_aaRentOwnerCounts.get(p.owner) || 0) + 1);
   }
+  try { _aaMyPilotSyncBtn(); } catch (_) {}   // v3.111.1 — "not set" depends on the feed being non-empty
 }
 
 // v3.100.0 — Your own SimFly pilot name. SimFly does not let you rent your
@@ -34259,6 +34260,26 @@ function _aaMyPlaneCount(name) {
   }
   return c;
 }
+// v3.111.1 — the exclusion above is silent when the name is blank, and the
+// name lives in localStorage, so it is blank on every new machine, browser
+// profile and origin (Pages vs a local file) until set again. True when AA is
+// counting availability WITHOUT knowing whose aircraft are yours — the cue for
+// the reminders on the SimBrief tooltip, the Rentals panel and the menu row.
+function _aaMyPilotUnset() {
+  return !_aaMyPilot && Array.isArray(_aaRentPlanes) && _aaRentPlanes.length > 0;
+}
+const _AA_MY_PILOT_UNSET_NOTE = '\u{1F464} My Pilot Name is not set, so your own aircraft may be counted here \u2014 SimFly will not rent you your own. Set it in Display \u2192 My Pilot Name.';
+// Menu row status: the row names its current state ("not set") so a blank
+// setting is visible without opening the dialog.
+function _aaMyPilotSyncBtn() {
+  const btn = document.getElementById('rgMyPilotBtn');
+  if (!btn) return;
+  const lbl = btn.querySelector('.rg-btn-label');
+  const unset = _aaMyPilotUnset();
+  if (lbl) lbl.innerHTML = 'My Pilot Name\u2026' + (unset ? ' <span class="aa-mypilot-unset">not set</span>' : '');
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _aaMyPilotSyncBtn);
+else setTimeout(_aaMyPilotSyncBtn, 0);
 
 // True when a plane is rentable RIGHT NOW: not in ground ops (by live clock,
 // not just the stale flag) and not currently rented by someone.
@@ -37539,6 +37560,10 @@ function _sbRouteStopStatus() {
       }
     }
   }
+  // v3.111.1 — every availability line above (blue, swap, reposition) may be
+  // one of YOUR aircraft when the pilot name is blank. Say so; never changes
+  // the colour (AA cannot know which plane is yours without the name).
+  if (ac && _aaMyPilotUnset() && (depHasAc || notes.length)) notes.push(_AA_MY_PILOT_UNSET_NOTE);
   // Neutral note — never changes the color, just avoids a falsely-confident green.
   if (depSuit === null) notes.push(dep + ' suitability unverified (no runway data)');
   if (arrSuit === null) notes.push(arr + ' suitability unverified (no runway data)');
@@ -42526,7 +42551,8 @@ function _aaRentRefreshPanel() {
   const aptSet = new Set(rows.map(r => r.apt));
   const sum = document.getElementById('aaRentSummary');
   if (sum) sum.innerHTML = `<b>${rows.length.toLocaleString('en-US')}</b> plane${rows.length !== 1 ? 's' : ''} · ` +
-                           `${aptSet.size.toLocaleString('en-US')} airport${aptSet.size !== 1 ? 's' : ''}`;
+                           `${aptSet.size.toLocaleString('en-US')} airport${aptSet.size !== 1 ? 's' : ''}` +
+                           (_aaMyPilotUnset() ? `<button type="button" class="aa-mypilot-nudge" onclick="_aaMyPilotOpen(event)" title="Click to enter your SimFly pilot name so your own aircraft stop counting as available">&#128100; Your pilot name isn&rsquo;t set &mdash; your own aircraft count as available. Set it&hellip;</button>` : '');
   const res = document.getElementById('aaRentResults');
   if (!res) return;
   if (!rows.length) { res.innerHTML = `<div class="aar-empty">No rentals match these filters.</div>`; return; }
@@ -44239,6 +44265,12 @@ function _aaMyPilotSave() {
   try { if (typeof _aaRentRefreshPanel === 'function') _aaRentRefreshPanel(); } catch (_) {}
   try { if (typeof _aaRentRenderBadges === 'function') _aaRentRenderBadges(); } catch (_) {}
   try { if (typeof _aaListRefreshIfOpen === 'function') _aaListRefreshIfOpen(); } catch (_) {}
+  // v3.111.1 — these read availability too but were never repainted, so the
+  // File-on-SimBrief colour / swap note and the owner-fleet badges kept
+  // counting your aircraft until the route or aircraft next changed.
+  try { if (typeof _sbApplyStopColor === 'function') _sbApplyStopColor(); } catch (_) {}
+  try { if (typeof _aaOwnerAcRenderBadges === 'function') _aaOwnerAcRenderBadges(); } catch (_) {}
+  _aaMyPilotSyncBtn();
   try {
     _aaRtToast(v ? ('\u{1F464} Pilot name set to \u201c' + v + '\u201d \u2014 ' + _aaMyPlaneCount(v) +
                     ' of your aircraft will no longer show as available to rent.')
@@ -50240,7 +50272,7 @@ function rgSendToFlightPlanner() {
 
             <strong>📜 Alert History</strong> (v2.87.0) &mdash; a separate modal (also opened from the bottom of the Alerts modal) showing the last <strong>100 alert events</strong> on this device. Each row captures the local + UTC timestamp the alarm tripped, the alarm type and label, every configurable parameter that was set on the alarm, the eventual dismissal reason (<em>user dismissed</em>, <em>duration timer</em>, or <em>group cascade</em>), and a full aircraft telemetry snapshot at trip time (position, altitude, GS, IAS, heading, vertical speed, phase, source, aircraft ident). <strong>Per-row 📍 Pin to Map</strong> drops a labelled gold pin at the captured lat/lon so you can review where each alert fired during the flight; click again to remove the pin. <strong>Per-row ✕</strong> deletes that single entry. <strong>⤓ Save Log</strong> (v3.17.0+) in the footer saves all entries to a JSON file on disk regardless of the current filter — useful for post-flight review or sharing with someone for troubleshooting. <strong>Clear History</strong> wipes the whole log. The log is FIFO &mdash; once full, the oldest entry is evicted to make room for each new event. Storage is local to this browser (<code>localStorage</code> key <code>simfly_aa_afk_alert_history</code>); it does not sync across machines and survives reloads. <strong>Group cascades</strong> are recorded fully: when one alarm in a group fires, its own entry is logged with role <em>group fired</em>; each sibling that was also tripped is marked dismissed via <em>group cascade</em>; and each armed sibling that was auto-disabled by the cascade gets a synthetic entry noting it never actually fired but was auto-dismissed because a different alarm in the group did.<br/><br/>
 
-            <strong>Your own aircraft in rentals</strong> (v3.100.0) &mdash; SimFly does not permit renting your own aircraft, but the public rentable feed carries each plane's <code>owner</code> with no notion of who is reading it, so AA counted your fleet as available like anyone else's. Set <strong>&#128065; Display &rarr; &#128100; My Pilot Name</strong> to your SimFly pilot name (matched case-insensitively; the dialog shows a live count of matching aircraft so a typo is caught in the dialog). Gating happens at the single chokepoint <code>_aaRentIsAvailableNow</code>, so every consumer moves together &mdash; dot colours, owner-fleet badges, the rentals matrix, the Aircraft Listing and every &ldquo;available now&rdquo; filter. Your aircraft remain <em>visible</em> and are labelled <strong>yours</strong>, exactly as an already-rented plane is handled, so you can still see where your fleet is parked. Blank by default, so behaviour is unchanged until set. Stored as <code>simfly_aa_my_pilot</code> and registered in the Master Save File.<br/><br/><strong>Phase stability in turbulence</strong> (v3.99.0) &mdash; every phase transition now reads a <em>least-squares slope</em> over its window rather than the difference between the first and last altitude samples in it. An endpoint difference is hostage to where those two samples land on an oscillation, so level flight wobbling &plusmn;80&nbsp;ft registered as a sustained &plusmn;320&nbsp;fpm &ldquo;trend&rdquo;: 45 minutes of level cruise in that chop produced <strong>98 phase flips</strong> and at least one false DESCENT. The same 45 minutes now produces <strong>1</strong>. This also matters structurally &mdash; the slow-descent path is clamped to time-in-phase, and a phase clock that resets every 30&nbsp;s in turbulence could never reach the three minutes that path needs, so the climb direction had to move to slopes for the descent fix to work at all. Climb promotion is <code>slope &gt; +250&nbsp;fpm</code> over 30&nbsp;s. There is deliberately <em>no</em> slow/depth path on the climb side: a 50&ndash;100&nbsp;fpm cruise climb as fuel burns off is normal long-haul behaviour and must keep reading as CRUISE, and nothing depends on detecting a slow climb, whereas a missed slow descent costs the alarm entirely.<br/><br/><strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
+            <strong>Your own aircraft in rentals</strong> (v3.100.0) &mdash; SimFly does not permit renting your own aircraft, but the public rentable feed carries each plane's <code>owner</code> with no notion of who is reading it, so AA counted your fleet as available like anyone else's. Set <strong>&#128065; Display &rarr; &#128100; My Pilot Name</strong> to your SimFly pilot name (matched case-insensitively; the dialog shows a live count of matching aircraft so a typo is caught in the dialog). Gating happens at the single chokepoint <code>_aaRentIsAvailableNow</code>, so every consumer moves together &mdash; dot colours, owner-fleet badges, the rentals matrix, the Aircraft Listing and every &ldquo;available now&rdquo; filter. Your aircraft remain <em>visible</em> and are labelled <strong>yours</strong>, exactly as an already-rented plane is handled, so you can still see where your fleet is parked. Blank by default, so behaviour is unchanged until set &mdash; but because the name is stored in your browser it is blank again on a new computer, browser profile or address (the GitHub Pages copy and a local file each keep their own), so while it is blank the menu row reads <strong>not set</strong>, the Rentals panel shows a reminder you can click, and the File on SimBrief tooltip warns that an available aircraft may be yours (v3.111.1). Stored as <code>simfly_aa_my_pilot</code> and registered in the Master Save File.<br/><br/><strong>Phase stability in turbulence</strong> (v3.99.0) &mdash; every phase transition now reads a <em>least-squares slope</em> over its window rather than the difference between the first and last altitude samples in it. An endpoint difference is hostage to where those two samples land on an oscillation, so level flight wobbling &plusmn;80&nbsp;ft registered as a sustained &plusmn;320&nbsp;fpm &ldquo;trend&rdquo;: 45 minutes of level cruise in that chop produced <strong>98 phase flips</strong> and at least one false DESCENT. The same 45 minutes now produces <strong>1</strong>. This also matters structurally &mdash; the slow-descent path is clamped to time-in-phase, and a phase clock that resets every 30&nbsp;s in turbulence could never reach the three minutes that path needs, so the climb direction had to move to slopes for the descent fix to work at all. Climb promotion is <code>slope &gt; +250&nbsp;fpm</code> over 30&nbsp;s. There is deliberately <em>no</em> slow/depth path on the climb side: a 50&ndash;100&nbsp;fpm cruise climb as fuel burns off is normal long-haul behaviour and must keep reading as CRUISE, and nothing depends on detecting a slow climb, whereas a missed slow descent costs the alarm entirely.<br/><br/><strong>High-elevation airport guards</strong> (v2.87.0) &mdash; ground detection now uses GS + VS instead of the old <code>MSL altitude &lt; 1000&nbsp;ft</code> test, so taxi at airports like MMAS (6,112&nbsp;ft) or El Alto (13,300&nbsp;ft) no longer fools the phase detector into thinking the aircraft is airborne. As a backstop, Cruise Reached and Descent Started additionally require a confirmed wheels-up event (sustained GS &gt; 40&nbsp;kt for 10&nbsp;s) before either can fire.<br/><br/>
 
             <strong>Bulletproof on-ground detection</strong> (v3.88.0) &mdash; when you track with the <strong>SimConnect feed</strong> from the <strong>SimFly Telemetry Bridge</strong>, the simulator&rsquo;s own wheels-on-ground signal drives the ground/airborne decision directly, replacing the GS + VS estimate. This removes the two cases the estimate can&rsquo;t tell apart &mdash; a fast taxi or high-speed rejected takeoff misread as airborne, and a slow, near-level pass (gliders, helicopters at a hover, low-and-slow bush flying) misread as on-ground. A new <strong>GROUND</strong> telemetry field (ON&nbsp;GROUND / AIRBORNE) surfaces this ground truth on the data bar, and the SimConnect feed also unlocks the <strong>ALT&nbsp;IND</strong> (indicated) and <strong>ALT&nbsp;AGL</strong> (height above terrain) telemetry fields; all three appear only while the source supplies them.<br/><br/>
 
@@ -50379,10 +50411,21 @@ function rgSendToFlightPlanner() {
     </div>
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
+      <div class="release" data-tag="fix">
+        <div class="release-header">
+          <span class="release-version">v3.111.1</span>
+          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-tag fix">Fix</span>
+        </div>
+        <ul class="release-notes">
+          <li><strong>Setting My Pilot Name now updates the File on SimBrief button straight away.</strong> Saving the name refreshed the rentals views but not the button colour, its &ldquo;Consider swapping departure and arrival&rdquo; note or the owner-fleet badges, so those kept counting your own aircraft as rentable until you changed the route or aircraft.</li>
+          <li><strong>A blank pilot name is now visible.</strong> The name is stored in your browser, so it is blank again on a new computer, browser profile or address (the GitHub Pages copy and a local file each keep their own) &mdash; and while blank, AA cannot tell your aircraft from anyone else&rsquo;s. The menu row now reads <strong>My Pilot Name&hellip; not set</strong>, the Rentals panel shows a reminder you can click to set it, and the File on SimBrief tooltip adds a note whenever it reports an available aircraft that may be yours.</li>
+        </ul>
+      </div>
       <div class="release" data-tag="feature">
         <div class="release-header">
           <span class="release-version">v3.111.0</span>
-          <span class="release-date">Oct 18, 2026 &middot; Current</span>
+          <span class="release-date">Oct 18, 2026</span>
           <span class="release-tag feature">Feature</span>
         </div>
         <ul class="release-notes">
@@ -64242,6 +64285,9 @@ function rgSendToFlightPlanner() {
         .aar-summary { margin-top:11px; padding-top:9px; border-top:1px solid rgba(255,255,255,0.1);
           font-size:1.18rem; color:#b4c2d2; }
         .aar-summary b { color:#3fe089; }
+        .aa-mypilot-nudge { display:block; width:100%; margin-top:7px; padding:5px 8px; text-align:left; background:rgba(245,176,0,0.1); border:1px solid rgba(245,176,0,0.45); border-radius:5px; color:#f5b000; font-family:'Rajdhani',sans-serif; font-size:0.82rem; line-height:1.3; cursor:pointer; }
+        .aa-mypilot-nudge:hover { background:rgba(245,176,0,0.18); }
+        .aa-mypilot-unset { margin-left:6px; padding:0 6px; border:1px solid rgba(245,176,0,0.55); border-radius:8px; color:#f5b000; font-size:0.74rem; }
         /* Auto-refresh freshness chip — sits just under the plane/airport stats. */
         .aar-freshness { margin-top:5px; font-family:'Rajdhani',sans-serif; font-size:0.8rem;
           letter-spacing:0.02em; color:rgba(255,255,255,0.4); cursor:pointer; user-select:none;
