@@ -4,7 +4,7 @@ A single-file flight planning tool for SimFly pilots. Download it, open it in an
 
 This app is a replacement for the [SimFly Active Airports Google Earth map](https://earth.google.com/web/data=Mj0KOwo5CiExN1phTGt0Yl9VclF0YmI4UUFGc0ExRnJuMDN1eGJvcmsSEgoQNTU4N0ZDODY1MzAwMDAwMSABQgIIAEoICJWWvoMBEAE).
 
-**Current version: v3.112.1**
+**Current version: v3.113.0**
 
 ---
 
@@ -409,6 +409,13 @@ The first click prompts once for your **SimBrief Pilot ID** (find it at *simbrie
 - **Route color** *(default magenta)* — a color picker plus a hex input. Applies to the polyline, waypoint dots, and origin / destination rings.
 
 If a flight plan is already plotted when you save the modal, the route repaints in place with the new color and label mode — no re-fetch.
+
+### 🛫 Start Flight Reminder (v3.113.0)
+SimFly only counts a flight once you press **Start Flight**, and it has to be pressed while you are parked at the departure airport — easy to forget mid-checklist. With a SimBrief flight plan loaded and live aircraft tracking on, Active Airports notices when you have been stopped on the ground within 3 nm of the plan's departure airport for 30 seconds. It then shows a green **🛫 Press Start Flight on SimFly** banner at the top of the map and plays a single soft beep that repeats (every 30 seconds by default), even with the tab in the background.
+
+Click **🔕 Silence** once you have started; it stays quiet for the rest of that flight plan, including after a page reload. It also stays quiet once you have taken off, so landing back at your departure airport never sets it off, and loading a new SimBrief plan (say, the next leg) starts it afresh.
+
+**🔌 Live → 🛫 Start Flight Reminder…** opens its settings: on or off (on by default), how often it beeps (10–600 seconds), a Test button, and a line explaining why it is or isn't reminding right now.
 
 ### Live Aircraft Tracking (SimConnect)
 Active Airports can take live telemetry from a SimConnect bridge running on the same PC, which

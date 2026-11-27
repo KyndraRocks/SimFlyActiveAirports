@@ -5293,6 +5293,23 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
   }
   body.light-mode .sl-map-banner { background:rgba(255,248,200,0.97); color:#7a5e00; border-bottom-color:#c8a000; }
   .sl-map-banner.active { display:flex; }
+  /* v3.113.0 — Start Flight reminder banner: a centred pill near the top of the map, just below
+     the search / category row so it never covers those controls (or the aircraft marker). */
+  .sfr-banner { display:none; position:absolute; top:52px; left:50%; transform:translateX(-50%); z-index:1150; align-items:center; gap:0.75rem; max-width:calc(100% - 32px); box-sizing:border-box; padding:0.5rem 0.6rem 0.5rem 1rem; background:rgba(10,30,22,0.96); border:2px solid #2ecc71; border-radius:999px; box-shadow:0 4px 22px rgba(46,204,113,0.35); font-family:'Rajdhani',sans-serif; color:#bff5d4; backdrop-filter:blur(6px); animation:sfrPulse 1.8s ease-in-out infinite alternate; }
+  .sfr-banner.active { display:flex; }
+  @keyframes sfrPulse { from { box-shadow:0 4px 18px rgba(46,204,113,0.25); } to { box-shadow:0 4px 30px rgba(46,204,113,0.65); } }
+  .sfr-banner-text { display:flex; flex-direction:column; line-height:1.15; min-width:0; }
+  .sfr-banner-title { font-size:1.02rem; font-weight:700; color:#7fffb0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sfr-banner-hint { font-size:0.82rem; font-weight:500; color:rgba(191,245,212,0.7); }
+  .sfr-banner-hint.warn { color:#ffb648; font-weight:700; }
+  .sfr-banner-btn { flex:none; background:#2ecc71; border:0; color:#06150e; border-radius:999px; font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:700; padding:0.35rem 0.95rem; cursor:pointer; white-space:nowrap; }
+  .sfr-banner-btn:hover { background:#45dd85; }
+  body.light-mode .sfr-banner { background:rgba(232,255,240,0.97); color:#145a32; border-color:#1e9e55; }
+  body.light-mode .sfr-banner-title { color:#0e6b35; }
+  body.light-mode .sfr-banner-hint { color:rgba(20,90,50,0.75); }
+  body.light-mode .sfr-banner-hint.warn { color:#b35c00; }
+  .sfr-row-state { margin-left:auto; padding-left:0.6rem; font-size:0.78rem; opacity:0.7; }
+  @media (max-width:600px) { .sfr-banner { gap:0.5rem; padding-left:0.8rem; } .sfr-banner-hint { display:none; } }
   .sl-map-banner-hint { color:rgba(232,224,0,0.6); font-size:0.9rem; font-weight:500; }
   body.light-mode .sl-map-banner-hint { color:rgba(120,90,0,0.7); }
   .sl-map-banner-done { margin-left:auto; background:rgba(232,224,0,0.12); border:1.5px solid rgba(232,224,0,0.7); color:#e8e000; border-radius:4px; font-family:'Rajdhani',sans-serif; font-size:0.95rem; font-weight:700; padding:0.18rem 0.8rem; cursor:pointer; transition:background 0.15s, border-color 0.15s; }
@@ -9076,7 +9093,7 @@ body.light-mode #simfly-clock { color: rgba(15,40,80,0.75); background: rgba(0,6
 <div id="iconLabelPopup"></div>
 
 <script>
-const APP_VERSION = '3.112.1';
+const APP_VERSION = '3.113.0';
 
 // ── Live Weather (CheckWX) ────────────────────────────────────────────────
 const WX_API_KEY        = 'dfa6b0d3f22843d18eb8772e81';
@@ -15257,6 +15274,8 @@ function _liveAcRenderMarker(d, snap) {
   // AFK Alerts + Aircraft Data Panel tick — defensive guard so a tick failure
   // never breaks live-aircraft rendering.
   if (typeof _afkTick === 'function') { try { _afkTick(d); } catch (e) { console.warn('[afk] tick error', e); } }
+  // v3.113.0 - Start Flight reminder. Only real positions reach this line (limbo is skipped above).
+  if (typeof _sfrOnFix === 'function') { try { _sfrOnFix(d); } catch (e) { console.warn('[sfr] fix error', e); } }
   if (!_liveAcMarker) {
     const icon = _liveAcPlaneIcon(hdg, false);
     _liveAcMarker = L.marker([lat, lng], { icon, pane: _rgMap.getPane('liveAcPane') ? 'liveAcPane' : 'markerPane', zIndexOffset: 1500, interactive: true }).addTo(_rgMap);
@@ -19781,8 +19800,17 @@ const _afkAudio = (() => {
   function currentId() { return activeSoundId; }
   // v3.110.4 - 'running' | 'suspended' | 'closed' | 'none' (no context yet).
   function state() { return ctx ? ctx.state : 'none'; }
+  // v3.113.0 - One pass of a sound, layered on top of whatever is playing. Unlike preview() it
+  // never stops or pauses an active alarm, so the Start Flight reminder can chime beside a tripped
+  // alert without silencing it. Takes a sound id from _AFK_SOUNDS or a { pattern } object of its
+  // own. Returns false when there is no audio context at all.
+  function chime(soundOrId) {
+    const sound = (soundOrId && soundOrId.pattern) ? soundOrId
+      : (_AFK_SOUNDS.find(s => s.id === soundOrId) || _AFK_SOUNDS[0]);
+    return _playPatternOnce(sound) > 0;
+  }
 
-  return { play, stop, preview, unlock, currentId, state };
+  return { play, stop, preview, unlock, currentId, state, chime };
 })();
 
 // v3.110.4 - Arm the alert sound on ANY user gesture. Chrome's autoplay policy keeps an
@@ -21973,6 +22001,8 @@ function _afkHeartbeatBeat() {
   //    potentially suppressing the CTD alarm for as long as the tab stayed
   //    hidden — which is the only situation where that alarm can help at all.
   try { _afkTelemetryLossTick(); } catch (_) {}
+  // 4. v3.113.0 - Start Flight reminder: keeps its beep on time in a hidden tab.
+  try { _sfrTick(); } catch (_) {}
 }
 function _afkStartHeartbeat() {
   if (_afkHbWorker) return;
@@ -21992,6 +22022,360 @@ function _afkStartHeartbeat() {
     _afkHbWorker = null;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   START FLIGHT REMINDER (v3.113.0)
+   SimFly's Start Flight has to be pressed while parked at the departure airport,
+   and it is easy to forget. This beeps (one soft tone, every 30 s by default,
+   user-settable 10-600 s) while the aircraft sits still
+   at the SimBrief origin before it has flown, until the pilot clicks Silence on
+   the map banner (which holds for that flight plan).
+
+   ARMED only when ALL hold:
+     1. a fresh live position from a real sim source (SimConnect bridge, FSUIPC,
+        STKP — never Demo), not the sim's menu/loading limbo spot;
+     2. on the ground (the source's on-ground flag; for a source without one,
+        the phase detector's 'ground' plus GS under 1 kt);
+     3. stopped (GS < 1 kt) continuously for 30 s — a stand, not a taxi pause;
+     4. a SimBrief plan loaded and the aircraft within 3 nm of its origin;
+     5. not airborne since that plan was loaded (latched, persisted);
+     6. not silenced for that plan, and the reminder switched on.
+   Anything uncertain (stale fix, unknown GS, no plan) reads as NOT armed.
+
+   The latch is keyed by the plan's SimBrief time_generated, so re-fetching the
+   same plan or reloading the page keeps it, and only a different plan clears
+   it. That is what keeps it silent after landing back at the departure airport
+   (round trip / return) and lets the next leg's plan, loaded at the arrival
+   airport, arm it again.
+
+   The decision lives in _sfrStep(), a pure function over (persisted state,
+   runtime scratch, inputs) with no DOM, storage or clock access, so it can be
+   driven by scripted sequences — see tests/sfr-reminder.test.js.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* SFR-CORE-BEGIN */
+const _SFR = {
+  RADIUS_NM:     3,       // "at the departure airport"
+  STILL_KTS:     1,       // stationary
+  DWELL_MS:      30000,   // stopped this long before the first chime
+  FRESH_MS:      15000,   // 1 Hz local sources (bridge, FSUIPC)
+  FRESH_SLOW_MS: 30000,   // STKP pushes every 10 s
+  AIR_GS_GND:    30,      // airborne: on-ground flag false AND GS at least this ...
+  AIR_GS_NOGND:  45,      // ... or, with no flag, GS at least this
+  AIR_FIXES:     3,       // ... for this many consecutive fixes
+  BEEP_S_DEFAULT: 30,     // beep cadence, user-settable in seconds ...
+  BEEP_S_MIN:    10,      // ... clamped to this range
+  BEEP_S_MAX:    600,
+  SOURCES:       { bridge: 'fast', fsuipc: 'fast', stkp: 'slow' },
+};
+
+// User-entered beep interval → whole seconds in range. Junk (blank, text, NaN) falls back to the
+// default rather than to a clamp edge, so a typo can't silently become a 10 s nag.
+function _sfrParseInterval(v) {
+  const s = (v == null) ? '' : String(v).trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return _SFR.BEEP_S_DEFAULT;
+  const n = Math.round(+s);
+  if (!isFinite(n) || n <= 0) return _SFR.BEEP_S_DEFAULT;
+  return Math.min(_SFR.BEEP_S_MAX, Math.max(_SFR.BEEP_S_MIN, n));
+}
+
+// Identity of a flight plan. time_generated changes on every SimBrief generation and survives
+// a re-fetch, which is exactly the "new plan vs same plan" distinction the latch needs.
+function _sfrPlanKey(sb) {
+  if (!sb || !sb.origin) return null;
+  const tg = (sb.params && sb.params.time_generated) || (sb.api_params && sb.api_params.time_generated);
+  if (tg) return 'tg:' + tg;
+  const o = sb.origin, d = sb.destination || {};
+  return 'od:' + (o.icao_code || '') + '>' + (d.icao_code || '') + '@' + o.pos_lat + ',' + o.pos_long;
+}
+
+function _sfrLimbo(lat, lng) {
+  lat = +lat; lng = +lng;
+  if (!isFinite(lat) || !isFinite(lng)) return true;
+  return Math.abs(lat) < 0.25 && (Math.abs(lng) < 0.25 || Math.abs(lng - 90) < 0.25);
+}
+
+function _sfrHaversineNm(lat1, lon1, lat2, lon2) {
+  const R = 3440.065, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function _sfrNum(v) { if (v == null || v === '') return null; const n = +v; return isFinite(n) ? n : null; }
+
+// state (persisted): { plan, since, airborne, silenced }
+// rt (runtime only): { lastFixAt, airRun, stillSince, lastBeep }
+// inp: { now, enabled, planKey, origin:{lat,lng}, fix:{lat,lng,gs,gnd,source,at}|null,
+//        phase, takeoffAt, intervalS }
+// Returns { armed, reason, beep, dist, changed } and mutates state / rt in place.
+function _sfrStep(state, rt, inp) {
+  const out = { armed: false, reason: '', beep: false, dist: null, changed: false };
+  const now = inp.now;
+  const disarm = (reason) => { out.reason = reason; rt.stillSince = 0; rt.lastBeep = 0; return out; };
+
+  if (!inp.planKey) return disarm('noplan');
+
+  // A different plan = a new flight: clear the latch. Same plan (re-fetch, reload): keep it.
+  if (state.plan !== inp.planKey) {
+    state.plan = inp.planKey; state.since = now; state.airborne = false; state.silenced = false;
+    rt.airRun = 0; rt.stillSince = 0; rt.lastBeep = 0; rt.lastFixAt = 0;
+    out.changed = true;
+  }
+
+  // Any wheels-up the app's own takeoff detector recorded after this plan arrived.
+  if (!state.airborne && inp.takeoffAt > 0 && inp.takeoffAt > state.since) {
+    state.airborne = true; out.changed = true;
+  }
+
+  const f = inp.fix;
+  const kind = f && _SFR.SOURCES[f.source];
+  const freshMs = kind === 'slow' ? _SFR.FRESH_SLOW_MS : _SFR.FRESH_MS;
+  const fresh = !!(f && kind && f.at > 0 && (now - f.at) <= freshMs && !_sfrLimbo(f.lat, f.lng));
+  const gs  = fresh ? _sfrNum(f.gs) : null;
+  const gnd = fresh ? (f.gnd === true ? true : (f.gnd === false ? false : null)) : null;
+
+  // Airborne latch — counted once per NEW fix, not per tick, so a 1 Hz heartbeat re-evaluating
+  // the same fix can't inflate the run.
+  if (fresh && f.at !== rt.lastFixAt) {
+    rt.lastFixAt = f.at;
+    const air = (gnd === false && gs != null && gs >= _SFR.AIR_GS_GND) ||
+                (gnd === null  && gs != null && gs >= _SFR.AIR_GS_NOGND);
+    rt.airRun = air ? (rt.airRun || 0) + 1 : 0;
+    if (!state.airborne && rt.airRun >= _SFR.AIR_FIXES) { state.airborne = true; out.changed = true; }
+  }
+
+  if (state.airborne) return disarm('flown');
+  if (!fresh)         return disarm('nolive');
+  if (state.silenced) return disarm('silenced');
+
+  const onGround = gnd === true || (gnd === null && inp.phase === 'ground' && gs != null && gs < _SFR.STILL_KTS);
+  if (!onGround) return disarm('notground');
+  if (gs == null || gs >= _SFR.STILL_KTS) return disarm('moving');
+
+  const o = inp.origin;
+  if (!o || !isFinite(+o.lat) || !isFinite(+o.lng)) return disarm('noplan');
+  out.dist = _sfrHaversineNm(+f.lat, +f.lng, +o.lat, +o.lng);
+  if (!(out.dist <= _SFR.RADIUS_NM)) return disarm('away');
+
+  if (!rt.stillSince) rt.stillSince = now;
+  if (now - rt.stillSince < _SFR.DWELL_MS) { out.reason = 'settling'; rt.lastBeep = 0; return out; }
+
+  if (!inp.enabled) { out.reason = 'off'; rt.lastBeep = 0; return out; }
+
+  out.armed = true; out.reason = 'armed';
+  const beepMs = _sfrParseInterval(inp.intervalS) * 1000;
+  if (!rt.lastBeep || now - rt.lastBeep >= beepMs) { out.beep = true; rt.lastBeep = now; }
+  return out;
+}
+/* SFR-CORE-END */
+
+// ── Wiring: storage, live inputs, sound, map banner, Live-menu row ─────────────
+const _SFR_LS_ON    = 'simfly_aa_sfr_on';      // '0' = off; anything else (incl. unset) = on
+const _SFR_LS_STATE = 'simfly_aa_sfr_state';   // per-plan latch, survives reloads
+const _SFR_LS_INT   = 'simfly_aa_sfr_interval_s';
+// One soft, bell-like sine ping (G5, ~0.6 s decay). Deliberately not in _AFK_SOUNDS: it is a gentle
+// nudge, not an alarm, and should not show up in the alert sound pickers.
+const _SFR_TONE     = { pattern: [{ f: 784, d: 600, g: 0.32, type: 'sine', decay: true }] };
+let _sfrEnabled = (() => { try { return localStorage.getItem(_SFR_LS_ON) !== '0'; } catch (_) { return true; } })();
+let _sfrIntervalS = (() => { try { return _sfrParseInterval(localStorage.getItem(_SFR_LS_INT)); } catch (_) { return _SFR.BEEP_S_DEFAULT; } })();
+let _sfrState = (() => {
+  try {
+    const s = JSON.parse(localStorage.getItem(_SFR_LS_STATE) || 'null');
+    if (s && typeof s === 'object') return { plan: s.plan || null, since: +s.since || 0, airborne: !!s.airborne, silenced: !!s.silenced };
+  } catch (_) {}
+  return { plan: null, since: 0, airborne: false, silenced: false };
+})();
+const _sfrRt = { lastFixAt: 0, airRun: 0, stillSince: 0, lastBeep: 0 };
+let _sfrFix  = null;     // last real live fix: { lat, lng, gs, gnd, source, at }
+let _sfrLast = { armed: false, reason: 'noplan', dist: null };
+
+function _sfrSaveState() {
+  try { localStorage.setItem(_SFR_LS_STATE, JSON.stringify(_sfrState)); } catch (_) {}
+}
+
+function _sfrOnFix(d) {
+  if (!d) return;
+  const src = d.source || (typeof _liveAcSource !== 'undefined' ? _liveAcSource : null);
+  _sfrFix = { lat: +d.lat, lng: +d.lng, gs: d.gs, gnd: d.gnd, source: src, at: Date.now() };
+  _sfrTick();
+}
+
+function _sfrInputs() {
+  const sb = (typeof _sbOfpLastData !== 'undefined') ? _sbOfpLastData : null;
+  let origin = null;
+  if (sb && sb.origin) origin = { lat: parseFloat(sb.origin.pos_lat), lng: parseFloat(sb.origin.pos_long) };
+  let phase = null;
+  try { phase = (typeof _afkPhase !== 'undefined' && _afkPhase.get) ? _afkPhase.get() : null; } catch (_) {}
+  // A fix only counts while its source is still the live one (a stopped source leaves _sfrFix behind).
+  const liveSrc = (typeof _liveAcSource !== 'undefined') ? _liveAcSource : null;
+  const fix = (_sfrFix && _sfrFix.source === liveSrc) ? _sfrFix : null;
+  return {
+    now: Date.now(), enabled: _sfrEnabled, planKey: _sfrPlanKey(sb), origin, fix, phase,
+    takeoffAt: (typeof _afkTakeoffAt !== 'undefined') ? (+_afkTakeoffAt || 0) : 0,
+    intervalS: _sfrIntervalS,
+  };
+}
+
+function _sfrTick() {
+  const r = _sfrStep(_sfrState, _sfrRt, _sfrInputs());
+  if (r.changed) _sfrSaveState();
+  if (r.beep) { try { _afkAudio.chime(_SFR_TONE); } catch (_) {} }
+  const prev = _sfrLast;
+  _sfrLast = r;
+  if (prev.armed !== r.armed || prev.reason !== r.reason || r.beep) _sfrRender();
+}
+
+function _sfrAudioBlocked() {
+  try { return _afkAudio.state() !== 'running'; } catch (_) { return true; }
+}
+
+// Plain-English "why isn't it armed" — shown on the Live-menu row's tooltip and status.
+function _sfrReasonText(r) {
+  const orig = (typeof _sbOfpLastData !== 'undefined' && _sbOfpLastData && _sbOfpLastData.origin && _sbOfpLastData.origin.icao_code) || 'the departure airport';
+  switch (r.reason) {
+    case 'noplan':    return 'Waiting for a SimBrief flight plan — it needs to know your departure airport.';
+    case 'nolive':    return 'Waiting for a live aircraft position — connect SimConnect, FSUIPC or STKP Live.';
+    case 'flown':     return 'Quiet — you have already flown since this flight plan was loaded. A new plan re-arms it.';
+    case 'silenced':  return 'Silenced for this flight plan. Switch the reminder off and on again to re-arm it.';
+    case 'notground': return 'Quiet — the aircraft is not on the ground.';
+    case 'moving':    return 'Quiet — the aircraft is moving. It arms once you are stopped at ' + orig + '.';
+    case 'away':      return 'Quiet — you are ' + (r.dist != null ? r.dist.toFixed(1) + ' nm' : 'away') + ' from ' + orig + ' (needs to be within ' + _SFR.RADIUS_NM + ' nm).';
+    case 'settling':  return 'Parked at ' + orig + ' — it will beep once you have been stopped for 30 seconds.';
+    case 'off':       return 'Switched off.';
+    case 'armed':     return 'Reminding now — parked at ' + orig + ' and the flight has not started.';
+    default:          return '';
+  }
+}
+
+function _sfrRender() {
+  const r = _sfrLast;
+  const ban = document.getElementById('sfrBanner');
+  if (ban) {
+    ban.classList.toggle('active', !!r.armed);
+    const hint = document.getElementById('sfrBannerHint');
+    if (hint) {
+      const blocked = r.armed && _sfrAudioBlocked();
+      hint.textContent = blocked ? '🔇 Your browser is blocking sound — click anywhere on the page to allow it' : 'Beeping every ' + _sfrFmtInterval(_sfrIntervalS);
+      hint.classList.toggle('warn', blocked);
+    }
+  }
+  const row = document.getElementById('sfrMenuRow');
+  if (row) {
+    row.classList.toggle('active', !!_sfrEnabled);
+    const st = row.querySelector('.sfr-row-state');
+    let short = '';
+    if (_sfrEnabled) {
+      if (r.armed) short = 'reminding';
+      else if (r.reason === 'silenced') short = 'silenced';
+      else if (r.reason === 'noplan') short = 'no plan';
+      else if (r.reason === 'nolive') short = 'no live data';
+    }
+    if (st) st.textContent = short;
+    row.title = 'Start Flight reminder — beeps every ' + _sfrFmtInterval(_sfrIntervalS) + ' while you are parked at your ' +
+      'SimBrief departure airport and have not flown yet, so you remember to press Start Flight on SimFly. ' +
+      'Click to switch it on or off, set how often it beeps, or hear the beep.\n\nNow: ' + (_sfrEnabled ? _sfrReasonText(r) : 'Switched off.');
+  }
+  // Keep an open settings dialog's status line current.
+  const ds = document.getElementById('sfrDlgStatus');
+  if (ds) ds.textContent = _sfrEnabled ? _sfrReasonText(r) : 'Switched off.';
+}
+
+function _sfrFmtInterval(s) {
+  s = +s || _SFR.BEEP_S_DEFAULT;
+  if (s < 60 || s % 60) return s + ' s';
+  return (s / 60) + ' min';
+}
+
+function _sfrSilence(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  _sfrState.silenced = true;
+  _sfrSaveState();
+  _sfrTick();
+  _aaRtToast('🔕 Start Flight reminder silenced for this flight plan.', 'ok');
+}
+
+// Settings dialog, opened from the Live menu row. Fixed size: the only text that changes is the
+// status line, which has its own fixed-height box, so nothing moves while the user types.
+function _sfrOpenSettings(e) {
+  if (e) { e.preventDefault(); e.stopPropagation(); }
+  _rgCloseAnyPulldown();
+  try { _afkAudio.unlock(); } catch (_) {}
+  const existing = document.getElementById('sfrSettingsModal');
+  if (existing) { existing.remove(); return; }
+  const overlay = document.createElement('div');
+  overlay.id = 'sfrSettingsModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99998;display:flex;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', ev => { if (ev.target === overlay) overlay.remove(); });
+  const silencedNote = _sfrState.silenced
+    ? '<div style="color:#ffb648;font-size:0.8rem;margin-top:6px;" title="You silenced the reminder for the flight plan that is loaded now">Silenced for the current flight plan &mdash; saving with the reminder on will re-arm it.</div>'
+    : '';
+  overlay.innerHTML = `<div style="background:#1a2535;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:20px 24px;width:440px;max-width:92vw;font-family:Rajdhani,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <span style="font-family:Orbitron,monospace;font-size:0.82rem;letter-spacing:0.1em;color:#fff;text-transform:uppercase;">&#128747; Start Flight Reminder</span>
+    <button onclick="document.getElementById('sfrSettingsModal').remove()" title="Close without saving" style="background:none;border:none;color:#888;font-size:1.4rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+  </div>
+  <div style="color:#9fb0c4;font-size:0.82rem;line-height:1.45;margin-bottom:14px;">
+    Beeps while you are parked at your SimBrief departure airport and have not flown yet, so you remember to press <strong>Start Flight</strong> on SimFly. Click <strong>Silence</strong> on the map banner once you have; it stays quiet for that flight plan.
+  </div>
+  <label title="Turn the Start Flight reminder on or off" style="display:flex;align-items:center;gap:9px;color:#fff;font-size:0.98rem;cursor:pointer;margin-bottom:12px;">
+    <input id="sfrDlgOn" type="checkbox" ${_sfrEnabled ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;"> Remind me to start my flight
+  </label>
+  <div style="display:flex;align-items:center;gap:9px;color:#c8d4e0;font-size:0.95rem;">
+    <label for="sfrDlgInt" title="How often to beep while the reminder is active, in seconds (${_SFR.BEEP_S_MIN}–${_SFR.BEEP_S_MAX})">Beep every</label>
+    <input id="sfrDlgInt" type="number" inputmode="numeric" min="${_SFR.BEEP_S_MIN}" max="${_SFR.BEEP_S_MAX}" step="1" value="${_sfrIntervalS}"
+      title="How often to beep while the reminder is active, in seconds (${_SFR.BEEP_S_MIN}–${_SFR.BEEP_S_MAX}). Anything outside that range is clamped to it; a blank or invalid entry uses ${_SFR.BEEP_S_DEFAULT}."
+      onkeydown="if(event.key==='Enter'){_sfrSaveSettings();}if(event.key==='Escape'){document.getElementById('sfrSettingsModal').remove();}"
+      style="width:80px;box-sizing:border-box;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-family:Rajdhani,sans-serif;font-size:1rem;padding:6px 9px;outline:none;">
+    <span title="The interval is in seconds">seconds</span>
+    <button onclick="_sfrTestSound()" title="Play the reminder beep once" style="margin-left:auto;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#c8d4e0;font-family:Rajdhani,sans-serif;font-size:0.9rem;padding:6px 12px;cursor:pointer;">&#128266; Test</button>
+  </div>
+  ${silencedNote}
+  <div id="sfrDlgStatus" title="What the reminder is doing right now" style="height:40px;display:flex;align-items:center;color:#9fb0c4;font-size:0.82rem;line-height:1.3;overflow:hidden;margin-top:8px;"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <button onclick="document.getElementById('sfrSettingsModal').remove()" title="Close without saving" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#c8d4e0;font-family:Rajdhani,sans-serif;font-size:0.9rem;padding:7px 14px;cursor:pointer;">Cancel</button>
+    <button onclick="_sfrSaveSettings()" title="Save these settings" style="background:rgba(0,200,255,0.16);border:1px solid #00c8ff;border-radius:6px;color:#fff;font-family:Rajdhani,sans-serif;font-size:0.9rem;font-weight:600;padding:7px 18px;cursor:pointer;">Save</button>
+  </div>
+</div>`;
+  document.body.appendChild(overlay);
+  _sfrRender();
+  const inp = document.getElementById('sfrDlgInt');
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function _sfrSaveSettings() {
+  const on  = document.getElementById('sfrDlgOn');
+  const inp = document.getElementById('sfrDlgInt');
+  const wasOn = _sfrEnabled;
+  _sfrEnabled = on ? !!on.checked : _sfrEnabled;
+  if (inp) _sfrIntervalS = _sfrParseInterval(inp.value);
+  try {
+    localStorage.setItem(_SFR_LS_ON, _sfrEnabled ? '1' : '0');
+    localStorage.setItem(_SFR_LS_INT, String(_sfrIntervalS));
+  } catch (_) {}
+  // Saving with the reminder on re-arms a plan you silenced (e.g. after cancelling a flight you
+  // had started before takeoff).
+  if (_sfrEnabled && _sfrState.silenced) { _sfrState.silenced = false; _sfrSaveState(); }
+  const m = document.getElementById('sfrSettingsModal');
+  if (m) m.remove();
+  _sfrTick();
+  _sfrRender();
+  _aaRtToast(_sfrEnabled
+    ? '🛫 Start Flight reminder ' + (wasOn ? 'saved' : 'on') + ' — beeps every ' + _sfrFmtInterval(_sfrIntervalS) + '.'
+    : 'Start Flight reminder off.', 'ok');
+}
+
+function _sfrTestSound(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  try { _afkAudio.unlock(); _afkAudio.chime(_SFR_TONE); } catch (_) {}
+}
+
+// Page-timer fallback for when the heartbeat worker cannot start (file:// pages). In a hidden tab
+// this is throttled, so the worker beat in _afkHeartbeatBeat is the path that keeps time there.
+setInterval(() => { try { _sfrTick(); } catch (_) {} }, 1000);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { try { _sfrTick(); _sfrRender(); } catch (_) {} });
+else setTimeout(() => { try { _sfrTick(); _sfrRender(); } catch (_) {} }, 0);
+// The banner's "browser is blocking sound" hint clears the moment a gesture unlocks audio.
+['pointerdown', 'keydown'].forEach(ev => { try { window.addEventListener(ev, () => setTimeout(_sfrRender, 50), { passive: true }); } catch (_) {} });
 
 const _afkAlarms = (() => {
   let alarms = [];
@@ -32649,6 +33033,7 @@ const _MSF_EXCLUDE = new Set([
   'simfly_aa_ac_track_fp_gen',   // trail clear-marker — ephemeral
   'simfly_aa_ac_live_cap',       // v3.89.0 — in-progress flight capture snapshot, crash-recovery only — per-flight runtime
   'simfly_aa_afk_takeoff_at',    // wheels-up timestamp — per-flight runtime
+  'simfly_aa_sfr_state',         // v3.113.0 Start Flight reminder per-plan latch — per-flight runtime
   'simfly_aa_afk_elapsed_state', // elapsed-timer runtime
   'simfly_aa_afk_elapsed_frozen',// elapsed-timer runtime
   'simfly_aa_afk_timer_last',    // alarm timer runtime
@@ -32741,6 +33126,8 @@ const _MSF_SETTINGS_REGISTRY = {
   'simfly_aa_random_opts':            { label:'Random flight options',         group:'Tools & misc' },
   'simfly_aa_meas_lockdist':          { label:'Measurement lock-distance mode', group:'Tools & misc' },
   'simfly_aa_my_pilot':               { label:'My SimFly pilot name',          group:'Tools & misc' },
+  'simfly_aa_sfr_on':                 { label:'Start Flight reminder on / off', group:'Tools & misc' },
+  'simfly_aa_sfr_interval_s':         { label:'Start Flight reminder beep interval (s)', group:'Tools & misc' },
   'simfly_aa_support':                { label:'Supporter status & reminder',   group:'Tools & misc' },
   'simfly_aa_demo_bar_collapsed':     { label:'Demo control-bar state',        group:'Tools & misc' },
   'simfly_aa_update_dismissed':       { label:'Update banner dismissed',       group:'Tools & misc' },
@@ -50077,6 +50464,18 @@ function rgSendToFlightPlanner() {
       </div>
 
       <div class="help-feature help-feature--pc">
+        <div class="help-feature-icon">🛫</div>
+        <div class="help-feature-body">
+          <div class="help-feature-title">Start Flight Reminder</div>
+          <div class="help-feature-desc">
+            SimFly only counts a flight once you press <strong>Start Flight</strong>, and it has to be pressed while you are parked at the departure airport &mdash; easy to forget once you are busy with checklists. With a <strong>SimBrief flight plan</strong> loaded and <strong>live aircraft tracking</strong> on, Active Airports watches for you sitting still on the ground at the plan&rsquo;s departure airport. Once you have been stopped there for 30 seconds, a green <strong>🛫 Press Start Flight on SimFly</strong> banner appears at the top of the map and a single soft beep sounds every 30 seconds, even with the tab in the background.<br/><br/>
+            Click <strong>🔕 Silence</strong> on the banner once you have pressed Start Flight. It stays quiet for the rest of that flight plan, including after a page reload. It also stays quiet after you take off, so landing back at the departure airport (a round trip, or a return) never sets it off. Loading a different SimBrief plan &mdash; for example the next leg, from where you just landed &mdash; starts it afresh.<br/><br/>
+            <strong>🛫 Start Flight Reminder&hellip;</strong> in the map&rsquo;s <strong>🔌 Live</strong> menu opens its settings: switch it on or off (on by default), choose how often it beeps (10&ndash;600 seconds), and <strong>🔊 Test</strong> the beep. The dialog, and the menu row&rsquo;s tooltip, show why it is or isn&rsquo;t reminding right now: no flight plan, no live position, already flown, silenced, or too far from the departure airport. Saving with the reminder on re-arms a plan you silenced, such as after cancelling a flight before takeoff. If your browser is blocking sound, the banner says so: click anywhere on the page to allow it.
+          </div>
+        </div>
+      </div>
+
+      <div class="help-feature help-feature--pc">
         <div class="help-feature-icon">🛰</div>
         <div class="help-feature-body">
           <div class="help-feature-title">Live Aircraft Tracking (SimConnect &mdash; recommended)</div>
@@ -50716,10 +51115,24 @@ function rgSendToFlightPlanner() {
     <div class="modal-body" id="releaseModalBody">
       <div class="rn-no-results" id="rnNoResults">No releases match the selected filters.</div>
 
+      <div class="release" data-tag="feature">
+        <div class="release-header">
+          <span class="release-version">v3.113.0</span>
+          <span class="release-date">Nov 27, 2026 &middot; Current</span>
+          <span class="release-tag feature">Feature</span>
+        </div>
+        <div class="release-divider"></div>
+        <ul class="release-notes">
+          <li><strong>Start Flight reminder.</strong> With a SimBrief plan loaded and live tracking on, once you have been stopped on the ground at the plan&rsquo;s departure airport for 30 seconds, a <strong>🛫 Press Start Flight on SimFly</strong> banner appears at the top of the map and a single soft beep sounds every 30 seconds, even with the tab in the background. It never sounds once you have flown on that plan, so landing back at the departure airport stays quiet, and it starts afresh when you load a new plan.</li>
+          <li><strong>One click silences it for the flight.</strong> <strong>🔕 Silence</strong> on the banner keeps it quiet for the rest of that flight plan, including across page reloads.</li>
+          <li><strong>Choose how often it beeps.</strong> <strong>🛫 Start Flight Reminder&hellip;</strong> in the map&rsquo;s 🔌 Live menu opens its settings: on or off (on by default), the beep interval in seconds (10&ndash;600), and a Test button. It also explains why it is or isn&rsquo;t reminding right now. If your browser is blocking sound, the banner tells you to click the page.</li>
+        </ul>
+      </div>
+
       <div class="release" data-tag="improved">
         <div class="release-header">
           <span class="release-version">v3.112.1</span>
-          <span class="release-date">Oct 30, 2026 &middot; Current</span>
+          <span class="release-date">Oct 30, 2026</span>
           <span class="release-tag improved">Improved</span>
         </div>
         <div class="release-divider"></div>
@@ -64417,6 +64830,7 @@ function rgSendToFlightPlanner() {
           <div class="rg-pulldown" id="rgLiveMenu">
             <button class="rg-btn rg-pulldown-row" id="sbOfpBtn" onclick="_sbOfpButtonClick(event);_rgCloseAnyPulldown()" oncontextmenu="_sbOfpButtonClick(event);_rgCloseAnyPulldown();event.preventDefault()" title="Fetch and plot your most recent SimBrief flight plan — Right-click to open settings (Pilot ID, waypoint labels, route color)"><span class="rg-row-icon">✈</span><span class="rg-btn-label">SimBrief Flight Plan…</span></button>
             <button class="rg-btn rg-pulldown-row" id="afkAutoDefaultsRow" style="display:none" onclick="_afkToggleAutoDefaults();_rgCloseAnyPulldown()" title="Automatically load your saved Default Alerts whenever a flight plan is loaded — provided the aircraft is on the ground. Set defaults via ⭐ Save Defaults in the Alerts modal. Right-click ⭐ Load Defaults there to clear."><span class="rg-row-icon">⭐</span><span class="rg-btn-label">Auto-load Default Alerts</span></button>
+            <button class="rg-btn rg-pulldown-row" id="sfrMenuRow" onclick="_sfrOpenSettings(event)" title="Start Flight reminder — beeps while you are parked at your SimBrief departure airport and have not flown yet, so you remember to press Start Flight on SimFly. Click to switch it on or off, set how often it beeps, or hear the beep."><span class="rg-row-icon">🛫</span><span class="rg-btn-label">Start Flight Reminder…</span><span class="sfr-row-state"></span></button>
             <button class="rg-btn rg-pulldown-row" id="sfbLiveBtn" onclick="_sfbButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via the SimFly Telemetry Bridge — adds AGL and indicated altitude, which FSUIPC cannot provide"><span class="rg-row-icon">🛰</span><span class="rg-btn-label">SimConnect Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="fsuipcLiveBtn" onclick="_fsuipcButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via FSUIPC7 + Paul Henty WebSocket (local, 1 Hz updates)"><span class="rg-row-icon">🔌</span><span class="rg-btn-label">FSUIPC Live</span></button>
             <button class="rg-btn rg-pulldown-row" id="stkpLiveBtn" style="display:none" onclick="_stkpButtonClick(event);_rgCloseAnyPulldown()" title="Live aircraft via SimToolkitPro (cloud, 10 s) — Shift-click to change token"><span class="rg-row-icon">🛩</span><span class="rg-btn-label">STKP Live</span></button>
@@ -65266,6 +65680,14 @@ function rgSendToFlightPlanner() {
         <span>📍 Scenery edit mode — click any airport dot to add or remove it</span>
         <span class="sl-map-banner-hint">· Shift+click works anytime without this mode</span>
         <button class="sl-map-banner-done" onclick="_slExitMapMode()" title="Exit scenery edit mode (Shift+click still works without it)">✕ Done</button>
+      </div>
+      <!-- v3.113.0 — Start Flight reminder. Shown only while the reminder is chiming. -->
+      <div class="sfr-banner" id="sfrBanner" role="alert" title="You are parked at your SimBrief departure airport and have not flown yet — remember to press Start Flight on SimFly">
+        <span class="sfr-banner-text">
+          <span class="sfr-banner-title">🛫 Press Start Flight on SimFly</span>
+          <span class="sfr-banner-hint" id="sfrBannerHint">Beeping every 30 s</span>
+        </span>
+        <button class="sfr-banner-btn" onclick="_sfrSilence(event)" title="Stop the reminder for this flight plan. It comes back when you load a different SimBrief plan.">🔕 Silence</button>
       </div>
       <!-- v2.98.0 — Payout palette editor. Hidden by default; opened by
            right-clicking the payout gradient bar. Positioned absolutely
